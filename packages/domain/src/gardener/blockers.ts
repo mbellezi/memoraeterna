@@ -97,6 +97,19 @@ export function gardenerBlocker<C extends GardenerBlockerClass>(
   } as GardenerBlocker;
 }
 
+/**
+ * The `download` blocker of a task whose routed local model is installed but not ready yet (D7),
+ * from the model's install status; null for a ready model and for one that is not arriving
+ * (missing, failed, removed: those stay `no_model`).
+ */
+export function routedModelDownloadBlocker(
+  installStatus: string | null | undefined
+): GardenerBlocker | null {
+  if (installStatus === "downloading") return gardenerBlocker("download", "model_downloading");
+  if (installStatus === "verifying") return gardenerBlocker("download", "model_verifying");
+  return null;
+}
+
 export function gardenerBlockerKey(blocker: Pick<GardenerBlocker, "class" | "reason">) {
   return `${blocker.class}.${blocker.reason}` as GardenerBlockerKey;
 }

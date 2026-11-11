@@ -6,6 +6,7 @@ import {
   providerFailureKind
 } from "@app/ai";
 import {
+  backgroundBlockerOf,
   gardenerBlocker,
   gardenerTaskConfig,
   type GardenerBlocker,
@@ -123,4 +124,20 @@ export function providerOutageBlocker(
 /** Whether an error is a provider outage a job waits for ({@link providerOutageBlocker}). */
 export function isProviderOutage(error: unknown): boolean {
   return providerOutageBlocker(error) !== null;
+}
+
+/**
+ * The `download` blocker a job's model call met (F4 D7): its routed local model is installed but
+ * still downloading or being verified, so the AI service held the call. The job (an import too,
+ * from any of its inline stages) waits for the model, its attempt kept, instead of failing as a
+ * missing model. Read through wrapping errors; null for any other error.
+ */
+export function modelDownloadBlocker(error: unknown): GardenerBlocker | null {
+  let current: unknown = error;
+  for (let depth = 0; depth < 5 && current !== undefined && current !== null; depth++) {
+    const blocker = backgroundBlockerOf(current);
+    if (blocker) return blocker.class === "download" ? blocker : null;
+    current = (current as { cause?: unknown }).cause;
+  }
+  return null;
 }

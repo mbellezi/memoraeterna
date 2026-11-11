@@ -5,12 +5,18 @@ import {
   isTransientAiError,
   toProviderNetworkError
 } from "@app/ai";
+import { BackgroundBlockedError, gardenerBlocker } from "@app/domain";
 import {
   workerErrorMessage,
   workerFailure,
   workerMessageSchema
 } from "../workers/worker-contracts.js";
-import { isProviderOutage, isTransientJobFailure, providerOutageBlocker } from "./job-failure.js";
+import {
+  isProviderOutage,
+  isTransientJobFailure,
+  modelDownloadBlocker,
+  providerOutageBlocker
+} from "./job-failure.js";
 
 describe("job failure classification", () => {
   it("retries provider timeouts, rate limits, server errors, network failures and stalls", () => {
@@ -213,5 +219,26 @@ describe("provider outage (F4 D7): a wait, not a failure", () => {
       isProviderOutage(Object.assign(new Error("connect ECONNREFUSED"), { code: "ECONNREFUSED" }))
     ).toBe(false);
     expect(isProviderOutage(undefined)).toBe(false);
+  });
+});
+
+describe("a job's call held for its routed model (F4 D7)", () => {
+  const verifying = gardenerBlocker("download", "model_verifying");
+
+  it("reads the download blocker, also through a wrapping error", () => {
+    expect(modelDownloadBlocker(new BackgroundBlockedError(verifying))).toEqual(verifying);
+    expect(
+      modelDownloadBlocker(new Error("identity", { cause: new BackgroundBlockedError(verifying) }))
+    ).toEqual(verifying);
+  });
+
+  it("reads nothing for another blocker class or an ordinary failure", () => {
+    expect(
+      modelDownloadBlocker(new BackgroundBlockedError(gardenerBlocker("paused", "user_pause")))
+    ).toBeNull();
+    expect(modelDownloadBlocker(new Error("errors.relationTypes.embeddingRequired"))).toBeNull();
+    expect(modelDownloadBlocker(undefined)).toBeNull();
+    // A held call is no transient failure: the supervisor sets it aside before it looks.
+    expect(isTransientJobFailure(new BackgroundBlockedError(verifying))).toBe(false);
   });
 });

@@ -162,8 +162,31 @@ export const aiConfigRepositoryReaders = [
   "listProfileTasks",
   "listTaskRoutes",
   "getDefaultTask",
+  "getRoutedLocalModelStatus",
   "recordTaskRun"
 ] as const;
+
+/**
+ * The profile a task runs on ($1 task, $2 explicit profile, $3 route keys): the first route key
+ * with a route, else the default profile. Shared by `getDefaultTask` and its install-state reader.
+ */
+const chosenProfileCte = `with route as (
+           select r.profile_id, r.task
+           from unnest($3::text[]) with ordinality as wanted(key, position)
+           join ai_task_profile_routes r on r.task = wanted.key
+           order by wanted.position
+           limit 1
+         ), chosen_profile as (
+           select coalesce(
+             $2::uuid,
+             (select profile_id from route),
+             (select id from ai_profile_sets where is_default = true and status = 'active' limit 1)
+           ) as id,
+           case when $2::uuid is null then coalesce((select task from route), $1) else $1 end
+             as route_key
+         )`;
+/** The chosen profile is active and its task row serves the route key (`p`, `t`, `selected`). */
+const servedProfileTask = `p.status = 'active' and (($2::uuid is not null and (t.status is null or t.status='active')) or (t.status = 'active' and t.task = selected.route_key))`;
 
 export function createAiConfigRepository(db: Queryable) {
   return bumpingGenerationAfter(aiConfigMethods(db), aiConfigRepositoryWriters);
@@ -471,21 +494,7 @@ function aiConfigMethods(db: Queryable) {
       outputLanguage: string;
     } | null> {
       const result = await db.query<QueryResultRow & Record<string, unknown>>(
-        `with route as (
-           select r.profile_id, r.task
-           from unnest($3::text[]) with ordinality as wanted(key, position)
-           join ai_task_profile_routes r on r.task = wanted.key
-           order by wanted.position
-           limit 1
-         ), chosen_profile as (
-           select coalesce(
-             $2::uuid,
-             (select profile_id from route),
-             (select id from ai_profile_sets where is_default = true and status = 'active' limit 1)
-           ) as id,
-           case when $2::uuid is null then coalesce((select task from route), $1) else $1 end
-             as route_key
-         )
+        `${chosenProfileCte}
          select selected.route_key as "routeKey",
                 p.id as "profileId", p.privacy_mode as "privacyMode", p.provider_config_id as "providerConfigId",
                 p.local_model_id as "localModelId", coalesce(c.provider, 'local-' || lm.runtime) as provider,
@@ -499,7 +508,7 @@ function aiConfigMethods(db: Queryable) {
          left join ai_profile_tasks t on t.profile_id = p.id and t.task = selected.route_key
          left join ai_provider_configs c on c.id = p.provider_config_id
          left join local_models lm on lm.id = p.local_model_id and lm.status = 'ready'
-         where p.status = 'active' and (($2::uuid is not null and (t.status is null or t.status='active')) or (t.status = 'active' and t.task = selected.route_key))
+         where ${servedProfileTask}
            and (c.id is not null or lm.id is not null)
          limit 1`,
         [task, explicitProfileId ?? null, routeKeys.length > 0 ? [...routeKeys] : [task]]
@@ -529,6 +538,31 @@ function aiConfigMethods(db: Queryable) {
         providerMetadata: asJsonObject(row.providerMetadata),
         outputLanguage: String(row.outputLanguage)
       };
+    },
+
+    /**
+     * The install status of the local model `getDefaultTask` would choose (same arguments, route,
+     * profile and task rows) if that model were ready; null when the chosen profile serves the task
+     * through a provider or none serves it. F4 D7: a task whose routed model is still downloading
+     * or being verified waits for it instead of failing.
+     */
+    async getRoutedLocalModelStatus(
+      task: string,
+      explicitProfileId?: string,
+      routeKeys: readonly string[] = [task]
+    ): Promise<string | null> {
+      const result = await db.query<{ status: string }>(
+        `${chosenProfileCte}
+         select lm.status
+         from ai_profile_sets p
+         join chosen_profile selected on selected.id = p.id
+         left join ai_profile_tasks t on t.profile_id = p.id and t.task = selected.route_key
+         join local_models lm on lm.id = p.local_model_id
+         where ${servedProfileTask} and p.provider_config_id is null
+         limit 1`,
+        [task, explicitProfileId ?? null, routeKeys.length > 0 ? [...routeKeys] : [task]]
+      );
+      return result.rows[0]?.status ?? null;
     },
 
     async setProfileTask(input: {

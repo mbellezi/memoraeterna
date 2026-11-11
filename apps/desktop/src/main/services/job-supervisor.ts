@@ -104,7 +104,11 @@ import {
   manualRetryStages,
   stageRetryStages
 } from "./job-retry.js";
-import { isTransientJobFailure, providerOutageBlocker } from "./job-failure.js";
+import {
+  isTransientJobFailure,
+  modelDownloadBlocker,
+  providerOutageBlocker
+} from "./job-failure.js";
 import {
   claimableTypes,
   jobBlocker,
@@ -639,10 +643,12 @@ export class JobSupervisor {
       const outage = wasCanceled ? null : providerOutageBlocker(error);
       // An import is the user's work and never meets a background gate; other heavy jobs may. An
       // import waits for the provider without a clear time: the breaker's close (`network_back`)
-      // or the blocker recheck sets it free, so each look does not leave one more stage row.
+      // or the blocker recheck sets it free, so each look does not leave one more stage row. It
+      // also waits for a routed local model that is still arriving (`download`, D7).
       const blocker =
         job.type === "ingestion"
-          ? outage && withoutClearTime(outage)
+          ? ((outage && withoutClearTime(outage)) ??
+            (wasCanceled ? null : modelDownloadBlocker(error)))
           : (jobBlocker(this.options.backgroundPolicy, job, { error, canceled: wasCanceled }) ??
             outage);
       if (blocker) {
@@ -1611,11 +1617,13 @@ export class JobSupervisor {
           : { configured: false, generated: false, projected: false };
       } catch (error) {
         // A graph that failed for good ends this stage only (D25, R25). Cancellation, a provider
-        // outage (the job waits for it, F4 D7) and a failure the job's own retry can still mend (a
-        // first local deadline) take the job's path, so the graph comes back before matching runs.
+        // outage or a routed model still arriving (the job waits for them, F4 D7) and a failure
+        // the job's own retry can still mend (a first local deadline) take the job's path, so the
+        // graph comes back before matching runs.
         if (
           signal.aborted ||
           providerOutageBlocker(error) !== null ||
+          modelDownloadBlocker(error) !== null ||
           (job.attempts < job.maxAttempts && isTransientJobFailure(error))
         )
           throw error;

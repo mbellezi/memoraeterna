@@ -129,6 +129,9 @@ import {
   generativeDeciderCapabilities,
   supportsTask,
   remoteBudgetRefusalOf,
+  routedModelDownloadBlocker,
+  BackgroundBlockedError,
+  type GardenerBlocker,
   type AiCapability,
   type AiModelParameterCapabilities,
   type AiOutputContract,
@@ -295,6 +298,8 @@ export interface AiServiceOptions {
    * policy remembers it for the job, as it does a gate's refusal at admission).
    */
   onBudgetRefusal?: (jobId: string, refusal: RemoteBudgetRefusal) => void;
+  /** Hears a job's call held because its routed local model is still arriving (F4 D7, `download`). */
+  onDownloadBlock?: (jobId: string, blocker: GardenerBlocker) => void;
 }
 
 /** The `class:decide` route: a validated dedicated ranker (D17, D18). */
@@ -1625,6 +1630,18 @@ export class AiService {
     const selection = found ? structuredClone(found) : null;
     if (!selection) {
       if (pinned) throw new Error("organization.errors.model");
+      // F4 D7: a job's task whose routed local model is still downloading or being verified waits
+      // for it (a `download` blocker, no attempt burned) instead of reading "no model". A ranker
+      // that is not validated yet keeps decision 19's path (matching waits for the decider).
+      if (context.jobId && task !== "reranking") {
+        const blocker = routedModelDownloadBlocker(
+          await repository.getRoutedLocalModelStatus(task, undefined, routeKeys)
+        );
+        if (blocker) {
+          this.options.onDownloadBlock?.(context.jobId, blocker);
+          throw new BackgroundBlockedError(blocker);
+        }
+      }
       return null;
     }
     const language = context.contentLanguage ?? (await this.options.getContentLanguage?.()) ?? "en";

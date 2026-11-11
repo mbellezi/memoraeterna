@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AiProviderError, toProviderNetworkError } from "@app/ai";
 import type { JobRecord, PgPool } from "@app/db";
+import { BackgroundBlockedError, gardenerBlocker } from "@app/domain";
 import { JobSupervisor } from "./job-supervisor.js";
 import type { KnowledgeService } from "./knowledge-service.js";
 import { resetRelationLinkRuntime, setRelationLinkRuntime } from "./relations/link-runtime.js";
@@ -603,6 +604,41 @@ describe("ingestion queue scheduling", () => {
           "job",
           expect.objectContaining({ status: "failed" })
         );
+        expect(matchAtomicNotes).not.toHaveBeenCalled();
+      });
+
+      it("waits for a routed model still being verified, on the last attempt too (F4 D7)", async () => {
+        const matchAtomicNotes = matching();
+        const held = new BackgroundBlockedError(gardenerBlocker("download", "model_verifying"));
+        mocks.jobs.setAside.mockResolvedValue({ job: { id: "job" }, mergedInto: null });
+        mocks.jobs.findById.mockResolvedValue({
+          id: "job",
+          type: "ingestion",
+          status: "queued",
+          attempts: 2,
+          blockedClass: "download",
+          blockedReason: "model_verifying"
+        });
+        const { job } = await ingest(
+          {
+            // The canonical embedder's call, wrapped by the graph pass.
+            generateKnowledgeGraph: vi
+              .fn()
+              .mockRejectedValue(new Error("identity failed", { cause: held })),
+            matchAtomicNotes
+          },
+          graphRun(),
+          {},
+          3
+        );
+        expect(job).toMatchObject({ status: "queued", blockedClass: "download" });
+        expect(mocks.jobs.setAside).toHaveBeenCalledWith(
+          "job",
+          expect.objectContaining({ blocker: { class: "download", reason: "model_verifying" } })
+        );
+        expect(mocks.runs.setAside).toHaveBeenCalledWith("run");
+        expect(mocks.runs.failStage).not.toHaveBeenCalled();
+        expect(mocks.runs.fail).not.toHaveBeenCalled();
         expect(matchAtomicNotes).not.toHaveBeenCalled();
       });
 

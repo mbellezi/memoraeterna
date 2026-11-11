@@ -18,7 +18,8 @@ import {
   gardenerTimeClearedReasons,
   highestGardenerBlocker,
   isBackgroundBlocked,
-  parseGardenerBlockerKey
+  parseGardenerBlockerKey,
+  routedModelDownloadBlocker
 } from "./blockers.js";
 
 describe("gardener blockers", () => {
@@ -196,5 +197,23 @@ describe("gardener blockers", () => {
         blockedReason: "other"
       })
     ).toBe(false);
+  });
+});
+
+describe("a routed local model that is still arriving (D7)", () => {
+  it("waits as a download while it downloads or is verified", () => {
+    expect(routedModelDownloadBlocker("downloading")).toEqual({
+      class: "download",
+      reason: "model_downloading"
+    });
+    expect(routedModelDownloadBlocker("verifying")).toEqual({
+      class: "download",
+      reason: "model_verifying"
+    });
+  });
+
+  it("is no download when the model is ready, missing, failed or being removed", () => {
+    for (const status of ["ready", "not_downloaded", "failed", "removing", null, undefined])
+      expect(routedModelDownloadBlocker(status)).toBeNull();
   });
 });

@@ -463,6 +463,8 @@ void app.whenReady().then(() => {
       const blocker = backgroundBlockerOf(refusal);
       if (blocker) backgroundPolicy?.gate.noteRefusal(jobId, blocker);
     },
+    // A job's call whose routed local model is still arriving: set aside, likewise (D7).
+    onDownloadBlock: (jobId, blocker) => backgroundPolicy?.gate.noteRefusal(jobId, blocker),
     // A probe answered: the tasks a provider outage set aside run again (D7, `network_back`).
     onBreakerTransition: (_lane, transition) => {
       if (transition.to === "closed") void backgroundPolicy?.blockers.notify("network_back");
