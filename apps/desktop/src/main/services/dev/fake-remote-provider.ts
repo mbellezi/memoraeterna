@@ -33,6 +33,8 @@ export interface OpenAiCompatibleFakeOptions {
   latency: LatencyModel;
   /** Share of the call that passes before the first answer text arrives. */
   firstByteFraction?: number;
+  /** How an Ask answer is spread over time and pieces; the default is {@link defaultAskStreamPlan}. */
+  askStream?: AskStreamPlan;
   modelId?: string;
   /**
    * The usage a completion reports, from its prompt, answer and request body; by default a token
@@ -52,20 +54,69 @@ export function firstEvidenceHandle(prompt: string): string | null {
   );
 }
 
-/** A valid Ask answer that cites the first passage of the prompt; plain text for any other prompt. */
+/** The evidence handles a consultation prompt offers, once each, in the order it lists them. */
+export function evidenceHandles(prompt: string): string[] {
+  const handles = [...prompt.matchAll(/"handle"\s*:\s*"(e\d{1,3})"/gu)].map((match) => match[1]!);
+  const found =
+    handles.length > 0 ? handles : [firstEvidenceHandle(prompt)].filter((h) => h !== null);
+  return [...new Set(found)];
+}
+
+/**
+ * A valid Ask answer of three paragraphs (F5 D14, J6): the first cites the first passage of the
+ * prompt, the next two the following ones (the same one again when the prompt offers fewer), and
+ * each carries its marker. Plain text for any other prompt.
+ */
 export function askAnswer(prompt: string): string {
-  const handle = firstEvidenceHandle(prompt);
-  if (handle === null) return "OK";
+  const handles = evidenceHandles(prompt);
+  if (handles.length === 0) return "OK";
+  const cited = (index: number) => handles[index % handles.length]!;
   return JSON.stringify({
     paragraphs: [
       {
-        markdown: `The first passage addresses the question [${handle}].`,
-        citations: [handle],
+        markdown: `The first passage addresses the question [${cited(0)}].`,
+        citations: [cited(0)],
+        contextIds: []
+      },
+      {
+        markdown: `A second passage adds the supporting detail the question asks for [${cited(1)}].`,
+        citations: [cited(1)],
+        contextIds: []
+      },
+      {
+        markdown: `Taken together, the passages answer the question in full [${cited(2)}].`,
+        citations: [cited(2)],
         contextIds: []
       }
     ],
     gaps: []
   });
+}
+
+/**
+ * How the fake plays an Ask answer so the streamed text can be watched (F5 D14, J6): the call takes
+ * at least `minMs` and the text arrives in at least `minPieces` pieces, cut at the paragraphs'
+ * ends too, so the paragraph completions come well apart (at least 100 ms with the defaults), past
+ * the 50 ms window of `consultation.delta`.
+ */
+export interface AskStreamPlan {
+  minMs: number;
+  minPieces: number;
+}
+export const defaultAskStreamPlan: AskStreamPlan = { minMs: 600, minPieces: 6 };
+
+/** Whether the text is an Ask answer (JSON), which the stream plan applies to; "OK" is not. */
+const isAskAnswerText = (text: string) => text.startsWith("{");
+
+/**
+ * The pieces an Ask answer streams in: each paragraph's object is cut apart from the next, and
+ * every part is split into short pieces, so no piece carries the end of one paragraph and the
+ * start of the next, and `minPieces` holds for the whole.
+ */
+export function askAnswerPieces(text: string, minPieces: number): string[] {
+  const parts = text.split(/(?<=\},)(?=\{"markdown")/u);
+  const perPart = Math.max(2, Math.ceil(minPieces / parts.length));
+  return parts.flatMap((part) => splitAnswer(part, 28, perPart));
 }
 
 /** An answer the consultation parser refuses: JSON cut off in the middle. */
@@ -97,9 +148,12 @@ export function openAiCompatibleKind(options: OpenAiCompatibleFakeOptions): Fake
       return jsonReply(400, { error: { message: "body is not JSON", code: "invalid_request" } });
     }
     const prompt = promptOf(body);
-    const totalMs = options.latency.sample(
+    const ask = isAskAnswerText(text);
+    const plan = options.askStream ?? defaultAskStreamPlan;
+    const sampled = options.latency.sample(
       seededUnit(options.seed, openAiCompatibleProvider, context.seq, "latency")
     );
+    const totalMs = ask ? Math.max(sampled, plan.minMs) : sampled;
     const counted = options.usage?.(prompt, text, body) ?? {
       prompt_tokens: fakeTokens(prompt),
       completion_tokens: fakeTokens(text)
@@ -134,7 +188,9 @@ export function openAiCompatibleKind(options: OpenAiCompatibleFakeOptions): Fake
       headers: { "content-type": "text/event-stream", "cache-control": "no-cache" },
       parts: timedParts(
         [],
-        splitAnswer(text).map((piece) => chunk({ content: piece })),
+        (ask ? askAnswerPieces(text, plan.minPieces) : splitAnswer(text)).map((piece) =>
+          chunk({ content: piece })
+        ),
         [
           chunk({}, "stop"),
           sseData({ id, object: "chat.completion.chunk", choices: [], usage }),

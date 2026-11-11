@@ -32,8 +32,8 @@ import {
   type ConsultationRelation,
   type ConsultationResult
 } from "@app/domain";
-import { ActiveDeadline, aiErrorRetryAfterMs, isRateLimitFailure } from "@app/ai";
-import type { ConsultationStatus } from "../../shared/app-events.js";
+import { ActiveDeadline, aiErrorRetryAfterMs, isRateLimitFailure, type AiTextDelta } from "@app/ai";
+import type { ConsultationStage } from "../../shared/app-events.js";
 import type { AiService } from "./ai-service.js";
 
 /** Equal scores break on document position (source title, chunk position); chunk IDs are random per import. */
@@ -75,7 +75,7 @@ export function rankConsultationCandidates(
 }
 
 /** The AI profile a question is pinned to. The AI service owns its shape. */
-type PinnedProfile = Awaited<ReturnType<AiService["pinOrganizationProfile"]>>;
+export type PinnedProfile = Awaited<ReturnType<AiService["pinOrganizationProfile"]>>;
 type PromptPin = ReturnType<typeof capturePromptPin>;
 
 /**
@@ -303,6 +303,23 @@ function askFailure(error: unknown, canceled: AbortSignal, active: AbortSignal) 
   return error;
 }
 
+const askMessageKey = /^consultation\.errors\.[A-Za-z]+$/;
+
+/**
+ * What an Ask that ended in `error` tells a window and stores on its question: the message key of
+ * the failure, or `consultation.errors.failed` for anything else, so raw error text (a provider's
+ * body, a path) never leaves the process or lands in the database.
+ */
+export function askErrorKey(error: unknown): string {
+  const message = error instanceof Error ? error.message : "";
+  return askMessageKey.test(message) ? message : "consultation.errors.failed";
+}
+
+/** Whether `error` is the end the person asked for (a cancel). */
+export function isAskCanceled(error: unknown): boolean {
+  return error instanceof Error && error.message === "consultation.errors.canceled";
+}
+
 /** Time an Ask may spend working; waiting for the AI queue does not count. */
 export const askTimeoutMs = 120_000;
 
@@ -342,9 +359,33 @@ function sleepUnlessAborted(ms: number, signal: AbortSignal): Promise<void> {
   });
 }
 
+/** The stages an Ask reports while it runs; the three that end it are the caller's to report. */
+export type AskRunStage = Exclude<ConsultationStage, "done" | "failed" | "canceled">;
+
 /** What the person is told about a running Ask besides its answer. */
 export interface AskHooks {
-  onStatus?: (status: ConsultationStatus) => void;
+  /**
+   * Where the Ask is, once per change and in order: `retrieving` while it selects the passages,
+   * `answering` when it asks the model, `waitingForProvider` while it waits out a rate limit and
+   * `answering` again after (owner Q2).
+   */
+  onStatus?: (stage: AskRunStage) => void;
+  /**
+   * The answer text as the model writes it, for a runtime that streams it (F5 D14). A piece with
+   * `restart` voids what came before: the provider retried, or a second call follows an invalid
+   * answer or a rate-limit wait. A throw in the hook never reaches the Ask.
+   */
+  onText?: (event: AiTextDelta) => void;
+  /**
+   * The passages the answer may cite (by handle) and the profile that answers, once the question is
+   * prepared and before the model is asked: what a caller needs to turn the streamed handles into
+   * addresses, and to record who wrote the answer.
+   */
+  onPrepared?: (prepared: {
+    evidence: readonly ConsultationEvidence[];
+    profile: PinnedProfile;
+    promptFingerprint: string;
+  }) => void;
 }
 
 export class ConsultationService {
@@ -469,7 +510,13 @@ export class ConsultationService {
     this.requestIds.set(signal, input.requestId);
     try {
       return await withPromptPin(capturePromptPin(), async () => {
+        hooks.onStatus?.("retrieving");
         const { snapshot, metadata } = await this.prepare(input, signal);
+        hooks.onPrepared?.({
+          evidence: snapshot.evidence,
+          profile: snapshot.profile,
+          promptFingerprint: metadata.promptFingerprint
+        });
         const { answer, inputTokens, outputTokens, costEstimate } = await this.generate(
           snapshot,
           input.question,
@@ -700,6 +747,18 @@ export class ConsultationService {
     const base = consultationPrompt(snapshot, question);
     if (!consultationFits(snapshot, question)) throw new Error("consultation.errors.context");
     const auditIds: string[] = [];
+    // Text reaches the hook as the runtime writes it; a hook that throws never ends the Ask.
+    const onTextDelta = hooks.onText
+      ? (event: AiTextDelta) => {
+          try {
+            hooks.onText?.(event);
+          } catch {
+            // A listener's failure is not the answer's.
+          }
+        }
+      : undefined;
+    let called = 0;
+    hooks.onStatus?.("answering");
     let answer: ReturnType<typeof parseConsultationAnswer> | null = null,
       inputTokens: number | null = 0,
       outputTokens: number | null = 0,
@@ -709,8 +768,10 @@ export class ConsultationService {
       signal.throwIfAborted();
       await this.fresh(snapshot, signal);
       const prompt = joinPrompts(base, attempt ? renderPrompt("consultation.repair") : "");
-      const call = () =>
-        this.options.ai.runOrganizationTask(
+      const call = () => {
+        // Every call after the first writes the answer again: what streamed before is void.
+        if (called++ > 0) onTextDelta?.({ kind: "text", delta: "", restart: true });
+        return this.options.ai.runOrganizationTask(
           profile,
           prompt,
           {
@@ -726,12 +787,14 @@ export class ConsultationService {
             contentLanguage: language,
             attempt: attempt + 1,
             // The second call follows an answer that failed validation: a repair for the audit (D35).
-            isRepair: attempt > 0
+            isRepair: attempt > 0,
+            ...(onTextDelta ? { onTextDelta } : {})
           },
           signal,
           2048,
           () => this.fresh(snapshot, signal)
         );
+      };
       let result: Awaited<ReturnType<typeof call>>;
       try {
         result = await call();

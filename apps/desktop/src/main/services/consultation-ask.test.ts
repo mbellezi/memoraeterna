@@ -593,16 +593,104 @@ const rateLimit = (retryAfterMs?: number) =>
     ...(retryAfterMs === undefined ? {} : { retryAfterMs })
   });
 
+describe("the streamed answer (F5 D14)", () => {
+  type Piece = { kind: "text"; delta: string; restart?: boolean };
+  /** A model call that streams `text` in pieces through the context's `onTextDelta`, then answers. */
+  const streaming =
+    (...texts: string[]) =>
+    async (_profile: unknown, _prompt: string, context: unknown) => {
+      const { onTextDelta } = context as { onTextDelta?: (event: Piece) => void };
+      const text = texts.shift() ?? "";
+      for (let at = 0; at < text.length; at += 7)
+        onTextDelta?.({ kind: "text", delta: text.slice(at, at + 7) });
+      return { ...modelAnswer(), output: text };
+    };
+
+  it("hands the hook every piece of the model's text and the passages it may cite", async () => {
+    const task = vi.fn<ModelCall>(streaming(JSON.stringify(answer)));
+    const { service: ask } = service(task);
+    const pieces: Piece[] = [];
+    const prepared: unknown[] = [];
+    await ask.ask(request(), {
+      onText: (event) => pieces.push(event as Piece),
+      onPrepared: (value) => prepared.push(value)
+    });
+    expect(pieces.map((piece) => piece.delta).join("")).toBe(JSON.stringify(answer));
+    expect(pieces.some((piece) => piece.restart)).toBe(false);
+    expect(prepared).toHaveLength(1);
+    expect(prepared[0]).toMatchObject({
+      evidence: [{ handle: "e1" }, { handle: "e2" }],
+      profile: { modelId: profile.modelId },
+      promptFingerprint: expect.any(String)
+    });
+  });
+
+  it("marks the repair call's text as a restart, so the invalid first text is void", async () => {
+    const task = vi.fn<ModelCall>(streaming("not json at all", JSON.stringify(answer)));
+    const { service: ask } = service(task);
+    const pieces: Piece[] = [];
+    await ask.ask(request(), { onText: (event) => pieces.push(event as Piece) });
+    expect(task).toHaveBeenCalledTimes(2);
+    const restart = pieces.findIndex((piece) => piece.restart);
+    expect(restart).toBeGreaterThan(0);
+    expect(pieces[restart]!.delta).toBe("");
+    expect(
+      pieces
+        .slice(restart + 1)
+        .map((piece) => piece.delta)
+        .join("")
+    ).toBe(JSON.stringify(answer));
+  });
+
+  it("passes no text hook to the model call when the caller has none, and survives a hook that throws", async () => {
+    const quiet = vi.fn<ModelCall>(streaming(JSON.stringify(answer)));
+    await service(quiet).service.ask(request());
+    expect(quiet.mock.calls[0]![2]).not.toHaveProperty("onTextDelta");
+    const loud = vi.fn<ModelCall>(streaming(JSON.stringify(answer)));
+    await expect(
+      service(loud).service.ask(request(), {
+        onText: () => {
+          throw new Error("a listener failed");
+        }
+      })
+    ).resolves.toMatchObject({ answer });
+  });
+});
+
 describe("the wait for a provider's rate limit (owner Q2)", () => {
   /** Lets the Ask run until `done` holds, without moving the fake clock. */
   async function until(done: () => boolean) {
     for (let step = 0; step < 500 && !done(); step++) await vi.advanceTimersByTimeAsync(0);
     expect(done()).toBe(true);
   }
+  /**
+   * The stages after the two that open every Ask (`retrieving`, `answering`, kept in `opening`):
+   * the wait and what follows it.
+   */
   const statusesOf = () => {
     const seen: string[] = [];
-    return { seen, onStatus: (status: string) => seen.push(status) };
+    const opening: string[] = [];
+    return {
+      seen,
+      opening,
+      onStatus: (status: string) => (opening.length < 2 ? opening : seen).push(status)
+    };
   };
+
+  it("opens every Ask with retrieving and then answering, before the model is asked", async () => {
+    const task = vi.fn<ModelCall>().mockResolvedValue(modelAnswer());
+    const { service: ask } = service(task);
+    const { seen, opening, onStatus } = statusesOf();
+    const order: string[] = [];
+    task.mockImplementation(async () => {
+      order.push(`model after ${opening.join(",")}`);
+      return modelAnswer();
+    });
+    await expect(ask.ask(request(), { onStatus })).resolves.toMatchObject({ answer });
+    expect(opening).toEqual(["retrieving", "answering"]);
+    expect(seen).toEqual([]);
+    expect(order).toEqual(["model after retrieving,answering"]);
+  });
 
   it("waits once for a reset that fits, says so, and asks the provider again", async () => {
     vi.useFakeTimers();
@@ -671,7 +759,7 @@ describe("the wait for a provider's rate limit (owner Q2)", () => {
   it("does not wait for a reset past 30 s, or for one the provider did not state", async () => {
     const task = vi.fn<ModelCall>().mockRejectedValue(rateLimit(askRateLimitWait.maxWaitMs + 1));
     const { service: ask } = service(task);
-    const { seen, onStatus } = statusesOf();
+    const { seen, opening, onStatus } = statusesOf();
     await expect(ask.ask(request(), { onStatus })).rejects.toThrow(
       "consultation.errors.rateLimited"
     );
@@ -680,7 +768,8 @@ describe("the wait for a provider's rate limit (owner Q2)", () => {
       "consultation.errors.rateLimited"
     );
     expect(task).toHaveBeenCalledTimes(2);
-    expect(seen).toEqual([]);
+    // Both Asks only retrieved and answered: neither waited.
+    expect([...opening, ...seen]).toEqual(["retrieving", "answering", "retrieving", "answering"]);
   });
 
   it("waits for a reset of exactly 30 s while the Ask has time for it", async () => {

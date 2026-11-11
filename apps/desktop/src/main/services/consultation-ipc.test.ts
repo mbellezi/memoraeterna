@@ -43,12 +43,13 @@ describe("Ask over IPC", () => {
 
 describe("what a running Ask tells the windows (F4 D26)", () => {
   /** Registers the handlers over a service whose Ask reports the given statuses as it runs. */
-  function asking(statuses: string[]) {
+  function asking(statuses: string[], failure?: Error) {
     const handlers = new Map<string, (event: unknown, ...args: unknown[]) => unknown>();
     const ipc = { handle: (channel: string, handler: never) => handlers.set(channel, handler) };
     const service = {
       ask: vi.fn(async (_input: unknown, hooks: { onStatus?: (status: string) => void }) => {
         for (const status of statuses) hooks.onStatus?.(status);
+        if (failure) throw failure;
         return "answer";
       }),
       cancel: vi.fn(async () => null)
@@ -74,7 +75,10 @@ describe("what a running Ask tells the windows (F4 D26)", () => {
     const requestId = randomUUID();
     await expect(ask(requestId)).resolves.toBe("answer");
     bus.flush();
-    expect(sent).toEqual([{ type: "consultation.status", requestId, stage: "waitingForProvider" }]);
+    expect(sent).toEqual([
+      { type: "consultation.status", requestId, stage: "waitingForProvider" },
+      { type: "consultation.status", requestId, stage: "done" }
+    ]);
     expect(invalid).toEqual([]);
     for (const event of sent) expect(AppEventSchema.parse(event)).toEqual(event);
     expect(channels.sort()).toEqual(
@@ -93,17 +97,49 @@ describe("what a running Ask tells the windows (F4 D26)", () => {
     expect(sent).toEqual([
       { type: "consultation.status", requestId: first, stage: "waitingForProvider" },
       { type: "consultation.status", requestId: first, stage: "answering" },
+      { type: "consultation.status", requestId: first, stage: "done" },
       { type: "consultation.status", requestId: second, stage: "waitingForProvider" },
-      { type: "consultation.status", requestId: second, stage: "answering" }
+      { type: "consultation.status", requestId: second, stage: "answering" },
+      { type: "consultation.status", requestId: second, stage: "done" }
     ]);
     bus.dispose();
+  });
+
+  it("reports how an Ask ended: a failure with its message key, a cancel, and never raw error text", async () => {
+    const stages = async (failure: Error) => {
+      const { ask, bus, sent } = asking(["retrieving", "answering"], failure);
+      await expect(ask(randomUUID())).rejects.toBe(failure);
+      bus.flush();
+      bus.dispose();
+      return sent.map((event) => ({
+        stage: (event as { stage: string }).stage,
+        error: (event as { error?: string }).error
+      }));
+    };
+    expect(await stages(new Error("consultation.errors.deadline"))).toEqual([
+      { stage: "retrieving", error: undefined },
+      { stage: "answering", error: undefined },
+      { stage: "failed", error: "consultation.errors.deadline" }
+    ]);
+    expect(await stages(new Error("consultation.errors.canceled"))).toEqual([
+      { stage: "retrieving", error: undefined },
+      { stage: "answering", error: undefined },
+      { stage: "canceled", error: undefined }
+    ]);
+    expect(
+      (await stages(new Error("connect ECONNREFUSED 10.0.0.1:443 key=sk-secret"))).at(-1)
+    ).toEqual({
+      stage: "failed",
+      error: "consultation.errors.failed"
+    });
   });
 
   it("sends a status the contract does not know to no window", async () => {
     const { ask, bus, sent, invalid } = asking(["thinking"]);
     await expect(ask(randomUUID())).resolves.toBe("answer");
     bus.flush();
-    expect(sent).toEqual([]);
+    // Only the stage the contract knows leaves; the unknown status is reported and dropped.
+    expect(sent.map((event) => (event as { stage: string }).stage)).toEqual(["done"]);
     expect(invalid).toHaveLength(1);
     const requestId = randomUUID();
     expect(
