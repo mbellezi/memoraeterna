@@ -5,6 +5,7 @@ import {
   inboxKinds,
   inboxReadLimits,
   parseInboxCursor,
+  relationConfidenceBands,
   type ChangeSetRisk,
   type InboxKind,
   type InboxObject
@@ -79,6 +80,8 @@ export interface InboxRelationRecord {
   relationType: string | null;
   vetoSource: string | null;
   finalScore: number;
+  /** The calibrated probability; null when an uncalibrated or threshold-only decider wrote it. */
+  probability: number | null;
   sourceNote: { id: string; title: string };
   targetNote: { id: string; title: string };
 }
@@ -93,8 +96,10 @@ const utc = (column: string) =>
  * (null: all). Each branch is the store's own predicate: pending change-sets (all three stores),
  * quarantined subjects that were not dismissed since, suggested `contradicts` relations and the
  * Divergences an automatic overview patch kept (`contradiction`, D17; a Divergence's ID is
- * `divergence:<finding id>`), withdrawn relations (both through the visibility module) and open
- * findings of the Inbox's kinds.
+ * `divergence:<finding id>`), the other suggested relations that are not "high" in confidence or
+ * have no probability (`suggestion`, D33: the rule of `routesToInbox`, the bound from
+ * `relationConfidenceBands`, a number from typed configuration), withdrawn relations (all through
+ * the visibility module) and open findings of the Inbox's kinds.
  */
 const openItemsSql = `
   select 'review'::text as kind, (cs.kind || ':' || cs.id::text) as id, cs.risk::text as risk,
@@ -114,6 +119,12 @@ const openItemsSql = `
     from atomic_note_relations r
    where r.relation_type = 'contradicts' and ${suggestedNoteRelationSql("r")}
      and ($1::text[] is null or 'contradiction' = any($1::text[]))
+  union all
+  select 'suggestion', r.id::text, 'medium', r.updated_at
+    from atomic_note_relations r
+   where ${suggestedNoteRelationSql("r")} and r.relation_type is distinct from 'contradicts'
+     and (r.probability is null or r.probability < ${relationConfidenceBands.high}::real)
+     and ($1::text[] is null or 'suggestion' = any($1::text[]))
   union all
   select 'contradiction', 'divergence:' || d.id::text, d.risk, d.created_at
     from gardener_findings d
@@ -234,13 +245,14 @@ export function createInboxRepository(db: Queryable) {
         relationType: string | null;
         vetoSource: string | null;
         finalScore: number;
+        probability: number | null;
         sourceId: string;
         sourceTitle: string;
         targetId: string;
         targetTitle: string;
       }>(
         `select r.id::text as id, r.relation_type as "relationType", r.veto_source as "vetoSource",
-                r.final_score as "finalScore",
+                r.final_score as "finalScore", r.probability as "probability",
                 s.id::text as "sourceId", left(s.title, $2::int) as "sourceTitle",
                 t.id::text as "targetId", left(t.title, $2::int) as "targetTitle"
            from atomic_note_relations r
@@ -254,6 +266,7 @@ export function createInboxRepository(db: Queryable) {
         relationType: row.relationType,
         vetoSource: row.vetoSource,
         finalScore: Number(row.finalScore),
+        probability: row.probability === null ? null : Number(row.probability),
         sourceNote: { id: row.sourceId, title: row.sourceTitle },
         targetNote: { id: row.targetId, title: row.targetTitle }
       }));

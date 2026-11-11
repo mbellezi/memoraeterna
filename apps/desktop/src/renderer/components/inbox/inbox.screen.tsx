@@ -2,7 +2,7 @@ import { inboxKinds, type InboxItem } from "@app/domain";
 
 import { screenTranslator } from "../../workspace/screen-locale";
 import type { ScreenModule } from "../../workspace/surfaces";
-import { countsOf, item, page, topicDiff } from "./inbox-fixtures";
+import { countsOf, item, page, topicDiff, uuid } from "./inbox-fixtures";
 import { InboxScreen } from "./InboxScreen";
 
 export const surface = "inbox";
@@ -10,8 +10,21 @@ export const surface = "inbox";
 const t = screenTranslator();
 const noop = () => undefined;
 
-/** One item of every kind, the first a reviewed topic overview with its change-set diff. */
-const items: InboxItem[] = inboxKinds.map((kind) => item(kind));
+/**
+ * One item of every kind, the first a reviewed topic overview with its change-set diff, and a
+ * second suggestion whose decider wrote no probability (D33: "unknown confidence", no number).
+ */
+const items: InboxItem[] = [
+  ...inboxKinds.map((kind) => item(kind)),
+  item("suggestion", {
+    id: uuid(83),
+    params: { relationType: "extends", probability: null },
+    objects: [
+      { kind: "note", id: uuid(84), title: "Magnesium and sleep depth" },
+      { kind: "note", id: uuid(85), title: "Evening routines" }
+    ]
+  })
+];
 
 const list =
   (all: readonly InboxItem[]) => (query: { kind?: string | null; risk?: string | null }) =>

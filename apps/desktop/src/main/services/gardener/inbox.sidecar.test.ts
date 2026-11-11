@@ -25,6 +25,7 @@ import {
 import {
   InboxListSchema,
   inboxKinds,
+  relationRoutingCases,
   type BudgetSnapshot,
   type InboxItem,
   type InboxKind
@@ -237,6 +238,26 @@ describe.skipIf(!sidecarInstalled)("the Inbox on a real PostgreSQL database", ()
     return { id: written.relation.id, notes };
   };
 
+  /** A suggested relation of a stored type and probability (null: the decider wrote none). */
+  const seedSuggestion = async (type: string, probability: number | null) => {
+    const notes = [await seedNote("Gamma"), await seedNote("Delta")].sort((a, b) =>
+      a.id < b.id ? -1 : 1
+    );
+    const run = await createRelationMatchRunRepository(pool!).start({ kind: "match" });
+    const written = await createAtomicNoteRelationRepository(pool!).upsert({
+      loAtomicNoteId: notes[0]!.id,
+      hiAtomicNoteId: notes[1]!.id,
+      direction: type === "contradicts" ? "symmetric" : "lo_to_hi",
+      relationType: type,
+      band: "suggest",
+      probability,
+      finalScore: probability ?? 0.5,
+      explanation: "knowledge.relations.explanations.reranked",
+      runId: run.id
+    });
+    return { id: written.relation.id, notes };
+  };
+
   /** A subject that failed twice on one input: its job, and the outcome that quarantined it. */
   const seedQuarantine = async (subjectKey: string, minutesAgo = 10) => {
     const db = pool!;
@@ -379,11 +400,117 @@ describe.skipIf(!sidecarInstalled)("the Inbox on a real PostgreSQL database", ()
     const counts = await inbox.counts();
     expect(counts.total).toBe(list.items.length);
     expect(counts.byKind).toMatchObject(Object.fromEntries(inboxKinds.map((kind) => [kind, 1])));
+    // The pass's suggested relation (0.6, below "high") is its own item (D33).
+    expect(byKind.get("suggestion")).toMatchObject({
+      id: pass.relationId,
+      risk: "medium",
+      variant: "relation",
+      params: { relationType: "supports", probability: 0.6 },
+      actions: ["apply", "dismiss"]
+    });
+    expect(
+      byKind
+        .get("suggestion")!
+        .objects.map((object) => object.title)
+        .sort()
+    ).toEqual(["Feedback", "Retrieval"]);
     expect(counts.byRisk).toEqual({
       high: list.items.filter((item) => item.risk === "high").length,
       medium: list.items.filter((item) => item.risk === "medium").length,
       low: list.items.filter((item) => item.risk === "low").length
     });
+  });
+
+  it("routes a suggested relation by the one rule of routesToInbox, and counts what it lists (D33)", async () => {
+    const expectedIds: string[] = [];
+    const contradictionIds: string[] = [];
+    const notListed: string[] = [];
+    for (const row of relationRoutingCases) {
+      const seeded = await seedSuggestion(row.stance, row.probability);
+      if (!row.routes) notListed.push(seeded.id);
+      else if (row.stance === "contradicts") contradictionIds.push(seeded.id);
+      else expectedIds.push(seeded.id);
+    }
+    const list = await inbox.list({});
+    const listed = (kind: InboxKind) =>
+      list.items.filter((item) => item.kind === kind).map((item) => item.id);
+    expect(listed("suggestion").sort()).toEqual([...expectedIds].sort());
+    // A suggested contradicts is listed once, under its own kind, at any confidence.
+    expect(listed("contradiction").sort()).toEqual([...contradictionIds].sort());
+    for (const id of notListed) expect(list.items.map((item) => item.id)).not.toContain(id);
+    const counts = await inbox.counts();
+    expect(counts.byKind.suggestion).toBe(expectedIds.length);
+    expect(counts.byKind.contradiction).toBe(contradictionIds.length);
+    expect(counts.total).toBe(expectedIds.length + contradictionIds.length);
+    // The kind filter reads the arm alone.
+    const only = await inbox.list({ kinds: ["suggestion"] });
+    expect(only.items.map((item) => item.id).sort()).toEqual([...expectedIds].sort());
+  });
+
+  it("words a suggestion with the probability stored, and null when the decider wrote none", async () => {
+    const medium = await seedSuggestion("supports", 0.64);
+    const unknown = await seedSuggestion("extends", null);
+    const items = (await inbox.list({ kinds: ["suggestion"] })).items;
+    expect(items.find((item) => item.id === medium.id)?.params).toEqual({
+      relationType: "supports",
+      probability: 0.64
+    });
+    expect(items.find((item) => item.id === unknown.id)?.params).toEqual({
+      relationType: "extends",
+      probability: null
+    });
+  });
+
+  it("lists no suggestion that was withdrawn, rejected or accepted", async () => {
+    const withdrawn = await seedRelation("supports", true);
+    const rejected = await seedSuggestion("supports", 0.64);
+    const accepted = await seedSuggestion("supports", 0.64);
+    await pool!.query("update atomic_note_relations set status = 'rejected' where id = $1", [
+      rejected.id
+    ]);
+    await pool!.query("update atomic_note_relations set status = 'accepted' where id = $1", [
+      accepted.id
+    ]);
+    const list = await inbox.list({ kinds: ["suggestion"] });
+    expect(list.items).toEqual([]);
+    expect((await inbox.counts()).byKind.suggestion).toBe(0);
+    // The withdrawn one is the withdrawn kind's, never a suggestion.
+    expect(idsOf((await inbox.list({ kinds: ["withdrawn"] })).items)).toEqual([
+      `withdrawn:${withdrawn.id}`
+    ]);
+  });
+
+  it("keeps or removes a suggestion through the review writer, and it leaves the Inbox", async () => {
+    const keep = await seedSuggestion("supports", 0.64);
+    const remove = await seedSuggestion("supports", null);
+    expect(await inbox.act({ kind: "suggestion", id: keep.id, action: "apply" })).toEqual({
+      status: "done",
+      undoable: false
+    });
+    expect(await inbox.act({ kind: "suggestion", id: remove.id, action: "dismiss" })).toEqual({
+      status: "done",
+      undoable: false
+    });
+    expect((await inbox.list({})).items).toEqual([]);
+    const status = async (id: string) =>
+      (
+        await pool!.query<{ status: string; vetoed: boolean }>(
+          "select status::text as status, vetoed_at is not null as vetoed from atomic_note_relations where id = $1",
+          [id]
+        )
+      ).rows[0]!;
+    // Kept is a human verdict; removed is the rejected status, never the withdrawn state.
+    expect(await status(keep.id)).toEqual({ status: "accepted", vetoed: false });
+    expect(await status(remove.id)).toEqual({ status: "rejected", vetoed: false });
+    expect(await inbox.act({ kind: "suggestion", id: keep.id, action: "dismiss" })).toEqual({
+      status: "stale"
+    });
+    expect(await inbox.act({ kind: "suggestion", id: randomUUID(), action: "apply" })).toEqual({
+      status: "gone"
+    });
+    await expect(
+      inbox.act({ kind: "suggestion", id: "not-a-uuid", action: "apply" })
+    ).rejects.toThrow("inbox.errors.invalidItem");
   });
 
   it("pages by risk and age with a cursor that never repeats or skips an item, vault conflicts included", async () => {
@@ -451,8 +578,9 @@ describe.skipIf(!sidecarInstalled)("the Inbox on a real PostgreSQL database", ()
       status: "done",
       undoable: false
     });
-    // Both left the Inbox, and the dismissed pass is reverted: its relation is gone.
-    expect((await inbox.list({})).items).toEqual([]);
+    // Both left the review list, and the dismissed pass is reverted: its relation is gone. The kept
+    // pass's relation is still a suggestion at 0.6, which D33 keeps in the Inbox.
+    expect(idsOf((await inbox.list({})).items)).toEqual([`suggestion:${kept.relationId}`]);
     expect(
       (await pool!.query("select 1 from atomic_note_relations where id = $1", [dropped.relationId]))
         .rowCount
