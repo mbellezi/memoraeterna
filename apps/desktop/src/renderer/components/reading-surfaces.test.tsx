@@ -2,10 +2,14 @@ import { renderToString } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
 import { MarkdownPreview } from "./MarkdownEditor";
-import libraryView from "./LibraryView.tsx?raw";
+import libraryShell from "./LibraryView.tsx?raw";
 import reviewQueueView from "./ReviewQueueView.tsx?raw";
 import searchView from "./SearchView.tsx?raw";
+import pageContent from "../workspace/panels/source/source-content.tsx?raw";
+import pageParts from "../workspace/panels/source/source-parts.tsx?raw";
 
+// The Source page's parts moved out of LibraryView into the source panel files (F5 T139).
+const libraryView = [libraryShell, pageParts, pageContent].join("\n");
 const sources: Record<string, string> = {
   "LibraryView.tsx": libraryView,
   "SearchView.tsx": searchView,
