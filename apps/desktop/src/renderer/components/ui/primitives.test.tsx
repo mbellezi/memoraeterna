@@ -1,3 +1,4 @@
+import { isValidElement, type ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { createTranslator } from "@app/i18n";
@@ -93,6 +94,37 @@ describe("sheet", () => {
     expect(html).not.toContain("--scrim");
     expect(html).not.toContain("data-aria-hidden");
     expect(html).not.toContain('aria-label="Close"');
+  });
+
+  // renderToStaticMarkup runs no effects, so a modal root renders the same markup as a non-modal
+  // one: the behaviour is asserted on the props the wrappers hand to Radix.
+  it("opens its Radix root with modal=false", () => {
+    const root = Sheet({ open: true, onOpenChange: noop }) as ReactElement<{ modal?: boolean }>;
+    expect(isValidElement(root)).toBe(true);
+    expect(root.props.modal).toBe(false);
+  });
+
+  it("stays open when focus moves to another row, and still tells the caller", () => {
+    type Props = { onFocusOutside: (event: { preventDefault(): void }) => void };
+    const seen: string[] = [];
+    const content = SheetContent({
+      title: "Lactic fermentation",
+      portal: false,
+      onFocusOutside: () => seen.push("caller")
+    }) as ReactElement<Props>;
+    const event = { preventDefault: () => seen.push("prevented") };
+    content.props.onFocusOutside(event);
+    expect(seen).toEqual(["prevented", "caller"]);
+  });
+
+  it("keeps focus on the row at open and close", () => {
+    type Props = { onOpenAutoFocus: (e: Event) => void; onCloseAutoFocus: (e: Event) => void };
+    const content = SheetContent({ title: "x", portal: false }) as ReactElement<Props>;
+    for (const handler of [content.props.onOpenAutoFocus, content.props.onCloseAutoFocus]) {
+      const event = new Event("focus", { cancelable: true });
+      handler(event);
+      expect(event.defaultPrevented).toBe(true);
+    }
   });
 });
 

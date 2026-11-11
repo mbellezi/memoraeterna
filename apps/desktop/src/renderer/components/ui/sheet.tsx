@@ -6,7 +6,7 @@ import { popSurface } from "./popover";
 /**
  * A non-modal sheet, the quick-look surface (decision A4): a centred raised sheet with no scrim,
  * no focus trap and no scroll lock. The keyboard stays on the row underneath (opening and closing
- * do not move focus), Esc and a click outside close it, and it never answers Cmd-W: the primitive
+ * do not move focus, and focus moving to another row does not close it), Esc and a click outside close it, and it never answers Cmd-W: the primitive
  * binds no shortcut of its own, the caller's keymap decides what Space, Cmd-Y and the arrows do.
  */
 export function Sheet(props: Omit<ComponentPropsWithoutRef<typeof DialogPrimitive.Root>, "modal">) {
@@ -33,6 +33,7 @@ export function SheetContent({
   children,
   onOpenAutoFocus,
   onCloseAutoFocus,
+  onFocusOutside,
   ...props
 }: SheetContentProps) {
   const content = (
@@ -46,6 +47,12 @@ export function SheetContent({
       onCloseAutoFocus={(event) => {
         event.preventDefault();
         onCloseAutoFocus?.(event);
+      }}
+      onFocusOutside={(event) => {
+        // Arrow keys move the row focus underneath while the sheet stays open to peek at the next
+        // row: only Esc, a pointer-down outside and the caller's keys close it, never a focus move.
+        event.preventDefault();
+        onFocusOutside?.(event);
       }}
       className={cn(
         "fixed left-1/2 top-24 w-160 max-w-[calc(100%-var(--space-16))] -translate-x-1/2 overflow-hidden",
