@@ -238,22 +238,68 @@ export async function readBlockedJobs(pool: PgPool): Promise<Record<string, numb
 /**
  * Whether anything can progress now: a job runs or is due, or an ingestion run has not ended. A job
  * a blocker set aside waits for its blocker, not for the lane, and the install of a model is not
- * the pipeline's work (it is what the pipeline may wait for).
+ * the pipeline's work (it is what the pipeline may wait for). Nor are the `ignored` job types: the
+ * harness's own topic release, which waits for the ranker and then for the light lane.
  */
-export async function readPipelineBusy(pool: PgPool): Promise<boolean> {
+export async function readPipelineBusy(
+  pool: PgPool,
+  ignored: readonly string[] = []
+): Promise<boolean> {
   const row = (
     await pool.query<{ n: number }>(
       `select (
          (select count(*) from jobs
-           where type::text <> 'local-model-download'
+           where type::text <> 'local-model-download' and type::text <> all($1::text[])
              and (status::text = 'running'
                or (status::text = 'queued' and blocked_class is null
                    and (run_after is null or run_after <= now()))))
          + (select count(*) from ingestion_runs where status::text in ('pending', 'running'))
-       )::int as n`
+       )::int as n`,
+      [[...ignored]]
     )
   ).rows[0];
   return Number(row?.n ?? 0) > 0;
+}
+
+/** The end of a heavy job of a source, as a release boundary (a2) reads it. */
+export interface BoundaryReading {
+  /** The hierarchy root of the job's source. */
+  rootId: string;
+  /** The root's current notes (its own and its divisions'), or its embedded ones (`embedded`). */
+  notes: number;
+}
+
+const boundaryNotes = {
+  current: `select count(*)::int from atomic_notes n
+      join source_items s on s.id = n.created_from_source_item_id
+    where coalesce(s.parent_source_item_id, s.id) = root.id
+      and n.status::text not in ('rejected', 'archived') and n.supersession_status = 'current'`,
+  embedded: `select count(*)::int from jobs j join source_items s on s.id::text = j.payload->>'sourceItemId'
+    where j.type::text = 'note-embedding' and j.status::text in ('running', 'succeeded')
+      and coalesce(s.parent_source_item_id, s.id) = root.id`
+} as const;
+
+/**
+ * What the end of a heavy job of `sourceItemId` tells the release policy: its root and that root's
+ * notes. `current` counts the current notes, as the import's division just wrote them. `embedded`
+ * counts the notes whose embedding job ran or is running (the self-test: its notes arrive seeded at
+ * once and become placeable one embedding at a time; the job that ends is still running).
+ */
+export async function readBoundary(
+  pool: PgPool,
+  sourceItemId: string,
+  count: keyof typeof boundaryNotes
+): Promise<BoundaryReading | null> {
+  const row = (
+    await pool.query<BoundaryReading>(
+      `select root.id::text as "rootId", (${boundaryNotes[count]}) as notes
+       from source_items item
+         join source_items root on root.id = coalesce(item.parent_source_item_id, item.id)
+       where item.id = $1::uuid`,
+      [sourceItemId]
+    )
+  ).rows[0];
+  return row ?? null;
 }
 
 /**

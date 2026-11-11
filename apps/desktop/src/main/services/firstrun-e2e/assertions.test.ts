@@ -8,6 +8,7 @@ import type { ClockFacts, FirstRunCheck, FirstRunFacts } from "./assertions.js";
 import { firstRunModels } from "./config.js";
 import type { ModelFacts } from "./facts.js";
 import { invokedSetupChannels } from "./sequence.js";
+import { topicReleaseSettings } from "./topic-release.js";
 
 const topic = (overrides: Partial<E6Topic> = {}): E6Topic => ({
   id: "t1",
@@ -200,6 +201,31 @@ function run(overrides: Partial<FirstRunFacts> = {}): FirstRunFacts {
       blocked: null,
       counts: { items: 64, placed: 64, pending: 0, needsGate: 0 }
     } as never,
+    topicRelease: {
+      settings: topicReleaseSettings(),
+      linkRuntime: "drain",
+      divisions: { first: 17, second: 3 },
+      releases: [
+        {
+          at: "division",
+          source: "first",
+          division: 6,
+          notes: 13,
+          releasedAtMs: 130_000,
+          drainedAtMs: 230_000,
+          outcome: "drained"
+        },
+        {
+          at: "source",
+          source: "first",
+          division: null,
+          notes: 40,
+          releasedAtMs: 1_000_000,
+          drainedAtMs: 1_010_000,
+          outcome: "drained"
+        }
+      ]
+    },
     recorded: {
       format: "memora-firstrun-e2e-record",
       version: 1,
@@ -636,6 +662,13 @@ describe("the first-run report", () => {
     expect(markdown).toContain("Stood in by the self-test: the library is seeded, not imported.");
     expect(markdown).toContain("| Esquecimento e memória | llm | pt-BR | 21 |");
     expect(markdown).toContain("Handlers wrapped: 67 Settings, 58 product.");
+    expect(markdown).toContain(
+      "Policy a2: at the first division boundary where the first source has 12 notes, then per source; " +
+        "link jobs in drain mode. Division boundaries: 17 of the first source, 3 of the second."
+    );
+    expect(markdown).toContain("| 1 (division) | first | 6 | 13 | 2:10 | 3:50 | drained |");
+    expect(markdown).toContain("| 2 (source) | first | - | 40 | 16:40 | 16:50 | drained |");
+    expect(report.reported.topicRelease.releases).toHaveLength(2);
   });
 
   it("marks a failed run and lists its errors", () => {

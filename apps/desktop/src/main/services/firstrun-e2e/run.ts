@@ -5,10 +5,15 @@
 // (the writer signs in, the embedder is asked for and waited for, the Hybrid preset is applied, one
 // test per class runs), and imports two sources through the Import handlers with the default plan.
 // The first-run ranker is on: it installs next to the embedder (downloaded for real in a recording,
-// installed from the DEV seed folder in a replay) and the topic jobs are released only once it
-// settled. T0 is the instant before the database starts; T1 is the first time a note of the first
-// source sits in a named topic with a shown relation; D is the time the recording spent waiting for
-// the downloads with nothing else to do (a replay adds the recording's D to its own T1 - T0).
+// installed from the DEV seed folder in a replay) and the held topic jobs are released only once it
+// settled. They are released by policy a2 (`topic-release.ts`): at the first division boundary where
+// the first source has enough notes, by a heavy job of the harness's own that drains the light lane
+// between two divisions, then once per source. The link jobs run in drain mode (one at a time, the
+// heavy lane waiting for them), so every prompt is a function of the arrival order and two replays
+// make the same calls. T0 is the instant before the database starts; T1 is the first time a note of
+// the first source sits in a named topic with a shown relation; D is the time the recording spent
+// waiting for the downloads with nothing else to do (a replay adds the recording's D to its own
+// T1 - T0).
 //
 // Import this module only after `electron` resolves to the stub (`topics-e2e/electron-stub.ts`).
 import { existsSync } from "node:fs";
@@ -20,6 +25,7 @@ import { join } from "node:path";
 import { AiCassette, readAiCassetteLocalMisses, setAiAdapterDecorator } from "@app/ai";
 import {
   closePgPool,
+  createJobRepository,
   createLocalModelRepository,
   createPgPool,
   PostgresSidecarManager,
@@ -27,7 +33,7 @@ import {
   resolvePostgresSidecarPaths,
   runMigrations
 } from "@app/db";
-import type { PgPool } from "@app/db";
+import type { JobRecord, JsonObject, PgPool } from "@app/db";
 import { gardenerStatusKinds, type TopicsStatus } from "@app/domain";
 import type { TopicTreeConfig } from "@app/domain/topic-tree";
 
@@ -61,6 +67,11 @@ import { PromptService } from "../prompt-service.js";
 import { registerOnboardingIpc } from "../onboarding/onboarding-ipc.js";
 import { OnboardingService, pgOnboardingStore } from "../onboarding/onboarding-service.js";
 import { registerPromptIpc } from "../prompt-ipc.js";
+import {
+  goldenLinkRuntime,
+  resetRelationLinkRuntime,
+  setRelationLinkRuntime
+} from "../relations/link-runtime.js";
 import { SearchService } from "../search-service.js";
 import { SettingsService } from "../settings-service.js";
 import { SimilarityDebugService } from "../similarity-debug-service.js";
@@ -82,6 +93,7 @@ import type { FirstRunConfig, RecordedFirstRun, WriterRoute } from "./config.js"
 import {
   activeJobs,
   readBlockedJobs,
+  readBoundary,
   readFirstRunRanker,
   readFirstSourceConnection,
   readHybridRoutes,
@@ -123,7 +135,15 @@ import {
   syntheticSecondArticle,
   writeSyntheticHelper
 } from "./synthetic.js";
+import {
+  TopicReleasePlan,
+  harnessLinkRuntime,
+  topicReleaseJob,
+  topicReleasePriority
+} from "./topic-release.js";
+import type { ReleaseSource, TopicRelease } from "./topic-release.js";
 import { waitQuiet } from "./wait.js";
+import type { WaitOutcome } from "./wait.js";
 import {
   Busy,
   DownloadTrace,
@@ -418,6 +438,11 @@ async function runPass(
     // A measurement run never refreshes catalog headers (T53h) and runs the product's extraction path.
     holdCatalogHeaderRefresh("topics_e2e");
     setExtractionPin(false);
+    // Link jobs drain one at a time in admission order and the heavy lane waits for them (D24, 5.6):
+    // the next division's import can no longer win the root's scope from a link job and make it
+    // type two divisions' pairs together, so the record and its replays make the same calls.
+    setRelationLinkRuntime(goldenLinkRuntime("live"));
+    log("relations", { linkRuntime: harnessLinkRuntime });
     const localMisses = readAiCassetteLocalMisses(deps.env);
     const cassette = new AiCassette({
       mode,
@@ -594,7 +619,38 @@ async function runPass(
       logger: quietLogger,
       topicHooks: topics.hooks
     });
+    // The a2 release (E6A2): the end of each heavy job of a source is a division boundary (an
+    // import's division; the self-test's seeded notes' embeddings stand in for divisions), read
+    // before the supervisor claims its next job. The boundary hook and the release job's body are
+    // bound below, once the pass's waits exist; until then a boundary decides nothing.
+    const boundaryJob = config.synthetic ? "note-embedding" : "ingestion";
+    const release: {
+      atBoundary: (sourceItemId: string) => Promise<void>;
+      run: (job: JobRecord, signal: AbortSignal) => Promise<JsonObject>;
+    } = {
+      atBoundary: async () => undefined,
+      run: async () => ({ released: false })
+    };
     const supervisor = new JobSupervisor({
+      // The hook runs once the job's work returned and before its row is finished, so it holds no
+      // scope: it only reads and, at most, queues the release job.
+      traceOperation: async <T>(
+        operation: string,
+        context: Record<string, unknown>,
+        run: () => Promise<T>
+      ): Promise<T> => {
+        const result = await run();
+        if (
+          operation === boundaryJob &&
+          context.origin === "job" &&
+          typeof context.sourceItemId === "string"
+        )
+          await release.atBoundary(context.sourceItemId);
+        return result;
+      },
+      devHeavyJobs: {
+        [topicReleaseJob]: { execute: (job, signal) => release.run(job, signal) }
+      },
       getPool: () => db,
       logger: quietLogger,
       knowledgeService: knowledge,
@@ -690,7 +746,9 @@ async function runPass(
       phase: () => phase,
       read: async () => {
         const downloading = trace.downloading();
-        const idle = !busy.active && !(await readPipelineBusy(db));
+        // A release job waiting for the ranker is the person waiting for the download, so it is
+        // on D's clock; its drain is the topic jobs' work, which counts by itself.
+        const idle = !busy.active && !(await readPipelineBusy(db, [topicReleaseJob]));
         // The status is read only where it matters: a download holds everything up. The Gardener's
         // tasks that wait then tell whether its sentence must name a class.
         const reading =
@@ -815,21 +873,127 @@ async function runPass(
         marks.mark("t1");
       }
     };
-    /** The imports' heavy work: no job running or due, no ingestion run unfinished. */
+    /**
+     * The imports' heavy work: no job running or due (a release job included), no ingestion run
+     * unfinished. A stop a release met ends the wait too (`stopped`: the release recorded why).
+     */
     const heavy = () =>
-      waitQuiet<Stop>({
+      waitQuiet<Stop | "stopped">({
         count: async () => {
           await observeT1();
           return (await activeJobs(db, false)) + (await unfinishedRuns(db));
         },
-        stopReason,
+        stopReason: async () => (outcome.stoppedBy !== null ? "stopped" : stopReason()),
         timeoutMs: deps.heavyTimeoutMs ?? 6 * 3_600_000,
         pollIntervalMs: pollMs,
         quietPolls: deps.quietPolls ?? 6,
         sleep
       });
-    const stopOf = (reason: Exclude<Awaited<ReturnType<typeof heavy>>, "settled">) =>
+    const stopOf = (reason: Exclude<WaitOutcome<Stop>, "settled">) =>
       reason === "timeout" ? ("drain_timeout" as const) : reason;
+
+    // The topic releases (a2, E6A2). Each waits for the ranker first (the relations and the gate
+    // need it; a recording may still be downloading it while a replay seeds it in seconds, and the
+    // two must not order the work differently), lets the held topic jobs run, waits for the light
+    // lane to drain and, unless it is the last, holds them again.
+    const releasePlan = new TopicReleasePlan(config.topicRelease);
+    const releases: TopicRelease[] = [];
+    const releaseTopics = async (
+      entry: TopicRelease,
+      options: { hold: boolean; signal?: AbortSignal }
+    ): Promise<WaitOutcome<Stop | "aborted">> => {
+      const ranker = await waitForRanker();
+      if (ranker !== "ready") {
+        entry.outcome = `the first-run ranker ended ${ranker}`;
+        return "model_failed";
+      }
+      entry.releasedAtMs = marks.mark(`topics.release.${releases.indexOf(entry) + 1}`);
+      try {
+        await topics.releaseTopicJobs();
+        supervisor.wake("light");
+        const lane = await waitQuiet<Stop | "aborted">({
+          count: async () => {
+            await observeT1();
+            return activeJobs(db, true);
+          },
+          stopReason: async () => (options.signal?.aborted ? "aborted" : stopReason()),
+          timeoutMs: config.laneTimeoutMs,
+          pollIntervalMs: pollMs,
+          quietPolls: deps.quietPolls ?? 6,
+          sleep
+        });
+        entry.drainedAtMs = marks.since();
+        entry.outcome = lane === "settled" ? "drained" : lane;
+        log("topics_released", { ...entry });
+        return lane;
+      } finally {
+        if (options.hold) topics.holdTopicJobs();
+      }
+    };
+    /** Records why a release ended early, unless the run already stopped for another reason. */
+    const releaseStopped = (lane: Exclude<WaitOutcome<Stop | "aborted">, "settled">) => {
+      if (outcome.stoppedBy === null)
+        outcome.stoppedBy = lane === "aborted" ? "error" : stopOf(lane);
+    };
+    // A boundary: the policy reads the source's notes and whether T1 stands, and may queue a
+    // release job, which the heavy lane claims after the boundary's link jobs (drain mode).
+    release.atBoundary = async (sourceItemId) => {
+      try {
+        if (outcome.stoppedBy !== null) return;
+        const reading = await readBoundary(
+          db,
+          sourceItemId,
+          config.synthetic ? "embedded" : "current"
+        );
+        if (!reading) return;
+        const source: ReleaseSource =
+          outcome.firstRootId === null || reading.rootId === outcome.firstRootId
+            ? "first"
+            : "second";
+        await observeT1();
+        const decision = releasePlan.boundary({
+          source,
+          notes: reading.notes,
+          t1Seen: outcome.connection !== null
+        });
+        log("boundary", { source, ...decision, notes: reading.notes });
+        if (!decision.release) return;
+        await createJobRepository(db).create({
+          type: topicReleaseJob,
+          lane: "heavy",
+          priority: topicReleasePriority,
+          maxAttempts: 1,
+          payload: { source, division: decision.division, notes: reading.notes }
+        });
+      } catch (error) {
+        errors.push(
+          `A topic release boundary could not be read: ${error instanceof Error ? error.message : String(error)}`
+        );
+      }
+    };
+    release.run = async (job, signal) => {
+      const entry: TopicRelease = {
+        at: "division",
+        source: job.payload.source === "second" ? "second" : "first",
+        division: typeof job.payload.division === "number" ? job.payload.division : null,
+        notes: typeof job.payload.notes === "number" ? job.payload.notes : 0,
+        releasedAtMs: null,
+        drainedAtMs: null,
+        outcome: "the run had stopped"
+      };
+      releases.push(entry);
+      if (outcome.stoppedBy !== null) return { released: false };
+      try {
+        const lane = await releaseTopics(entry, { hold: true, signal });
+        if (lane !== "settled") releaseStopped(lane);
+      } catch (error) {
+        errors.push(
+          `A topic release failed: ${error instanceof Error ? error.message : String(error)}`
+        );
+        if (outcome.stoppedBy === null) outcome.stoppedBy = "error";
+      }
+      return { released: entry.releasedAtMs !== null, outcome: entry.outcome };
+    };
 
     if (outcome.stoppedBy === null) {
       // 2. The user: drop two sources. No Settings handler may be called from here on.
@@ -880,42 +1044,51 @@ async function runPass(
           }
           const done = await heavy();
           if (done !== "settled") {
-            outcome.stoppedBy = stopOf(done);
+            if (done !== "stopped") outcome.stoppedBy = stopOf(done);
             return false;
           }
+          // A release job that ran during the heavy work may have stopped the run.
+          if (outcome.stoppedBy !== null) return false;
           marks.mark(`heavy.${what}`);
           return true;
         };
+        /** The release after a source's heavy work (a2's per-source part). */
+        const releaseSource = async (source: ReleaseSource, hold: boolean): Promise<boolean> => {
+          const rootId = source === "first" ? outcome.firstRootId : outcome.secondRootId;
+          const entry: TopicRelease = {
+            at: "source",
+            source,
+            division: null,
+            notes: rootId ? ((await readSourceFacts(db, [rootId]))[0]?.notes ?? 0) : 0,
+            releasedAtMs: null,
+            drainedAtMs: null,
+            outcome: "not run"
+          };
+          releases.push(entry);
+          releasePlan.sourceReleased();
+          const lane = await releaseTopics(entry, { hold });
+          if (lane === "settled") return true;
+          releaseStopped(lane);
+          return false;
+        };
 
         outcome.firstRootId = await importSource("first");
-        if (await settle("first")) {
+        if ((await settle("first")) && (await releaseSource("first", true))) {
           outcome.secondRootId = await importSource("second");
           if (await settle("second")) {
             if (config.synthetic) {
               await seedSyntheticRelation(db, seededArticles.first!, seededArticles.second!);
               outcome.stood.push(
                 "the two papers are seeded, not imported",
-                "one relation between them is seeded, not matched"
+                "one relation between them is seeded, not matched",
+                "the division boundaries are the seeded notes' embedding jobs (a2 counts embedded notes)"
               );
               supervisor.wake();
             }
-            // D23: the topic jobs run once the imports' heavy work completed.
-            await topics.releaseTopicJobs();
-            supervisor.wake("light");
+            // The last release: the topic jobs run to the end, as nothing holds them any more.
             phase = "drain";
-            const lane = await waitQuiet<Stop>({
-              count: async () => {
-                await observeT1();
-                return activeJobs(db, true);
-              },
-              stopReason,
-              timeoutMs: config.laneTimeoutMs,
-              pollIntervalMs: pollMs,
-              quietPolls: deps.quietPolls ?? 6,
-              sleep
-            });
+            await releaseSource("second", false);
             marks.mark("drained");
-            if (lane !== "settled") outcome.stoppedBy = stopOf(lane);
           }
         }
         if (outcome.stoppedBy === null) await observeT1();
@@ -1024,6 +1197,15 @@ async function runPass(
       stoppedBy: outcome.stoppedBy,
       errors,
       engine: outcome.engine,
+      topicRelease: {
+        settings: config.topicRelease,
+        linkRuntime: harnessLinkRuntime,
+        divisions: {
+          first: releasePlan.divisionsOf("first"),
+          second: releasePlan.divisionsOf("second")
+        },
+        releases
+      },
       recorded,
       budgetMs: config.budgetMs
     };
@@ -1060,6 +1242,8 @@ async function runPass(
         contentLanguage,
         sources: config.sources,
         writer: recordedWriter(writer),
+        topicRelease: config.topicRelease,
+        linkRuntime: harnessLinkRuntime,
         models: {
           embedding: {
             catalogId: plan.embedding,
@@ -1128,6 +1312,8 @@ async function runPass(
     holdCatalogHeaderRefresh(null);
     policy?.stop();
     await jobs?.stop().catch(() => undefined);
+    // Back to the product's link runtime once no loop of this pass can claim a job.
+    resetRelationLinkRuntime();
     topicServices?.dispose();
     await ai?.dispose().catch(() => undefined);
     await models?.shutdown().catch(() => undefined);

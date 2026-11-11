@@ -229,6 +229,22 @@ describe("the first-run end-to-end options", () => {
     });
   });
 
+  it("releases the topic work by a2 at 12 first-source notes by default, the threshold and the repeat by flag", () => {
+    expect(parse([]).topicRelease).toEqual({
+      policy: "a2",
+      firstSourceNotes: 12,
+      repeatUntilT1: false
+    });
+    expect(parse(["--synthetic"]).topicRelease.firstSourceNotes).toBe(12);
+    expect(parse(["--topic-release-notes", "8", "--topic-release-repeat"]).topicRelease).toEqual({
+      policy: "a2",
+      firstSourceNotes: 8,
+      repeatUntilT1: true
+    });
+    expect(refused(["--topic-release-notes", "0"])).toMatch(/--topic-release-notes/u);
+    expect(refused(["--topic-release-notes", "2.5"])).toMatch(/whole number/u);
+  });
+
   it("keeps the model catalog ids the preset and the first-run ranker name", () => {
     expect(firstRunModels).toEqual({
       embedding: "gguf-qwen3-embedding-0.6b-q8-0",
@@ -249,6 +265,8 @@ describe("the first-run end-to-end options", () => {
     expect(usage).toContain("T0");
     expect(usage).toContain("T1");
     expect(usage).toContain("D");
+    expect(usage).toContain("--topic-release-notes");
+    expect(usage).toContain("--topic-release-repeat");
     expect(parseFirstRunArgs(["--help"], { repositoryRoot: root })).toBe("help");
   });
 });
@@ -300,6 +318,8 @@ const record: RecordedFirstRun = {
   contentLanguage: "pt-BR",
   sources: { first: defaultFirstSourceKey, second: defaultSecondSourceKey },
   writer: { kind: "codex", modelId: defaultCodexModel },
+  topicRelease: { policy: "a2", firstSourceNotes: 12, repeatUntilT1: false },
+  linkRuntime: "drain",
   models: {
     embedding: {
       catalogId: firstRunModels.embedding,
@@ -334,6 +354,22 @@ describe("the record kept next to the cassette", () => {
       }).success
     ).toBe(false);
     expect(RecordedFirstRunSchema.safeParse({ ...record, apiKey: "k" }).success).toBe(false);
+  });
+
+  it("names its topic release and link runtime, and still reads a record from before a2 (a replay refuses it)", () => {
+    expect(
+      RecordedFirstRunSchema.safeParse({
+        ...record,
+        topicRelease: { policy: "both-imports", firstSourceNotes: 12, repeatUntilT1: false }
+      }).success
+    ).toBe(false);
+    expect(RecordedFirstRunSchema.safeParse({ ...record, linkRuntime: "product" }).success).toBe(
+      false
+    );
+    const barrier: Partial<RecordedFirstRun> = { ...record };
+    delete barrier.topicRelease;
+    delete barrier.linkRuntime;
+    expect(RecordedFirstRunSchema.safeParse(barrier).success).toBe(true);
   });
 
   it("needs a SHA-256 digest and whole-millisecond clocks", () => {

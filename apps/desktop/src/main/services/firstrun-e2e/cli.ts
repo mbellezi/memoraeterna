@@ -10,9 +10,15 @@ import { UsageError, parseFirstRunArgs, usage } from "./config.js";
  * connects the first note in at most ten minutes. An empty database, the writer signed in, the two
  * first-run models installed (the embedder and the ranker), two public sources imported with the
  * default plan, all through the product's own services and IPC handlers without Electron (a stub
- * stands in for it). The AI calls go through a cassette; the topic jobs are held while the imports'
- * heavy work runs and released once the first-run ranker is validated (D23). Each pass writes
- * `report.json` and `report.md` under `.cache/topics/firstrun-e2e/<time>/`.
+ * stands in for it). The AI calls go through a cassette; the topic jobs are held while the sources
+ * import and released by policy a2 once the first-run ranker is validated: at the first division
+ * boundary where the first source has 12 notes (`--topic-release-notes`), then after each source's
+ * heavy work. The link jobs run in drain mode, so two replays make the same calls in the same
+ * order. A cassette records its release policy and link runtime, and a replay refuses another. Each
+ * pass writes `report.json` and `report.md` under `.cache/topics/firstrun-e2e/<time>/`.
+ *
+ * This file is the harness's only way in (the root `firstrun:e2e` script): no product module
+ * imports the folder (`isolation.test.ts`), so nothing here is in the app's bundles.
  *
  * Replay (the cassette, the golden sources, the seeded models; no network, no provider, no key; the
  * install checks and the ranker validation run for real on the seeded files, the AI calls are served

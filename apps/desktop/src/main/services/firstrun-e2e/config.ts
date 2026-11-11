@@ -20,6 +20,13 @@ import { z } from "zod";
 
 import { firstRunRankerCatalogIds } from "../first-run-ranker.js";
 import { generationCapabilities } from "../topics-e2e/config.js";
+import {
+  TopicReleaseSettingsSchema,
+  defaultTopicReleaseNotes,
+  harnessLinkRuntimes,
+  topicReleaseSettings
+} from "./topic-release.js";
+import type { TopicReleaseSettings } from "./topic-release.js";
 
 export const firstRunCassetteName = "firstrun-hybrid-f4";
 export const recordFileName = "firstrun-record.json";
@@ -32,7 +39,7 @@ export const defaultApiKeyEnv = "MEMORA_E2E_API_KEY";
 export const defaultCodexModel = "gpt-5.6-luna";
 /** The bar of E6: each replay plus the download term D must fit in this. */
 export const e6BudgetMinutes = 10;
-/** The light lane may take at most this long to drain after the imports' heavy work. */
+/** The light lane may take at most this long to drain, at each release of the topic work. */
 export const defaultLaneTimeoutMinutes = 15;
 /** How long the install of a model may take (a download on a slow line, or a seeded copy). */
 export const defaultDownloadTimeoutMinutes = 60;
@@ -125,6 +132,13 @@ export const RecordedFirstRunSchema = z
     contentLanguage: z.string().min(1),
     sources: z.object({ first: z.string().min(1), second: z.string().min(1) }).strict(),
     writer: RecordedWriterSchema,
+    /**
+     * When the topic jobs ran (a2, E6A2) and how the link jobs ran: a replay with another policy
+     * makes the same calls in another order, so it refuses the cassette. Absent in a record made
+     * before E6A2 (the both-imports barrier, the product link runtime), which no replay accepts.
+     */
+    topicRelease: TopicReleaseSettingsSchema.optional(),
+    linkRuntime: z.enum(harnessLinkRuntimes).optional(),
     models: z.object({ embedding: RecordedModelSchema, ranker: RecordedModelSchema }).strict(),
     result: z
       .object({
@@ -186,6 +200,8 @@ export interface FirstRunConfig {
   downloadTimeoutMs: number;
   /** E6's bar: each replay plus D must fit. */
   budgetMs: number;
+  /** When the held topic jobs run (a2); a replay must use the recording's. */
+  topicRelease: TopicReleaseSettings;
   workDir: string | null;
   keep: boolean;
   /** Record: continue a cassette that already holds calls (the clock of that take is not live). */
@@ -212,7 +228,9 @@ export const usage = `Usage: npm run firstrun:e2e -- [options]
   The clock (E6): T0 is the app launch on an empty userData (the database starts and migrates, the
   services start); T1 is a note of the first source in a named topic with a shown relation. A replay
   passes when its T1 - T0 plus D, the download time the live record spent on the critical path, is at
-  most ${e6BudgetMinutes} minutes.
+  most ${e6BudgetMinutes} minutes. The topic jobs are held while the sources import and released by
+  policy a2 (at the first division boundary with ${defaultTopicReleaseNotes} first-source notes, then per source); the
+  link jobs run in drain mode, so two replays make the same calls in the same order.
 
   --mode record|replay|both   both = record then replay (synthetic only)
   --synthetic                 synthetic library, models and writer
@@ -224,9 +242,13 @@ export const usage = `Usage: npm run firstrun:e2e -- [options]
   --replays <n>               replay passes in this invocation (default 1)
   --timing recorded|off       replay: served calls wait their recorded time (default recorded)
   --seed-dir <dir>            replay: the seeded models (default $MEMORA_LOCAL_MODEL_SEED_DIR, else <repo>/.cache/models)
-  --lane-timeout <minutes>    light lane budget (default ${defaultLaneTimeoutMinutes})
+  --lane-timeout <minutes>    light lane budget of each release (default ${defaultLaneTimeoutMinutes})
   --download-timeout <min>    one model's install budget (default ${defaultDownloadTimeoutMinutes})
   --budget-minutes <n>        E6's bar (default ${e6BudgetMinutes})
+  --topic-release-notes <n>   a2: release the topic work at the first division boundary where the
+                              first source has n notes (default ${defaultTopicReleaseNotes}), then per source
+  --topic-release-repeat      a2 hardening: release again at every division boundary until T1
+                              (a replay takes the recording's two release options)
   --work-dir <dir>            where the scratch workspace is made (default: system temp)
   --keep                      keep the scratch workspace
   --resume                    record: continue a cassette that holds calls (its clock is not live, so it cannot gate)
@@ -301,6 +323,8 @@ export function parseFirstRunArgs(
         "lane-timeout": { type: "string" },
         "download-timeout": { type: "string" },
         "budget-minutes": { type: "string" },
+        "topic-release-notes": { type: "string" },
+        "topic-release-repeat": { type: "boolean" },
         "work-dir": { type: "string" },
         keep: { type: "boolean" },
         report: { type: "string" },
@@ -399,6 +423,14 @@ export function parseFirstRunArgs(
       positiveNumber("--download-timeout", v["download-timeout"], defaultDownloadTimeoutMinutes) *
       60_000,
     budgetMs: positiveNumber("--budget-minutes", v["budget-minutes"], e6BudgetMinutes) * 60_000,
+    topicRelease: topicReleaseSettings({
+      firstSourceNotes: positiveInteger(
+        "--topic-release-notes",
+        v["topic-release-notes"],
+        defaultTopicReleaseNotes
+      )!,
+      repeatUntilT1: v["topic-release-repeat"] === true
+    }),
     workDir: v["work-dir"] ? resolve(v["work-dir"]) : null,
     keep: v.keep === true,
     resume: v.resume === true,

@@ -21,6 +21,7 @@ import { sharedElectronStub } from "../topics-e2e/electron-stub.js";
 import { parseFirstRunArgs, recordFileName } from "./config.js";
 import type { FirstRunConfig } from "./config.js";
 import { invokedSetupChannels } from "./sequence.js";
+import { topicReleaseSettings } from "./topic-release.js";
 import { replaysAgree, runFirstRunE2e } from "./run.js";
 import type { PassResult } from "./run.js";
 
@@ -58,11 +59,16 @@ describe.skipIf(!sidecarAvailable)(
     let config: FirstRunConfig;
     let passes: PassResult[] = [];
     const events: Array<{ event: string; data: Record<string, unknown> | undefined }> = [];
+    /** The link runtime each topic release saw while the pass ran. */
+    const drainAtRelease: boolean[] = [];
 
     const deps = () => ({
       electron: sharedElectronStub(),
       env: {},
-      log: (event: string, data?: Record<string, unknown>) => void events.push({ event, data }),
+      log: (event: string, data?: Record<string, unknown>) => {
+        if (event === "topics_released") drainAtRelease.push(relationLinkRuntime().drain);
+        events.push({ event, data });
+      },
       pollIntervalMs: 20,
       quietPolls: 5,
       syntheticInstallMs: 200,
@@ -266,6 +272,72 @@ describe.skipIf(!sidecarAvailable)(
       expect(record!.report.checks.some((check) => check.id === "gate")).toBe(false);
     });
 
+    it("releases the topic work by a2: at the 12th first-source note's boundary, then per source, the same in every pass", () => {
+      const releasesOf = (pass: PassResult) =>
+        pass.report.reported.topicRelease.releases.map(
+          ({ at, source, division, notes, outcome }) => ({ at, source, division, notes, outcome })
+        );
+      const [record, ...replays] = passes;
+      expect(releasesOf(record!)).toEqual([
+        { at: "division", source: "first", division: 12, notes: 12, outcome: "drained" },
+        { at: "source", source: "first", division: null, notes: 36, outcome: "drained" },
+        { at: "source", source: "second", division: null, notes: 15, outcome: "drained" }
+      ]);
+      for (const pass of passes) {
+        const { topicRelease, clock } = pass.report.reported;
+        expect(topicRelease).toMatchObject({
+          settings: { policy: "a2", firstSourceNotes: 12, repeatUntilT1: false },
+          linkRuntime: "drain",
+          divisions: { first: 36, second: 15 }
+        });
+        // The division release ran inside the first source's heavy work, before it settled.
+        const division = topicRelease.releases[0]!;
+        expect(division.releasedAtMs).toBeGreaterThan(clock.marks["import.first.queued"]!);
+        expect(division.drainedAtMs).toBeLessThan(clock.marks["heavy.first"]!);
+        expect(clock.marks).toMatchObject({
+          "topics.release.1": division.releasedAtMs,
+          "topics.release.3": topicRelease.releases[2]!.releasedAtMs
+        });
+        // The release job is the harness's own heavy job: it finished, nothing failed.
+        expect(pass.report.reported.failedWork).toEqual([]);
+      }
+      for (const replay of replays) expect(releasesOf(replay)).toEqual(releasesOf(record!));
+    });
+
+    it("runs the link jobs in drain mode during every pass and goes back to the product's after", () => {
+      expect(drainAtRelease.length).toBeGreaterThanOrEqual(passes.length * 3);
+      expect(drainAtRelease.every(Boolean)).toBe(true);
+      expect(
+        events.filter((entry) => entry.event === "relations").map((entry) => entry.data)
+      ).toEqual(passes.map(() => ({ linkRuntime: "drain" })));
+      expect(relationLinkRuntime()).toEqual(productLinkRuntime);
+    });
+
+    it("refuses to replay the cassette under another release policy", async () => {
+      await expect(
+        runFirstRunE2e(
+          {
+            ...config,
+            mode: "replay",
+            replays: 1,
+            topicRelease: topicReleaseSettings({ firstSourceNotes: 8 })
+          },
+          deps()
+        )
+      ).rejects.toThrow(/released the topic work at 12.*--topic-release-notes 12/su);
+      await expect(
+        runFirstRunE2e(
+          {
+            ...config,
+            mode: "replay",
+            replays: 1,
+            topicRelease: topicReleaseSettings({ repeatUntilT1: true })
+          },
+          deps()
+        )
+      ).rejects.toThrow(/without --topic-release-repeat/u);
+    });
+
     it("keeps the record next to the cassette without credentials, paths or the key", async () => {
       const text = await readFile(join(workDir, "cassette", recordFileName), "utf8");
       expect(JSON.parse(text)).toMatchObject({
@@ -273,6 +345,8 @@ describe.skipIf(!sidecarAvailable)(
         synthetic: true,
         contentLanguage: "pt-BR",
         writer: { kind: "codex", modelId: "synthetic-codex" },
+        topicRelease: { policy: "a2", firstSourceNotes: 12, repeatUntilT1: false },
+        linkRuntime: "drain",
         result: { notes: 51, topics: 3, noteRelations: 1 },
         timing: { live: true }
       });

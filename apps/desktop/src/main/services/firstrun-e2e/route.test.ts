@@ -12,6 +12,7 @@ import {
   readRecordedFirstRun,
   writeRecordedFirstRun
 } from "./route.js";
+import { topicReleaseSettings } from "./topic-release.js";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -130,6 +131,8 @@ const record: RecordedFirstRun = {
   contentLanguage: "pt-BR",
   sources: { first: "plos", second: "wikibooks" },
   writer: { kind: "codex", modelId: "m" },
+  topicRelease: topicReleaseSettings(),
+  linkRuntime: "drain",
   models: {
     embedding: { catalogId: firstRunModels.embedding, runtime: "gguf", bytes: 1, installMs: 1 },
     ranker: { catalogId: firstRunModels.rankerMlx, runtime: "mlx", bytes: 1, installMs: 1 }
@@ -171,7 +174,11 @@ describe("the record kept with the cassette", () => {
   });
 
   it("must match the replay: the sources, the ranker this machine installs, the live or synthetic kind", () => {
-    const config = { sources: { first: "plos", second: "wikibooks" }, synthetic: false };
+    const config = {
+      sources: { first: "plos", second: "wikibooks" },
+      synthetic: false,
+      topicRelease: topicReleaseSettings()
+    };
     expect(() => checkRecordMatches(record, config, plan)).not.toThrow();
     expect(() =>
       checkRecordMatches(record, { ...config, sources: { first: "plos", second: "other" } }, plan)
@@ -189,5 +196,40 @@ describe("the record kept with the cassette", () => {
     expect(() => checkRecordMatches({ ...record, synthetic: true }, config, plan)).toThrow(
       /self-test's.*--synthetic/su
     );
+  });
+
+  it("must match the replay's topic release and link runtime, and refuses a record from before a2", () => {
+    const config = {
+      sources: { first: "plos", second: "wikibooks" },
+      synthetic: false,
+      topicRelease: topicReleaseSettings()
+    };
+    const barrier: RecordedFirstRun = { ...record };
+    delete barrier.topicRelease;
+    delete barrier.linkRuntime;
+    expect(() => checkRecordMatches(barrier, config, plan)).toThrow(
+      /before the a2 topic release.*record again/su
+    );
+    expect(() =>
+      checkRecordMatches(
+        record,
+        { ...config, topicRelease: topicReleaseSettings({ firstSourceNotes: 8 }) },
+        plan
+      )
+    ).toThrow(/at 12 first-source notes, not 8: replay it with --topic-release-notes 12/u);
+    expect(() =>
+      checkRecordMatches(
+        record,
+        { ...config, topicRelease: topicReleaseSettings({ repeatUntilT1: true }) },
+        plan
+      )
+    ).toThrow(/without --topic-release-repeat/u);
+    expect(() =>
+      checkRecordMatches(
+        { ...record, topicRelease: topicReleaseSettings({ repeatUntilT1: true }) },
+        config,
+        plan
+      )
+    ).toThrow(/replay it with --topic-release-repeat/u);
   });
 });

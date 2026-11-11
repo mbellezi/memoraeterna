@@ -18,6 +18,7 @@ import {
 } from "./config.js";
 import type { FirstRunConfig, RecordedFirstRun, WriterRoute } from "./config.js";
 import type { FirstRunModelPlan } from "./models.js";
+import { releaseMismatch } from "./topic-release.js";
 
 /** The refresh token the scratch profile holds: it refreshes nothing. */
 export const harnessRefreshToken = "refresh-unavailable-in-the-first-run-harness";
@@ -147,12 +148,13 @@ export async function writeRecordedFirstRun(
 }
 
 /**
- * A replay makes the requests of the recording: its sources, its content language and the ranker it
- * installed must be the ones the cassette holds. Throws a usage error naming the first difference.
+ * A replay makes the requests of the recording: its sources, its content language, the ranker it
+ * installed, its topic release policy and its link runtime must be the ones the cassette holds.
+ * Throws a usage error naming the first difference.
  */
 export function checkRecordMatches(
   record: RecordedFirstRun,
-  config: Pick<FirstRunConfig, "sources" | "synthetic">,
+  config: Pick<FirstRunConfig, "sources" | "synthetic" | "topicRelease">,
   plan: FirstRunModelPlan
 ): void {
   if (record.synthetic !== config.synthetic)
@@ -176,4 +178,6 @@ export function checkRecordMatches(
     throw new UsageError(
       `The cassette was recorded with the embedder ${record.models.embedding.catalogId}, not ${plan.embedding}`
     );
+  const release = releaseMismatch(record, config.topicRelease);
+  if (release) throw new UsageError(release);
 }

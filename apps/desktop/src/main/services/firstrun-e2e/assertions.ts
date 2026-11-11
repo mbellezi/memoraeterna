@@ -21,6 +21,7 @@ import type { ModelsMode } from "./models.js";
 import type { StatusAtStalls } from "./timeline.js";
 import type { SetupFacts } from "./setup.js";
 import type { RecordedFirstRun } from "./config.js";
+import type { HarnessLinkRuntime, TopicRelease, TopicReleaseSettings } from "./topic-release.js";
 
 export { formatDuration };
 
@@ -96,8 +97,18 @@ export interface FirstRunFacts {
     | null;
   errors: string[];
   engine: TopicsStatus | null;
+  /** When the held topic jobs ran (a2): the policy, the link runtime, the boundaries and each release. */
+  topicRelease: TopicReleaseFacts;
   recorded: RecordedFirstRun | null;
   budgetMs: number;
+}
+
+export interface TopicReleaseFacts {
+  settings: TopicReleaseSettings;
+  linkRuntime: HarnessLinkRuntime;
+  /** The division boundaries each source reached. */
+  divisions: { first: number; second: number };
+  releases: TopicRelease[];
 }
 
 export type FirstRunCheckId =
@@ -166,6 +177,7 @@ export interface FirstRunReport {
     failedWork: string[];
     stoodIn: string[];
     engine: TopicsStatus | null;
+    topicRelease: TopicReleaseFacts;
   };
   errors: string[];
 }
@@ -520,10 +532,32 @@ export function evaluateFirstRun(store: StoreFacts, run: FirstRunFacts): FirstRu
       statusAtStalls: run.statusAtStalls,
       failedWork,
       stoodIn: run.stoodIn,
-      engine: run.engine
+      engine: run.engine,
+      topicRelease: run.topicRelease
     },
     errors: run.errors
   };
+}
+
+function renderTopicReleases(release: TopicReleaseFacts): string[] {
+  const { settings } = release;
+  return [
+    "## Topic releases",
+    "",
+    `Policy ${settings.policy}: at the first division boundary where the first source has ${settings.firstSourceNotes} notes` +
+      `${settings.repeatUntilT1 ? ", again at every later boundary until T1" : ""}, then per source; ` +
+      `link jobs in ${release.linkRuntime} mode. Division boundaries: ${release.divisions.first} of the first source, ` +
+      `${release.divisions.second} of the second.`,
+    "",
+    "| Release | Source | Division | Notes | Released | Drained | Outcome |",
+    "| --- | --- | --- | --- | --- | --- | --- |",
+    ...release.releases.map(
+      (entry, index) =>
+        `| ${index + 1} (${entry.at}) | ${entry.source} | ${entry.division ?? "-"} | ${entry.notes} | ` +
+        `${formatDuration(entry.releasedAtMs)} | ${formatDuration(entry.drainedAtMs)} | ${entry.outcome} |`
+    ),
+    ""
+  ];
 }
 
 function count(routes: Readonly<Record<string, string>>, role: string): number {
@@ -557,6 +591,7 @@ export function renderFirstRunMarkdown(report: FirstRunReport, store: StoreFacts
     "| --- | --- |",
     ...Object.entries(clock.marks).map(([name, ms]) => `| ${name} | ${formatDuration(ms)} |`),
     "",
+    ...renderTopicReleases(r.topicRelease),
     "## Models",
     "",
     ...clock.installs.map(
