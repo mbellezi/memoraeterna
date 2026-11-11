@@ -17,6 +17,7 @@ import {
   createSourceItemRepository,
   createTopicOverviewRepository,
   createTopicTreeRepository,
+  pageSql,
   resolvePostgresSidecarPaths,
   runMigrations,
   type PgPool,
@@ -43,6 +44,13 @@ import { InboxService, type InboxServiceOptions } from "./inbox-service.js";
 const workspace = resolve(import.meta.dirname, "../../../../../..");
 const sidecar = resolvePostgresSidecarPaths({ cwd: workspace, env: process.env });
 const sidecarInstalled = existsSync(join(sidecar.binDir, "postgres"));
+
+/** The part of an EXPLAIN (FORMAT JSON) node the volume test reads. */
+interface PlanNode {
+  "Relation Name"?: string;
+  "Actual Loops"?: number;
+  Plans?: PlanNode[];
+}
 
 const snapshot = (
   state: "open" | "paused" | "exhausted",
@@ -513,6 +521,79 @@ describe.skipIf(!sidecarInstalled)("the Inbox on a real PostgreSQL database", ()
     ).rejects.toThrow("inbox.errors.invalidItem");
   });
 
+  /** Sets when a relation last changed, which is its age in the list. */
+  const ageRelation = (id: string, minutesAgo: number) =>
+    pool!.query(
+      "update atomic_note_relations set updated_at = now() - make_interval(mins => $2::int) where id = $1",
+      [id, minutesAgo]
+    );
+
+  it("lists and counts no suggestion between notes that are no longer current, and a page still fills from the later ones (D9, D33)", async () => {
+    const archived = await seedSuggestion("supports", 0.64);
+    const superseded = await seedSuggestion("extends", 0.5);
+    const current = await seedSuggestion("supports", 0.7);
+    const later = await seedSuggestion("supports", null);
+    await ageRelation(archived.id, 40);
+    await ageRelation(superseded.id, 30);
+    await ageRelation(current.id, 20);
+    await ageRelation(later.id, 10);
+    await pool!.query("update atomic_notes set status = 'archived' where id = $1", [
+      archived.notes[0]!.id
+    ]);
+    await pool!.query(
+      `update documents set metadata = jsonb_build_object('supersededByDocumentId', $2::text)
+        where id = (select c.document_id from atomic_notes n join chunks c on c.id = n.evidence_chunk_id
+                     where n.id = $1)`,
+      [superseded.notes[1]!.id, randomUUID()]
+    );
+    // The two oldest are not current; the page of one still reads the next that is.
+    const first = await inbox.list({ kinds: ["suggestion"], limit: 1 });
+    expect(first.items.map((item) => item.id)).toEqual([current.id]);
+    const second = await inbox.list({
+      kinds: ["suggestion"],
+      limit: 1,
+      cursor: first.nextCursor ?? undefined
+    });
+    expect(second.items.map((item) => item.id)).toEqual([later.id]);
+    expect(second.nextCursor).toBeNull();
+    expect((await inbox.counts()).byKind.suggestion).toBe(2);
+  });
+
+  it("pages the suggestions by age without repeating or skipping one", async () => {
+    const ids: string[] = [];
+    for (let n = 0; n < 5; n += 1) {
+      const seeded = await seedSuggestion("supports", 0.6 + n / 100);
+      await ageRelation(seeded.id, 50 - n * 10);
+      ids.push(seeded.id);
+    }
+    const seen: string[] = [];
+    let cursor: string | undefined;
+    do {
+      const page = await inbox.list({ kinds: ["suggestion"], limit: 2, cursor });
+      seen.push(...page.items.map((item) => item.id));
+      cursor = page.nextCursor ?? undefined;
+    } while (cursor);
+    expect(seen).toEqual(ids);
+  });
+
+  it("reads the endpoint check for one page of suggestions, not for every one (D33's volume bound)", async () => {
+    for (let n = 0; n < 24; n += 1) await seedSuggestion("supports", 0.6);
+    const limit = 5;
+    const plan = await pool!.query<{ "QUERY PLAN": Array<{ Plan: PlanNode }> }>(
+      `explain (analyze, format json) ${pageSql}`,
+      [null, null, null, null, null, limit + 1]
+    );
+    // Each relation's two notes are looked up once per relation the page reads: at most the page
+    // and a row more, never the 24 the table holds.
+    const lookups = (node: PlanNode): number =>
+      (node["Relation Name"] === "atomic_notes" ? Number(node["Actual Loops"] ?? 0) : 0) +
+      (node.Plans ?? []).reduce((sum, child) => sum + lookups(child), 0);
+    expect(lookups(plan.rows[0]!["QUERY PLAN"][0]!.Plan)).toBeLessThanOrEqual(2 * (limit + 1));
+    const page = await inbox.list({ kinds: ["suggestion"], limit });
+    expect(page.items).toHaveLength(limit);
+    expect(page.nextCursor).not.toBeNull();
+  });
+
   it("pages by risk and age with a cursor that never repeats or skips an item, vault conflicts included", async () => {
     for (let n = 0; n < 4; n += 1) await finding("duplicate", `dup:${n}`, { reason: "title" });
     for (let n = 0; n < 3; n += 1) await seedQuarantine(`note:${randomUUID()}`, 30 - n);
@@ -578,8 +659,10 @@ describe.skipIf(!sidecarInstalled)("the Inbox on a real PostgreSQL database", ()
       status: "done",
       undoable: false
     });
-    // Both left the review list, and the dismissed pass is reverted: its relation is gone. The kept
-    // pass's relation is still a suggestion at 0.6, which D33 keeps in the Inbox.
+    // Both left the review list, and the dismissed pass is reverted: its relation is gone. Keeping
+    // a pass sets only the run's verdict; its relation is still a suggestion at 0.6 (no human
+    // verdict on the relation itself), which D33 keeps in the Inbox as its own item. Whether a
+    // kept pass should close its relations' items is an open question (see the card report).
     expect(idsOf((await inbox.list({})).items)).toEqual([`suggestion:${kept.relationId}`]);
     expect(
       (await pool!.query("select 1 from atomic_note_relations where id = $1", [dropped.relationId]))
