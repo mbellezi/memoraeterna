@@ -167,7 +167,7 @@
   },
   "apps/desktop/src/main/services/source-deletion-service.ts": {
     "no-useless-assignment": {
-      "count": 5
+      "count": 4
     }
   },
   "apps/desktop/src/main/services/source-relation-processing.test.ts": {
