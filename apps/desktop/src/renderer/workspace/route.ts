@@ -40,7 +40,8 @@ export type SettingsSectionId = (typeof settingsSectionIds)[number];
 /** The columns `library.rows` sorts by. */
 export const librarySorts = ["title", "added", "updated", "notes", "status"] as const;
 export type LibrarySort = (typeof librarySorts)[number];
-export const libraryStatuses = ["processing", "ready", "failed"] as const;
+/** The five statuses `library.rows` gives a source (`S/ipc-library.ts`). */
+export const libraryStatuses = ["processing", "ready", "failed", "needsYou", "storedOnly"] as const;
 export type LibraryStatus = (typeof libraryStatuses)[number];
 export const libraryTabs = ["sources", "questions"] as const;
 export type LibraryTab = (typeof libraryTabs)[number];

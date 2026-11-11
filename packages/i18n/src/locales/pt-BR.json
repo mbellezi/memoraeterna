@@ -565,6 +565,168 @@
       "dismiss": "Dispensar notificacao"
     }
   },
+  "libraryTable": {
+    "actions": {
+      "generate": "Gerar notas",
+      "generateFor": "Gerar notas de {title}"
+    },
+    "chips": {
+      "all": "Todas",
+      "failed": "Bloqueadas",
+      "label": "Estado",
+      "needsYou": "Precisa de você",
+      "processing": "Gerando",
+      "storedOnly": "Sem notas",
+      "storedOnlyHint": "Fontes nos modos Só guardar ou Pesquisável + organizado"
+    },
+    "columns": {
+      "added": "Adicionada",
+      "answers": "Respostas",
+      "asked": "Feita em",
+      "notes": "Notas",
+      "place": "Lugar na árvore",
+      "question": "Pergunta",
+      "source": "Fonte",
+      "state": "Estado"
+    },
+    "compact": {
+      "label": "Lista de fontes",
+      "questionsLabel": "Lista de perguntas"
+    },
+    "count": {
+      "questionsMany": "{count} perguntas",
+      "questionsOne": "{count} pergunta",
+      "sourcesMany": "{count} fontes",
+      "sourcesOne": "{count} fonte"
+    },
+    "dates": {
+      "today": "hoje, {time}",
+      "yesterday": "ontem, {time}"
+    },
+    "density": {
+      "comfortable": "Confortável",
+      "compact": "Compacto",
+      "label": "Densidade"
+    },
+    "filter": {
+      "clear": "Limpar filtro",
+      "clearAll": "Limpar filtros",
+      "questionsLabel": "Filtrar perguntas",
+      "questionsPlaceholder": "Filtrar pelas palavras da pergunta",
+      "sourcesLabel": "Filtrar fontes",
+      "sourcesPlaceholder": "Filtrar por título"
+    },
+    "keys": {
+      "choose": "escolher",
+      "open": "abrir ao lado",
+      "peek": "espiar",
+      "space": "Espaço"
+    },
+    "order": {
+      "addedAsc": "as mais antigas primeiro",
+      "addedDesc": "as mais novas primeiro",
+      "newest": "as mais novas primeiro",
+      "notesAsc": "com menos notas primeiro",
+      "notesDesc": "com mais notas primeiro",
+      "statusAsc": "por estado, as que precisam de você primeiro",
+      "statusDesc": "por estado, as prontas primeiro",
+      "titleAsc": "por título, de A a Z",
+      "titleDesc": "por título, de Z a A",
+      "updatedAsc": "as alteradas há mais tempo primeiro",
+      "updatedDesc": "as alteradas há menos tempo primeiro"
+    },
+    "peek": {
+      "answersMany": "{count} respostas",
+      "answersOne": "{count} resposta",
+      "close": "fechar",
+      "closes": "fecha",
+      "heading": "Espiando",
+      "next": "espiar a próxima",
+      "notesMany": "{count} notas",
+      "notesOne": "{count} nota",
+      "opens": "abre ao lado",
+      "passagesMany": "{count} trechos",
+      "passagesOne": "{count} trecho",
+      "stays": "A Biblioteca continua aqui; nada foi aberto.",
+      "title": "Espiando {title}",
+      "unavailable": "Não deu para ler este item."
+    },
+    "place": {
+      "none": "Sem lugar",
+      "tentative": "provável:",
+      "tentativeHint": "Lugar provável, definido quando as notas terminarem"
+    },
+    "questionStatus": {
+      "canceled": "Interrompida",
+      "complete": "Respondida",
+      "failed": "Não terminou",
+      "running": "Respondendo"
+    },
+    "reasons": {
+      "failed": "parou; a fonte continua guardada",
+      "modelMissing": "um modelo precisa ser instalado",
+      "moneyNear": "perto do limite de gastos",
+      "moneyReached": "limite de gastos atingido",
+      "noRoute": "falta escolher um modelo",
+      "other": "esperando por você",
+      "signIn": "entre de novo no provedor de IA"
+    },
+    "scope": {
+      "library": "Toda a Biblioteca",
+      "topic": "Tópico: {title}",
+      "topicGone": "Um tópico que não existe mais",
+      "topicPending": "Um tópico"
+    },
+    "states": {
+      "moreError": "Não deu para carregar mais.",
+      "questionsEmpty": "Nenhuma pergunta guardada ainda.",
+      "questionsEmptyBody": "Pergunte pela barra do topo ou a partir de uma nota, tópico ou fonte; cada pergunta fica guardada aqui, com as respostas. Atalho:",
+      "questionsError": "Não deu para ler as perguntas guardadas.",
+      "questionsFiltered": "Nenhuma pergunta com esse filtro.",
+      "questionsKept": "Elas continuam guardadas neste Mac.",
+      "sourcesEmpty": "Nenhuma fonte ainda.",
+      "sourcesEmptyBody": "Adicione um PDF, um link ou uma nota. O Memora lê, escreve as notas e coloca tudo na árvore para você.",
+      "sourcesEmptyHint": "Use Adicionar, no topo, solte arquivos na janela ou aperte",
+      "sourcesError": "Não deu para ler a Biblioteca.",
+      "sourcesFiltered": "Nenhuma fonte com esse filtro.",
+      "sourcesKept": "Suas fontes e notas estão guardadas."
+    },
+    "status": {
+      "failed": "Bloqueada",
+      "needsYou": "Precisa de você",
+      "processing": "Gerando",
+      "ready": "Pronta",
+      "storedOnly": "Guardada, sem notas"
+    },
+    "tabs": {
+      "label": "Visões da Biblioteca",
+      "questions": "Perguntas",
+      "sources": "Fontes"
+    },
+    "territory": {
+      "fewer": "Mostrar menos",
+      "heading": "Por área:",
+      "label": "Fontes por área da árvore",
+      "more": "Mostrar as {count} áreas",
+      "sourceMany": "fontes",
+      "sourceOne": "fonte",
+      "untitled": "Área sem nome"
+    },
+    "title": "Biblioteca",
+    "types": {
+      "AcademicPaper": "Artigo acadêmico",
+      "Book": "Livro",
+      "BookChapter": "Capítulo de livro",
+      "DailyNote": "Nota diária",
+      "DocumentSection": "Seção de documento",
+      "GenericDocument": "Documento",
+      "PeriodicalIssue": "Edição de periódico",
+      "PersonalNote": "Nota pessoal",
+      "StandaloneArticle": "Artigo avulso",
+      "Video": "Vídeo",
+      "WebArticle": "Artigo da web"
+    }
+  },
   "knowledgeGraph": {
     "openSourceEntities": "Abrir grafo de entidades da fonte",
     "backToGraph": "Voltar ao grafo do conhecimento",

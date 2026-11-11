@@ -30,6 +30,8 @@ describe("parseAddress", () => {
       ["memora://explore", { view: "explore" }],
       ["memora://library", { view: "library" }],
       ["memora://library?tab=questions", { view: "library", tab: "questions" }],
+      ["memora://library?status=needsYou", { view: "library", query: { status: "needsYou" } }],
+      ["memora://library?status=storedOnly", { view: "library", query: { status: "storedOnly" } }],
       [
         `memora://library?q=caf%C3%A9%20au%20lait&sort=added&dir=desc&status=ready&topic=${topic.toUpperCase()}`,
         {

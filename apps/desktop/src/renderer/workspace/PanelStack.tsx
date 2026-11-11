@@ -21,6 +21,7 @@ import type { RibbonPlace } from "./PathRibbon";
 import { destinationTitleKeys } from "./shell-model";
 import {
   layout,
+  type Density,
   type LayoutChrome,
   type Panel,
   type PanelAddress,
@@ -74,6 +75,9 @@ export interface PanelProps {
   onOpen: (address: PanelAddress, options?: { replace?: boolean }) => void;
   /** For a root in its compact form: the address of the panel it opened (`aria-current`). */
   current?: PanelAddress;
+  /** For a root: the density kept per device (the Library header's toggle, D18) and how to change it. */
+  density?: Density;
+  onDensity?: (density: Density) => void;
 }
 
 /** A panel kind, as its `*.panel.tsx` module exports it. */
@@ -129,7 +133,7 @@ export function matchPanel(
 
 /** Every `panels/*.panel.tsx`, found at build time. */
 export const panelRegistry: readonly PanelModule[] = registerPanels(
-  import.meta.glob("./panels/*.panel.tsx", { eager: true })
+  import.meta.glob(["./panels/*.panel.tsx", "./destinations/*/*.panel.tsx"], { eager: true })
 );
 
 // ---------------------------------------------------------------------------
@@ -652,6 +656,8 @@ export function PanelStack({
           onState={(state) => report(key, state)}
           onPlace={(place) => reportPlace(key, place)}
           onOpen={openFrom(-1)}
+          density={workspace.density}
+          onDensity={(density) => dispatch({ type: "setDensity", density })}
           {...(mode === "compact" && next ? { current: addressOf(next) } : {})}
         />
       </div>
