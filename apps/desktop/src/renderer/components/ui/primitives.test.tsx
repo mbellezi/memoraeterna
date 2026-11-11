@@ -21,6 +21,7 @@ import { EmptyState } from "./empty-state";
 import { ErrorState } from "./error-state";
 import { HoverCard, HoverCardContent, HoverCardTrigger, hoverCardOpenDelayMs } from "./hover-card";
 import { Kbd } from "./kbd";
+import { PrimitivesSheet } from "./primitives-sheet";
 import { Popover, PopoverContent, PopoverTrigger } from "./popover";
 import { ScrollArea } from "./scroll-area";
 import { Sheet, SheetContent } from "./sheet";
@@ -404,5 +405,25 @@ describe("tokens only", () => {
       expect(source, path).not.toMatch(/addEventListener\(["']keydown/u);
       expect(source, path).not.toMatch(/metaKey|ctrlKey/u);
     }
+  });
+});
+
+describe("primitives sheet", () => {
+  const html = renderToStaticMarkup(
+    <PrimitivesSheet t={t} load={() => new Promise(() => undefined)} />
+  );
+
+  it("never leaves a separator dot alone at the end of a wrapped line", () => {
+    expect(html).not.toContain('<span aria-hidden="true">\u00b7</span>');
+    expect(html).toContain('<span aria-hidden="true">\u00b7 </span>');
+  });
+
+  it("the quick-look body opens with the kind line and ends with the counts line", () => {
+    expect(html).toContain("Note \u00b7 3 min");
+    expect(html).toContain("2 connections \u00b7 1 source");
+  });
+
+  it("shows an open tooltip sample", () => {
+    expect(html).toContain('role="tooltip"');
   });
 });
