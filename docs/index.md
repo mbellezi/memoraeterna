@@ -64,6 +64,9 @@ binding decision records of F2, F3 and F4. The measurements are dated, not rules
   decisions, gates M, S and X, the exit and carried bars (E1-E7, C1-C4), the 7-day soak plan and the budget.
 - [f5-decisions.md](f5-decisions.md) — the binding F5 decisions (D1-D32), the owner answers of 2026-11-11, the gates
   D, M, U, J and X, the exit bars X1-X12, the slot plan and the budget.
+- [design/f5-workspace.md](design/f5-workspace.md) — the binding F5 workspace design (gate D): layout, tokens,
+  components, pages, keys, pt-BR copy and the per-screen checklist, reconciled with the F5 decisions; mockup in
+  `design/f5-workspace/mockup.html`.
 - [settings-inventory.md](settings-inventory.md) — F4 T68: every persisted setting with its reader, default, screen,
   fate and E7 category; the 35/43 counts and the 17 matching controls verified; the dead settings; the pair-key fields.
 
