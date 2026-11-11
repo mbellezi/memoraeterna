@@ -145,7 +145,8 @@ const openItemsSql = `
 const rankSql = `(case items.risk when 'high' then 0 when 'medium' then 1 else 2 end)`;
 const keySql = `(items.kind || ':' || items.id)`;
 
-const pageSql = `
+/** The statements of `page` and `counts`, exported for the EXPLAIN proof (T176). */
+export const pageSql = `
   select items.kind, items.id, items.risk, ${rankSql} as rank, ${utc("items.at")} as at,
          ${keySql} as key
     from (${openItemsSql}) items
@@ -155,7 +156,7 @@ const pageSql = `
    order by ${rankSql}, items.at, ${keySql} collate "C"
    limit $6::int`;
 
-const countsSql = `select items.kind, items.risk, count(*)::int as n from (${openItemsSql}) items
+export const countsSql = `select items.kind, items.risk, count(*)::int as n from (${openItemsSql}) items
    group by items.kind, items.risk`;
 
 interface PageRow extends QueryResultRow {
