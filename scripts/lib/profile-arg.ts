@@ -1,13 +1,15 @@
 import { readFile } from "node:fs/promises";
 import { realpathSync } from "node:fs";
-import { homedir } from "node:os";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import { z } from "zod";
 
 import {
+  defaultUserDataPath,
   readMatchingProfile,
   type MatchingRunner
 } from "../../apps/desktop/src/main/services/matching-profile.ts";
+
+export { defaultUserDataPath };
 
 /**
  * `--profile <absolute dir>` of the matching scripts (F5 D26, T112). A script names the scratch profile
@@ -24,11 +26,6 @@ export class ProfileArgError extends Error {
 
 export const profileArgUsage =
   "Pass --profile <absolute scratch profile directory> (inside .cache/profiles/ or .cache/f<N>/scratch/).";
-
-/** The owner's default DEV userData folder (Electron's default for `@app/desktop`). */
-export function defaultUserDataPath(home: string = homedir()): string {
-  return join(home, "Library", "Application Support", "@app", "desktop");
-}
 
 function canonical(path: string): string {
   let resolved = resolve(path);
@@ -147,7 +144,8 @@ export async function resolveMatchingScriptProfile(
   const matching = await readMatchingProfile({
     userDataPath: profile,
     workspaceRoot: options.workspaceRoot ?? process.cwd(),
-    runner
+    runner,
+    ...(options.home === undefined ? {} : { home: options.home })
   });
   return { ...matching, rest };
 }

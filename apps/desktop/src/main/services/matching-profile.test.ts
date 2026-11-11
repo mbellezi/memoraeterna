@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { isMeasurementProfilePath } from "./profile-reset.js";
 import {
+  defaultUserDataPath,
   isScratchProfilePath,
   MatchingProfileError,
   notScratchProfileCode,
@@ -75,6 +76,40 @@ describe("scratch profile path", () => {
     // A path that climbs out with `..` resolves outside too.
     const climbing = join(workspace, ".cache", "f5", "scratch", "..", "..", "..");
     expect(await isScratchProfilePath(climbing, workspace)).toBe(false);
+  });
+
+  it("refuses a scratch root that is a link leaving .cache, and what lies behind it (D26)", async () => {
+    const behind = await folder(outside, "elsewhere", "env-f");
+    await folder(workspace, ".cache", "f5");
+    await folder(workspace, ".cache", "f6", "scratch", "ok");
+    await symlink(join(outside, "elsewhere"), join(workspace, ".cache", "profiles"));
+    await symlink(join(outside, "elsewhere"), join(workspace, ".cache", "f5", "scratch"));
+    for (const path of [
+      join(workspace, ".cache", "profiles", "env-f"),
+      join(workspace, ".cache", "f5", "scratch", "env-f"),
+      behind
+    ])
+      expect(await isScratchProfilePath(path, workspace)).toBe(false);
+    // A real root beside the links still works.
+    expect(
+      await isScratchProfilePath(join(workspace, ".cache", "f6", "scratch", "ok"), workspace)
+    ).toBe(true);
+  });
+
+  it("refuses the default userData even when a scratch root links to it", async () => {
+    const home = await folder(outside, "home");
+    const defaultData = await folder(defaultUserDataPath(home));
+    await folder(workspace, ".cache", "f5");
+    await symlink(
+      join(home, "Library", "Application Support", "@app"),
+      join(workspace, ".cache", "f5", "scratch")
+    );
+    const viaLink = join(workspace, ".cache", "f5", "scratch", "desktop");
+    for (const userDataPath of [viaLink, defaultData])
+      await expect(
+        readMatchingProfile({ userDataPath, workspaceRoot: workspace, runner: "pilot", home })
+      ).rejects.toBeInstanceOf(MatchingProfileError);
+    expect(await readdir(defaultData)).toEqual([]);
   });
 
   it("refuses the default userData path and a relative path", async () => {
