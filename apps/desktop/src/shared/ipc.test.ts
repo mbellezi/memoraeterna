@@ -495,6 +495,12 @@ describe("desktop IPC contracts", () => {
   it("registers the objects.locate and objects.neighborhood channels", () => {
     expect(ipcChannels.objectsLocate).toBe("app:objects:locate");
     expect(ipcChannels.objectsNeighborhood).toBe("app:objects:neighborhood");
+    // The objects and questions areas (F5 T170) join the table under their own channel names.
+    expect(ipcChannels.objectsGet).toBe("app:objects:get");
+    expect(ipcChannels.objectsResolveMany).toBe("app:objects:resolve-many");
+    expect(ipcChannels.objectsBacklinks).toBe("app:objects:backlinks");
+    expect(ipcChannels.questionsAsk).toBe("app:questions:ask");
+    expect(ipcChannels.questionsCancel).toBe("app:questions:cancel");
     expect(new Set(Object.values(ipcChannels)).size).toBe(Object.values(ipcChannels).length);
   });
 

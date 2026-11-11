@@ -43,6 +43,8 @@ import { WikiService } from "./services/wiki-service.js";
 import { registerWikiIpc } from "./services/wiki-ipc.js";
 import { registerObjectsIpc } from "./services/objects-ipc.js";
 import { ObjectsService } from "./services/objects-service.js";
+import { registerQuestionsIpc } from "./services/questions-ipc.js";
+import { QuestionsService } from "./services/questions-service.js";
 import { registerNotePageIpc } from "./services/note-page-ipc.js";
 import { NotePageService } from "./services/note-page-service.js";
 import { registerRelationExplanationIpc } from "./services/relation-explanation-ipc.js";
@@ -85,7 +87,12 @@ import { IngestionService } from "./services/ingestion-service.js";
 import { HierarchicalIngestionService } from "./services/hierarchical-ingestion-service.js";
 import { createJobEmbeddingGenerators } from "./services/job-embedding.js";
 import { JobSupervisor } from "./services/job-supervisor.js";
-import { AppEventBus, budgetEventPublisher, changeSetEventHooks } from "./services/app-events.js";
+import {
+  AppEventBus,
+  appEventPort,
+  budgetEventPublisher,
+  changeSetEventHooks
+} from "./services/app-events.js";
 import { connectJobProgress, type JobProgressPublisher } from "./services/job-progress.js";
 import {
   createBackgroundPolicy,
@@ -203,6 +210,12 @@ function createMainWindow(): BrowserWindow {
     void shell.openExternal(url);
     return { action: "deny" };
   });
+
+  // A window that has just loaded learns the sticky states (database, loaded models, Gardener) at
+  // once, and not at the next change (F5 D16).
+  mainWindow.webContents.on("did-finish-load", () =>
+    appEvents?.replaySticky(mainWindow.webContents)
+  );
 
   mainWindow.webContents.on("preload-error", (_event, preloadPath, error) => {
     console.error(`Preload failed: ${preloadPath}: ${error.message}`);
@@ -372,6 +385,9 @@ void app.whenReady().then(() => {
     onError: (error) => console.error(error instanceof Error ? error.message : String(error))
   });
   appEvents = events;
+  // Services without the bus in hand publish through the port (F5 D16): what they published
+  // before this point, the sticky states, reaches the bus now.
+  appEventPort.attach(events);
   // The RemoteBudget in the background policy (F4 D7, D14): the claim leaves out a background kind
   // whose route the budget refuses now, and the budget's changes re-gate the rows it held. Both read
   // the budget and the AI routes, which exist below; the gate answers only after its first read.
@@ -462,6 +478,8 @@ void app.whenReady().then(() => {
       const payload = localEmbeddingLoadStatusSchema.parse(status);
       // A model loading into memory is a wait the Activity explains (F4 D27).
       gardenerStatus?.noteEmbeddingLoad(payload.state);
+      // The same state on the bus, sticky per model, so a window that loads later learns it (F5 D16).
+      events.publish({ type: "model.loading", modelId: payload.modelId, state: payload.state });
       for (const contents of webContents.getAllWebContents()) {
         if (!contents.isDestroyed()) contents.send(ipcChannels.aiLocalEmbeddingLoadStatus, payload);
       }
@@ -728,6 +746,16 @@ void app.whenReady().then(() => {
     logger: console
   });
   registerConsultationIpc(ipcMain, consultationService, events);
+  // Ask with a stored Question (F5 D14): the answer travels on the bus through the port.
+  registerQuestionsIpc(
+    ipcMain,
+    new QuestionsService({
+      getPool: () => databaseService?.getPool() ?? null,
+      consultation: consultationService,
+      contentLanguage: async () => (await settingsService!.getApp()).contentLanguage,
+      logger: console
+    })
+  );
   registerBudgetIpc(
     ipcMain,
     remoteBudget!,
@@ -912,6 +940,8 @@ void app.whenReady().then(() => {
       onChanged: () => {
         for (const contents of webContents.getAllWebContents())
           if (!contents.isDestroyed()) contents.send(ipcChannels.viewHistoryChanged);
+        // The old channel keeps sending until the consumers move (T125); the bus event is the new one.
+        events.publish({ type: "view.changed" });
       }
     })
   );
@@ -1539,6 +1569,7 @@ function shutdownSteps(): ShutdownStep[] {
         jobProgress = null;
         appEvents?.dispose();
         appEvents = null;
+        appEventPort.detach();
       }
     },
     {

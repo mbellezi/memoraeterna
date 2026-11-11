@@ -112,6 +112,8 @@ import {
 } from "../shared/monitoring.js";
 import { z } from "zod";
 import { contextBridge, ipcRenderer } from "electron";
+import { createObjectsApi } from "./objects-api.js";
+import { createQuestionsApi } from "./questions-api.js";
 import type {
   AiProfileCreate,
   AiProfileUpdate,
@@ -309,7 +311,9 @@ const api: DesktopApi = {
         await ipcRenderer.invoke(ipcChannels.promptCommand, PromptCommandSchema.parse(input))
       )
   },
+  questions: createQuestionsApi((channel, ...args) => ipcRenderer.invoke(channel, ...args)),
   objects: {
+    ...createObjectsApi(ipcRenderer),
     locate: async (input) =>
       ObjectLocateResultSchema.nullable().parse(
         await ipcRenderer.invoke(ipcChannels.objectsLocate, ObjectLocateInputSchema.parse(input))

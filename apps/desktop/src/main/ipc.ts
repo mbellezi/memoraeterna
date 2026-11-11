@@ -16,6 +16,7 @@ import {
   obsidianWikiRetiredMoveSchema
 } from "../shared/ipc.js";
 import { RelationsChangedEventSchema } from "../shared/ipc.js";
+import { appEventPort } from "./services/app-events.js";
 import type { MonitoringService } from "./services/monitoring-service.js";
 import { monitoringQuerySchema, monitoringPruneSchema } from "../shared/monitoring.js";
 import { randomUUID } from "node:crypto";
@@ -323,14 +324,17 @@ export function registerIpcHandlers(
     const path = await chooseImportFile();
     if (!path) return null;
     const report = (progress: Omit<FileImportProgress, "requestId">) => {
+      const parsed = fileImportProgressSchema.parse({ requestId, ...progress });
+      // The bus carries it to the windows (F5 D16); one file per request, so the index is 0. The old
+      // channel below keeps sending until the Import consumers move (T125).
+      appEventPort.publish({
+        type: "import.progress",
+        runId: requestId,
+        fileIndex: 0,
+        fraction: parsed.progress
+      });
       if (event.sender.isDestroyed()) return;
-      event.sender.send(
-        ipcChannels.ingestionFileProgress,
-        fileImportProgressSchema.parse({
-          requestId,
-          ...progress
-        })
-      );
+      event.sender.send(ipcChannels.ingestionFileProgress, parsed);
     };
     return ingestionService.prepareFileMetadata(path, input.sourceType, report);
   });

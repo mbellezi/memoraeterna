@@ -37,6 +37,8 @@ import type { OnboardingFinishInput, OnboardingState } from "@app/domain";
 import type { ObsidianDeepLink } from "./obsidian-deep-link.js";
 import type { AppMenuCommand } from "./app-menu.js";
 import type { AppEventHandler, AppEventType } from "./app-events.js";
+import { objectsIpcChannels, type ObjectsApi } from "./ipc-objects.js";
+import { questionsChannels, type QuestionsApi } from "./ipc-questions.js";
 import type {
   ViewHistoryEntry,
   ViewHistoryListInput,
@@ -157,6 +159,11 @@ export const ipcChannels = {
   wikiSearch: "app:wiki:search",
   objectsLocate: "app:objects:locate",
   objectsNeighborhood: "app:objects:neighborhood",
+  /** The objects area (`ipc-objects.ts`, F5 D30): get, resolveMany and backlinks. */
+  ...objectsIpcChannels,
+  /** The questions area (`ipc-questions.ts`, F5 D30): `app:questions:*`, named by area here. */
+  questionsAsk: questionsChannels.ask,
+  questionsCancel: questionsChannels.cancel,
   notesPage: "app:notes:page",
   notesRelations: "app:notes:relations",
   relationsExplain: "app:relations:explain",
@@ -1928,7 +1935,9 @@ export interface DesktopApi {
     profile: (input?: HardwareProfileInput) => Promise<HardwareProfileResult>;
   };
   prompts: { command: (input: PromptCommand) => Promise<unknown> };
-  objects: {
+  /** Ask with a stored Question (F5 D14): asking and canceling; the answer arrives as events. */
+  questions: QuestionsApi;
+  objects: ObjectsApi & {
     /** Where an object is (primary path, other placements, citations); null when it does not exist. */
     locate: (input: ObjectLocateInput) => Promise<ObjectLocateResult | null>;
     /**

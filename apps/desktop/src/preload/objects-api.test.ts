@@ -21,7 +21,10 @@ describe("objects area channels", () => {
       objectsResolveMany: "app:objects:resolve-many",
       objectsBacklinks: "app:objects:backlinks"
     });
-    const all = [...Object.values(ipcChannels), ...Object.values(objectsIpcChannels)];
+    // `ipcChannels` holds the area's channels (F5 T170): each once, and no value twice.
+    const all = Object.values(ipcChannels);
+    for (const channel of Object.values(objectsIpcChannels))
+      expect(all.filter((value) => value === channel)).toHaveLength(1);
     expect(new Set(all).size).toBe(all.length);
   });
 });
