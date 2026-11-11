@@ -792,7 +792,9 @@ Wave 2 (tasks, status, harnesses; C1 and C2; gate S at the end):
 - [ ] T85 AUDIT extensions: duplicates, broken links, stale embeddings, rolling re-placement, theme drift.
 - [x] T86 Status service and sentence.
 - [ ] T87 Entity identity grouped per source and raw-batch checkpoints (C1, X7 ≤40).
-- [ ] T88 Batched source judge and two neighbours (C2, S1 and X3).
+- [ ] T88 Batched source judge and two neighbours (C2): C2 missed its microbenchmark (LIB2 10 of 27 accepted, bar
+      ≥12), so D21's registered fallback applies: one neighbour, the judge per pair (`perPair`); S1 and X3 at two
+      neighbours not run.
 - [x] T89 The 7-day soak harness (real Codex writer knob, token cap, zero-token faults, ground truth).
 - [ ] T90 First-run Hybrid e2e harness and the live clean-install record (E6).
 - [ ] T91 Gate S, 5 h pre-soak with calibration (the orchestrator).
