@@ -242,7 +242,7 @@
       },
       "suggestion": {
         "title": "Uma conexão sugerida espera sua confirmação",
-        "body": "Foi sugerida uma conexão entre “{first}” e “{second}”: {confidence}. Mantenha-a para que conte como decisão sua ou remova-a.",
+        "body": "Foi sugerida uma conexão entre “{first}” e “{second}”: {confidence}. Mantenha a conexão para que conte como decisão sua ou remova a conexão.",
         "hint": "Nada é apagado: só a conexão muda. Se você a remover, ela não volta a ser sugerida."
       },
       "withdrawn": {

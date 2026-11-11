@@ -11,11 +11,11 @@ const t = screenTranslator();
 const noop = () => undefined;
 
 /**
- * One item of every kind, the first a reviewed topic overview with its change-set diff, and a
- * second suggestion whose decider wrote no probability (D33: "unknown confidence", no number).
+ * The suggestions come first so the capture selects one: a medium one at 64% and one whose decider
+ * wrote no probability (D33: "unknown confidence", no number); then one item of every other kind.
  */
 const items: InboxItem[] = [
-  ...inboxKinds.map((kind) => item(kind)),
+  item("suggestion"),
   item("suggestion", {
     id: uuid(83),
     params: { relationType: "extends", probability: null },
@@ -23,7 +23,8 @@ const items: InboxItem[] = [
       { kind: "note", id: uuid(84), title: "Magnesium and sleep depth" },
       { kind: "note", id: uuid(85), title: "Evening routines" }
     ]
-  })
+  }),
+  ...inboxKinds.filter((kind) => kind !== "suggestion").map((kind) => item(kind))
 ];
 
 const list =
