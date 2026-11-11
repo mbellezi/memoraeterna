@@ -63,6 +63,7 @@ import type {
 
 import { readPublicHtml, youtubeIdFromUrl, type ExternalPageFetch } from "./source-url-preview.js";
 import { AssetStorageService, type StoredAsset } from "./asset-storage-service.js";
+import { publishObjectKindChanged } from "./object-events.js";
 import { YouTubeService } from "./youtube-service.js";
 import {
   HierarchicalIngestionService,
@@ -195,7 +196,10 @@ export class IngestionService {
   }
 
   public async editSource(input: SourceEditInput, transaction?: PgClient) {
-    return new SourceEditorialService(this.requirePool()).save(input, transaction);
+    const saved = await new SourceEditorialService(this.requirePool()).save(input, transaction);
+    // With the caller's transaction the commit is the caller's, and so is the announcement.
+    if (!transaction) publishObjectKindChanged("source", [input.sourceItemId], "updated");
+    return saved;
   }
 
   public async createManual(input: ManualIngestionInput): Promise<IngestionResult> {
@@ -264,6 +268,11 @@ export class IngestionService {
       await this.attachDescriptorCover(transaction, item.id, descriptor);
       return item;
     });
+    publishObjectKindChanged(
+      "source",
+      [sourceItem.id],
+      duplicate && input.duplicatePolicy === "update" ? "updated" : "created"
+    );
     return containerResult(sourceItem.id, Boolean(duplicate));
   }
 
@@ -711,6 +720,7 @@ export class IngestionService {
       throw error;
     }
     const { sourceItem, document, structure, edited: editedDuplicate } = persisted;
+    publishObjectKindChanged("source", [sourceItem.id], updating ? "updated" : "created");
 
     if (structure) {
       return {

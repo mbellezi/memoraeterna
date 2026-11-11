@@ -8,6 +8,7 @@ import {
   type PgPool
 } from "@app/db";
 import type { StorageSettings } from "../../shared/ipc.js";
+import { publishObjectsChanged, objectRefs } from "./object-events.js";
 import { parseManagedMarkdown } from "./obsidian-projection.js";
 import type { TopicChangeHooks } from "./topic-tree/topic-hooks.js";
 
@@ -299,6 +300,12 @@ export class SourceDeletionService {
       // dirty (D32): the repair jobs exist exactly when the deletion commits.
       await this.options.topicHooks?.itemsRemoved({ client });
       await client.query("commit");
+      // After the commit only: the windows read the sources, the notes and the entities that went.
+      publishObjectsChanged([
+        ...objectRefs("source", sourceItemIds, "deleted"),
+        ...objectRefs("note", atomicNoteIds, "deleted"),
+        ...objectRefs("entity", deletedEntityIds, "deleted")
+      ]);
 
       const graphCleanupFailed = await this.removeGraphProjections(
         pool,

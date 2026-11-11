@@ -4,6 +4,8 @@
 import { TopicsChangedEventSchema, topicLimits } from "@app/domain";
 import type { z } from "zod";
 
+import { publishObjectKindChanged, publishObjectKindsOverflow } from "../object-events.js";
+
 export type TopicsChangedEvent = z.output<typeof TopicsChangedEventSchema>;
 
 export interface TopicChange {
@@ -58,6 +60,10 @@ export class TopicChangeCoalescer {
       pending.topicIds = null;
     }
     pending.changeSetIds.add(change.changeSetId);
+    // The workspace's `object.changed` (F5 D16): the bus folds what arrives within its own window,
+    // and a change too broad to list says only that topics changed.
+    if (change.topicIds === null) publishObjectKindsOverflow(["topic"]);
+    else publishObjectKindChanged("topic", change.topicIds, "updated");
     this.timer ??= setTimeout(() => this.flush(), this.options.delayMs ?? topicsChangedCoalesceMs);
   }
 

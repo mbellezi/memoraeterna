@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   identityGroupFor,
   promptDefinition,
@@ -10,6 +10,7 @@ import type { PgPool } from "@app/db";
 
 import type { DefaultAiTaskResult } from "./ai-service.js";
 import { createEntityIdentityResolver } from "./entity-identity-resolution.js";
+import { captureObjectEvents, type ObjectEventCapture } from "./object-events-fixture.js";
 import { changedPromptIdentity } from "./prompt-runtime.js";
 import {
   createRelationTypeResolver,
@@ -671,6 +672,68 @@ describe("entity identity grouped per source (F4 D20)", () => {
       resolved[0]!.entities[0]!.canonicalEntityId
     );
     expect(resolved[2]!.entities[0]!.canonicalEntityId).toBe(stored);
+  });
+});
+
+describe("entity identity announces its commits (F5 T114)", () => {
+  let capture: ObjectEventCapture;
+  beforeEach(() => {
+    capture = captureObjectEvents();
+  });
+  afterEach(() => capture.stop());
+
+  it("announces a created entity and an existing one that gained aliases, after the group commits", async () => {
+    storePeople(1);
+    // Person 0 has a stored candidate and the model confirms it; Person 7 has none.
+    const ai = writer((row) => row[3][0] ?? null);
+    const resolved = await createEntityIdentityResolver({
+      ...base,
+      ai,
+      settings: settings(),
+      group: { maxRows: 24, maxCharacters: 24_000 }
+    })([
+      {
+        entities: [person("e1", "Person 0", 0), person("e2", "Person 7", 0)],
+        relations: []
+      }
+    ]);
+    const [existing, created] = resolved[0]!.entities.map((entity) => entity.canonicalEntityId!);
+    expect(existing).toBe("00000000-0000-4000-8000-200000000000");
+    expect(capture.refs()).toEqual([
+      { kind: "entity", id: existing, change: "updated" },
+      { kind: "entity", id: created, change: "created" }
+    ]);
+  });
+
+  it("announces nothing when the catalog moved under the group and the commit was refused", async () => {
+    // The resolver tries a group three times before it gives up on a moving catalog.
+    fake.entities.commit.mockResolvedValueOnce(null).mockResolvedValueOnce(null);
+    fake.entities.commit.mockResolvedValueOnce(null);
+    await expect(
+      createEntityIdentityResolver({
+        ...base,
+        ai: writer(),
+        settings: settings(),
+        group: { maxRows: 24, maxCharacters: 24_000 }
+      })(people(2, 1))
+    ).rejects.toThrow("errors.entityIdentity.catalogChanged");
+    expect(capture.events).toEqual([]);
+  });
+
+  it("announces nothing for a group that did not commit because a provider call failed", async () => {
+    storePeople(2);
+    await expect(
+      createEntityIdentityResolver({
+        ...base,
+        ai: writer(
+          () => null,
+          () => true
+        ),
+        settings: settings(),
+        group: { maxRows: 24, maxCharacters: 24_000 }
+      })(people(2, 1))
+    ).rejects.toThrow("provider_unavailable");
+    expect(capture.events).toEqual([]);
   });
 });
 

@@ -1,8 +1,9 @@
 import { createHash } from "node:crypto";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PgPool } from "@app/db";
 import type { AiService } from "./ai-service.js";
 import { KnowledgeService } from "./knowledge-service.js";
+import { captureObjectEvents, type ObjectEventCapture } from "./object-events-fixture.js";
 import { renderPrompt } from "./prompt-runtime.js";
 import type { TopicChangeHooks } from "./topic-tree/topic-hooks.js";
 
@@ -15,7 +16,7 @@ const mocks = vi.hoisted(() => ({
     createKnowledgeGeneration: vi.fn(),
     completeKnowledgeGeneration: vi.fn()
   },
-  notes: { upsertGenerated: vi.fn() },
+  notes: { upsertGenerated: vi.fn(), review: vi.fn() },
   embedding: { findCurrentNoteVectors: vi.fn(), upsert: vi.fn() },
   run: vi.fn(),
   embedMany: vi.fn()
@@ -335,5 +336,80 @@ describe("handing embedded notes to the topic tree", () => {
     const hooks = topicHooks();
     await service(undefined, hooks).generateAtomicNotes(sourceId, documentId);
     expect(hooks.notesChanged).not.toHaveBeenCalled();
+  });
+});
+
+describe("announcing notes to the windows (F5 T114)", () => {
+  let capture: ObjectEventCapture;
+  beforeEach(() => {
+    capture = captureObjectEvents();
+  });
+  afterEach(() => capture.stop());
+
+  it("announces the notes it stored as created, and the ones a regeneration rewrote as updated", async () => {
+    const before = new Date("2026-01-01T00:00:00Z");
+    const after = new Date("2026-01-02T00:00:00Z");
+    let made = 0;
+    mocks.notes.upsertGenerated.mockImplementation(async (input) => {
+      made += 1;
+      return {
+        id: `note-${made}`,
+        title: input.title,
+        metadata: {},
+        status: "active",
+        createdAt: before,
+        // The first note was already there: its row was updated in place.
+        updatedAt: made === 1 ? after : before
+      };
+    });
+    await service().generateAtomicNotes(sourceId, documentId);
+    expect(capture.refs()).toEqual([
+      { kind: "note", id: "note-1", change: "updated" },
+      { kind: "note", id: "note-2", change: "created" }
+    ]);
+  });
+
+  it("announces nothing when the generation failed before any note was stored", async () => {
+    mocks.run.mockRejectedValue(new Error("provider_unavailable"));
+    await expect(service().generateAtomicNotes(sourceId, documentId)).rejects.toThrow(
+      "provider_unavailable"
+    );
+    expect(capture.events).toEqual([]);
+  });
+
+  it("announces the notes stored before a later one failed, each was committed on its own", async () => {
+    let made = 0;
+    mocks.notes.upsertGenerated.mockImplementation(async (input) => {
+      if ((made += 1) === 2) throw new Error("database_unavailable");
+      return { id: "note-1", title: input.title, metadata: {}, status: "active" };
+    });
+    await expect(service().generateAtomicNotes(sourceId, documentId)).rejects.toThrow(
+      "database_unavailable"
+    );
+    expect(capture.refs()).toEqual([{ kind: "note", id: "note-1", change: "created" }]);
+  });
+
+  it("announces a reviewed note, and nothing for a note that is gone", async () => {
+    mocks.notes.review.mockResolvedValueOnce({
+      id: "note-9",
+      title: "T",
+      ideaStatement: "I",
+      bodyMarkdown: "B",
+      metadata: {},
+      status: "approved",
+      createdFromSourceItemId: sourceId,
+      createdAt: new Date(0),
+      updatedAt: new Date(1)
+    });
+    await service().reviewNote({ id: "note-9", action: "approve" });
+    expect(capture.refs()).toEqual([{ kind: "note", id: "note-9", change: "updated" }]);
+    capture.clear();
+    mocks.notes.review.mockResolvedValueOnce(null);
+    await service().reviewNote({ id: "note-9", action: "discard" });
+    mocks.notes.review.mockRejectedValueOnce(new Error("sourceWorkspace.conflict"));
+    await expect(service().reviewNote({ id: "note-9", action: "edit" })).rejects.toThrow(
+      "sourceWorkspace.conflict"
+    );
+    expect(capture.events).toEqual([]);
   });
 });

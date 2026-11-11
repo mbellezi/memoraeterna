@@ -90,6 +90,7 @@ import {
 } from "./catalog-header-refresh.js";
 import { catalogHeaderConfig } from "./catalog-header-policy.js";
 import type { KnowledgeService } from "./knowledge-service.js";
+import { publishObjectKindChanged } from "./object-events.js";
 import type { ObsidianSyncService } from "./obsidian-sync-service.js";
 import type { TopicChangeHooks } from "./topic-tree/topic-hooks.js";
 import { logStructuredError } from "./structured-logging.js";
@@ -487,8 +488,14 @@ export class JobSupervisor {
           cap: () => this.relationsConfig.ai.maxBackgroundCallsPerDay
         }),
       config: this.relationsConfig,
-      relationsChanged: (noteIds) => this.relationsChanged.changed(noteIds),
+      relationsChanged: (noteIds) => this.noteRelationsChanged(noteIds),
       runsSettled: async (runs) => {
+        // A run that waited for its link job ended with it: its source reads its final state.
+        publishObjectKindChanged(
+          "source",
+          runs.flatMap((run) => (run.sourceItemId ? [run.sourceItemId] : [])),
+          "updated"
+        );
         const hierarchy = createHierarchicalIngestionRepository(this.requirePool());
         for (const batchId of new Set(runs.flatMap((run) => (run.batchId ? [run.batchId] : []))))
           await hierarchy.refreshBatch(batchId);
@@ -515,7 +522,18 @@ export class JobSupervisor {
    * review): they join the same coalesced push, so open pages read their relations once per burst.
    */
   public announceRelationsChanged(noteIds: Iterable<string>): void {
-    this.relationsChanged.changed(noteIds);
+    this.noteRelationsChanged(noteIds);
+  }
+
+  /**
+   * The one place notes whose relations a commit changed are announced (link jobs, the owner's
+   * review, a veto from an explanation, an undo): to the old push, and to the windows as
+   * `object.changed` with `relations`. Callers invoke it only after the commit.
+   */
+  private noteRelationsChanged(noteIds: Iterable<string>): void {
+    const ids = [...noteIds];
+    this.relationsChanged.changed(ids);
+    publishObjectKindChanged("note", ids, "relations");
   }
 
   public async start(): Promise<void> {
@@ -664,6 +682,9 @@ export class JobSupervisor {
         } else {
           await runs.fail(job.payload.ingestionRunId, normalizeWorkerError(error));
         }
+        // The run ended: its source reads its state again.
+        const failedSource = optionalString(job.payload.sourceItemId);
+        if (failedSource) publishObjectKindChanged("source", [failedSource], "updated");
       }
       const updated = await repository.update(
         job.id,
@@ -1744,7 +1765,10 @@ export class JobSupervisor {
         interactive: priority === "P1"
       });
       this.wakeLoops("light");
-    } else await runs.complete(ingestionRunId);
+    } else {
+      await runs.complete(ingestionRunId);
+      publishObjectKindChanged("source", [sourceItemId], "updated");
+    }
     // A summary written while this catalog run was working is followed once it has ended (T53h).
     if (catalogMetadataOnly) await this.followSummaries([sourceItemId]);
     this.notify();

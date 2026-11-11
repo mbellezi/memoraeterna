@@ -15,6 +15,7 @@ import {
   type RelationTypeVector
 } from "@app/db";
 import type { AiService, AiTaskLogContext } from "./ai-service.js";
+import { publishObjectsChanged } from "./object-events.js";
 import { createCanonicalEmbedder } from "./canonical-embedding.js";
 import {
   aliasCandidates,
@@ -276,7 +277,18 @@ export function createEntityIdentityResolver(
         });
         options.signal?.throwIfAborted();
         const committed = await repository.commit(decisions, revision);
-        if (committed) outcome = { size, ids: idsOf(committed) };
+        if (committed) {
+          // The group is stored: a new canonical entity was created, an existing one gained aliases.
+          publishObjectsChanged(
+            decisions.flatMap((decision) => {
+              const id = committed.get(decision.key);
+              return id
+                ? [{ kind: "entity" as const, id, change: decision.target ? "updated" : "created" }]
+                : [];
+            })
+          );
+          outcome = { size, ids: idsOf(committed) };
+        }
       }
       if (!outcome)
         throw new Error(

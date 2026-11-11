@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { captureObjectEvents, type ObjectEventCapture } from "../object-events-fixture.js";
 import { TopicChangeCoalescer, topicsChangedCoalesceMs } from "./topic-changes.js";
 import type { TopicsChangedEvent } from "./topic-changes.js";
 
@@ -10,15 +11,18 @@ const treeB = uuid(2);
 describe("topicsChanged (D15)", () => {
   let events: TopicsChangedEvent[];
   let coalescer: TopicChangeCoalescer;
+  let capture: ObjectEventCapture;
 
   beforeEach(() => {
     vi.useFakeTimers();
+    capture = captureObjectEvents();
     events = [];
     coalescer = new TopicChangeCoalescer();
     coalescer.subscribe((event) => events.push(event));
   });
 
   afterEach(() => {
+    capture.stop();
     coalescer.dispose();
     vi.useRealTimers();
   });
@@ -37,6 +41,29 @@ describe("topicsChanged (D15)", () => {
     expect(events).toEqual([
       { treeId: treeA, generation: 5, topicIds: [uuid(11), uuid(12)], changeSetId: null }
     ]);
+  });
+
+  it("announces the topics of a committed change as updated objects, and a broad one as an overflow", () => {
+    coalescer.record({
+      treeId: treeA,
+      generation: 4,
+      topicIds: [uuid(11), uuid(12)],
+      changeSetId: null
+    });
+    expect(capture.refs()).toEqual([
+      { kind: "topic", id: uuid(11), change: "updated" },
+      { kind: "topic", id: uuid(12), change: "updated" }
+    ]);
+    capture.clear();
+    coalescer.record({ treeId: treeA, generation: 5, topicIds: null, changeSetId: null });
+    expect(capture.events).toEqual([{ type: "object.changed", overflow: true, kinds: ["topic"] }]);
+  });
+
+  it("announces nothing until a change is recorded", () => {
+    coalescer.record({ treeId: treeA, generation: 4, topicIds: [], changeSetId: null });
+    coalescer.flush();
+    vi.advanceTimersByTime(topicsChangedCoalesceMs);
+    expect(capture.events).toEqual([]);
   });
 
   it("names the change-set when exactly one was coalesced", () => {

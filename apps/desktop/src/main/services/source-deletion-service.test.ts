@@ -3,9 +3,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import type { QueryResult, QueryResultRow } from "pg";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PgPool } from "@app/db";
 
+import { captureObjectEvents, type ObjectEventCapture } from "./object-events-fixture.js";
 import { SourceDeletionService } from "./source-deletion-service.js";
 
 const rootSourceId = "11111111-1111-4111-8111-111111111111";
@@ -16,6 +17,12 @@ const noteId = "55555555-5555-4555-8555-555555555555";
 const chunkId = "66666666-6666-4666-8666-666666666666";
 
 describe("SourceDeletionService", () => {
+  let capture: ObjectEventCapture;
+  beforeEach(() => {
+    capture = captureObjectEvents();
+  });
+  afterEach(() => capture.stop());
+
   it("deletes a complete source tree and its owned application and Obsidian files", async () => {
     const root = await mkdtemp(join(tmpdir(), "memora-source-delete-"));
     const uploads = join(root, "uploads");
@@ -115,7 +122,28 @@ describe("SourceDeletionService", () => {
       ]
     ]);
     expect(pool.queries.at(-1)).toBe("commit");
+    // The commit announced every source of the tree, its notes and the entity that went with them.
+    expect(capture.refs()).toEqual([
+      { kind: "source", id: rootSourceId, change: "deleted" },
+      { kind: "source", id: childSourceId, change: "deleted" },
+      { kind: "source", id: sectionSourceId, change: "deleted" },
+      { kind: "note", id: noteId, change: "deleted" },
+      { kind: "entity", id: "ffffffff-ffff-4fff-8fff-ffffffffffff", change: "deleted" }
+    ]);
     await rm(root, { recursive: true, force: true });
+  });
+
+  it("publishes nothing when the deletion rolls back", async () => {
+    const pool = new DeletionPool();
+    pool.failOn = /^delete from entities/;
+    const service = new SourceDeletionService({
+      getPool: () => pool as unknown as PgPool,
+      getStorageSettings: async () => ({}) as never,
+      userDataPath: tmpdir()
+    });
+    await expect(service.delete(rootSourceId)).rejects.toThrow("simulated database failure");
+    expect(pool.queries.at(-1)).toBe("rollback");
+    expect(capture.events).toEqual([]);
   });
 
   it("repairs the topic tree in the deleting transaction, after the delete and before the commit", async () => {
@@ -172,12 +200,15 @@ describe("SourceDeletionService", () => {
     });
     await expect(service.delete(rootSourceId)).resolves.toMatchObject({ deletedSources: 0 });
     expect(itemsRemoved).not.toHaveBeenCalled();
+    expect(capture.events).toEqual([]);
   });
 });
 
 class DeletionPool {
   /** The source tree query finds nothing: the source is already gone. */
   noSources = false;
+  /** A statement that matches fails, as a database error would. */
+  failOn: RegExp | null = null;
   readonly queries: string[] = [];
   /** The parameters of each query, in the same order as `queries`. */
   readonly values: Array<readonly unknown[] | undefined> = [];
@@ -196,6 +227,7 @@ class DeletionPool {
     const normalized = text.trim();
     this.queries.push(normalized);
     this.values.push(values);
+    if (this.failOn?.test(normalized)) throw new Error("simulated database failure");
     let rows: QueryResultRow[] = [];
     if (normalized.startsWith("with recursive source_tree")) {
       rows = this.noSources

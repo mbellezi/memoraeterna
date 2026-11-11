@@ -54,6 +54,7 @@ import { changeSetRisk, defaultTopicTreeConfig } from "@app/domain/topic-tree";
 
 import { ActiveDeadline } from "@app/ai";
 import type { AiService, AiTaskLogContext } from "../ai-service.js";
+import { publishObjectKindChanged } from "../object-events.js";
 import { promptFingerprint } from "../prompt-runtime.js";
 import type { TopicAiMode } from "./topic-ai.js";
 import {
@@ -1036,6 +1037,8 @@ export class TopicOverviewService {
     call: OverviewCall,
     parent?: AbortSignal
   ): Promise<Promise<void> | null> {
+    // A version was just stored by every caller of this step: the topic's overview changed.
+    publishObjectKindChanged("topic", [topicId], "updated");
     if (!(await this.rankerReady())) return null;
     const sentences = overviewSentences(composed.content.paragraphs).filter(
       (sentence) => sentence.paragraph >= composed.previousParagraphs

@@ -7,6 +7,7 @@ import { atomicNoteEmbeddingText } from "./note-embedding-text.js";
 import { noteMatchingEmbeddingOperation } from "./ai-task-parameters.js";
 import { createEntityIdentityResolver } from "./entity-identity-resolution.js";
 import { isExtractionPinned } from "./extraction-pin.js";
+import { publishObjectKindChanged } from "./object-events.js";
 import {
   matchSources,
   promoteSourceRelations,
@@ -555,6 +556,8 @@ export class KnowledgeService {
     ideaStatement?: string | undefined;
   }) {
     const note = await createAtomicNoteRepository(this.requirePool()).review(input);
+    // The verdict is stored: an approved, edited or discarded note reads differently now.
+    if (note) publishObjectKindChanged("note", [note.id], "updated");
     // A discarded note leaves the topic tree; an edited one is placed again once its new vector
     // exists (the `note-embedding` job), which also asks MATCH to decide it once more. An approval
     // changes no vector and no decision, so MATCH only looks for a note it never matched (F4 D16).
@@ -672,6 +675,7 @@ export class KnowledgeService {
         summary: null,
         summaryGeneratedAt: null
       });
+      publishObjectKindChanged("source", [sourceItemId], "updated");
       return {
         configured: true,
         generated: false,
@@ -729,6 +733,7 @@ export class KnowledgeService {
       summary: summary.summary,
       summaryGeneratedAt: persisted.generatedAt
     });
+    publishObjectKindChanged("source", [sourceItemId], "updated");
     return {
       configured: true,
       generated: true,
@@ -1082,6 +1087,13 @@ export class KnowledgeService {
         });
         noteIds.push(note.id);
         persistedNotes.push(note);
+        // Each note is committed on its own, so each is announced as it is stored (the bus folds
+        // them); a regeneration rewrites the notes it made before, and those read "updated".
+        publishObjectKindChanged(
+          "note",
+          [note.id],
+          note.updatedAt > note.createdAt ? "updated" : "created"
+        );
       }
       await hierarchy.completeKnowledgeGeneration(generationId);
       // A note is embedded when it is created, so matching never meets a note without a vector.

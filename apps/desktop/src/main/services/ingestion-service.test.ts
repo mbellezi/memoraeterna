@@ -12,6 +12,8 @@ import {
 } from "@app/domain";
 
 import { HierarchicalIngestionService } from "./hierarchical-ingestion-service.js";
+import { SourceEditorialService } from "./source-editorial-service.js";
+import { captureObjectEvents, type ObjectEventCapture } from "./object-events-fixture.js";
 import { IngestionService, type IngestionServiceOptions } from "./ingestion-service.js";
 import { YouTubeService } from "./youtube-service.js";
 
@@ -628,10 +630,13 @@ class TransactionRecordingPool {
 
 describe("IngestionService atomic import persistence", () => {
   let directory: string;
+  let capture: ObjectEventCapture;
   beforeEach(async () => {
     directory = await mkdtemp(join(tmpdir(), "memora-atomic-import-"));
+    capture = captureObjectEvents();
   });
   afterEach(async () => {
+    capture.stop();
     vi.restoreAllMocks();
     await rm(directory, { recursive: true, force: true });
   });
@@ -703,6 +708,10 @@ describe("IngestionService atomic import persistence", () => {
     expect(pool.texts("pool").some((text) => text.includes("insert into"))).toBe(false);
     expect(await storedFiles()).toHaveLength(1);
     expect(process).toHaveBeenCalledOnce();
+    // The commit announced the new source; nothing was announced before it.
+    expect(capture.refs()).toEqual([
+      { kind: "source", id: "00000000-0000-4000-8000-000000000001", change: "created" }
+    ]);
   });
 
   it.each([
@@ -721,6 +730,7 @@ describe("IngestionService atomic import persistence", () => {
     expect(pool.texts("pool").some((text) => text.includes("insert into"))).toBe(false);
     expect(await storedFiles()).toEqual([]);
     expect(process).not.toHaveBeenCalled();
+    expect(capture.events).toEqual([]);
   });
 
   it("rolls back a hierarchical import when the structure draft fails after the asset rows", async () => {
@@ -738,6 +748,7 @@ describe("IngestionService atomic import persistence", () => {
     expect(transaction).not.toContain("commit");
     expect(await storedFiles()).toEqual([]);
     expect(process).not.toHaveBeenCalled();
+    expect(capture.events).toEqual([]);
   });
 
   it("keeps a stored file that another asset row already references", async () => {
@@ -784,5 +795,49 @@ describe("IngestionService atomic import persistence", () => {
     expect(transaction.some((text) => text.includes("insert into source_items"))).toBe(true);
     expect(transaction.at(-1)).toBe("rollback");
     expect(transaction).not.toContain("commit");
+    expect(capture.events).toEqual([]);
+  });
+
+  describe("editing a source", () => {
+    const sourceItemId = "00000000-0000-4000-8000-000000000001";
+    const input = { sourceItemId } as unknown as Parameters<IngestionService["editSource"]>[0];
+
+    it("announces the source once its own transaction committed", async () => {
+      vi.spyOn(SourceEditorialService.prototype, "save").mockResolvedValue({} as never);
+      const service = createService(new TransactionRecordingPool() as unknown as PgPool);
+
+      await service.editSource(input);
+
+      expect(capture.refs()).toEqual([{ kind: "source", id: sourceItemId, change: "updated" }]);
+    });
+
+    it("leaves the announcement to the caller whose transaction it joined, and to nobody on failure", async () => {
+      const save = vi
+        .spyOn(SourceEditorialService.prototype, "save")
+        .mockResolvedValueOnce({} as never)
+        .mockRejectedValueOnce(new Error("sourceWorkspace.conflict"));
+      const service = createService(new TransactionRecordingPool() as unknown as PgPool);
+
+      await service.editSource(input, {} as never);
+      await expect(service.editSource(input)).rejects.toThrow("sourceWorkspace.conflict");
+
+      expect(save).toHaveBeenCalledTimes(2);
+      expect(capture.events).toEqual([]);
+    });
+  });
+
+  it("announces a committed container source as created", async () => {
+    const pool = new TransactionRecordingPool();
+    const service = createService(pool as unknown as PgPool, { userDataPath: directory });
+
+    await service.createContainerSource({
+      descriptor: SourceDescriptorSchema.parse({ type: "Book", title: "Atomic book" }),
+      duplicatePolicy: "ignore"
+    });
+
+    expect(pool.texts("client-1").at(-1)).toBe("commit");
+    expect(capture.refs()).toEqual([
+      { kind: "source", id: "00000000-0000-4000-8000-000000000001", change: "created" }
+    ]);
   });
 });
