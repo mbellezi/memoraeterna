@@ -7,6 +7,7 @@ import { expect, type ElectronApplication, type Locator, type Page } from "@play
 
 import { captureStep, type MemoraSession } from "./app.js";
 import { readGestures } from "./gestures.js";
+import { pressShortcut } from "./shortcuts.js";
 
 /** The device-local layout key of the workspace (`R/workspace/persist.ts`, D8). */
 export const workspaceStorageKey = "memora.workspace.v1";
@@ -81,37 +82,6 @@ export async function expectStack(
 }
 
 /**
- * Presses `Meta+<key>` the way the person's keyboard does in the built app. Cmd-1..5, Cmd-K and the
- * other workspace accelerators belong to the native menu, which on macOS acts after the page has
- * seen the key, and a key that Playwright injects over the DevTools protocol never reaches the menu:
- * so the key reaches the page (a trusted keydown, counted as the gesture it is) and the menu item
- * that owns the accelerator is clicked in main, as the menu would on that key.
- */
-export async function pressMenuShortcut(
-  session: { electronApp: ElectronApplication; page: Page },
-  key: string
-): Promise<void> {
-  await session.page.keyboard.press(`Meta+${key}`);
-  const wanted = `CmdOrCtrl+${key.length === 1 ? key.toUpperCase() : key}`;
-  const found = await session.electronApp.evaluate(({ BrowserWindow, Menu }, accelerator) => {
-    const find = (items: Electron.MenuItem[]): Electron.MenuItem | null => {
-      for (const item of items) {
-        if (String(item.accelerator ?? "") === accelerator) return item;
-        const inner = item.submenu ? find(item.submenu.items) : null;
-        if (inner) return inner;
-      }
-      return null;
-    };
-    const item = find(Menu.getApplicationMenu()?.items ?? []);
-    if (!item) return false;
-    const window = BrowserWindow.getAllWindows()[0];
-    item.click({ triggeredByAccelerator: true } as never, window, window?.webContents);
-    return true;
-  }, wanted);
-  if (!found) throw new Error(`The application menu has no item for ${wanted}`);
-}
-
-/**
  * Shows the context panel (it starts hidden: Cmd-Shift-\ toggles it). From 1280 px it docks beside
  * the stack; below that it is a 40 px strip, and `open` also opens the strip's overlay.
  */
@@ -121,7 +91,7 @@ export async function showContextPanel(
 ): Promise<void> {
   const panel = session.page.locator('[data-surface="context-panel"]');
   const hidden = await panel.evaluate((node) => node.hasAttribute("hidden")).catch(() => true);
-  if (hidden) await pressMenuShortcut(session, "Shift+\\");
+  if (hidden) await pressShortcut(session, "Meta+Shift+\\");
   await expect(panel, "the context panel did not show").toBeVisible({ timeout: 15_000 });
   if (!options.open) return;
   const strip = panel.locator("button[aria-expanded]").first();

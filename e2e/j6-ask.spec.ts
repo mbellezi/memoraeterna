@@ -24,7 +24,8 @@ import { invokeApp, openClone, setContentSize, waitForDatabase } from "./support
 import { openProfileDb, type ProfileDb } from "./support/db.js";
 import { installGestureCounter } from "./support/gestures.js";
 import { journeysRun } from "./support/profile.js";
-import { expectStack, pressMenuShortcut, StepLog, surface } from "./support/workspace-steps.js";
+import { pressShortcut } from "./support/shortcuts.js";
+import { expectStack, StepLog, surface } from "./support/workspace-steps.js";
 
 const question = "How does what we remember fade as time passes after learning something new?";
 
@@ -106,7 +107,7 @@ test("J6 ask and jump to citation: the answer streams, the Question is stored fr
     );
 
     // The question is asked from Explore, where its panels stand.
-    await pressMenuShortcut(session, "2");
+    await pressShortcut(session, "Meta+2");
     await expect(
       page.locator('[data-surface="destination-explore"]:not([data-state="loading"])').first()
     ).toBeVisible({ timeout: 60_000 });
@@ -114,7 +115,7 @@ test("J6 ask and jump to citation: the answer streams, the Question is stored fr
     await watchParagraphs(page);
 
     // 1. Cmd-K, `? <question>`: the palette offers to ask it.
-    await pressMenuShortcut(session, "k");
+    await pressShortcut(session, "Meta+K");
     const palette = surface(page, "palette");
     await expect(palette, "Cmd-K opened no palette").toBeVisible({ timeout: 15_000 });
     await page.keyboard.type(`? ${question}`);
@@ -199,7 +200,7 @@ test("J6 ask and jump to citation: the answer streams, the Question is stored fr
     // 4. After a reload, Library > Questions lists the Question and its page shows the stored answer.
     await page.reload();
     await expect(surface(page, "shell").first()).toBeVisible({ timeout: 60_000 });
-    await pressMenuShortcut(session, "3");
+    await pressShortcut(session, "Meta+3");
     const library = surface(page, "destination-library");
     await expect(library, "the Library did not reach success").toHaveAttribute(
       "data-state",
