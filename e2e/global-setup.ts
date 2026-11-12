@@ -29,11 +29,14 @@ import {
   cassetteMisses,
   defaultCassette,
   firstRunModelIds,
+  firstRunRankerEnv,
+  firstRunRankerState,
   importGoldenSource,
   invokeApp,
   launchMemora,
   modelSeedDir,
   waitForDatabase,
+  type ListedLocalModel,
   type MemoraSession
 } from "./support/app.js";
 import {
@@ -54,7 +57,6 @@ import { acquireJourneySlots, busyLockPath, mainCheckoutRoot } from "./support/s
 
 const firstSourceKey = "plos-one-murre-dros-2015";
 const contentLanguage = "pt-BR";
-const firstRunRankerKey = "local-models.first-run-ranker";
 const classTests = ["embed", "write-fast", "write-quality", "answer", "judge"] as const;
 /** The capabilities Settings gives a Codex writer (`codexCapabilities` of the first-run harness). */
 const codexCapabilities = [
@@ -220,14 +222,11 @@ async function playFirstRun(session: MemoraSession, db: ProfileDb, writerModel: 
     tests.push({ route, state: test?.state ?? "untested" });
   }
   log(`class tests: ${tests.map((test) => `${test.route} ${test.state}`).join(", ")}`);
-  const ranker = await until("the first-run ranker", minutes(30), 3_000, async () => {
-    const [row] = await db.query<{ value: { state?: string } }>(
-      "select value from settings where key = $1",
-      [firstRunRankerKey]
-    );
-    const value = row?.value.state;
-    return value && value !== "requested" ? value : null;
-  });
+  // With a cassette on the app never asks for the ranker (`FirstRunRanker` is disabled, so its
+  // setting is never written); both setup launches install it from the seed folder instead.
+  const ranker = await until("the first-run ranker", minutes(30), 3_000, async () =>
+    firstRunRankerState(await invokeApp<ListedLocalModel[]>(page, "localModels.list"))
+  );
   if (ranker !== "ready") throw new Error(`The first-run ranker ended ${ranker}, not ready`);
   await invokeApp(page, "onboarding.finish", { outcome: "completed" });
   return { providerConfigId, tests, ranker };
@@ -258,7 +257,7 @@ async function buildBaseJ(run: JourneysRun): Promise<BaseJRecord> {
   log("both first-run models are seeded");
   await emptyProfile(base, run.repoRoot);
   const writerModel = await recordedWriterModel(run);
-  let session = await launchMemora({ run, userDataDir: base });
+  let session = await launchMemora({ run, userDataDir: base, env: firstRunRankerEnv() });
   let db: ProfileDb | null = null;
   try {
     await waitForDatabase(session.page, minutes(3));
@@ -271,7 +270,7 @@ async function buildBaseJ(run: JourneysRun): Promise<BaseJRecord> {
     db = null;
     await session.close();
     await cloneProfile(base, profileDir(run, "base-empty"), run.repoRoot);
-    session = await launchMemora({ run, userDataDir: base });
+    session = await launchMemora({ run, userDataDir: base, env: firstRunRankerEnv() });
     await waitForDatabase(session.page, minutes(3));
     db = await openProfileDb(base);
     await invokeApp(session.page, "knowledgeControls.update", { paused: false, autonomy: "auto" });

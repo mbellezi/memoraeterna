@@ -24,6 +24,7 @@ import {
   cassetteMisses,
   defaultCassette,
   firstRunModelIds,
+  firstRunRankerEnv,
   goldenSource,
   invokeApp,
   launchMemora,
@@ -264,7 +265,7 @@ test("J1 first run: onboarding, Home as the first-run surface, the first source 
   const session = await launchMemora({
     run,
     userDataDir,
-    env: { MEMORA_LOCAL_MODEL_INSTALL: firstRunModelIds().ranker }
+    env: firstRunRankerEnv()
   });
   const { page } = session;
   let db: ProfileDb | null = null;

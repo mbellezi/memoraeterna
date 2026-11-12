@@ -16,6 +16,8 @@ import {
   cassetteMisses,
   fakeRemotePlan,
   firstRunModelIds,
+  firstRunRankerEnv,
+  firstRunRankerState,
   journeyEnvironment,
   secondSourceKey
 } from "./app.js";
@@ -115,6 +117,31 @@ describe("the first-run models a journey installs", () => {
     } finally {
       await rm(seed, { recursive: true, force: true });
     }
+  });
+});
+
+describe("the first-run ranker a journey waits for", () => {
+  const { ranker } = firstRunModelIds();
+  const listed = (status: string, capabilities: string[] = [], lastError: string | null = null) => [
+    { catalogId: "other", status: "ready", capabilities: ["reranking"], lastError: null },
+    { catalogId: ranker, status, capabilities, lastError }
+  ];
+
+  it("is installed at launch by the DEV knob, because the cassette turns the app's own install off", () => {
+    expect(firstRunRankerEnv()).toEqual({ MEMORA_LOCAL_MODEL_INSTALL: ranker });
+  });
+
+  it("is ready only when installed and validated for reranking", () => {
+    expect(firstRunRankerState([])).toBeNull();
+    expect(firstRunRankerState(listed("installing"))).toBeNull();
+    expect(firstRunRankerState(listed("ready", ["embedding"]))).toBeNull();
+    expect(firstRunRankerState(listed("ready", ["reranking"]))).toBe("ready");
+  });
+
+  it("stops the wait with the install's error when it failed", () => {
+    expect(() => firstRunRankerState(listed("failed", [], "bad checksum"))).toThrow(
+      new RegExp(`${ranker} failed: bad checksum`, "u")
+    );
   });
 });
 

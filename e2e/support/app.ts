@@ -51,6 +51,35 @@ export function firstRunModelIds(
 }
 
 /**
+ * The environment that makes a launch install the first-run ranker from the seed folder. With a
+ * cassette on, the app disables `FirstRunRanker` (`enabled: aiCassette === null`), so it never asks
+ * for the ranker itself; the DEV knob `MEMORA_LOCAL_MODEL_INSTALL` installs it at start instead.
+ */
+export function firstRunRankerEnv(ranker = firstRunModelIds().ranker): Record<string, string> {
+  return { MEMORA_LOCAL_MODEL_INSTALL: ranker };
+}
+
+export interface ListedLocalModel {
+  catalogId: string;
+  status: string;
+  capabilities: readonly string[];
+  lastError: string | null;
+}
+
+/**
+ * Where the first-run ranker stands in `localModels.list`: `ready` once it is installed and validated
+ * for reranking, null while it is on its way, and a thrown error when its install failed.
+ */
+export function firstRunRankerState(
+  models: readonly ListedLocalModel[],
+  ranker = firstRunModelIds().ranker
+): "ready" | null {
+  const model = models.find((entry) => entry.catalogId === ranker);
+  if (model?.status === "failed") throw new Error(`${ranker} failed: ${model.lastError}`);
+  return model?.status === "ready" && model.capabilities.includes("reranking") ? "ready" : null;
+}
+
+/**
  * Refuses unless the seed folder holds every pinned file of each model at its declared size (the
  * install verifies the bytes). Without it the app's download would fetch what the seed lacks from
  * the model host: a journey never downloads a model.
