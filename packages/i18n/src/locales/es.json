@@ -5473,5 +5473,175 @@
       "sourceUnnamed": "esta fuente"
     },
     "untitledTopic": "Tema sin nombre"
+  },
+  "settingsShell": {
+    "classic": {
+      "open": "Abrir los ajustes antiguos"
+    },
+    "navChangedMany": "{count} ajustes cambiados",
+    "navChangedOne": "{count} ajuste cambiado",
+    "navFoot": "Cada ajuste muestra si cambió y cómo volver al valor predeterminado.",
+    "navHitsMany": "{count} resultados",
+    "navHitsOne": "{count} resultado",
+    "navLabel": "Secciones de los ajustes",
+    "row": {
+      "changed": "Cambiado",
+      "default": "Predeterminado:",
+      "defaultVaries": "Predeterminado: depende de este Mac y de las otras opciones",
+      "removeAsk": "¿Quitar de este Mac? Tendrías que volver a introducirlo.",
+      "removeConfirm": "Quitar",
+      "reset": "Restaurar predeterminado",
+      "resetFailed": "No se pudo restaurar. No se cambió nada.",
+      "resetPending": "Falta un paso que confirmas en la propia opción.",
+      "resetting": "Restaurando…",
+      "valueNone": "Sin definir",
+      "valueOff": "Desactivado",
+      "valueOn": "Activado",
+      "valueSet": "Definido"
+    },
+    "search": {
+      "clear": "Borrar la búsqueda",
+      "emptyBack": "y volver a {section}.",
+      "emptyBody": "Prueba con otra palabra, un sinónimo o el nombre en inglés. Por ejemplo:",
+      "emptyClear": "Borrar la búsqueda",
+      "emptyTitle": "Nada con “{query}” en los ajustes.",
+      "exampleBudget": "gastos",
+      "exampleDark": "oscuro",
+      "exampleObsidian": "Obsidian",
+      "examplePrivacy": "privacidad",
+      "help": "También encuentra sinónimos: “oscuro” lleva a Tema.",
+      "keysClear": "borra la búsqueda",
+      "keysMove": "recorren",
+      "keysOpen": "abre el mejor",
+      "label": "Buscar en los ajustes",
+      "placeholder": "Buscar: tema, gastos…",
+      "placeholderShort": "Buscar…",
+      "resultsMany": "{count} resultados para “{query}”",
+      "resultsOne": "1 resultado para “{query}”"
+    },
+    "section": {
+      "allDefault": "Todo está en su valor predeterminado en esta sección.",
+      "changedMany": "{count} ajustes cambiados",
+      "changedOne": "{count} ajuste cambiado",
+      "inSection": "en esta sección",
+      "listLabel": "Qué ajustes cambiaron",
+      "restoreAll": "Restaurar todos",
+      "restoreAskMany": "¿Restaurar {count} ajustes a su valor predeterminado?",
+      "restoreAskOne": "¿Restaurar {count} ajuste a su valor predeterminado?",
+      "restoreConfirm": "Restaurar",
+      "restoreFailedMany": "{count} no se pudieron restaurar y quedaron como estaban.",
+      "restoreFailedOne": "{count} no se pudo restaurar y quedó como estaba.",
+      "restoreSkippedMany": "{count} necesitan un paso tuyo y quedaron como estaban.",
+      "restoreSkippedOne": "{count} necesita un paso tuyo y quedó como estaba."
+    },
+    "sections": {
+      "advanced": {
+        "description": "Correspondencia, registros",
+        "name": "Avanzado y diagnóstico"
+      },
+      "ai": {
+        "description": "Configuración y modelos",
+        "name": "IA"
+      },
+      "general": {
+        "description": "Tema e idiomas",
+        "name": "General y apariencia"
+      },
+      "integrations": {
+        "description": "Obsidian, libros, navegador",
+        "name": "Integraciones"
+      },
+      "knowledge": {
+        "description": "Jardinero, árbol, conexiones",
+        "name": "Conocimiento"
+      },
+      "library": {
+        "description": "Copias, seguridad, importación",
+        "name": "Biblioteca y almacenamiento"
+      },
+      "privacy": {
+        "description": "Qué sale del Mac, borrar",
+        "name": "Privacidad y datos"
+      }
+    },
+    "states": {
+      "errorKept": "No se cambió nada: Memora sigue usando los valores que ya valían.",
+      "errorTitle": "No se pudieron leer los ajustes guardados."
+    },
+    "title": "Ajustes",
+    "words": {
+      "activeMatchingPresetId": "preajuste correspondencia calibrado equilibrado recomendado duplicar personalizado perfil umbrales valores predeterminados comparación configuraciones guardar mis",
+      "advancedCallLog": "registro llamadas de ia historial solicitudes modelo tokens tiempo latencia coste auditoría limpiar solo lectura ver todas",
+      "advancedPrompts": "prompts instrucciones sistema editar plantillas revisiones catálogo texto del prompt personalizar redacción versiones en uso activos",
+      "advancedSimilarityRuns": "ejecuciones depuración similitud limpiar borrar comparaciones registradas diagnósticos registros limpieza",
+      "advancedTaskHistory": "historial trabajos tareas terminadas fallos canceladas ejecuciones pasado actividad registro lista",
+      "aiDecisionsOpenaiPlatform": "clave openai platform api decisiones credencial secreto token",
+      "aiModels": "modelos locales descargar instalar gguf importar mlx catálogo hugging face probar predeterminado en este mac",
+      "aiPresetV1": "configuración modo local híbrido nube personalizado sin conexión sin internet ejecutar en este mac privado dónde corre la ia en el dispositivo",
+      "aiProfiles": "perfiles modelo parámetros temperatura tokens máximos razonamiento esfuerzo por perfil opciones avanzadas del modelo",
+      "aiProviderGoogle": "google gemini clave api proveedor nube modelo ai studio",
+      "aiProviderOpenaiCodex": "chatgpt codex suscripción plan iniciar sesión entrar conectar cuenta proveedor plus pro openai",
+      "aiProviderOpenaiCompatible": "compatible openai clave api dirección url servidor propio openrouter lm studio ollama proxy proveedor",
+      "aiRouteAnswer": "respuestas preguntas modelo conversación responder preguntar chat",
+      "aiRouteDecide": "clasificación clasificador reordenar decidir relaciones notas relacionadas puntuación juez modelo decisor",
+      "aiRouteEmbed": "embeddings vectores búsqueda modelo semejanza semántica similitud temas comparación índice",
+      "aiRouteJudge": "juez generativo decidir relaciones sin clasificador modelo de escritura fuentes relacionar decisor respaldo",
+      "aiRouteWriteFast": "escritura rápida modelo resúmenes nombres de temas explicaciones cortas barato pequeño redactor",
+      "aiRouteWriteQuality": "escritura cuidadosa calidad modelo notas entidades grafo de conocimiento mejor redactor grande",
+      "aiThisMac": "este mac ordenador equipo hardware chip memoria ram apple silicon configuración recomendada capacidad qué puede ejecutar especificaciones qué modelos caben",
+      "atomicNoteMatchingSettingsMaxRerankOutputTokens": "límite de salida por nota tokens reordenar longitud de la respuesta tope coste juzgar enlaces entre notas",
+      "bookLookup": "buscar datos libros internet metadatos isbn doi crossref google books portada autores título en línea detalles proveedor",
+      "canonicalMatchingSettingsConfirmationBatchSize": "identidades por confirmación lote tamaño solicitud grupo elementos llamada confirmar cantidad",
+      "canonicalMatchingSettingsConfirmationMaxCharacters": "tamaño de la confirmación caracteres límite máximo texto longitud por solicitud",
+      "canonicalMatchingSettingsEntityCandidateLimit": "candidatos por entidad límite cuántas entidades comparar máximo nombres parecidos",
+      "canonicalMatchingSettingsRelationTypeCandidateLimit": "candidatos por tipo de relación límite cuántos tipos comparar máximo",
+      "contentLanguage": "idioma lengua contenido notas resúmenes escritura traducción texto generado respuestas nombres de los temas",
+      "debugFullCapture": "captura completa prompts respuestas texto íntegro guardar en bruto registrar todo depuración sensible grabar soporte",
+      "debugMode": "depuración diagnósticos registro detallado rastreo solución de problemas investigar error log operaciones similitud modo de depuración soporte",
+      "entityIdentitySimilarityThreshold": "semejanza entidades identidad umbral corte fusionar entidades duplicadas misma persona lugar candidatos rigor parecidos nombres",
+      "graphWheelZoomSensitivity": "zoom grafo sensibilidad velocidad rueda del ratón desplazamiento trackpad mapa más rápido más lento escala pellizco",
+      "integrationsGateway": "apps emparejadas emparejamiento extensión chrome plugin obsidian conectar gateway local mcp token navegador clipper dispositivos otra aplicación",
+      "keepLocalEmbeddingModelsLoaded": "mantener modelo local búsqueda cargado memoria ram embedding precargar descargar más rápido liberar residente en memoria",
+      "knowledgeControlsV1Autonomy": "autonomía jardinero automatización apagado sugerir automático cuánto trabajar solo sin preguntar confirmar aprobar manual",
+      "knowledgeControlsV1MonthlyCapUsd": "límite mensual tope presupuesto gastos coste dinero dólares nube gasto máximo precio",
+      "knowledgeControlsV1OnlyIdle": "inactivo reposo solo cuando mac sin uso segundo plano esperar ausente batería cpu horario tranquilo ordenador",
+      "knowledgeControlsV1OnlyOnAc": "enchufado cargador corriente adaptador batería solo cargando portátil horario ahorrar conectado",
+      "knowledgeControlsV1Paused": "pausar jardinero detener trabajo en segundo plano automatización reanudar parar congelar desactivar",
+      "knowledgeControlsV1TreeShape": "forma árbol temas equilibrado amplio profundo plano organización estructura jerarquía profundidad estrecho",
+      "language": "idioma lengua de la app interfaz menús botones mensajes pantalla traducción",
+      "libraryBackup": "copia de seguridad restaurar exportar base de datos archivo guardar biblioteca verificar recuperar carpeta con fecha",
+      "libraryStorage": "almacenamiento base de datos dónde están los datos archivos carpeta ubicación disco tamaño espacio biblioteca ruta",
+      "localModelsRepositoryTokenRef": "token hugging face hf acceso repositorio privado modelos restringidos descargar credenciales",
+      "managedRoot": "carpeta raíz gestionada obsidian bóveda subcarpeta memora dónde se escriben archivos directorio nombre dentro",
+      "metadataGoogleBooks": "clave google books api metadatos credencial cuota límite libros",
+      "obsidianLayoutAttachments": "adjuntos copiar archivos originales pdf imágenes obsidian bóveda adjuntar solo texto binario",
+      "obsidianLayoutLanguage": "idioma carpetas bóveda nombres obsidian estructura organización archivos nombrados renombrar carpetas traducir disposición",
+      "obsidianSync": "sincronizar obsidian doble sentido activar desactivar pausar detener markdown notas exportar bóveda escribir biblioteca ediciones temporalmente",
+      "obsidianVaultPath": "bóveda obsidian carpeta ruta directorio elegir notas sincronizar ubicación markdown vault",
+      "obsidianWikiIncludeDescendants": "capítulos partes descendientes incluir hijos subfuentes obsidian wiki anidadas secciones",
+      "obsidianWikiScope": "wiki obsidian páginas fuentes alcance cuáles se convierten elegir límite publicar exportar subconjunto",
+      "privacyCallLog": "llamadas de ia registro recientes qué se envió modelos solicitudes proveedores tokens historial auditoría transparencia",
+      "privacyClearQuestions": "borrar preguntas respuestas historial conversaciones guardadas quitar chats limpiar",
+      "privacyClearViewHistory": "borrar recientes historial abiertos recientemente lista eliminar elementos recientes",
+      "privacyReset": "restablecer todo borrar datos de fábrica empezar de cero biblioteca limpiar peligro reiniciar",
+      "privacySummary": "privacidad qué sale de este mac datos enviados remoto nube proveedores externos red sin conexión solo local compartir",
+      "processingPresets": "planes de importación procesamiento preajustes guardados renombrar borrar plantillas opciones ajustes",
+      "relationLabels": "descripciones relaciones etiquetas conexiones texto regenerar reescribir faltantes idioma explicación",
+      "relationsDeciderMode": "quién decide relaciones entre notas modo decisor clasificador juez automático conexiones decisión cómo se deciden los enlaces",
+      "relationsDecisions": "openai decisions decisor remoto nube clasificador más barato preciso conexiones relaciones de pago activar servicio en línea",
+      "relationTypeSimilarityThreshold": "semejanza tipos de relación umbral corte fusionar tipos duplicados candidatos rigor puntuación parecidos nombres",
+      "sourceRelationSettingsEvidenceChunksPerSource": "pasajes de evidencia por fuente par citas cuántos pasajes citar comparar libros contexto",
+      "sourceRelationSettingsEvidenceMaxCharacters": "caracteres por pasaje evidencia extracto longitud máxima tamaño texto límite citado",
+      "sourceRelationSettingsIncludeWeakTypes": "relaciones débiles tipos menciones genéricas permitir incluir vagas conexiones sueltas enlaces ruido tenues",
+      "sourceRelationSettingsMaxInputTokens": "presupuesto de entrada tokens máximo límite coste tope por ejecución relaciones entre fuentes gasto contexto cuánto texto comparar par de libros",
+      "sourceRelationSettingsMaxOutputTokens": "límite de salida por par de fuentes tokens respuesta longitud tope coste relaciones comparar dos libros",
+      "sourceRelationSettingsMaxRelationsPerPair": "relaciones por par de fuentes máximo conexiones entre dos fuentes límite cuántas mantener libros",
+      "sourceRelationSettingsMinConfidence": "confianza mínima evidencia umbral puntuación filtro relaciones certeza corte ignorar incertidumbre está segura",
+      "sourceRelationSettingsMinImportance": "importancia mínima conceptual umbral puntuación filtro relaciones calidad corte débiles ignorar poco importantes enlaces",
+      "sourceRelationSettingsSummaryMaxCharacters": "caracteres de resumen por fuente longitud máxima tamaño usado para comparar",
+      "summaryMinimumWordCount": "mínimo palabras resumen elementos cortos omitir resúmenes recuento umbral fuentes pequeñas ahorrar llamadas cero apagar texto más corto",
+      "themeMode": "tema oscuro claro noche modo apariencia colores esquema sistema visual",
+      "uploadCopies": "copias subidos guardar originales archivos copia carpeta importaciones segunda seguridad de las subidas"
+    }
   }
 }

@@ -5469,5 +5469,175 @@
       "sourceUnnamed": "esta fonte"
     },
     "untitledTopic": "Tópico sem nome"
+  },
+  "settingsShell": {
+    "classic": {
+      "open": "Abrir os ajustes antigos"
+    },
+    "navChangedMany": "{count} ajustes alterados",
+    "navChangedOne": "{count} ajuste alterado",
+    "navFoot": "Cada ajuste mostra se foi alterado e como voltar ao padrão.",
+    "navHitsMany": "{count} resultados",
+    "navHitsOne": "{count} resultado",
+    "navLabel": "Seções dos ajustes",
+    "row": {
+      "changed": "Alterado",
+      "default": "Padrão:",
+      "defaultVaries": "Padrão: depende deste Mac e das outras opções",
+      "removeAsk": "Remover deste Mac? Será preciso informar de novo.",
+      "removeConfirm": "Remover",
+      "reset": "Restaurar padrão",
+      "resetFailed": "Não deu para restaurar. Nada foi alterado.",
+      "resetPending": "Falta um passo que você confirma na própria opção.",
+      "resetting": "Restaurando…",
+      "valueNone": "Não definido",
+      "valueOff": "Desligado",
+      "valueOn": "Ligado",
+      "valueSet": "Definido"
+    },
+    "search": {
+      "clear": "Limpar a busca",
+      "emptyBack": "e voltar a {section}.",
+      "emptyBody": "Tente outra palavra, um sinônimo ou o nome em inglês. Por exemplo:",
+      "emptyClear": "Limpar a busca",
+      "emptyTitle": "Nada com “{query}” nos ajustes.",
+      "exampleBudget": "orçamento",
+      "exampleDark": "escuro",
+      "exampleObsidian": "Obsidian",
+      "examplePrivacy": "privacidade",
+      "help": "Acha também por sinônimo: “escuro” leva a Tema.",
+      "keysClear": "limpa a busca",
+      "keysMove": "percorrem",
+      "keysOpen": "abre o melhor",
+      "label": "Buscar nos ajustes",
+      "placeholder": "Buscar: tema, orçamento…",
+      "placeholderShort": "Buscar…",
+      "resultsMany": "{count} resultados para “{query}”",
+      "resultsOne": "1 resultado para “{query}”"
+    },
+    "section": {
+      "allDefault": "Tudo no padrão nesta seção.",
+      "changedMany": "{count} ajustes alterados",
+      "changedOne": "{count} ajuste alterado",
+      "inSection": "nesta seção",
+      "listLabel": "Quais ajustes mudaram",
+      "restoreAll": "Restaurar todos",
+      "restoreAskMany": "Restaurar {count} ajustes ao padrão?",
+      "restoreAskOne": "Restaurar {count} ajuste ao padrão?",
+      "restoreConfirm": "Restaurar",
+      "restoreFailedMany": "{count} não puderam ser restaurados e ficaram como estavam.",
+      "restoreFailedOne": "{count} não pôde ser restaurado e ficou como estava.",
+      "restoreSkippedMany": "{count} precisam de um passo seu e ficaram como estavam.",
+      "restoreSkippedOne": "{count} precisa de um passo seu e ficou como estava."
+    },
+    "sections": {
+      "advanced": {
+        "description": "Correspondência, registros",
+        "name": "Avançado e diagnóstico"
+      },
+      "ai": {
+        "description": "Configuração e modelos",
+        "name": "IA"
+      },
+      "general": {
+        "description": "Tema e idiomas",
+        "name": "Geral e aparência"
+      },
+      "integrations": {
+        "description": "Obsidian, livros, navegador",
+        "name": "Integrações"
+      },
+      "knowledge": {
+        "description": "Jardineiro, árvore, conexões",
+        "name": "Conhecimento"
+      },
+      "library": {
+        "description": "Cópias, backup, importação",
+        "name": "Biblioteca e armazenamento"
+      },
+      "privacy": {
+        "description": "O que sai do Mac, apagar",
+        "name": "Privacidade e dados"
+      }
+    },
+    "states": {
+      "errorKept": "Nada foi alterado: o Memora continua usando os valores que já valiam.",
+      "errorTitle": "Não deu para ler os ajustes salvos."
+    },
+    "title": "Ajustes",
+    "words": {
+      "activeMatchingPresetId": "predefinição correspondência calibrada equilibrada recomendada duplicar personalizada perfil limiares padrões comparação configurações salvar minhas",
+      "advancedCallLog": "registro chamadas de ia histórico requisições modelo tokens tempo latência custo auditoria limpar somente leitura ver todas",
+      "advancedPrompts": "prompts instruções sistema editar modelos revisões catálogo texto do prompt personalizar redação versões em uso ativos",
+      "advancedSimilarityRuns": "execuções depuração similaridade limpar apagar comparações registradas diagnósticos erase registros limpeza",
+      "advancedTaskHistory": "histórico trabalhos tarefas concluídas falhas canceladas execuções passado atividade registro lista",
+      "aiDecisionsOpenaiPlatform": "chave openai platform api decisões credencial segredo token",
+      "aiModels": "modelos locais baixar instalar download gguf importar mlx catálogo hugging face testar padrão neste mac",
+      "aiPresetV1": "configuração modo local híbrido nuvem personalizado offline sem internet rodar neste mac privado onde a ia roda no dispositivo",
+      "aiProfiles": "perfis modelo parâmetros temperatura tokens máximos raciocínio esforço por perfil opções avançadas do modelo",
+      "aiProviderGoogle": "google gemini chave api provedor nuvem modelo ai studio",
+      "aiProviderOpenaiCodex": "chatgpt codex assinatura plano login entrar conectar conta provedor plus pro openai",
+      "aiProviderOpenaiCompatible": "compatível openai chave api endereço url servidor próprio openrouter lm studio ollama proxy provedor",
+      "aiRouteAnswer": "respostas perguntas modelo conversa responder perguntar chat",
+      "aiRouteDecide": "classificação ranqueador reordenar decidir relações notas relacionadas pontuação juiz modelo decisor",
+      "aiRouteEmbed": "embeddings vetores busca modelo semelhança semântica similaridade tópicos comparação índice",
+      "aiRouteJudge": "juiz generativo decidir relações sem ranqueador modelo de escrita fontes relacionar decisor reserva",
+      "aiRouteWriteFast": "escrita rápida modelo resumos nomes de tópicos explicações curtas barato pequeno redator",
+      "aiRouteWriteQuality": "escrita cuidadosa qualidade modelo notas entidades grafo de conhecimento melhor redator grande",
+      "aiThisMac": "este mac computador hardware chip memória ram apple silicon configuração recomendada capacidade o que consegue rodar especificações quais modelos cabem",
+      "atomicNoteMatchingSettingsMaxRerankOutputTokens": "limite saída por nota tokens reordenar tamanho da resposta teto custo julgar ligações entre notas",
+      "bookLookup": "buscar dados livros internet metadados isbn doi crossref google books capa autores título online detalhes provedor",
+      "canonicalMatchingSettingsConfirmationBatchSize": "identidades por confirmação lote tamanho pedido grupo itens chamada confirmar quantidade",
+      "canonicalMatchingSettingsConfirmationMaxCharacters": "tamanho da confirmação caracteres limite máximo texto comprimento por pedido",
+      "canonicalMatchingSettingsEntityCandidateLimit": "candidatos por entidade limite quantas entidades comparar máximo nomes parecidos",
+      "canonicalMatchingSettingsRelationTypeCandidateLimit": "candidatos por tipo de relação limite quantos tipos comparar máximo",
+      "contentLanguage": "idioma língua conteúdo notas resumos escrita tradução texto gerado respostas nomes dos tópicos",
+      "debugFullCapture": "captura completa prompts respostas texto integral guardar bruto registrar tudo depuração sensível gravar suporte",
+      "debugMode": "depuração diagnósticos registro detalhado rastreio solução de problemas investigar erro log operações similaridade modo de depuração suporte",
+      "entityIdentitySimilarityThreshold": "semelhança entidades identidade limiar corte unir entidades duplicadas mesma pessoa lugar candidatos rigor parecidos nomes",
+      "graphWheelZoomSensitivity": "zoom grafo sensibilidade velocidade roda do mouse rolagem trackpad mapa mais rápido mais lento escala pinça",
+      "integrationsGateway": "apps pareados pareamento extensão chrome plugin obsidian conectar gateway local mcp token navegador clipper dispositivos outro aplicativo",
+      "keepLocalEmbeddingModelsLoaded": "manter modelo local busca carregado memória ram embedding pré-carregar descarregar mais rápido liberar residente na memória",
+      "knowledgeControlsV1Autonomy": "autonomia jardineiro automação desligado sugerir automático quanto trabalhar sozinho sem perguntar confirmar aprovar manual",
+      "knowledgeControlsV1MonthlyCapUsd": "limite mensal teto orçamento gastos custo dinheiro dólares nuvem gasto máximo preço",
+      "knowledgeControlsV1OnlyIdle": "ocioso parado só quando mac sem uso segundo plano esperar inativo ausente bateria cpu horário quieto computador",
+      "knowledgeControlsV1OnlyOnAc": "tomada carregador energia adaptador corrente bateria só carregando notebook horário economizar conectado",
+      "knowledgeControlsV1Paused": "pausar jardineiro parar trabalho em segundo plano automação retomar interromper congelar desativar",
+      "knowledgeControlsV1TreeShape": "formato árvore tópicos equilibrada ampla profunda rasa organização estrutura hierarquia profundidade plana estreita",
+      "language": "idioma língua do app interface menus botões mensagens exibição tradução",
+      "libraryBackup": "backup restaurar exportar cópia de segurança banco de dados arquivo salvar biblioteca verificar recuperar pasta datada",
+      "libraryStorage": "armazenamento banco de dados onde ficam dados arquivos pasta local disco tamanho espaço biblioteca caminho",
+      "localModelsRepositoryTokenRef": "token hugging face hf acesso repositório privado modelos restritos baixar credenciais",
+      "managedRoot": "pasta raiz gerenciada obsidian cofre subpasta memora onde arquivos escritos diretório nome dentro",
+      "metadataGoogleBooks": "chave google books api metadados credencial cota limite livros",
+      "obsidianLayoutAttachments": "anexos copiar arquivos originais pdf imagens obsidian cofre anexar só texto binário",
+      "obsidianLayoutLanguage": "idioma pastas cofre nomes obsidian estrutura organização arquivos nomeados renomear pastas traduzir disposição",
+      "obsidianSync": "sincronizar obsidian dois sentidos ligar desligar pausar parar markdown notas exportar cofre escrever biblioteca edições temporariamente",
+      "obsidianVaultPath": "cofre obsidian pasta caminho diretório escolher notas sincronizar local markdown vault",
+      "obsidianWikiIncludeDescendants": "capítulos partes descendentes incluir filhos subfontes obsidian wiki aninhadas seções",
+      "obsidianWikiScope": "wiki obsidian páginas fontes escopo quais viram escolher limite publicar exportar subconjunto",
+      "privacyCallLog": "chamadas de ia registro recentes o que foi enviado modelos requisições provedores tokens histórico auditoria transparência",
+      "privacyClearQuestions": "apagar perguntas respostas histórico conversas salvas remover chats limpar",
+      "privacyClearViewHistory": "limpar recentes histórico abertos recentemente lista apagar itens recentes",
+      "privacyReset": "resetar tudo apagar dados de fábrica recomeçar do zero biblioteca limpar perigo redefinir",
+      "privacySummary": "privacidade o que sai deste mac dados enviados remoto nuvem provedores externos rede offline só local compartilhamento",
+      "processingPresets": "planos de importação processamento predefinições salvas renomear apagar modelos opções configurações",
+      "relationLabels": "descrições relações rótulos conexões texto regenerar reescrever faltantes idioma explicação",
+      "relationsDeciderMode": "quem decide relações entre notas modo decisor ranqueador juiz automático conexões decisão como ligações são decididas",
+      "relationsDecisions": "openai decisions decisor remoto nuvem ranqueador mais barato preciso conexões relações pago ativar serviço online",
+      "relationTypeSimilarityThreshold": "semelhança tipos de relação limiar corte unir tipos duplicados candidatos rigor pontuação parecidos nomes",
+      "sourceRelationSettingsEvidenceChunksPerSource": "trechos evidência por fonte par citações quantas passagens citar comparar livros contexto",
+      "sourceRelationSettingsEvidenceMaxCharacters": "caracteres por trecho evidência extrato comprimento máximo tamanho texto limite citado",
+      "sourceRelationSettingsIncludeWeakTypes": "relações fracas tipos menções genéricas permitir incluir vagas conexões soltas ligações ruído tênues",
+      "sourceRelationSettingsMaxInputTokens": "orçamento entrada tokens máximo limite custo teto por execução relações entre fontes gasto contexto quanto texto comparar par de livros",
+      "sourceRelationSettingsMaxOutputTokens": "limite saída por par de fontes tokens resposta tamanho teto custo relações comparar dois livros",
+      "sourceRelationSettingsMaxRelationsPerPair": "relações por par de fontes máximo conexões entre duas fontes limite quantas manter livros",
+      "sourceRelationSettingsMinConfidence": "confiança mínima evidência limiar pontuação filtro relações certeza corte ignorar incerteza tem certeza",
+      "sourceRelationSettingsMinImportance": "importância mínima conceitual limiar pontuação filtro relações qualidade corte fracas ignorar pouco importantes ligações",
+      "sourceRelationSettingsSummaryMaxCharacters": "caracteres de resumo por fonte comprimento máximo tamanho usado para comparar",
+      "summaryMinimumWordCount": "mínimo palavras resumo itens curtos pular resumos contagem limiar fontes pequenas economizar chamadas zero desligar menor texto",
+      "themeMode": "tema escuro claro noite modo aparência cores esquema sistema visual",
+      "uploadCopies": "cópias enviados guardar originais arquivos cópia pasta importações segundo backup dos envios salvar"
+    }
   }
 }
