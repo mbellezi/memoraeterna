@@ -73,14 +73,13 @@ function usePagedData<Item, Facets>(config: PagedConfig<Item, Facets>): PagedDat
     initialPagedState as PagedState<Item, Facets>
   );
   const latest = useRef(config);
-  latest.current = config;
+  // The identity of a row is the same function for the life of the list.
   const [list] = useState(() =>
-    createPagedList<Item, Facets>({
-      ...libraryPaging,
-      key: (item) => latest.current.itemKey(item),
-      onChange: setState
-    })
+    createPagedList<Item, Facets>({ ...libraryPaging, key: config.itemKey, onChange: setState })
   );
+  useEffect(() => {
+    latest.current = config;
+  });
   // What the last read was for: the first read starts at once, later ones wait for the typing to settle.
   const read = useRef<{ key: string; facetKey: string } | null>(null);
 
@@ -106,7 +105,6 @@ function usePagedData<Item, Facets>(config: PagedConfig<Item, Facets>): PagedDat
     const timer = setTimeout(start, libraryPaging.settleMs);
     return () => clearTimeout(timer);
     // The query's key is the whole dependency: the source is built from the latest config.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [config.active, config.key, list]);
 
   useEffect(() => () => list.dispose(), [list]);

@@ -668,9 +668,6 @@ export function LibraryRoot({
   // The sheet closes with the row it was on.
   const rows = data.items as readonly Row[];
   const selectedRow = useMemo(() => rows.find((row) => row.id === selected), [rows, selected]);
-  useEffect(() => {
-    if (peeking && !selectedRow) setPeeking(false);
-  }, [peeking, selectedRow]);
 
   const onTab = useCallback((next: LibraryTab) => {
     setTab(next);
@@ -713,7 +710,7 @@ export function LibraryRoot({
       questions={questions}
       titles={titles}
       selected={selected}
-      peeking={peeking}
+      peeking={peeking && selectedRow !== undefined}
       expanded={expanded}
       currentKey={current ? (parseObjectAddress(current)?.id ?? null) : null}
       now={new Date()}
