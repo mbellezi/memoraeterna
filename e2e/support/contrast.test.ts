@@ -7,7 +7,8 @@ import {
   evaluateSamples,
   parseCssColor,
   requiredRatio,
-  type ContrastSample
+  type ContrastSample,
+  type ShapePaint
 } from "./contrast.js";
 
 const near = (value: number, expected: number, digits = 0) =>
@@ -131,5 +132,117 @@ describe("effectiveColours and evaluateSamples", () => {
     expect(result.failures.map((failure) => failure.text)).toEqual(["small grey", "icon"]);
     expect(result.failures[0]).toMatchObject({ required: 4.5, ratio: 3.84 });
     expect(result.unverifiable.map((entry) => entry.text)).toEqual(["over an image", "odd colour"]);
+  });
+});
+
+// Real computed values of the dark theme: the page canvas, a raised surface (a pill, a row) and the
+// tokens that paint the glyphs under test (tokens.css: --surface-*, --state-success, --text-secondary).
+const darkCanvas = "rgb(16, 21, 29)";
+const darkRaised = "rgb(23, 30, 40)";
+const glyph = (overrides: Partial<ContrastSample>): ContrastSample =>
+  sample({
+    kind: "glyph",
+    text: "Atividade: Sua biblioteca está em dia.",
+    // The svg root of a solid glyph: its own `fill` is the default black, its `stroke` is none.
+    color: "rgb(0, 0, 0)",
+    backgrounds: ["rgba(0, 0, 0, 0)", darkRaised],
+    ...overrides
+  });
+const shape = (overrides: Partial<ShapePaint>): ShapePaint => ({
+  tag: "path",
+  fill: "none",
+  stroke: "none",
+  fillOpacity: 1,
+  strokeOpacity: 1,
+  opacity: 1,
+  area: 100,
+  ...overrides
+});
+
+describe("an icon's colour is the paint of its shapes, not its root's default", () => {
+  // SolidCheck: a disc filled with currentColor and a check stroked in the surface colour.
+  const solidCheck = [
+    shape({ fill: "rgb(95, 208, 143)", area: 283.5 }),
+    shape({ stroke: "rgb(23, 30, 40)", area: 55 })
+  ];
+
+  it("reads the disc of a solid glyph, not the black of the svg root", () => {
+    const colours = effectiveColours(glyph({ shapes: solidCheck }));
+    expect(colours).toEqual({
+      foreground: { r: 95, g: 208, b: 143 },
+      background: { r: 23, g: 30, b: 40 }
+    });
+    const result = evaluateSamples([glyph({ shapes: solidCheck })]);
+    expect(result.failures).toEqual([]);
+    expect(result.checked).toBe(1);
+  });
+
+  it("still fails a solid glyph whose disc really is too dim for 3:1", () => {
+    const dim = [shape({ fill: "rgb(40, 52, 68)", area: 283.5 }), solidCheck[1] as ShapePaint];
+    const result = evaluateSamples([glyph({ shapes: dim })]);
+    expect(result.failures).toHaveLength(1);
+    expect(result.failures[0]).toMatchObject({ kind: "glyph", foreground: "rgb(40, 52, 68)" });
+  });
+
+  it("reads the stroke of a line sample whose children carry the stroke", () => {
+    // LineSample: <line stroke="currentColor"> in an svg that has no stroke of its own.
+    const legend = glyph({
+      text: "Legenda",
+      backgrounds: ["rgba(0, 0, 0, 0)", darkCanvas],
+      shapes: [shape({ stroke: "rgb(182, 195, 211)", area: 30 })]
+    });
+    expect(evaluateSamples([legend]).failures).toEqual([]);
+    expect(effectiveColours(legend)).toMatchObject({ foreground: { r: 182, g: 195, b: 211 } });
+  });
+
+  it("does not count the default fill of a line, which has no interior", () => {
+    // LineSample's <line>: computed fill is black, the stroke is the legend's text colour.
+    const line = glyph({
+      text: "Legenda",
+      backgrounds: ["rgba(0, 0, 0, 0)", darkCanvas],
+      shapes: [shape({ tag: "line", fill: "rgb(0, 0, 0)", stroke: "rgb(182, 195, 211)", area: 30 })]
+    });
+    expect(effectiveColours(line)).toMatchObject({ foreground: { r: 182, g: 195, b: 211 } });
+    expect(evaluateSamples([line]).failures).toEqual([]);
+  });
+
+  it("takes the filled shape over a stroke when both are drawn, and the largest of several", () => {
+    const colours = effectiveColours(
+      glyph({
+        shapes: [
+          shape({ stroke: "rgb(255, 0, 0)", area: 900 }),
+          shape({ fill: "rgb(10, 10, 10)", area: 4 }),
+          shape({ fill: "rgb(200, 200, 200)", area: 50 })
+        ]
+      })
+    );
+    expect(colours).toMatchObject({ foreground: { r: 200, g: 200, b: 200 } });
+  });
+
+  it("applies the paint opacity and the shape's own opacity", () => {
+    const colours = effectiveColours(
+      glyph({
+        backgrounds: ["rgba(0, 0, 0, 0)", "rgb(0, 0, 0)"],
+        shapes: [shape({ fill: "rgb(200, 200, 200)", fillOpacity: 0.5, opacity: 0.5 })]
+      })
+    );
+    expect(colours).toMatchObject({ foreground: { r: 50, g: 50, b: 50 } });
+  });
+
+  it("ignores shapes that paint nothing and falls back to the root's paint", () => {
+    const outline = glyph({
+      color: "rgb(182, 195, 211)",
+      shapes: [shape({}), shape({ fill: "rgb(255, 0, 0)", fillOpacity: 0 })]
+    });
+    expect(effectiveColours(outline)).toMatchObject({ foreground: { r: 182, g: 195, b: 211 } });
+    // A sample from before shapes existed has none, and keeps its root colour.
+    const legacy = sample({ kind: "glyph", color: "rgb(182, 195, 211)" });
+    expect(effectiveColours(legacy)).toMatchObject({ foreground: { r: 182, g: 195, b: 211 } });
+  });
+
+  it("lists a gradient paint as unverifiable instead of guessing", () => {
+    const result = evaluateSamples([glyph({ shapes: [shape({ fill: 'url("#g")' })] })]);
+    expect(result.checked).toBe(0);
+    expect(result.unverifiable).toHaveLength(1);
   });
 });

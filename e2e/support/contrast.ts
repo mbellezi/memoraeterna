@@ -134,6 +134,21 @@ export function composite(top: Rgba, bottom: Rgb): Rgb {
   };
 }
 
+/**
+ * The paint of one shape inside an icon (see `collectInPage`): the computed `fill` and `stroke`
+ * (colour strings, or `none`), the paint opacities, the shape's own opacity and its box area.
+ */
+export interface ShapePaint {
+  /** The element name (`path`, `circle`, `line`…). */
+  tag: string;
+  fill: string;
+  stroke: string;
+  fillOpacity: number;
+  strokeOpacity: number;
+  opacity: number;
+  area: number;
+}
+
 /** What the page reports for one text, input or icon (see `collectInPage`). */
 export interface ContrastSample {
   kind: "text" | "glyph";
@@ -150,6 +165,13 @@ export interface ContrastSample {
   opacities: number[];
   fontSizePx: number;
   fontWeight: number;
+  /**
+   * An icon: the paint of each shape drawn inside it. The icons of `solid-glyphs.tsx` and the line
+   * samples put the paint on their children (`fill="currentColor"`), so the root's own `fill` is the
+   * default black and says nothing about what the person sees; `color` is the root's paint, kept as
+   * the fallback for an icon with no painted shape.
+   */
+  shapes?: ShapePaint[];
 }
 
 export interface ContrastFinding {
@@ -175,6 +197,43 @@ export function requiredRatio(sample: Pick<ContrastSample, "kind" | "fontSizePx"
   return large ? glyphMinimum : textMinimum;
 }
 
+const unpainted = (paint: string) => paint === "" || paint === "none" || paint === "transparent";
+
+/**
+ * The colour a person reads an icon in: the fill of its largest filled shape (a solid glyph's disc
+ * or triangle; the cut-out strokes drawn on it are not its colour), else the stroke of its largest
+ * stroked shape (an outline icon), else the root's own paint. Paint and shape opacities apply. Null
+ * when the paint cannot be read (a gradient, an unknown colour form).
+ */
+export function glyphForeground(
+  shapes: readonly ShapePaint[] | undefined,
+  rootPaint: string
+): Rgba | null {
+  const largest = (candidates: readonly ShapePaint[]) =>
+    candidates.reduce((best, shape) => (shape.area > best.area ? shape : best));
+  // A line has no interior: its computed `fill` is the default black and nothing is drawn with it.
+  const filled = (shapes ?? []).filter(
+    (shape) =>
+      shape.tag !== "line" && !unpainted(shape.fill) && shape.fillOpacity * shape.opacity > 0
+  );
+  const stroked = (shapes ?? []).filter(
+    (shape) => !unpainted(shape.stroke) && shape.strokeOpacity * shape.opacity > 0
+  );
+  let paint = rootPaint;
+  let alpha = 1;
+  if (filled.length > 0) {
+    const shape = largest(filled);
+    paint = shape.fill;
+    alpha = shape.fillOpacity * shape.opacity;
+  } else if (stroked.length > 0) {
+    const shape = largest(stroked);
+    paint = shape.stroke;
+    alpha = shape.strokeOpacity * shape.opacity;
+  }
+  const colour = parseCssColor(paint);
+  return colour && { ...colour, a: colour.a * alpha };
+}
+
 const css = (colour: Rgb) =>
   `rgb(${Math.round(colour.r)}, ${Math.round(colour.g)}, ${Math.round(colour.b)})`;
 
@@ -186,7 +245,10 @@ const css = (colour: Rgb) =>
 export function effectiveColours(
   sample: ContrastSample
 ): { foreground: Rgb; background: Rgb } | { reason: string } {
-  const foreground = parseCssColor(sample.color);
+  const foreground =
+    sample.kind === "glyph"
+      ? glyphForeground(sample.shapes, sample.color)
+      : parseCssColor(sample.color);
   const layers = sample.backgrounds.map(parseCssColor);
   if (!foreground || layers.some((layer) => layer === null))
     return { reason: `unparsed colour (${[sample.color, ...sample.backgrounds].join(" | ")})` };
@@ -322,12 +384,39 @@ export function collectInPage(limit: number): ContrastSample[] {
     const style = getComputedStyle(icon);
     const stroke = style.stroke;
     const color = stroke && stroke !== "none" && stroke !== "transparent" ? stroke : style.fill;
-    if (!color || color === "none") continue;
+    const shapes: ShapePaint[] = [];
+    for (const shape of Array.from(
+      icon.querySelectorAll("path, circle, rect, ellipse, line, polyline, polygon")
+    )) {
+      const paint = getComputedStyle(shape);
+      let area = 0;
+      try {
+        const box = (shape as SVGGraphicsElement).getBBox();
+        // A line has no area; one pixel of height keeps it comparable with the shapes beside it.
+        area = Math.max(box.width, 1) * Math.max(box.height, 1);
+      } catch {
+        // A shape that is not rendered has no box and nothing to judge.
+      }
+      shapes.push({
+        tag: shape.tagName.toLowerCase(),
+        fill: paint.fill,
+        stroke: paint.stroke,
+        fillOpacity: Number(paint.fillOpacity),
+        strokeOpacity: Number(paint.strokeOpacity),
+        opacity: Number(paint.opacity),
+        area
+      });
+    }
+    const drawn = (paint: string) => paint !== "" && paint !== "none";
+    if (!drawn(color) && !shapes.some((shape) => drawn(shape.fill) || drawn(shape.stroke)))
+      continue;
     const label =
       icon.getAttribute("aria-label") ??
       icon.closest("[aria-label]")?.getAttribute("aria-label") ??
       "icon";
     add(icon, "glyph", label, color);
+    const added = samples[samples.length - 1];
+    if (added) added.shapes = shapes;
   }
   return samples;
 }
