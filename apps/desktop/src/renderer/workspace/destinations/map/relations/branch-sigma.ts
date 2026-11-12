@@ -345,7 +345,7 @@ export const stanceGlyphPaths: Readonly<Record<RelationBranchStance, string>> = 
 };
 
 /** The glyph's disc: its radius on screen, and the shortest line that carries one. */
-export const midpointGlyph = { radius: 8, glyphSize: 12, minimumLine: 48 } as const;
+export const midpointGlyph = { radius: 9, glyphSize: 14, minimumLine: 52 } as const;
 
 /**
  * Where a relation's stance glyph sits on screen: the midpoint of the visible part of the line, or
@@ -358,4 +358,103 @@ export function midpointOf(
   const length = Math.hypot(target.x - source.x, target.y - source.y);
   if (length - source.size - target.size < midpointGlyph.minimumLine) return null;
   return { x: (source.x + target.x) / 2, y: (source.y + target.y) / 2 };
+}
+
+/** Path2D objects for the stance glyphs, built once per window (a canvas only). */
+let glyphCache: Map<RelationBranchStance, Path2D> | null = null;
+function glyphPath(stance: RelationBranchStance): Path2D {
+  glyphCache ??= new Map();
+  let path = glyphCache.get(stance);
+  if (!path) {
+    path = new Path2D(stanceGlyphPaths[stance]);
+    glyphCache.set(stance, path);
+  }
+  return path;
+}
+
+/**
+ * Draws a relation's stance glyph at the midpoint of its line, on a disc of the canvas colour, in
+ * the colour it is given (its stance colour, or faded with the line). Nothing on a short line.
+ */
+export function drawMidpointGlyph(
+  context: CanvasRenderingContext2D,
+  source: { x: number; y: number; size: number },
+  target: { x: number; y: number; size: number },
+  stance: RelationBranchStance | null,
+  colour: string,
+  palette: Pick<GraphPalette, "canvas">
+): void {
+  const point = midpointOf(source, target);
+  if (!point || !stance) return;
+  const scale = midpointGlyph.glyphSize / 16;
+  context.save();
+  context.beginPath();
+  context.arc(point.x, point.y, midpointGlyph.radius, 0, Math.PI * 2);
+  context.fillStyle = palette.canvas;
+  context.fill();
+  context.translate(point.x - midpointGlyph.glyphSize / 2, point.y - midpointGlyph.glyphSize / 2);
+  context.scale(scale, scale);
+  context.lineWidth = 1.5;
+  context.lineCap = "round";
+  context.lineJoin = "round";
+  context.strokeStyle = colour;
+  context.stroke(glyphPath(stance));
+  context.restore();
+}
+
+/**
+ * The turn that lays a branch along the canvas's long side. The forces have no preferred
+ * direction, so a chain of notes may settle upright inside a wide canvas and leave most of it
+ * empty; turning the drawing so its principal axis runs across the canvas fits it larger, with
+ * more room between labels. Positions are `[x0, y0, x1, y1, …]`; `previous` keeps the turn
+ * continuous while the layout settles (an axis has two directions: the nearer one is kept).
+ */
+export function landscapeTurn(
+  positions: ArrayLike<number>,
+  wide: boolean,
+  previous: number | null
+): number {
+  const count = Math.floor(positions.length / 2);
+  if (count < 2) return previous ?? 0;
+  let meanX = 0;
+  let meanY = 0;
+  for (let index = 0; index < count; index += 1) {
+    meanX += positions[index * 2]!;
+    meanY += positions[index * 2 + 1]!;
+  }
+  meanX /= count;
+  meanY /= count;
+  let xx = 0;
+  let yy = 0;
+  let xy = 0;
+  for (let index = 0; index < count; index += 1) {
+    const dx = positions[index * 2]! - meanX;
+    const dy = positions[index * 2 + 1]! - meanY;
+    xx += dx * dx;
+    yy += dy * dy;
+    xy += dx * dy;
+  }
+  if (xx + yy === 0) return previous ?? 0;
+  // The principal axis's angle; turning by its negative lays it along x (along y on a tall canvas).
+  const axis = 0.5 * Math.atan2(2 * xy, xx - yy);
+  let turn = -axis + (wide ? 0 : Math.PI / 2);
+  if (previous !== null) {
+    while (turn - previous > Math.PI / 2) turn -= Math.PI;
+    while (previous - turn > Math.PI / 2) turn += Math.PI;
+  }
+  return turn;
+}
+
+/** `positions` turned by `angle` around the origin (the layout's centre). */
+export function turnPositions(positions: ArrayLike<number>, angle: number): Float32Array {
+  const turned = new Float32Array(positions.length);
+  const cos = Math.cos(angle);
+  const sin = Math.sin(angle);
+  for (let index = 0; index + 1 < positions.length; index += 2) {
+    const x = positions[index]!;
+    const y = positions[index + 1]!;
+    turned[index] = x * cos - y * sin;
+    turned[index + 1] = x * sin + y * cos;
+  }
+  return turned;
 }

@@ -4195,10 +4195,12 @@
     },
     "loading": "Caricamento del grafo",
     "node": {
-      "description": "{title}. Argomento: {topic}. Connessioni: {count}."
+      "description": "{title}. Argomento: {topic}. Connessioni: {count}.",
+      "meta": "Argomento: {topic} · Connessioni: {count}"
     },
     "scope": {
       "above": "Sopra",
+      "areas": "Aree",
       "beside": "Accanto",
       "inside": "Dentro",
       "label": "Ramo: {title}",

@@ -4204,10 +4204,12 @@
     },
     "loading": "Cargando el grafo",
     "node": {
-      "description": "{title}. Tema: {topic}. Conexiones: {count}."
+      "description": "{title}. Tema: {topic}. Conexiones: {count}.",
+      "meta": "Tema: {topic} · Conexiones: {count}"
     },
     "scope": {
       "above": "Arriba",
+      "areas": "Áreas",
       "beside": "Al lado",
       "inside": "Dentro",
       "label": "Rama: {title}",

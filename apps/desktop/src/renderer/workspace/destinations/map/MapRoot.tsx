@@ -1,12 +1,11 @@
 import { useCallback, useEffect, useId, useState } from "react";
-import type { Translator } from "@app/i18n";
 import { formatObjectAddress, parseObjectAddress } from "@app/domain";
 
-import { EmptyState } from "../../../components/ui/empty-state";
-import { Button } from "../../../components/ui/button";
 import type { PanelLoadState } from "../../PanelFrame";
 import type { PanelProps } from "../../PanelStack";
 import { formatView, parseViewAddress, type MapLens } from "../../route";
+import type { BranchScope } from "./relations/branch-model";
+import { RelationsLens } from "./relations/RelationsLens";
 import { ShapeScreen } from "./shape/ShapeScreen";
 import { panelDomId, tabDomId, ViewSwitch } from "./shape/ViewSwitch";
 
@@ -14,7 +13,8 @@ import { panelDomId, tabDomId, ViewSwitch } from "./shape/ViewSwitch";
  * The Map destination's root (design record §7.5): the title, the two views of the tree and the
  * view itself. The tab is part of the root's address (`memora://view/map/<lens>`), so the stack
  * remembers it. "Árvore" (`shape`) is the size and health of the tree; "Grafo" (`relations`) is the
- * connections between topics, and shows a placeholder until its card (T151) lands. The root
+ * connections among the notes of one branch (a topic, or the source the Map was opened for). As
+ * the previous panel the root shows the tree's table whatever the tab. The root
  * reports its own `data-surface` and `data-state`, as the stack draws no frame around a root.
  */
 
@@ -59,7 +59,10 @@ export function MapRoot({ t, address, mode, active, onState, onOpen, current }: 
   const originTitle = useTitle(originTopic);
   const prefix = useId();
   const [shapeState, setShapeState] = useState<PanelLoadState>("loading");
-  const state: PanelLoadState = lens === "shape" ? shapeState : "empty";
+  const [relationsState, setRelationsState] = useState<PanelLoadState>("loading");
+  const compact = mode === "compact";
+  const showsTree = lens === "shape" || compact;
+  const state: PanelLoadState = showsTree ? shapeState : relationsState;
   useEffect(() => {
     onState(state);
   }, [onState, state]);
@@ -79,7 +82,6 @@ export function MapRoot({ t, address, mode, active, onState, onOpen, current }: 
   const origin = originTopic
     ? { topicId: parseObjectAddress(originTopic)!.id, title: originTitle }
     : null;
-  const compact = mode === "compact";
 
   return (
     <section
@@ -116,7 +118,7 @@ export function MapRoot({ t, address, mode, active, onState, onOpen, current }: 
             })}
         className="min-h-0 min-w-0"
       >
-        {lens === "shape" ? (
+        {showsTree ? (
           <ShapeScreen
             t={t}
             active={active}
@@ -132,7 +134,14 @@ export function MapRoot({ t, address, mode, active, onState, onOpen, current }: 
             onBack={() => originTopic && onOpen(originTopic)}
           />
         ) : (
-          <RelationsPlaceholder t={t} onShape={() => openLens("shape")} />
+          <RelationsLens
+            t={t}
+            active={active}
+            scope={branchScope(scope)}
+            onOpenNote={(noteId) => onOpen(formatObjectAddress({ kind: "note", id: noteId }))}
+            onShowTree={() => openLens("shape")}
+            onState={setRelationsState}
+          />
         )}
       </div>
     </section>
@@ -144,19 +153,10 @@ const readTopicId = (address: string): string | null => {
   return parsed?.kind === "topic" ? parsed.id : null;
 };
 
-/** Until the graph of connections lands (T151): says what is coming and offers the tree. */
-function RelationsPlaceholder({ t, onShape }: { t: Translator; onShape: () => void }) {
-  return (
-    <EmptyState
-      headline={t("map.relations.headline")}
-      className="max-w-xl"
-      action={
-        <Button type="button" onClick={onShape}>
-          {t("map.relations.action")}
-        </Button>
-      }
-    >
-      {t("map.relations.body")}
-    </EmptyState>
-  );
+/** The Grafo's branch: the topic or source of the root's address; any other object picks none. */
+function branchScope(scope: string | null): BranchScope | null {
+  const parsed = scope ? parseObjectAddress(scope) : null;
+  if (parsed?.kind === "topic" || parsed?.kind === "source")
+    return { kind: parsed.kind, id: parsed.id };
+  return null;
 }

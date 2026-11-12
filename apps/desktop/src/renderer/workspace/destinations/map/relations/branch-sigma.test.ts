@@ -10,12 +10,14 @@ import {
   branchZoom,
   buildBranchSigmaGraph,
   groupNodeKey,
+  landscapeTurn,
   midpointOf,
   placeGroupNodes,
   relationOf,
   showsGroups,
   stanceGlyphPaths,
-  superEdgeThickness
+  superEdgeThickness,
+  turnPositions
 } from "./branch-sigma";
 
 const palette = fallbackGraphPalette;
@@ -95,5 +97,22 @@ describe("the Grafo's Sigma graph", () => {
     expect(midpointOf({ x: 0, y: 0, size: 4 }, { x: 100, y: 0, size: 4 })).toEqual({ x: 50, y: 0 });
     expect(midpointOf({ x: 0, y: 0, size: 4 }, { x: 30, y: 0, size: 4 })).toBeNull();
     for (const path of Object.values(stanceGlyphPaths)) expect(path).toMatch(/^M[0-9 .a-zA-Z-]+$/u);
+  });
+
+  it("turns an upright branch to run across a wide canvas, continuously while it settles", () => {
+    const upright = [0, -100, 2, -50, -1, 0, 1, 50, 0, 100];
+    const turn = landscapeTurn(upright, true, null);
+    const turned = turnPositions(upright, turn);
+    const xs = [0, 2, 4, 6, 8].map((index) => turned[index]!);
+    const ys = [1, 3, 5, 7, 9].map((index) => turned[index]!);
+    expect(Math.max(...xs) - Math.min(...xs)).toBeGreaterThan(190);
+    expect(Math.max(...ys) - Math.min(...ys)).toBeLessThan(10);
+    // A tall canvas keeps the branch upright.
+    const tall = turnPositions(upright, landscapeTurn(upright, false, null));
+    expect(Math.abs(tall[9]! - tall[1]!)).toBeGreaterThan(190);
+    // The next frame never flips the drawing half a turn.
+    expect(landscapeTurn(upright, true, turn + Math.PI * 0.4)).toBeCloseTo(turn, 9);
+    expect(landscapeTurn(upright, true, turn + Math.PI * 0.6)).toBeCloseTo(turn + Math.PI, 9);
+    expect(landscapeTurn([1, 1], true, 0.3)).toBe(0.3);
   });
 });

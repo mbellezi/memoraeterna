@@ -110,7 +110,9 @@ describe("colour tokens", () => {
     for (const file of [
       "components/graph/graph-tokens.ts",
       "components/graph/EgoGraph.tsx",
-      "components/graph/ego-graph-sigma.ts"
+      "components/graph/ego-graph-sigma.ts",
+      "workspace/destinations/map/relations/RelationsCanvas.tsx",
+      "workspace/destinations/map/relations/branch-sigma.ts"
     ])
       expect(read(`${renderer}/${file}`), file).not.toMatch(retired);
   });

@@ -4202,10 +4202,12 @@
     },
     "loading": "Chargement du graphe",
     "node": {
-      "description": "{title}. Thème : {topic}. Connexions : {count}."
+      "description": "{title}. Thème : {topic}. Connexions : {count}.",
+      "meta": "Thème : {topic} · Connexions : {count}"
     },
     "scope": {
       "above": "Au-dessus",
+      "areas": "Domaines",
       "beside": "À côté",
       "inside": "Dedans",
       "label": "Branche : {title}",

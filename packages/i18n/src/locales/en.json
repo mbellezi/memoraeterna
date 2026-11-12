@@ -4197,10 +4197,12 @@
     },
     "loading": "Loading the graph",
     "node": {
-      "description": "{title}. Topic: {topic}. Connections: {count}."
+      "description": "{title}. Topic: {topic}. Connections: {count}.",
+      "meta": "Topic: {topic} · Connections: {count}"
     },
     "scope": {
       "above": "Above",
+      "areas": "Areas",
       "beside": "Beside",
       "inside": "Inside",
       "label": "Branch: {title}",

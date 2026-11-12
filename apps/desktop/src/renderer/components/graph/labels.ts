@@ -94,6 +94,52 @@ export interface LabelContext {
   fillText(text: string, x: number, y: number): void;
 }
 
+/** A topic's pill on a zoomed-out graph: the topic colour as its ring, the name inside. */
+export const graphPillLayout = { maxWidth: 200, height: 26, paddingX: 12, ring: 2 } as const;
+
+export interface PillContext extends LabelContext {
+  beginPath(): void;
+  roundRect(x: number, y: number, width: number, height: number, radius: number): void;
+  fill(): void;
+  stroke(): void;
+}
+
+/**
+ * Draws a topic group as a pill centred on its node: the canvas colour inside, a ring in the
+ * topic's colour (`ringColour`), the name in the label colour on one line (an ellipsis when it is
+ * longer than the pill may be). Returns the text it drew.
+ */
+export function drawPillLabel(
+  context: PillContext,
+  node: LabelNode & { ringColour: string },
+  palette: Pick<GraphPalette, "canvas" | "label">
+): string {
+  if (!node.label) return "";
+  const weight = node.emphasised ? "650" : "600";
+  context.font = `${weight} ${graphTypography.labelSize}px ${graphTypography.labelFont}`;
+  const text =
+    wrapLabel(
+      node.label,
+      graphPillLayout.maxWidth - graphPillLayout.paddingX * 2,
+      (value) => context.measureText(value).width,
+      1
+    )[0] ?? "";
+  const width = context.measureText(text).width + graphPillLayout.paddingX * 2;
+  const height = graphPillLayout.height;
+  context.beginPath();
+  context.roundRect(node.x - width / 2, node.y - height / 2, width, height, height / 2);
+  context.fillStyle = palette.canvas;
+  context.fill();
+  context.lineWidth = node.emphasised ? graphPillLayout.ring + 1 : graphPillLayout.ring;
+  context.strokeStyle = node.ringColour;
+  context.stroke();
+  context.textAlign = "center";
+  context.textBaseline = "middle";
+  context.fillStyle = node.labelColor ?? palette.label;
+  context.fillText(text, node.x, node.y);
+  return text;
+}
+
 /** Draws a node's label under it on a halo; returns the lines it drew (for tests). */
 export function drawHaloLabel(
   context: LabelContext,
