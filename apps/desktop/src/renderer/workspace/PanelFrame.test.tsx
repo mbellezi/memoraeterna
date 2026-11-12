@@ -112,7 +112,11 @@ describe("the panel frame", () => {
 });
 
 describe("the path ribbon", () => {
-  const ref = (kind: "topic" | "source" | "note" | "entity", n: number, title: string) => ({
+  const ref = (
+    kind: "topic" | "source" | "note" | "entity" | "question",
+    n: number,
+    title: string
+  ) => ({
     kind,
     id: uuid(n),
     title
@@ -241,6 +245,24 @@ describe("the path ribbon", () => {
       />
     );
     expect(html).toContain("Ainda não citada em nenhum tópico");
+    expect(html).not.toContain("Sem lugar");
+    expect(html).not.toContain("Escolher lugar");
+  });
+
+  it("says a question that is being answered has no place yet, and offers none to choose", () => {
+    const loose = located([ref("question", 5, "Why do fermented foods keep?")]);
+    const html = renderToString(
+      <PathRibbonView
+        t={pt}
+        address={`memora://question/${uuid(5)}`}
+        place="tentativeQuestion"
+        onOpen={noop}
+        onChoosePlace={noop}
+        located={{ status: "ready", located: loose }}
+        onRetry={noop}
+      />
+    );
+    expect(html).toContain("Lugar: sai das citações quando a resposta terminar");
     expect(html).not.toContain("Sem lugar");
     expect(html).not.toContain("Escolher lugar");
   });

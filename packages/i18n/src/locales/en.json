@@ -4404,6 +4404,7 @@
       "retry": "Try again",
       "tentative": "Likely place:",
       "tentativeQuestion": "by the citations, when the answer is done",
+      "tentativeQuestionNone": "Place: it comes from the citations when the answer is done",
       "tentativeSource": "set when the notes are done",
       "topLevel": "At the top level of the tree",
       "unsorted": "No place",
@@ -4774,6 +4775,137 @@
       "errorKept": "Nothing was changed, and the actions still work.",
       "noCommand": "No action matches “{query}”.",
       "noResult": "Nothing with “{query}”."
+    }
+  },
+  "askPanel": {
+    "answer": {
+      "label": "Answer",
+      "saved": "Saved in Questions. Each citation leads to the exact passage.",
+      "savedPlace": "Saved in Questions. Its place in the tree comes from the citations when the answer ends. Each citation leads to the exact passage."
+    },
+    "band": {
+      "again": "Ask again",
+      "answering": "Writing the answer",
+      "answeringSourcesMany": "{count} sources cited so far",
+      "answeringSourcesOne": "{count} source cited so far",
+      "canceled": "Stopped by you",
+      "continue": "Continue",
+      "doneOn": "Answered on {date}",
+      "retrieving": "Reading the library",
+      "retrievingHint": "looking for the passages that answer this",
+      "sourcesMany": "{count} sources",
+      "sourcesOne": "{count} source",
+      "stale": "May be outdated: a cited source changed after the answer.",
+      "stop": "Stop",
+      "waiting": "Waiting for the cloud AI to answer",
+      "waitingHint": "the answer continues from here"
+    },
+    "chip": {
+      "labelPlain": "Citation {number}"
+    },
+    "compact": {
+      "error": "Could not open."
+    },
+    "empty": {
+      "add": "Add a source",
+      "body": "Rephrase the question, or add a source that covers it.",
+      "headline": "I found nothing in your library about this.",
+      "rephrase": "Rephrase"
+    },
+    "error": {
+      "kept": "Your library is as it was.",
+      "message": "This question could not be opened."
+    },
+    "failed": {
+      "again": "Could not ask again.",
+      "kept": "What was written before it stopped is kept below.",
+      "keptNothing": "Your question is saved, so you can ask again.",
+      "message": "The AI route did not answer.",
+      "otherRoute": "Use another route",
+      "stop": "Could not stop the answer."
+    },
+    "followUp": {
+      "label": "Follow-up question",
+      "placeholder": "Keep asking, in the same scope…",
+      "send": "Ask"
+    },
+    "kind": "Ask",
+    "launcher": {
+      "draftLabel": "Your question",
+      "empty": {
+        "body": "Ask about what you saved. Each question is kept in Library › Questions, with its answer.",
+        "headline": "Nothing asked yet."
+      },
+      "error": {
+        "kept": "Your words are still in the field.",
+        "message": "The question could not be sent."
+      },
+      "heading": "Ask your library",
+      "hintAsk": "to ask",
+      "hintNewline": "new line",
+      "lead": "The answer cites the exact passages it rests on. It is saved in Questions and never changes your notes.",
+      "long": "Keep it under 1,000 characters.",
+      "placeholder": "What do you want to know?",
+      "recent": {
+        "heading": "Recent questions",
+        "label": "Open a recent question"
+      },
+      "scope": {
+        "label": "Scope",
+        "library": "whole library",
+        "source": "source: {title}",
+        "topic": "topic: {title}",
+        "unsupported": "Only the whole library, a topic or a source can be asked about.",
+        "unsupportedKept": "Nothing was asked."
+      },
+      "short": "Write at least 3 characters.",
+      "starting": "Sending the question…",
+      "submit": "Ask"
+    },
+    "meta": {
+      "asked": "Asked on {date}",
+      "cloud": "cloud AI",
+      "local": "local AI",
+      "scopeLibrary": "scope: whole library",
+      "scopeSource": "scope: source {title}",
+      "scopeSources": "scope: {count} sources",
+      "scopeTopic": "scope: topic {title}"
+    },
+    "missing": {
+      "action": "See Questions",
+      "body": "It may have been deleted. Your notes and sources are as they were.",
+      "headline": "This question is no longer in the library."
+    },
+    "sources": {
+      "changed": "changed since the answer",
+      "heading": "Evidence for this answer",
+      "hint": "The numbers are those of the citations.",
+      "label": "Passages cited by this answer",
+      "open": "Open the passage beside",
+      "passagesMany": "{count} passages cited",
+      "passagesOne": "{count} passage cited",
+      "readFailed": "The passage could not be read.",
+      "readFromMany": "from {count} sources",
+      "readFromOne": "from {count} source",
+      "readNotCited": "Read, not cited",
+      "readNotCitedReason": "not used in the answer",
+      "readNotCitedSibling": "Another passage of source {number}",
+      "readPassagesMany": "{count} passages read",
+      "readPassagesOne": "{count} passage read",
+      "reading": "reading…",
+      "removed": "passage removed",
+      "seeSource": "see the source"
+    },
+    "tray": {
+      "empty": "Hover or focus a citation to read its passage here.",
+      "heading": "Citation {number}",
+      "label": "Passage of the citation"
+    },
+    "versions": {
+      "label": "Answer versions",
+      "next": "Next version",
+      "of": "Version {version} of {total}",
+      "previous": "Previous version"
     }
   },
   "preview": {

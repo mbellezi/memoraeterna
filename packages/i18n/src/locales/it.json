@@ -4402,6 +4402,7 @@
       "retry": "Riprova",
       "tentative": "Posizione probabile:",
       "tentativeQuestion": "dalle citazioni, quando la risposta sarà finita",
+      "tentativeQuestionNone": "Posto: deriva dalle citazioni quando la risposta sarà finita",
       "tentativeSource": "definita quando le note saranno pronte",
       "topLevel": "Al primo livello dell’albero",
       "unsorted": "Senza posizione",
@@ -4772,6 +4773,137 @@
       "errorKept": "Nulla è stato modificato e le azioni continuano a funzionare.",
       "noCommand": "Nessuna azione corrisponde a “{query}”.",
       "noResult": "Niente per “{query}”."
+    }
+  },
+  "askPanel": {
+    "answer": {
+      "label": "Risposta",
+      "saved": "Salvata in Domande. Ogni citazione porta al passaggio esatto.",
+      "savedPlace": "Salvata in Domande. Il suo posto nell’albero deriva dalle citazioni quando la risposta sarà finita. Ogni citazione porta al passaggio esatto."
+    },
+    "band": {
+      "again": "Rifai",
+      "answering": "Scrittura della risposta",
+      "answeringSourcesMany": "{count} fonti citate finora",
+      "answeringSourcesOne": "{count} fonte citata finora",
+      "canceled": "Interrotta da te",
+      "continue": "Continua",
+      "doneOn": "Risposta il {date}",
+      "retrieving": "Lettura della biblioteca",
+      "retrievingHint": "ricerca dei passaggi che rispondono",
+      "sourcesMany": "{count} fonti",
+      "sourcesOne": "{count} fonte",
+      "stale": "Potrebbe essere superata: una fonte citata è cambiata dopo la risposta.",
+      "stop": "Interrompi",
+      "waiting": "In attesa della risposta dell’IA nel cloud",
+      "waitingHint": "la risposta continua da qui"
+    },
+    "chip": {
+      "labelPlain": "Citazione {number}"
+    },
+    "compact": {
+      "error": "Impossibile aprire."
+    },
+    "empty": {
+      "add": "Aggiungi una fonte",
+      "body": "Riformula la domanda o aggiungi una fonte che tratti l’argomento.",
+      "headline": "Non ho trovato nulla nella tua biblioteca su questo.",
+      "rephrase": "Riformula"
+    },
+    "error": {
+      "kept": "La tua biblioteca è rimasta com’era.",
+      "message": "Impossibile aprire questa domanda."
+    },
+    "failed": {
+      "again": "Impossibile rifare la domanda.",
+      "kept": "Ciò che era stato scritto prima dell’interruzione è conservato qui sotto.",
+      "keptNothing": "La tua domanda è salvata: puoi rifarla.",
+      "message": "Il percorso IA non ha risposto.",
+      "otherRoute": "Usa un altro percorso",
+      "stop": "Impossibile interrompere la risposta."
+    },
+    "followUp": {
+      "label": "Domanda di approfondimento",
+      "placeholder": "Continua a chiedere, nello stesso ambito…",
+      "send": "Chiedi"
+    },
+    "kind": "Chiedi",
+    "launcher": {
+      "draftLabel": "La tua domanda",
+      "empty": {
+        "body": "Chiedi di ciò che hai salvato. Ogni domanda resta in Biblioteca › Domande, con la sua risposta.",
+        "headline": "Ancora nessuna domanda."
+      },
+      "error": {
+        "kept": "Le tue parole sono ancora nel campo.",
+        "message": "Impossibile inviare la domanda."
+      },
+      "heading": "Chiedi alla tua biblioteca",
+      "hintAsk": "per chiedere",
+      "hintNewline": "nuova riga",
+      "lead": "La risposta cita i passaggi esatti su cui si basa. Viene salvata in Domande e non modifica mai le tue note.",
+      "long": "Usa al massimo 1.000 caratteri.",
+      "placeholder": "Cosa vuoi sapere?",
+      "recent": {
+        "heading": "Domande recenti",
+        "label": "Apri una domanda recente"
+      },
+      "scope": {
+        "label": "Ambito",
+        "library": "tutta la biblioteca",
+        "source": "fonte: {title}",
+        "topic": "argomento: {title}",
+        "unsupported": "Si può chiedere solo di tutta la biblioteca, di un argomento o di una fonte.",
+        "unsupportedKept": "Non è stato chiesto nulla."
+      },
+      "short": "Scrivi almeno 3 caratteri.",
+      "starting": "Invio della domanda…",
+      "submit": "Chiedi"
+    },
+    "meta": {
+      "asked": "Chiesta il {date}",
+      "cloud": "IA nel cloud",
+      "local": "IA locale",
+      "scopeLibrary": "ambito: tutta la biblioteca",
+      "scopeSource": "ambito: fonte {title}",
+      "scopeSources": "ambito: {count} fonti",
+      "scopeTopic": "ambito: argomento {title}"
+    },
+    "missing": {
+      "action": "Vedi Domande",
+      "body": "Potrebbe essere stata eliminata. Le tue note e le tue fonti sono rimaste come erano.",
+      "headline": "Questa domanda non è più nella biblioteca."
+    },
+    "sources": {
+      "changed": "cambiata dopo la risposta",
+      "heading": "Prove di questa risposta",
+      "hint": "I numeri sono quelli delle citazioni.",
+      "label": "Passaggi citati da questa risposta",
+      "open": "Apri il passaggio accanto",
+      "passagesMany": "{count} passaggi citati",
+      "passagesOne": "{count} passaggio citato",
+      "readFailed": "Impossibile leggere il passaggio.",
+      "readFromMany": "da {count} fonti",
+      "readFromOne": "da {count} fonte",
+      "readNotCited": "Letti, non citati",
+      "readNotCitedReason": "non usato nella risposta",
+      "readNotCitedSibling": "Un altro passaggio della fonte {number}",
+      "readPassagesMany": "{count} passaggi letti",
+      "readPassagesOne": "{count} passaggio letto",
+      "reading": "lettura…",
+      "removed": "passaggio rimosso",
+      "seeSource": "vedi la fonte"
+    },
+    "tray": {
+      "empty": "Passa il mouse o il focus su una citazione per leggere qui il suo passaggio.",
+      "heading": "Citazione {number}",
+      "label": "Passaggio della citazione"
+    },
+    "versions": {
+      "label": "Versioni della risposta",
+      "next": "Versione successiva",
+      "of": "Versione {version} di {total}",
+      "previous": "Versione precedente"
     }
   },
   "preview": {
