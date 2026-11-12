@@ -60,12 +60,21 @@ async function copyText(text: string): Promise<boolean> {
  * with "Revoke" (asked first, in the row), and "Pair an app…", which shows the pairing token once.
  * The gateway answers only paired apps; the token is never kept after the person is done with it.
  */
-export function GatewayRow({ entry, handle }: { entry: SettingEntryV2; handle: GatewayHandle }) {
+export function GatewayRow({
+  entry,
+  handle,
+  initialOpen = false
+}: {
+  entry: SettingEntryV2;
+  handle: GatewayHandle;
+  /** The row starts open (the screens tool shows the address and the paired apps this way). */
+  initialOpen?: boolean;
+}) {
   const { t } = useSettings();
   const { gateway } = handle;
   // A read that failed opens the row by itself, so its sentence and its retry are not hidden.
   const [opened, setOpened] = useState<boolean | null>(null);
-  const open = opened ?? gateway.status === "failed";
+  const open = opened ?? (initialOpen || gateway.status === "failed");
   const meta =
     gateway.status === "ready"
       ? gatewayMeta(t, gateway.value.status, gateway.value.clients)
@@ -166,9 +175,11 @@ function GatewayPage({
     setCopied(null);
   };
 
+  // The paired apps run to the row's right edge, where every other control aligns; the status, the
+  // pairing form and the one-time code keep a reading width.
   return (
-    <div className="grid max-w-[34rem] gap-4">
-      <div className="grid gap-1.5">
+    <div className="grid gap-4">
+      <div className="grid max-w-[34rem] gap-1.5">
         <StatusLine tone={stateTone[gateway.state]}>
           {t("settingsIntegrations.gateway.statusLine", {
             values: {
@@ -209,7 +220,7 @@ function GatewayPage({
           {t("settingsIntegrations.gateway.clients")}
         </h4>
         {paired.length === 0 ? (
-          <p className="m-0 text-sm text-secondary-foreground [text-wrap:pretty]">
+          <p className="m-0 max-w-[34rem] text-sm text-secondary-foreground [text-wrap:pretty]">
             {t("settingsIntegrations.gateway.noClients")}
           </p>
         ) : (
@@ -269,7 +280,7 @@ function GatewayPage({
         <div
           role="group"
           aria-label={t("settingsIntegrations.gateway.tokenTitle")}
-          className="grid gap-2 rounded-lg bg-warning-soft p-3 text-sm text-foreground"
+          className="grid max-w-[34rem] gap-2 rounded-lg bg-warning-soft p-3 text-sm text-foreground"
         >
           <p className="m-0 font-semibold">{t("settingsIntegrations.gateway.tokenTitle")}</p>
           <p className="m-0 [text-wrap:pretty]">{t("settingsIntegrations.gateway.tokenWarning")}</p>
@@ -306,14 +317,18 @@ function GatewayPage({
             {t("settingsIntegrations.gateway.pair")}
           </Button>
           {gateway.state !== "ready" ? (
-            <p className="m-0 mt-1 text-xs text-muted-foreground">
-              {t("settingsIntegrations.gateway.pairNeedsReady")}
+            <p className="m-0 mt-1 max-w-[34rem] text-xs text-muted-foreground [text-wrap:pretty]">
+              {t(
+                gateway.state === "starting"
+                  ? "settingsIntegrations.gateway.pairNeedsReady"
+                  : "settingsIntegrations.gateway.pairRestart"
+              )}
             </p>
           ) : null}
         </div>
       ) : (
         <form
-          className="grid gap-3 rounded-lg border border-border bg-surface p-3"
+          className="grid max-w-[34rem] gap-3 rounded-lg border border-border bg-surface p-3"
           onSubmit={(event) => {
             event.preventDefault();
             void pair();

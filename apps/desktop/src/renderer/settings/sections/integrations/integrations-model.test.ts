@@ -63,13 +63,13 @@ describe("the words of a value", () => {
 
 describe("the line under the sync", () => {
   it("is nothing while the sync is off and a note while it is paused", () => {
-    expect(syncLine(en, "off", sync({}), now)).toBeNull();
-    expect(syncLine(en, "paused", sync({}), now)).toMatchObject({ tone: "idle", canRun: false });
+    expect(syncLine(en, "off", sync({}), now, 0)).toBeNull();
+    expect(syncLine(en, "paused", sync({}), now, 0)).toMatchObject({ tone: "idle", canRun: false });
   });
 
   it("shows the progress of a run, and no way to start another", () => {
     expect(
-      syncLine(en, "on", sync({ state: "running", stage: "projecting", progress: 0.5 }), now)
+      syncLine(en, "on", sync({ state: "running", stage: "projecting", progress: 0.5 }), now, 0)
     ).toMatchObject({
       tone: "working",
       canRun: false,
@@ -77,17 +77,23 @@ describe("the line under the sync", () => {
     });
   });
 
-  it("says when it last finished with the conflicts, warns on conflicts or a failure", () => {
-    const done = syncLine(en, "on", sync({}), now);
+  it("says when it last finished, and counts only what waits in the vault reviews", () => {
+    const done = syncLine(en, "on", sync({}), now, 0);
     expect(done).toMatchObject({ tone: "ok", canRun: true });
     expect(done?.text).toContain("Synced today, 09:12");
-    expect(done?.text).toContain("0 conflicts");
-    expect(syncLine(en, "on", sync({ conflicts: 2 }), now)?.tone).toBe("warn");
-    expect(syncLine(en, "on", sync({ state: "failed" }), now)).toMatchObject({
+    expect(done?.text).not.toContain("·");
+    // Its own conflict count is not a second count of the same pages.
+    expect(syncLine(en, "on", sync({ conflicts: 2 }), now, 0)?.text).not.toContain("conflict");
+    const waiting = syncLine(en, "on", sync({}), now, 2);
+    expect(waiting).toMatchObject({ tone: "warn" });
+    expect(waiting?.text).toContain("Synced today, 09:12");
+    expect(waiting?.text).toContain(" · 2 waiting for review");
+    expect(syncLine(en, "on", sync({}), now, 1)?.text).toContain("1 waiting for review");
+    expect(syncLine(en, "on", sync({ state: "failed" }), now, 0)).toMatchObject({
       tone: "warn",
       canRun: true
     });
-    expect(syncLine(en, "on", sync({ state: "idle", finishedAt: null }), now)?.text).toBe(
+    expect(syncLine(en, "on", sync({ state: "idle", finishedAt: null }), now, 0)?.text).toBe(
       "It has not synced yet."
     );
   });

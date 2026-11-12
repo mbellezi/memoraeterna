@@ -5475,6 +5475,7 @@
       "pair": "Associer une app…",
       "pairFailed": "Impossible de créer l’association. Rien n’a été conservé.",
       "pairNeedsReady": "Pour associer, la connexion locale doit être prête.",
+      "pairRestart": "Pour associer, la connexion locale doit être prête. Elle démarre à l’ouverture de Memora ; si elle reste arrêtée, fermez Memora et rouvrez-le.",
       "pairedSince": "Associée {since}",
       "readFailed": "Impossible de lire la connexion locale.",
       "revoke": "Révoquer",
@@ -5505,6 +5506,7 @@
       "hint": "Ce qui vous attend après que Memora a écrit dans le coffre : des pages modifiées des deux côtés, des fichiers qui n’ont pas pu être écrits et des modifications du plugin.",
       "none": "rien en attente",
       "plugin": "Modifications du plugin",
+      "pluginReadFailed": "Impossible de lire les modifications du plugin.",
       "title": "Relectures du coffre",
       "waitingMany": "{count} en attente",
       "waitingOne": "{count} en attente",
@@ -5521,8 +5523,6 @@
       "saveFailed": "Impossible d’enregistrer. Le choix précédent reste."
     },
     "sync": {
-      "conflictsMany": "{count} conflits",
-      "conflictsOne": "{count} conflit",
       "failed": "La dernière synchronisation s’est arrêtée. Rien n’a été perdu ; réessayez.",
       "last": "Synchronisé {when}",
       "needsVault": "Choisissez le dossier du coffre ci-dessus pour activer la synchronisation.",
@@ -5533,6 +5533,8 @@
       "paused": "En pause",
       "pausedNote": "En pause : Memora garde tout et ne synchronise pas tant que vous ne la réactivez pas.",
       "readFailed": "Impossible de lire l’état de la synchronisation.",
+      "reviewMany": "{count} en attente de relecture",
+      "reviewOne": "{count} en attente de relecture",
       "runFailed": "La synchronisation n'a pas pu démarrer.",
       "saveFailed": "Impossible de changer la synchronisation. Le choix précédent reste.",
       "statusFailed": "Impossible de voir la dernière synchronisation."

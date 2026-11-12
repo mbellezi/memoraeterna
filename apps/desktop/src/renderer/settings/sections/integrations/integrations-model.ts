@@ -64,12 +64,17 @@ export interface SyncLine {
   progress: number | null;
 }
 
-/** The line under the sync control: running, failed, or when it last finished and with how many conflicts. */
+/**
+ * The line under the sync control: running, failed, or when it last finished. What waits for review
+ * is counted once, by "Vault reviews" (`waiting`, the same number): the sync's own conflict count
+ * would be a second, differing count of the same pages, so the line takes the review's.
+ */
 export function syncLine(
   t: Translator,
   mode: ObsidianSyncMode,
   status: ObsidianSyncStatus,
-  now: Date
+  now: Date,
+  waiting: number
 ): SyncLine | null {
   if (mode === "off") return null;
   if (mode === "paused")
@@ -93,7 +98,6 @@ export function syncLine(
       canRun: true,
       progress: null
     };
-  const conflicts = conflictsText(t, status.conflicts);
   if (status.finishedAt === null)
     return {
       tone: "idle",
@@ -102,24 +106,19 @@ export function syncLine(
       progress: null
     };
   return {
-    tone: status.conflicts > 0 ? "warn" : "ok",
+    tone: waiting > 0 ? "warn" : "ok",
     text: `${t("settingsIntegrations.sync.last", {
       values: { when: formatWhen(t, t.locale, status.finishedAt, now) }
-    })} · ${conflicts}`,
+    })}${waiting > 0 ? ` · ${reviewText(t, waiting)}` : ""}`,
     canRun: true,
     progress: null
   };
 }
 
-export const conflictsText = (t: Translator, count: number): string =>
-  t(
-    count === 1
-      ? "settingsIntegrations.sync.conflictsOne"
-      : "settingsIntegrations.sync.conflictsMany",
-    {
-      values: { count }
-    }
-  );
+export const reviewText = (t: Translator, count: number): string =>
+  t(count === 1 ? "settingsIntegrations.sync.reviewOne" : "settingsIntegrations.sync.reviewMany", {
+    values: { count }
+  });
 
 export const sourcesText = (t: Translator, count: number): string =>
   count === 0

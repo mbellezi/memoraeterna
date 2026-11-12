@@ -1,6 +1,6 @@
 import { useId, useRef, useState, type KeyboardEvent, type ReactNode, type RefObject } from "react";
 import { ChevronDown } from "lucide-react";
-import type { Translator } from "@app/i18n";
+import type { MessageKey, Translator } from "@app/i18n";
 
 import { RunningRing, SolidCheck, SolidTriangle } from "../components/ui/solid-glyphs";
 import { InlineAction } from "./InlineAction";
@@ -390,7 +390,7 @@ export function ReadProblem({
   message,
   onRetry
 }: {
-  t: Translator;
+  t: (key: MessageKey) => string;
   message: string;
   onRetry: () => void;
 }) {

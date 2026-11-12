@@ -18,6 +18,7 @@ let gateway: () => Promise<unknown>;
 let layout: unknown;
 let describeValues: Record<string, unknown>;
 let editorial: unknown[];
+let editorialRead: (() => Promise<unknown>) | null;
 let applied: unknown;
 let startSync: () => Promise<unknown>;
 let reads: number;
@@ -85,6 +86,7 @@ beforeEach(() => {
   reads = 0;
   wikiRead = () => Promise.resolve(wikiStatusOf());
   editorial = [];
+  editorialRead = null;
   applied = { config: null, migrations: [] };
   startSync = () => Promise.resolve({});
   storage = () => {
@@ -171,7 +173,7 @@ beforeEach(() => {
       },
       editorialConflicts: () => {
         reads += 1;
-        return Promise.resolve(editorial);
+        return editorialRead ? editorialRead() : Promise.resolve(editorial);
       }
     },
     integrations: {
@@ -259,10 +261,11 @@ describe("Settings › Integrations", () => {
     expect(segments.map((segment) => segment.disabled)).toEqual([false, true, true]);
   });
 
-  it("shows when the sync last ran with its conflicts, and runs it now", async () => {
+  it("shows when the sync last ran, says nothing about conflicts while none waits, and runs it now", async () => {
     await mount();
     expect(row("obsidianSync").textContent).toContain("Synced today");
-    expect(row("obsidianSync").textContent).toContain("0 conflicts");
+    expect(row("obsidianSync").textContent).not.toContain("conflict");
+    expect(row("obsidianSync").textContent).not.toContain("waiting for review");
     await click(button("Sync now"));
     expect(called("obsidian.startSync")).toHaveLength(1);
   });
@@ -352,6 +355,101 @@ describe("Settings › Integrations", () => {
     expect(headings).toEqual(["Pages edited on both sides", "Plugin edits"]);
     expect(dom.document.body.textContent).not.toContain("Sync review");
     expect(dom.document.body.textContent).not.toContain("Pending local edits");
+  });
+
+  it("counts what waits for review once: the sync line takes the number of the vault reviews", async () => {
+    editorial = [
+      {
+        id: "6f1f8b2e-1c10-4d3a-9a39-3a9c2b1d7e77",
+        path: "Notes/edited-in-obsidian.md",
+        receipt: { status: "conflict", revision: "r1", comparison: null }
+      }
+    ];
+    await mount();
+    expect(row("obsidianSync").textContent).toContain("1 waiting for review");
+    expect(dom.document.body.textContent).toContain("Vault reviews · 1 waiting");
+    expect(dom.document.body.textContent).not.toContain("0 conflicts");
+  });
+
+  it("says a failed read of the plugin's edits as a read, with one retry, and never keeps loading", async () => {
+    editorialRead = () => Promise.reject(new Error("down"));
+    await mount();
+    const text = dom.document.body.textContent ?? "";
+    expect(text).toContain("Could not read the plugin edits.");
+    expect(text).not.toContain("Delivery failed");
+    expect(text).not.toContain("Loading projection");
+    expect(text).not.toContain("nothing waiting");
+    const alert = [...dom.document.querySelectorAll("[role=alert]")].find((element) =>
+      element.textContent?.includes("plugin edits")
+    ) as HTMLElement;
+    expect(alert.querySelectorAll("button")).toHaveLength(1);
+    editorialRead = null;
+    await click(button("Retry", alert));
+    await settle();
+    expect(dom.document.body.textContent).not.toContain("Could not read the plugin edits.");
+  });
+
+  it("keeps the plugin's waiting edits in view when only the wiki read failed", async () => {
+    wikiRead = () => Promise.reject(new Error("down"));
+    editorial = [
+      {
+        id: "6f1f8b2e-1c10-4d3a-9a39-3a9c2b1d7e77",
+        path: "Notes/edited-in-obsidian.md",
+        receipt: { status: "conflict", revision: "r1", comparison: null }
+      }
+    ];
+    await mount();
+    const text = dom.document.body.textContent ?? "";
+    expect(text).toContain("Vault reviews · 1 waiting");
+    expect(text).toContain("Notes/edited-in-obsidian.md");
+    expect(text).not.toContain("Pages edited on both sides");
+    // The Sources row still says its one failure.
+    expect(
+      [...dom.document.querySelectorAll("[role=alert]")].filter((a) =>
+        a.textContent?.includes("Could not read the vault’s sources.")
+      )
+    ).toHaveLength(1);
+  });
+
+  it("shows one failure and one retry for one failed storage read, in the vault row only", async () => {
+    storage = () => Promise.reject(new Error("closed"));
+    await mount();
+    const alerts = [...dom.document.querySelectorAll("[role=alert]")];
+    expect(alerts).toHaveLength(1);
+    expect(row("obsidianVaultPath").contains(alerts[0]!)).toBe(true);
+    expect(row("obsidian.layout.attachments").querySelector("[role=alert]")).toBeNull();
+    expect(row("obsidian.layout.attachments").textContent).not.toContain("Choose the vault folder");
+    expect(
+      (row("obsidian.layout.attachments").querySelector("[role=switch]") as HTMLButtonElement)
+        .disabled
+    ).toBe(true);
+    storage = () => Promise.resolve(vaultSettings);
+    const before = reads;
+    await click(button("Retry", row("obsidianVaultPath")));
+    await settle();
+    // The same retry read the layout again too.
+    expect(reads).toBeGreaterThan(before);
+    expect(dom.document.querySelectorAll("[role=alert]")).toHaveLength(0);
+  });
+
+  it("says once, in the sources row, that a vault is needed, and leaves the chapters switch bare", async () => {
+    storage = () =>
+      Promise.resolve({ ...vaultSettings, obsidianVaultPath: null, obsidianSyncEnabled: false });
+    await mount();
+    expect(row("obsidian.wiki.scope").textContent).toContain("Choose the vault folder above");
+    expect(row("obsidian.wiki.includeDescendants").textContent).not.toContain(
+      "Choose the vault folder"
+    );
+  });
+
+  it("says what to do when the local connection is stopped", async () => {
+    gateway = () =>
+      Promise.resolve({ state: "stopped", host: "127.0.0.1", port: null, baseUrl: null });
+    await mount();
+    await click(row("integrations.gateway").querySelector("button[aria-expanded]")!);
+    const page = row("integrations.gateway").textContent ?? "";
+    expect(page).toContain("It starts when Memora opens");
+    expect((button("Pair an app…") as HTMLButtonElement).disabled).toBe(true);
   });
 
   it("counts the chosen sources, saves the chapters switch at once with the saved sources", async () => {

@@ -5470,6 +5470,7 @@
       "pair": "Pair an app…",
       "pairFailed": "Could not create the pairing. Nothing was kept.",
       "pairNeedsReady": "To pair, the local connection has to be ready.",
+      "pairRestart": "To pair, the local connection has to be ready. It starts when Memora opens; if it stays stopped, close Memora and open it again.",
       "pairedSince": "Paired {since}",
       "readFailed": "Could not read the local connection.",
       "revoke": "Revoke",
@@ -5500,6 +5501,7 @@
       "hint": "What waits for you after Memora writes to the vault: pages edited on both sides, files that could not be written and edits from the plugin.",
       "none": "nothing waiting",
       "plugin": "Plugin edits",
+      "pluginReadFailed": "Could not read the plugin edits.",
       "title": "Vault reviews",
       "waitingMany": "{count} waiting",
       "waitingOne": "{count} waiting",
@@ -5516,8 +5518,6 @@
       "saveFailed": "Could not save. The previous choice stays."
     },
     "sync": {
-      "conflictsMany": "{count} conflicts",
-      "conflictsOne": "{count} conflict",
       "failed": "The last sync stopped. Nothing was lost; try again.",
       "last": "Synced {when}",
       "needsVault": "Choose the vault folder above to turn the sync on.",
@@ -5528,6 +5528,8 @@
       "paused": "Paused",
       "pausedNote": "Paused: Memora keeps everything and does not sync until you turn it on again.",
       "readFailed": "Could not read the state of the sync.",
+      "reviewMany": "{count} waiting for review",
+      "reviewOne": "{count} waiting for review",
       "runFailed": "Could not start the sync.",
       "saveFailed": "Could not change the sync. The previous choice stays.",
       "statusFailed": "Could not see the last sync."

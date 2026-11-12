@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { FileWarning, X } from "lucide-react";
 import type { MessageKey, Translator } from "@app/i18n";
+import { ReadProblem } from "../settings/SettingControls";
 import { Button } from "./ui/button";
 import { MarkdownEditor } from "./MarkdownEditor";
 import { followEditorialConflicts } from "./obsidian-followers";
@@ -27,16 +28,21 @@ export function ObsidianEditorialCard({
 }) {
   const [ownRows, setOwnRows] = useState<Conflict[] | null>(null),
     [selected, setSelected] = useState<Conflict | null>(null),
-    [ownError, setError] = useState(false);
+    [ownReadFailed, setOwnReadFailed] = useState(false),
+    [sendFailed, setSendFailed] = useState(false);
   const rows = feed ? feed.rows : ownRows;
-  const error = ownError || Boolean(feed?.failed);
+  // A failed read and a failed comparison are two different things, each said in its own words.
+  const readFailed = feed ? feed.failed : ownReadFailed;
   const refresh = () =>
     feed
       ? feed.refresh()
       : window.app.obsidian
           .editorialConflicts()
-          .then(setOwnRows)
-          .catch(() => setError(true));
+          .then((value) => {
+            setOwnRows(value);
+            setOwnReadFailed(false);
+          })
+          .catch(() => setOwnReadFailed(true));
   // One read now, and one after each editorial projection or end of a sync (D16); no timer.
   const followed = feed === undefined;
   useEffect(
@@ -44,13 +50,17 @@ export function ObsidianEditorialCard({
       followed
         ? followEditorialConflicts(
             () => window.app,
-            setOwnRows,
-            () => setError(true)
+            (value) => {
+              setOwnRows(value);
+              setOwnReadFailed(false);
+            },
+            () => setOwnReadFailed(true)
           )
         : undefined,
     [followed]
   );
-  if (heading !== undefined && !error && !rows?.length && !selected) return null;
+  if (heading !== undefined && !readFailed && !sendFailed && !rows?.length && !selected)
+    return null;
   return (
     <section
       className={heading === undefined ? "grid gap-3 border-t border-border pt-4" : "grid gap-2"}
@@ -63,13 +73,22 @@ export function ObsidianEditorialCard({
       ) : (
         <h4 className="m-0 text-sm font-medium text-foreground">{heading}</h4>
       )}
-      {error && (
+      {readFailed && (
+        <ReadProblem
+          t={t}
+          message={t("settingsIntegrations.review.pluginReadFailed")}
+          onRetry={refresh}
+        />
+      )}
+      {sendFailed && (
         <p role="status" className="text-sm text-muted-foreground">
           {t("obsidianEditing.deliveryError")}
         </p>
       )}
       {rows === null ? (
-        <p>{t("obsidianWiki.loading")}</p>
+        readFailed ? null : (
+          <p>{t("obsidianWiki.loading")}</p>
+        )
       ) : rows.length ? (
         rows.map((row) => (
           <div key={row.id} className="flex items-center gap-3 rounded-xl bg-soft p-3">
@@ -81,11 +100,11 @@ export function ObsidianEditorialCard({
             </span>
             <Button
               onClick={() => {
-                setError(false);
+                setSendFailed(false);
                 void window.app.obsidian
                   .editorialComparison(row.id)
                   .then((receipt) => setSelected({ ...row, receipt }))
-                  .catch(() => setError(true));
+                  .catch(() => setSendFailed(true));
               }}
             >
               {t("obsidianWiki.review")}

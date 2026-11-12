@@ -5468,6 +5468,7 @@
       "pair": "Abbina un’app…",
       "pairFailed": "Non è stato possibile creare l’abbinamento. Non è stato salvato nulla.",
       "pairNeedsReady": "Per abbinare, la connessione locale deve essere pronta.",
+      "pairRestart": "Per abbinare, la connessione locale deve essere pronta. Si avvia quando Memora si apre; se resta ferma, chiudi Memora e riaprilo.",
       "pairedSince": "Abbinata {since}",
       "readFailed": "Non è stato possibile leggere la connessione locale.",
       "revoke": "Revoca",
@@ -5498,6 +5499,7 @@
       "hint": "Ciò che ti aspetta dopo che Memora scrive nel vault: pagine modificate su entrambi i lati, file che non è stato possibile scrivere e modifiche del plugin.",
       "none": "niente in attesa",
       "plugin": "Modifiche del plugin",
+      "pluginReadFailed": "Non è stato possibile leggere le modifiche del plugin.",
       "title": "Revisioni nel vault",
       "waitingMany": "{count} in attesa",
       "waitingOne": "{count} in attesa",
@@ -5514,8 +5516,6 @@
       "saveFailed": "Non è stato possibile salvare. Resta la scelta precedente."
     },
     "sync": {
-      "conflictsMany": "{count} conflitti",
-      "conflictsOne": "{count} conflitto",
       "failed": "L’ultima sincronizzazione si è fermata. Non è andato perso nulla; riprova.",
       "last": "Sincronizzato {when}",
       "needsVault": "Scegli qui sopra la cartella del vault per attivare la sincronizzazione.",
@@ -5526,6 +5526,8 @@
       "paused": "In pausa",
       "pausedNote": "In pausa: Memora conserva tutto e non sincronizza finché non la riattivi.",
       "readFailed": "Non è stato possibile leggere lo stato della sincronizzazione.",
+      "reviewMany": "{count} in attesa di revisione",
+      "reviewOne": "{count} in attesa di revisione",
       "runFailed": "Non è stato possibile avviare la sincronizzazione.",
       "saveFailed": "Non è stato possibile cambiare la sincronizzazione. Resta la scelta precedente.",
       "statusFailed": "Non è stato possibile vedere l’ultima sincronizzazione."

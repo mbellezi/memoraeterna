@@ -5477,6 +5477,7 @@
       "pair": "Emparejar una app…",
       "pairFailed": "No se pudo crear el emparejamiento. No se guardó nada.",
       "pairNeedsReady": "Para emparejar, la conexión local tiene que estar lista.",
+      "pairRestart": "Para emparejar, la conexión local tiene que estar lista. Se enciende cuando Memora se abre; si sigue detenida, cierra Memora y ábrelo de nuevo.",
       "pairedSince": "Emparejada {since}",
       "readFailed": "No se pudo leer la conexión local.",
       "revoke": "Revocar",
@@ -5507,6 +5508,7 @@
       "hint": "Lo que te espera después de que Memora escribe en la bóveda: páginas editadas en los dos lados, archivos que no se pudieron grabar y ediciones del plugin.",
       "none": "nada esperando",
       "plugin": "Ediciones del plugin",
+      "pluginReadFailed": "No se pudieron leer las ediciones del plugin.",
       "title": "Revisiones en la bóveda",
       "waitingMany": "{count} esperando",
       "waitingOne": "{count} esperando",
@@ -5523,8 +5525,6 @@
       "saveFailed": "No se pudo guardar. Sigue la elección anterior."
     },
     "sync": {
-      "conflictsMany": "{count} conflictos",
-      "conflictsOne": "{count} conflicto",
       "failed": "La última sincronización se detuvo. No se perdió nada; inténtalo de nuevo.",
       "last": "Sincronizado {when}",
       "needsVault": "Elige arriba la carpeta de la bóveda para activar la sincronización.",
@@ -5535,6 +5535,8 @@
       "paused": "En pausa",
       "pausedNote": "En pausa: Memora guarda todo y no sincroniza hasta que la actives de nuevo.",
       "readFailed": "No se pudo leer el estado de la sincronización.",
+      "reviewMany": "{count} esperando revisión",
+      "reviewOne": "{count} esperando revisión",
       "runFailed": "No se pudo iniciar la sincronización.",
       "saveFailed": "No se pudo cambiar la sincronización. Sigue la elección anterior.",
       "statusFailed": "No se pudo ver la última sincronización."

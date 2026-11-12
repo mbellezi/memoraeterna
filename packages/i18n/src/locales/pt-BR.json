@@ -5473,6 +5473,7 @@
       "pair": "Parear um app…",
       "pairFailed": "Não foi possível criar o pareamento. Nada foi guardado.",
       "pairNeedsReady": "Para parear, a conexão local precisa estar pronta.",
+      "pairRestart": "Para parear, a conexão local precisa estar pronta. Ela liga quando o Memora abre; se continuar parada, feche o Memora e abra de novo.",
       "pairedSince": "Pareado {since}",
       "readFailed": "Não foi possível ler a conexão local.",
       "revoke": "Revogar",
@@ -5503,6 +5504,7 @@
       "hint": "O que espera por você depois que o Memora escreve no cofre: páginas editadas dos dois lados, arquivos que não puderam ser gravados e edições do plugin.",
       "none": "nada esperando",
       "plugin": "Edições do plugin",
+      "pluginReadFailed": "Não foi possível ler as edições do plugin.",
       "title": "Revisões no cofre",
       "waitingMany": "{count} esperando",
       "waitingOne": "{count} esperando",
@@ -5519,8 +5521,6 @@
       "saveFailed": "Não foi possível salvar. A escolha anterior continua."
     },
     "sync": {
-      "conflictsMany": "{count} conflitos",
-      "conflictsOne": "{count} conflito",
       "failed": "A última sincronização parou. Nada foi perdido; tente de novo.",
       "last": "Sincronizado {when}",
       "needsVault": "Escolha a pasta do cofre acima para ligar a sincronização.",
@@ -5531,6 +5531,8 @@
       "paused": "Pausada",
       "pausedNote": "Pausada: o Memora guarda tudo e não sincroniza até você ligar de novo.",
       "readFailed": "Não foi possível ler o estado da sincronização.",
+      "reviewMany": "{count} esperando revisão",
+      "reviewOne": "{count} esperando revisão",
       "runFailed": "Não foi possível iniciar a sincronização.",
       "saveFailed": "Não foi possível mudar a sincronização. A escolha anterior continua.",
       "statusFailed": "Não foi possível ver a última sincronização."

@@ -15,7 +15,7 @@ import {
 import { cn } from "../../../lib/cn";
 import { StatusLine } from "../../SettingControls";
 import { useSettings } from "../../settings-context";
-import { useEditorialConflicts, type WikiHandle } from "./use-integrations-data";
+import type { EditorialHandle, WikiHandle } from "./use-integrations-data";
 
 type Diff = Awaited<ReturnType<typeof window.app.obsidian.wikiDiff>>;
 
@@ -33,13 +33,26 @@ const failureKey = (cause: unknown): MessageKey => {
   return "obsidianWiki.errors.load";
 };
 
+/** How many things wait for the person: the pages edited on both sides, the files that could not be written, the old wiki's files that stayed and the plugin's edits. */
+export function reviewCount(wiki: WikiHandle["wiki"], editorial: EditorialHandle): number {
+  const plugin = editorial.rows?.length ?? 0;
+  if (wiki.status !== "ready") return plugin;
+  return wiki.value.conflicts.length + wiki.value.retired.keptTotal + plugin;
+}
+
 /**
  * What the vault projection leaves for the person to look at (Settings › Integrations › Obsidian):
  * pages edited in Obsidian while Memora changed them too, files that could not be written, the old
  * wiki's files that stayed, and the edits the paired plugin sent. It sits under the Obsidian rows as
  * one quiet line that opens in place; it opens by itself when something waits for review.
  */
-export function ObsidianReview({ handle }: { handle: WikiHandle }) {
+export function ObsidianReview({
+  handle,
+  editorial
+}: {
+  handle: WikiHandle;
+  editorial: EditorialHandle;
+}) {
   const { t } = useSettings();
   const { wiki } = handle;
   const [diff, setDiff] = useState<Diff | null>(null);
@@ -47,19 +60,19 @@ export function ObsidianReview({ handle }: { handle: WikiHandle }) {
   const [error, setError] = useState<MessageKey | null>(null);
   const [opened, setOpened] = useState<boolean | null>(null);
   const bodyId = useId();
-  const editorial = useEditorialConflicts();
 
   if (wiki.status === "loading") return <Skeleton className="mt-3 h-4 w-48" />;
-  // The Sources row already says the wiki status could not be read and offers the one retry.
-  if (wiki.status === "failed") return null;
+  // The Sources row already says the wiki status could not be read and offers the one retry. What
+  // the plugin sent is another read: it stays here while an edit waits or its own read failed.
+  if (wiki.status === "failed" && !editorial.rows?.length && !editorial.failed) return null;
 
-  const status = wiki.value;
-  const failed = status.conflicts.filter(isFailedFile);
-  const pending = status.conflicts.filter((row) => !isFailedFile(row));
-  const retiredKept = status.retired.keptTotal;
-  const waiting = pending.length + failed.length + retiredKept + (editorial.rows?.length ?? 0);
-  const open = opened ?? waiting > 0;
-  const working = status.job && ["queued", "running", "retrying"].includes(status.job.status);
+  const status = wiki.status === "ready" ? wiki.value : null;
+  const failed = status?.conflicts.filter(isFailedFile) ?? [];
+  const pending = status?.conflicts.filter((row) => !isFailedFile(row)) ?? [];
+  const waiting = reviewCount(wiki, editorial);
+  // It opens by itself for what waits, and for a failed read of the plugin's edits.
+  const open = opened ?? (waiting > 0 || editorial.failed);
+  const working = status?.job && ["queued", "running", "retrying"].includes(status.job.status);
 
   const act = async (work: () => Promise<void>) => {
     setBusy(true);
@@ -88,15 +101,20 @@ export function ObsidianReview({ handle }: { handle: WikiHandle }) {
       >
         <span>
           {t("settingsIntegrations.review.title")}
-          {" · "}
-          {waiting === 0
-            ? t("settingsIntegrations.review.none")
-            : t(
-                waiting === 1
-                  ? "settingsIntegrations.review.waitingOne"
-                  : "settingsIntegrations.review.waitingMany",
-                { values: { count: waiting } }
-              )}
+          {/* "Nothing waiting" would be a claim the failed read of the plugin's edits cannot back. */}
+          {waiting === 0 && editorial.failed ? null : (
+            <>
+              {" · "}
+              {waiting === 0
+                ? t("settingsIntegrations.review.none")
+                : t(
+                    waiting === 1
+                      ? "settingsIntegrations.review.waitingOne"
+                      : "settingsIntegrations.review.waitingMany",
+                    { values: { count: waiting } }
+                  )}
+            </>
+          )}
         </span>
         <ChevronDown
           aria-hidden="true"
@@ -104,9 +122,9 @@ export function ObsidianReview({ handle }: { handle: WikiHandle }) {
         />
       </button>
       {open ? (
-        <div id={bodyId} className="grid max-w-[34rem] gap-3">
-          {waiting === 0 ? (
-            <p className="m-0 text-xs text-muted-foreground [text-wrap:pretty]">
+        <div id={bodyId} className="grid gap-3">
+          {waiting === 0 && !editorial.failed ? (
+            <p className="m-0 max-w-[34rem] text-xs text-muted-foreground [text-wrap:pretty]">
               {t("settingsIntegrations.review.hint")}
             </p>
           ) : null}
@@ -119,12 +137,12 @@ export function ObsidianReview({ handle }: { handle: WikiHandle }) {
             <StatusLine tone="working" role="status">
               {t("settingsIntegrations.review.working")}
             </StatusLine>
-          ) : status.job?.status === "failed" ? (
+          ) : status?.job?.status === "failed" ? (
             <StatusLine tone="warn" role="status">
               {t(errorMessage(status.job.error))}
             </StatusLine>
           ) : null}
-          {status.delivery && status.delivery.total > 0 ? (
+          {status?.delivery && status.delivery.total > 0 ? (
             <DeliveryProgress t={t} delivery={status.delivery} quiet />
           ) : null}
           <ObsidianFailedFiles t={t} failed={failed} />
@@ -157,15 +175,17 @@ export function ObsidianReview({ handle }: { handle: WikiHandle }) {
               ))}
             </div>
           ) : null}
-          <ObsidianRetiredReport
-            t={t}
-            retired={status.retired}
-            busy={busy}
-            active={status.active}
-            onMove={(id) =>
-              void act(async () => handle.set(await window.app.obsidian.moveRetiredWiki({ id })))
-            }
-          />
+          {status ? (
+            <ObsidianRetiredReport
+              t={t}
+              retired={status.retired}
+              busy={busy}
+              active={status.active}
+              onMove={(id) =>
+                void act(async () => handle.set(await window.app.obsidian.moveRetiredWiki({ id })))
+              }
+            />
+          ) : null}
           <ObsidianEditorialCard
             t={t}
             feed={editorial}
@@ -173,7 +193,7 @@ export function ObsidianReview({ handle }: { handle: WikiHandle }) {
           />
         </div>
       ) : null}
-      {diff ? (
+      {diff && status ? (
         <ProjectionDiff
           error={error}
           t={t}

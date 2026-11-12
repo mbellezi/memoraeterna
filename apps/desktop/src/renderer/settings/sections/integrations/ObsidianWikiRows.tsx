@@ -144,6 +144,7 @@ export function WikiDescendantsRow({
     }
   };
 
+  // Without a vault the switch only waits: the Sources row above already says to choose one.
   return (
     <RegistryRow
       entry={entry}
@@ -162,17 +163,10 @@ export function WikiDescendantsRow({
         )
       }
       note={
-        failed || vaultBound === false ? (
-          <div className="grid gap-1">
-            {vaultBound === false ? (
-              <span>{t("settingsIntegrations.scope.needsVault")}</span>
-            ) : null}
-            {failed ? (
-              <StatusLine tone="warn" role="status">
-                {t("settingsIntegrations.scope.saveFailed")}
-              </StatusLine>
-            ) : null}
-          </div>
+        failed ? (
+          <StatusLine tone="warn" role="status">
+            {t("settingsIntegrations.scope.saveFailed")}
+          </StatusLine>
         ) : undefined
       }
     />

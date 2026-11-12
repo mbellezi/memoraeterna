@@ -142,7 +142,15 @@ export function useEditorialConflicts(): EditorialHandle {
       ),
     [round]
   );
-  return { rows, failed, refresh: () => setRound((value) => value + 1) };
+  return {
+    rows,
+    failed,
+    // Trying again clears the failure, so the person sees the read start again.
+    refresh: () => {
+      setFailed(false);
+      setRound((value) => value + 1);
+    }
+  };
 }
 
 export interface LayoutHandle {

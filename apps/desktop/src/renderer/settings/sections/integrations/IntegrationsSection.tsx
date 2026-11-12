@@ -11,9 +11,10 @@ import { BookLookupRow, GoogleBooksKeyRow } from "./BookRows";
 import { GatewayRow } from "./GatewayRow";
 import { AttachmentsRow } from "./ObsidianLayoutRow";
 import { SyncRow, VaultRow } from "./ObsidianRows";
-import { ObsidianReview } from "./ObsidianReview";
+import { ObsidianReview, reviewCount } from "./ObsidianReview";
 import { WikiDescendantsRow, WikiScopeRow } from "./ObsidianWikiRows";
 import {
+  useEditorialConflicts,
   useGateway,
   useLayoutStatus,
   useStorage,
@@ -28,13 +29,15 @@ import {
  * Registry-driven: one row for each entry of the section, in the registry's groups. Each status is
  * read once and follows the bus; a read that fails says so in its row, with the way to try again.
  */
-export function IntegrationsSection() {
+export function IntegrationsSection({ gatewayOpen = false }: { gatewayOpen?: boolean }) {
   const { t, section } = useSettings();
   const storage = useStorage();
   const sync = useSyncStatus();
   const wiki = useWikiStatus();
   const layout = useLayoutStatus();
   const gateway = useGateway();
+  const editorial = useEditorialConflicts();
+  const waiting = reviewCount(wiki.wiki, editorial);
 
   // `false` only once the storage is read and holds no vault; unknown (still reading, or failed) is `null`.
   const vaultBound =
@@ -50,7 +53,11 @@ export function IntegrationsSection() {
             entry={entry}
             storage={storage.storage}
             apply={storage.apply}
-            retry={storage.retry}
+            // The layout row reads the same settings: one retry covers both.
+            retry={() => {
+              storage.retry();
+              layout.reload();
+            }}
           />
         );
       case "obsidianSync":
@@ -61,6 +68,7 @@ export function IntegrationsSection() {
             apply={storage.apply}
             sync={sync.sync}
             retrySync={sync.retry}
+            waiting={waiting}
           />
         );
       case "obsidian.wiki.scope":
@@ -68,13 +76,19 @@ export function IntegrationsSection() {
       case "obsidian.wiki.includeDescendants":
         return <WikiDescendantsRow entry={entry} handle={wiki} vaultBound={vaultBound} />;
       case "obsidian.layout.attachments":
-        return <AttachmentsRow entry={entry} layout={layout} />;
+        return (
+          <AttachmentsRow
+            entry={entry}
+            layout={layout}
+            storageFailed={storage.storage.status === "failed"}
+          />
+        );
       case "bookLookup":
         return <BookLookupRow entry={entry} />;
       case "metadata:google-books":
         return <GoogleBooksKeyRow entry={entry} />;
       case "integrations.gateway":
-        return <GatewayRow entry={entry} handle={gateway} />;
+        return <GatewayRow entry={entry} handle={gateway} initialOpen={gatewayOpen} />;
       default:
         // A setting added to this section that the section does not draw yet still shows its value.
         return <RegistryRow entry={entry} control={<ReadOnlyValue entry={entry} />} />;
@@ -94,7 +108,9 @@ export function IntegrationsSection() {
           {entries.map((entry) => (
             <Fragment key={entry.id}>{rowOf(entry)}</Fragment>
           ))}
-          {group === "obsidian" && vaultBound !== false ? <ObsidianReview handle={wiki} /> : null}
+          {group === "obsidian" && vaultBound !== false ? (
+            <ObsidianReview handle={wiki} editorial={editorial} />
+          ) : null}
         </SettingsGroup>
       ))}
       <p className="m-0 mt-8 text-sm text-secondary-foreground [text-wrap:pretty]">

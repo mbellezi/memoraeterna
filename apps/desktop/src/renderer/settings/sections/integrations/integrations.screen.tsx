@@ -5,7 +5,7 @@ import { settingsRegistryV2, type Json } from "../../../../shared/settings-regis
 import { screenTranslator } from "../../../workspace/screen-locale";
 import type { ScreenModule } from "../../../workspace/surfaces";
 import { SettingsSurface } from "../../SettingsSurface";
-import { section } from "./IntegrationsSection";
+import { IntegrationsSection } from "./IntegrationsSection";
 
 /** Settings fills the content area of the window: the rail's width stands empty beside it. */
 export const fullWindow = true;
@@ -14,6 +14,12 @@ export const surface = "settings-integrations";
 
 const t = screenTranslator();
 const noop = () => undefined;
+
+/** The section with its local connection open, so every run shows the address and the paired apps. */
+const section = {
+  id: "integrations" as const,
+  Section: () => <IntegrationsSection gatewayOpen />
+};
 
 /**
  * What the Integrations section reads, over a library with an Obsidian vault in sync: the vault, the

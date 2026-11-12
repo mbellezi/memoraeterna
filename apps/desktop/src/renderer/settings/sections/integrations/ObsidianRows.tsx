@@ -108,11 +108,14 @@ export function SyncRow({
   storage,
   apply,
   sync,
-  retrySync
+  retrySync,
+  waiting
 }: Omit<StorageProps, "retry"> & {
   entry: SettingEntryV2;
   sync: Loaded<ObsidianSyncStatus>;
   retrySync: () => void;
+  /** How many things wait in "Vault reviews" below: the sync line names that count, not its own. */
+  waiting: number;
 }) {
   const settings = useSettings();
   const { t } = settings;
@@ -141,7 +144,7 @@ export function SyncRow({
     }
   };
 
-  const line = sync.status === "ready" ? syncLine(t, mode, sync.value, new Date()) : null;
+  const line = sync.status === "ready" ? syncLine(t, mode, sync.value, new Date(), waiting) : null;
   const runNow = async () => {
     setStarting(true);
     setRunFailed(false);
@@ -210,10 +213,12 @@ export function SyncRow({
                 {line.text}
                 {line.canRun ? (
                   <>
-                    <span aria-hidden="true"> · </span>
-                    <InlineAction size="xs" disabled={starting} onClick={() => void runNow()}>
-                      {t("settingsIntegrations.sync.now")}
-                    </InlineAction>
+                    {/* No dot between: it would start the next line when the action wraps. */}
+                    <span className="ml-2 inline-block whitespace-nowrap">
+                      <InlineAction size="xs" disabled={starting} onClick={() => void runNow()}>
+                        {t("settingsIntegrations.sync.now")}
+                      </InlineAction>
+                    </span>
                   </>
                 ) : null}
               </StatusLine>

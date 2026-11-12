@@ -52,7 +52,16 @@ const errorText = (cause: unknown): MessageKey => {
  * prepares the change and shows what it would move; nothing in the vault changes until the person
  * has closed their editors and confirms "Apply". The reset of this row prepares the same migration.
  */
-export function AttachmentsRow({ entry, layout }: { entry: SettingEntryV2; layout: LayoutHandle }) {
+export function AttachmentsRow({
+  entry,
+  layout,
+  storageFailed
+}: {
+  entry: SettingEntryV2;
+  layout: LayoutHandle;
+  /** The settings this row's read also depends on could not be read: the Vault row says so, once. */
+  storageFailed: boolean;
+}) {
   const settings = useSettings();
   const { t } = settings;
   const language = useContentLanguage();
@@ -106,14 +115,14 @@ export function AttachmentsRow({ entry, layout }: { entry: SettingEntryV2; layou
       }
       note={
         <div className="grid gap-2">
-          {layout.failed ? (
+          {layout.failed && !storageFailed ? (
             <ReadProblem
               t={t}
               message={t("settingsIntegrations.layout.readFailed")}
               onRetry={layout.reload}
             />
           ) : null}
-          {!layout.configured && layout.status !== null ? (
+          {!layout.configured && layout.status !== null && !storageFailed ? (
             <span>{t("settingsIntegrations.layout.needsVault")}</span>
           ) : null}
           {error ? (
