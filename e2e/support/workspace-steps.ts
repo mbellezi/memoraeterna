@@ -3,9 +3,13 @@
 // `data-surface` and `data-state` its frame writes, and a step log that captures each step in both
 // themes with its contrast scan (X12) and reports the failures at the end of the journey. A selector
 // is a data attribute or a role the surface emits, never its copy.
+import { mkdir, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+
 import { expect, type ElectronApplication, type Locator, type Page } from "@playwright/test";
 
-import { captureStep, type MemoraSession } from "./app.js";
+import type { MemoraSession, StepRecord } from "./app.js";
+import { scanContrast } from "./contrast.js";
 import { readGestures } from "./gestures.js";
 
 /** The device-local layout key of the workspace (`R/workspace/persist.ts`, D8). */
@@ -111,6 +115,25 @@ export async function pressMenuShortcut(
   if (!found) throw new Error(`The application menu has no item for ${wanted}`);
 }
 
+/**
+ * Shows the context panel (it starts hidden: Cmd-Shift-\ toggles it). From 1280 px it docks beside
+ * the stack; below that it is a 40 px strip, and `open` also opens the strip's overlay.
+ */
+export async function showContextPanel(
+  session: { electronApp: ElectronApplication; page: Page },
+  options: { open?: boolean } = {}
+): Promise<void> {
+  const panel = session.page.locator('[data-surface="context-panel"]');
+  const hidden = await panel.evaluate((node) => node.hasAttribute("hidden")).catch(() => true);
+  if (hidden) await pressMenuShortcut(session, "Shift+\\");
+  await expect(panel, "the context panel did not show").toBeVisible({ timeout: 15_000 });
+  if (!options.open) return;
+  const strip = panel.locator("button[aria-expanded]").first();
+  if ((await strip.count()) === 0) return;
+  if ((await strip.getAttribute("aria-expanded")) !== "true") await strip.click();
+  await expect(strip).toHaveAttribute("aria-expanded", "true");
+}
+
 /** `memora://note/<id>`. */
 export const noteAddress = (id: string) => `memora://note/${id}`;
 
@@ -148,12 +171,55 @@ export class StepLog {
 
   async step(name: string): Promise<void> {
     this.index += 1;
-    const record = await captureStep(this.session, this.spec, this.index, name);
+    // A window another app covers is occluded: it stops rendering, so the theme switch of the capture
+    // (its wait runs on animation frames) would never see the new colours. Bring it to the front.
+    await this.session.electronApp
+      .evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.moveTop())
+      .catch(() => undefined);
+    await this.session.page.bringToFront().catch(() => undefined);
+    const record = await this.capture(name);
     for (const theme of ["light", "dark"] as const)
       for (const failure of record.contrast[theme].failures)
         this.failures.push(
           `${name} ${theme}: "${failure.text}" ${failure.ratio}:1 < ${failure.required}:1`
         );
+  }
+
+  /**
+   * One step's evidence: a screenshot in each theme and its contrast scan, as `captureStep` writes
+   * them. The theme is set through the page's colour-scheme emulation (and the window's native theme
+   * with it): in some windows the native switch alone never reached the renderer's media query.
+   */
+  private async capture(name: string): Promise<StepRecord> {
+    const { page, electronApp, run } = this.session;
+    const folder = join(run.evidenceDir, this.spec);
+    await mkdir(folder, { recursive: true });
+    const base = `${String(this.index).padStart(2, "0")}-${name.replace(/[^a-z0-9-]+/giu, "-")}`;
+    const record: StepRecord = {
+      step: name,
+      screenshots: [],
+      contrast: {} as StepRecord["contrast"]
+    };
+    for (const theme of ["light", "dark"] as const) {
+      await electronApp.evaluate(({ nativeTheme }, source) => {
+        nativeTheme.themeSource = source;
+      }, theme);
+      await page.emulateMedia({ colorScheme: theme });
+      await page.waitForFunction(
+        (dark) => window.matchMedia("(prefers-color-scheme: dark)").matches === dark,
+        theme === "dark",
+        { polling: 100 }
+      );
+      await page.evaluate(
+        () => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)))
+      );
+      const path = join(folder, `${base}-${theme}.png`);
+      await page.screenshot({ path });
+      record.screenshots.push(path);
+      record.contrast[theme] = await scanContrast(page);
+    }
+    await writeFile(join(folder, `${base}.json`), `${JSON.stringify(record, null, 2)}\n`);
+    return record;
   }
 
   note(text: string): void {

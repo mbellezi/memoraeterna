@@ -16,14 +16,16 @@
 import { appliedNoteRelationSql, shownNoteRelationSql } from "@app/db";
 import { expect, test, type Locator, type Page } from "@playwright/test";
 
-import { invokeApp, openClone, setContentSize, waitForDatabase } from "./support/app.js";
+import { invokeApp, launchMemora, setContentSize, waitForDatabase } from "./support/app.js";
 import { openProfileDb, type ProfileDb } from "./support/db.js";
 import { installGestureCounter } from "./support/gestures.js";
-import { journeysRun } from "./support/profile.js";
+import { cloneProfile, journeysRun, profileDir } from "./support/profile.js";
+import { inboxStoreReaders, seedInbox } from "./support/seed-inbox.js";
 import {
   expectStack,
   noteAddress,
   openObject,
+  showContextPanel,
   StepLog,
   surface
 } from "./support/workspace-steps.js";
@@ -99,14 +101,24 @@ const noteTop = (page: Page): Locator => page.locator('[data-surface="note"][dat
 test("J4 follow a relation: the card opens the target beside it, Connections shows the backlink, hover cards only on links", async () => {
   test.setTimeout(30 * 60_000);
   const run = journeysRun();
-  const session = await openClone(run, "j4");
+  // The clone is seeded before it starts (the Inbox's writers, support/seed-inbox.ts): the suggested
+  // connections of the last step of this journey are the seed's, with a known state and verdict.
+  const userDataDir = await cloneProfile(
+    profileDir(run, "base"),
+    profileDir(run, "j4"),
+    run.repoRoot
+  );
+  const seed = await seedInbox(run, userDataDir);
+  const session = await launchMemora({ run, userDataDir });
   const { page } = session;
   let db: ProfileDb | null = null;
+  let readers: Awaited<ReturnType<typeof inboxStoreReaders>> | null = null;
   try {
     await waitForDatabase(page, 180_000);
     await setContentSize(session, 1200, 900);
     await expect(surface(page, "shell").first()).toBeVisible({ timeout: 60_000 });
     db = await openProfileDb(session.userDataDir);
+    readers = await inboxStoreReaders(userDataDir);
 
     // Setup (a harness step): the origin note's body gets one object link, to the target note.
     const pick = await pickRelation(page, db);
@@ -118,14 +130,17 @@ test("J4 follow a relation: the card opens the target beside it, Connections sho
     );
     const targetTitle =
       (targetRow?.title ?? "Related note").replace(/[[\]()]/gu, " ").trim() || "Note";
-    const [originRow] = await db.query<{ body: string }>(
-      "select body_markdown as body from atomic_notes where id = $1::uuid",
+    const [originRow] = await db.query<{ body: string; revision: string }>(
+      `select body_markdown as body,
+              to_char(updated_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') as revision
+         from atomic_notes where id = $1::uuid`,
       [pick.originId]
     );
     if (!originRow) throw new Error("The origin note is gone");
     await invokeApp(page, "knowledge.reviewNote", {
       id: pick.originId,
       action: "edit",
+      expectedUpdatedAt: originRow.revision,
       bodyMarkdown: `${originRow.body.trimEnd()}\n\nSee also [${targetTitle}](${target}).`
     });
     test.info().annotations.push({
@@ -203,9 +218,7 @@ test("J4 follow a relation: the card opens the target beside it, Connections sho
 
     // 4. The context panel's Connections tab shows the other note of the relation, and the store
     // says the same: a backlink of the target `via = relation` from the origin.
-    const strip = page.locator('[data-surface="context-panel"] button[aria-expanded]').first();
-    if ((await strip.getAttribute("aria-expanded")) !== "true") await strip.click();
-    await expect(strip).toHaveAttribute("aria-expanded", "true");
+    await showContextPanel(session, { open: true });
     const connections = page.locator('[data-surface="context-connections"]');
     await expect(connections, "the Connections tab did not reach success").toHaveAttribute(
       "data-state",
@@ -230,8 +243,53 @@ test("J4 follow a relation: the card opens the target beside it, Connections sho
     await expect(objectCard, "a hover card opened on a context-panel row (focus)").toHaveCount(0);
     expect(pushed.panels.at(-1)).toBe(target);
 
+    // 6. A suggested connection in the context panel is kept with `a` and removed with Backspace
+    // (D34): the keys are on its buttons (`aria-keyshortcuts`), work while focus is in its box, and
+    // each verdict is read back from the relation's events.
+    for (const [name, key] of [
+      ["suggestionLow", "a"],
+      ["suggestionUnknown", "Backspace"]
+    ] as const) {
+      const suggested = seed.relations[name];
+      await openObject(session, suggested.notes[0]);
+      await expect(noteTop(page), `${name}: the note panel did not reach success`).toHaveAttribute(
+        "data-state",
+        "success",
+        { timeout: 60_000 }
+      );
+      await expectStack(
+        page,
+        "explore",
+        (stack) => stack.panels.at(-1) === suggested.notes[0],
+        `${name}: the note of the suggestion is the top panel`
+      );
+      await showContextPanel(session, { open: true });
+      const box = page.locator(`[data-suggestion="${suggested.id}"]`);
+      await expect(box, `${name}: Connections shows no box for the suggestion`).toBeVisible({
+        timeout: 30_000
+      });
+      const keep = box.locator('button[aria-keyshortcuts="a"]');
+      const remove = box.locator('button[aria-keyshortcuts="Backspace"]');
+      await expect(keep, `${name}: no Keep button with its key`).toBeVisible();
+      await expect(remove, `${name}: no Remove button with its key`).toBeVisible();
+      if (name === "suggestionLow") await steps.step("context-suggestion");
+      await (key === "a" ? keep : remove).focus();
+      await page.keyboard.press(key);
+      await expect(box, `${name}: the box stayed after ${key}`).toHaveCount(0, {
+        timeout: 30_000
+      });
+      const last = (await readers.relationEvents(suggested.id)).at(-1);
+      expect(last?.kind, `${name}: the last relation event after ${key}`).toBe(
+        key === "a" ? "kept" : "removed"
+      );
+      expect(last?.after?.status, `${name}: the relation's human state`).toBe(
+        key === "a" ? "accepted" : "rejected"
+      );
+    }
+
     await steps.finish(test.info());
   } finally {
+    await readers?.close();
     await db?.close();
     await session.close();
   }

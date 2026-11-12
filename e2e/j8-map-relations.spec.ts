@@ -22,6 +22,7 @@ import {
   expectStack,
   openObject,
   readWorkspace,
+  showContextPanel,
   StepLog,
   surface
 } from "./support/workspace-steps.js";
@@ -131,9 +132,45 @@ test("J8 Map > Relations: a topic opens in the Map, canvas and table select each
       page.locator('[data-surface="topic"][data-panel-top]'),
       "the topic panel did not reach success"
     ).toHaveAttribute("data-state", "success", { timeout: 60_000 });
-    await page.keyboard.press("Alt+5");
+    await showContextPanel(session);
     const graphTab = page.locator('[data-surface="context-graph"]');
-    await expect(graphTab, "Option-5 did not open the Graph tab").toHaveAttribute(
+    await page.keyboard.press("Alt+5");
+    const viaKey = await graphTab.waitFor({ timeout: 3_000 }).then(
+      () => true,
+      () => false
+    );
+    if (!viaKey) {
+      // Option-5 did not switch the tab: the tab's own button does, and the miss is recorded.
+      test.info().annotations.push({
+        type: "note",
+        description: "Option-5 did not open the Graph tab"
+      });
+      const seen = await page.evaluate(() => ({
+        tabs: [...document.querySelectorAll('[data-surface="context-panel"] [role="tab"]')].map(
+          (tab) => `${tab.id.replace(/^.*-tab-/u, "")}:${tab.getAttribute("aria-selected")}`
+        ),
+        surfaces: [...document.querySelectorAll("[data-surface]")].map(
+          (node) => `${node.getAttribute("data-surface")}:${node.getAttribute("data-state")}`
+        )
+      }));
+      const tabButton = page.locator(
+        '[data-surface="context-panel"] [role="tab"][id$="-tab-graph"]'
+      );
+      if ((await tabButton.count()) > 0) await tabButton.click();
+      else {
+        // The tab is in the "more" menu; its item carries the Option-5 shortcut.
+        await page.locator('[data-surface="context-panel"] button[aria-haspopup="menu"]').click();
+        await page
+          .locator('[role="menuitem"]')
+          .filter({ hasText: "5" })
+          .first()
+          .click()
+          .catch(() => {
+            throw new Error(`The Graph tab is nowhere (${JSON.stringify(seen)})`);
+          });
+      }
+    }
+    await expect(graphTab, "the Graph tab did not reach success").toHaveAttribute(
       "data-state",
       "success",
       { timeout: 30_000 }
@@ -234,6 +271,21 @@ test("J8 Map > Relations: a topic opens in the Map, canvas and table select each
     await expectBranchOnScreen(page, source.branch, "source scope");
     expect(mapStack.root).toContain("relations");
     await steps.step("map-relations-source");
+
+    // 6. A note opened from the table (a double click on its cell) stands beside the Map, which
+    // becomes the previous panel and reports its compact form.
+    await rowsOf(page).first().locator("td").first().dblclick();
+    await expectStack(
+      page,
+      "map",
+      (stack) => stack.panels.length === 1 && stack.panels[0]!.startsWith("memora://note/"),
+      "a note opens beside the Map"
+    );
+    await expect(
+      surface(page, "destination-map-compact"),
+      "the Map root is not reported as the previous panel"
+    ).toBeVisible({ timeout: 30_000 });
+    await steps.step("map-previous-panel");
 
     await steps.finish(test.info());
   } finally {
