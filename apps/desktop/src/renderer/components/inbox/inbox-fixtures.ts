@@ -59,6 +59,18 @@ export const item = (kind: InboxKind, overrides: Partial<InboxItem> = {}): Inbox
       changeSet: null,
       actions: ["apply", "dismiss"]
     },
+    suggestion: {
+      id: uuid(80),
+      risk: "medium",
+      variant: "relation",
+      params: { relationType: "supports", probability: 0.64 },
+      objects: [
+        { kind: "note", id: uuid(81), title: "Daylight sets the body clock" },
+        { kind: "note", id: uuid(82), title: "Morning light shifts sleep timing" }
+      ],
+      changeSet: null,
+      actions: ["apply", "dismiss"]
+    },
     withdrawn: {
       id: uuid(30),
       risk: "low",

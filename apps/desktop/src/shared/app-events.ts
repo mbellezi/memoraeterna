@@ -64,6 +64,7 @@ export const inboxEventKinds = [
   "review",
   "quarantined",
   "contradiction",
+  "suggestion",
   "withdrawn",
   "duplicate",
   "obsidian_conflict",

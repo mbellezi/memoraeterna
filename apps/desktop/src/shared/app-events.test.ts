@@ -335,6 +335,11 @@ describe("the app event contract", () => {
       Object.entries(event.byKind).filter(([kind]) => kind !== "review")
     );
     expect(AppEventSchema.safeParse({ ...event, byKind: withoutReview }).success).toBe(false);
+    // The suggestions D33 routes to the Inbox have their own count (T176).
+    const withoutSuggestion = Object.fromEntries(
+      Object.entries(event.byKind).filter(([kind]) => kind !== "suggestion")
+    );
+    expect(AppEventSchema.safeParse({ ...event, byKind: withoutSuggestion }).success).toBe(false);
   });
 
   it("counts the same kinds the Inbox lists, in the same order", () => {
