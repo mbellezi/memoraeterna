@@ -9,11 +9,15 @@
 // Steps: whitespace and final newline, Prettier and ESLint on the changed files; the incremental
 // `tsc -b` (only changed projects and their dependents rebuild) plus the script projects that hold
 // changed scripts; the tests related to the changed files (`vitest related`); the ratchet and the
-// contrast check (both take well under a second). The full `npm run check` closes a stage.
+// contrast check (both take well under a second). A test that reaches its subject through a path
+// or a spawned process (`scripts/lib/guard-tests.mjs`) is named explicitly, since `vitest related`
+// follows imports only. The full `npm run check` closes a stage.
 import { spawnSync, execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, extname, join } from "node:path";
 import { parseArgs } from "node:util";
+
+import { guardTestsFor } from "./lib/guard-tests.mjs";
 
 const root = process.cwd();
 const { values } = parseArgs({
@@ -116,7 +120,8 @@ step("tests (vitest related)", bin("vitest"), [
   "--passWithNoTests",
   ...(values.workers ? [`--maxWorkers=${values.workers}`] : []),
   ...changed,
-  ...built
+  ...built,
+  ...guardTestsFor(changed).filter((test) => !changed.includes(test))
 ]);
 step("ratchet", process.execPath, ["scripts/quality-ratchet.mjs"]);
 step("contrast", bin("tsx"), ["scripts/contrast/check-contrast.ts"]);

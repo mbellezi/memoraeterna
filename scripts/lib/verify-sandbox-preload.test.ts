@@ -3,7 +3,9 @@
 // journeys' global setup ran that step, so a preload change could leave the build broken for days
 // (F5 BUILDCHK). This test bundles the preload the way electron-vite does (the same entry and
 // aliases, `electron` and Node's own modules left external, one CJS file) and runs the script
-// against it, so `npm run check` fails on the day the preload and the script disagree.
+// against it, so `npm run check` fails on the day the preload and the script disagree, and
+// `check:changed` runs it whenever a file the preload bundles changes (`scripts/lib/guard-tests.mjs`:
+// `vitest related` follows imports only, and this test reaches the preload through a path).
 import { spawnSync } from "node:child_process";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { builtinModules } from "node:module";

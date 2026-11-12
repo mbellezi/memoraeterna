@@ -54,7 +54,7 @@ assert.equal(listeners(), 1);
 
 const sticky = (state) => ({ type: "model.loading", modelId: "mlx-embedding", state });
 send(sticky("loading"));
-send({ type: "job.progress", lanes: "not counts" });
+send({ type: "model.loading", modelId: "mlx-embedding", state: "bogus" });
 const firstSeen = [];
 const stopFirst = app.onAppEvent("model.loading", (event) => firstSeen.push(event.state));
 assert.deepEqual(firstSeen, ["loading"]);
