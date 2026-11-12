@@ -258,7 +258,7 @@ function LoadedPage({
           action={
             <Button
               variant="secondary"
-              onClick={() => onOpen(formatView({ view: "ask", question: entity.canonicalName }))}
+              onClick={() => onOpen(formatView({ view: "ask", draft: entity.canonicalName }))}
             >
               {t("entityPage.empty.ask", { values: { name: entity.canonicalName } })}
             </Button>

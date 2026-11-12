@@ -10,11 +10,12 @@ import { askTextState, readAskAddress } from "./ask/ask-scope";
 import { AskLauncherView, launcherState } from "./ask/AskLauncherView";
 
 /**
- * The Ask panel (`#ask`, design record §6.4; D14): the view `memora://ask[?q=…][&scope=…]`. With
- * words it asks at once and, as soon as the Question exists (`questions.ask` answers before
+ * The Ask panel (`#ask`, design record §6.4; D14): the view `memora://ask[?q=…|draft=…][&scope=…]`.
+ * With words it asks at once and, as soon as the Question exists (`questions.ask` answers before
  * retrieval starts), replaces itself with `memora://question/<id>`, which streams the answer and
  * is what a reload restores: an `ask` address is an instruction, never a place to come back to.
- * Without words it shows the field, the scope and the recent questions. The scope is a topic or a
+ * A `draft` only fills the field (an entity's "Ask about …" offers its name): nothing is sent until
+ * the person sends it. Without words it shows the field, the scope and the recent questions. The scope is a topic or a
  * source; any other object is refused (the Ask tab of the context panel maps a note, an entity or
  * a question to a scope before it opens one).
  */
@@ -33,7 +34,7 @@ export function title(_summary: unknown, t: Translator): string {
 export function Component({ t, address, mode, active, onState, onOpen }: PanelProps) {
   const request = readAskAddress(address);
   const scope = request?.scope ?? { status: "unsupported" as const };
-  const [value, setValue] = useState(request?.text ?? "");
+  const [value, setValue] = useState(request?.text || request?.draft || "");
   const field = useRef<HTMLTextAreaElement>(null);
   const moveTo = useStableCallback((questionId: string) =>
     onOpen(formatObjectAddress({ kind: "question", id: questionId }), { replace: true })

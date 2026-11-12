@@ -63,6 +63,24 @@ describe("the Ask and Question panels register by file", () => {
     expect(onState).toHaveBeenCalledWith("loading");
   });
 
+  it("asks at once for words in the address, and only fills the field for a draft (an entity's name)", () => {
+    const askSpy = vi.fn(() => new Promise(() => undefined));
+    vi.stubGlobal("window", {
+      app: { questions: { ask: askSpy, list: () => new Promise(() => undefined) } }
+    });
+    try {
+      const draft = renderToString(
+        <ask.Component {...props("memora://ask?draft=Lactobacillus")} />
+      );
+      expect(askSpy).not.toHaveBeenCalled();
+      expect(draft).toContain("Lactobacillus</textarea>");
+      renderToString(<ask.Component {...props("memora://ask?q=Lactobacillus")} />);
+      expect(askSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("starts the Ask panel in the state its recent list is in", () => {
     const onState = vi.fn();
     renderToString(<ask.Component {...props("memora://ask", vi.fn(), onState)} />);
