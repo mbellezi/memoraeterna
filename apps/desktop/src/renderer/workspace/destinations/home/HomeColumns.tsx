@@ -100,6 +100,7 @@ const needKindWords = {
   quarantined: "home.need.kinds.quarantined",
   contradiction: "home.need.kinds.contradiction",
   withdrawn: "home.need.kinds.withdrawn",
+  suggestion: "home.need.kinds.suggestion",
   duplicate: "home.need.kinds.duplicate",
   obsidian_conflict: "home.need.kinds.obsidianConflict",
   budget: "home.need.kinds.budget",

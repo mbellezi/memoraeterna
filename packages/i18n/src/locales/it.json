@@ -124,9 +124,10 @@
         "quarantined": "Attività non riuscita",
         "review": "Da rivedere",
         "reviewOverview": "Panoramica",
-        "reviewRelation": "Connessione",
+        "reviewRelation": "Collegamento",
         "reviewTopic": "Struttura",
-        "withdrawn": "Connessione ritirata"
+        "suggestion": "Collegamento suggerito",
+        "withdrawn": "Collegamento ritirato"
       },
       "link": "Posta in arrivo",
       "risk": {

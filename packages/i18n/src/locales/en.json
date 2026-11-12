@@ -126,6 +126,7 @@
         "reviewOverview": "Overview",
         "reviewRelation": "Connection",
         "reviewTopic": "Structure",
+        "suggestion": "Suggested connection",
         "withdrawn": "Withdrawn connection"
       },
       "link": "Inbox",

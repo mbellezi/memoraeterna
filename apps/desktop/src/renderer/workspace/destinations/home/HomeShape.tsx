@@ -1,6 +1,6 @@
 import type { Translator } from "@app/i18n";
 
-import { SolidTriangle } from "../../../components/activity/solid-glyphs";
+import { SolidTriangle } from "../../../components/ui/solid-glyphs";
 import { cn } from "../../../lib/cn";
 import { shapeSegments, tooBigTopics, type ShapeSegment } from "./home-model";
 import { countText, pluralKey } from "./home-text";

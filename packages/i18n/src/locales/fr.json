@@ -124,9 +124,10 @@
         "quarantined": "Tâche échouée",
         "review": "À examiner",
         "reviewOverview": "Vue d’ensemble",
-        "reviewRelation": "Connexion",
+        "reviewRelation": "Lien",
         "reviewTopic": "Structure",
-        "withdrawn": "Connexion retirée"
+        "suggestion": "Lien suggéré",
+        "withdrawn": "Lien retiré"
       },
       "link": "Boîte de réception",
       "risk": {
