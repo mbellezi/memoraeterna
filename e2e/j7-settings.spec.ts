@@ -37,7 +37,7 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { messages } from "@app/i18n";
-import { expect, test, type Locator, type Page } from "@playwright/test";
+import { expect, test, type ElementHandle, type Locator, type Page } from "@playwright/test";
 
 import {
   settingsRegistryV2,
@@ -94,6 +94,38 @@ const heldOutEntry: Readonly<Record<string, string | null>> = {
   "relations.match.valuesHistory.v1": null,
   "onboarding.v1": null
 };
+
+/**
+ * The entries whose first English held-out query does not list them in the app's search, as X9's
+ * fixture and `searchSettings` have them today (found by running the fixture's first English query
+ * of each entry through the search). X10 types the label for these only: a miss outside this list is
+ * a regression of the English search and fails the journey, so a search that stops reading the
+ * keywords cannot be absorbed by the label fallback. A listed entry that gets found is a note.
+ */
+const knownFirstQueryMisses: readonly string[] = [
+  "ai.thisMac",
+  "knowledge.controls.v1.onlyIdle",
+  "sourceRelationSettings.minConfidence"
+];
+
+/**
+ * The entries that have no held-out query at all (the list X9's test, `settings-search.test.ts`,
+ * pins as "the entries that have no held-out query"): X10 types their label. The gap can only shrink.
+ */
+const entriesWithoutHeldOutQuery: readonly string[] = [
+  "advanced.similarityRuns",
+  "advanced.taskHistory",
+  "ai.profiles",
+  "ai.route.judge",
+  "library.storage",
+  "obsidian.layout.attachments",
+  "obsidian.wiki.includeDescendants",
+  "privacy.callLog",
+  "privacy.clearQuestions",
+  "privacy.clearViewHistory",
+  "privacy.summary",
+  "relationLabels"
+];
 
 /** The held-out queries of each registry entry, in the fixture's order, for one locale. */
 function heldOutQueries(fixture: HeldOut, locale: Locale): Map<string, string[]> {
@@ -194,6 +226,59 @@ async function visibleWithoutScrolling(row: Locator): Promise<boolean> {
     };
     return rect.height > 0 && rect.top >= box.top - 1 && rect.bottom <= box.bottom + 1;
   });
+}
+
+/** The Settings column that scrolls: the nearest scrolling ancestor of the open section's title. */
+async function sectionScroller(page: Page): Promise<ElementHandle<HTMLElement>> {
+  const title = settingsRoot(page).locator('h2[tabindex="-1"]').first();
+  await expect(title, "the section's title is not on screen").toBeVisible();
+  const handle = await title.evaluateHandle((node) => {
+    let scroller: HTMLElement | null = node.parentElement;
+    while (scroller && getComputedStyle(scroller).overflowY !== "auto")
+      scroller = scroller.parentElement;
+    return scroller ?? document.scrollingElement;
+  });
+  return handle as ElementHandle<HTMLElement>;
+}
+
+/**
+ * Takes a step (both themes) for each screen of the open section: the scan sees only what is inside
+ * the window, so the section's column is scrolled by a page (less a margin that keeps one row in
+ * two screens) until its end. Returns how many screens it took.
+ */
+async function stepEveryScreen(page: Page, steps: StepLog, name: string): Promise<number> {
+  const scroller = await sectionScroller(page);
+  const frame = () =>
+    page.evaluate(
+      () => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)))
+    );
+  await scroller.evaluate((node) => {
+    node.scrollTop = 0;
+  });
+  let screens = 0;
+  for (;;) {
+    await frame();
+    screens += 1;
+    await steps.step(screens === 1 ? name : `${name}-screen-${screens}`);
+    const moved = await scroller.evaluate((node) => {
+      const before = node.scrollTop;
+      node.scrollTop = before + Math.max(node.clientHeight - 96, 96);
+      return node.scrollTop > before;
+    });
+    if (!moved || screens >= 40) break;
+  }
+  await scroller.evaluate((node) => {
+    node.scrollTop = 0;
+  });
+  await scroller.dispose();
+  return screens;
+}
+
+/** The changed count the section's navigation button shows (the badge is absent at 0). */
+async function navChangedCount(page: Page, section: string): Promise<number> {
+  const badge = sectionButton(page, section).locator("span[aria-label]");
+  if ((await badge.count()) === 0) return 0;
+  return Number.parseInt((await badge.first().innerText()).trim(), 10) || 0;
 }
 
 async function openSettings(page: Page): Promise<void> {
@@ -343,9 +428,11 @@ test("J7 Settings: search, the changed marker and restore, asks before deleting,
     await expect(themeRow, "a changed theme shows no changed marker").toHaveAttribute(
       "data-changed"
     );
-    await expect(themeRow, "the row does not name the default (the copy of Dark)").toContainText(
-      copy("pt-BR", "settingsGeneral.theme.dark")
-    );
+    // The default line ("Padrão: Escuro"), not the row's own Dark segment, which is always there.
+    await expect(
+      themeRow.locator("p", { hasText: copy("pt-BR", "settingsShell.row.default") }),
+      "the row does not name the default on its default line"
+    ).toContainText(copy("pt-BR", "settingsGeneral.theme.dark"));
     await expect
       .poll(async () => (await storedPreferences(db!)).themeMode, {
         message: "the light theme was not stored"
@@ -474,6 +561,7 @@ test("J7 Settings: search, the changed marker and restore, asks before deleting,
     ).toBe(true);
     expect((await keepStored()) ?? true, "the stored switch").toBe(true);
     await expect(keepRow).not.toHaveAttribute("data-changed");
+    const advancedChangedBefore = await navChangedCount(page, "advanced");
     await keepSwitch.click();
     await expect.poll(keepStored, { message: "the switch was not stored" }).toBe(false);
     await expect(keepRow, "a changed switch shows no marker").toHaveAttribute("data-changed");
@@ -483,10 +571,11 @@ test("J7 Settings: search, the changed marker and restore, asks before deleting,
     await expect(keepRow).toContainText(copy("pt-BR", "settingsShell.row.default"));
     await expect(resetButton(keepRow), "a changed row offers no restore").toBeVisible();
     expect((await describe(page)).get(keepId)?.changed).toBe(true);
-    await expect(
-      sectionButton(page, "advanced"),
-      "the section does not count the changed setting"
-    ).toContainText(/1/u);
+    await expect
+      .poll(() => navChangedCount(page, "advanced"), {
+        message: "the section's changed count did not go up by exactly 1"
+      })
+      .toBe(advancedChangedBefore + 1);
     await steps.step("advanced-changed-switch");
     await resetButton(keepRow).click();
     await expect
@@ -497,6 +586,11 @@ test("J7 Settings: search, the changed marker and restore, asks before deleting,
     );
     await expect(keepSwitch).toHaveAttribute("aria-checked", "true");
     expect((await describe(page)).get(keepId)?.changed).toBe(false);
+    await expect
+      .poll(() => navChangedCount(page, "advanced"), {
+        message: "the section's changed count did not come back after the restore"
+      })
+      .toBe(advancedChangedBefore);
 
     // -----------------------------------------------------------------------------------------
     // 4. A restore that deletes asks first and does nothing until confirmed.
@@ -629,7 +723,9 @@ test("J7 Settings: search, the changed marker and restore, asks before deleting,
     await expect(settingsRoot(page)).toHaveAttribute("data-state", "success");
 
     // -----------------------------------------------------------------------------------------
-    // X12: every section of Settings, top of the section, both themes.
+    // X12: every section of Settings, every screen of it (the scan sees the window only, so the
+    // section's column is scrolled a page at a time), both themes.
+    const screensOf: string[] = [];
     for (const section of [
       "general",
       "ai",
@@ -644,8 +740,12 @@ test("J7 Settings: search, the changed marker and restore, asks before deleting,
       await expect(settingsRoot(page)).toHaveAttribute("data-state", "success", {
         timeout: 30_000
       });
-      await steps.step(`section-${section}`);
+      screensOf.push(`${section} ${await stepEveryScreen(page, steps, `section-${section}`)}`);
     }
+    info.annotations.push({
+      type: "X12 screens scanned per section",
+      description: screensOf.join(", ")
+    });
 
     // -----------------------------------------------------------------------------------------
     // 6. X10, in English (the held-out queries are English). The app's language is changed by the
@@ -668,6 +768,7 @@ test("J7 Settings: search, the changed marker and restore, asks before deleting,
     const sectionProblems: string[] = [];
     const noQuery: string[] = [];
     const queryMisses: string[] = [];
+    const unpinnedMisses: string[] = [];
 
     for (const entry of registry) {
       // From another place: Home.
@@ -693,6 +794,8 @@ test("J7 Settings: search, the changed marker and restore, asks before deleting,
         if (!found && how === "query") {
           // The held-out query does not list the entry: its label is typed instead, and recorded.
           queryMisses.push(`${entry.id} ("${query}")`);
+          if (!knownFirstQueryMisses.includes(entry.id))
+            unpinnedMisses.push(`${entry.id} ("${query}")`);
           how = "label";
           query = labelOf(entry);
           await searchField(page).fill(query);
@@ -756,7 +859,7 @@ test("J7 Settings: search, the changed marker and restore, asks before deleting,
       },
       {
         type: "X10 held-out misses (label typed instead)",
-        description: queryMisses.join("; ") || "none"
+        description: `${queryMisses.join("; ") || "none"}${unpinnedMisses.length ? ` (NOT PINNED: ${unpinnedMisses.length})` : ""}`
       },
       {
         type: "X10 rail and section",
@@ -777,6 +880,18 @@ test("J7 Settings: search, the changed marker and restore, asks before deleting,
       .soft(
         sectionProblems,
         "X10: every non-advanced entry by rail and section, visible without scrolling"
+      )
+      .toEqual([]);
+    expect
+      .soft(
+        unpinnedMisses,
+        "X10: a first held-out query that does not list its entry, outside the pinned misses of X9 (the English search regressed)"
+      )
+      .toEqual([]);
+    expect
+      .soft(
+        noQuery.filter((id) => !entriesWithoutHeldOutQuery.includes(id)),
+        "X10: an entry with no held-out query that X9's test does not name"
       )
       .toEqual([]);
     expect.soft(pageErrors, "uncaught errors in the page").toEqual([]);
