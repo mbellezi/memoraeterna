@@ -10,11 +10,13 @@ import { InboxDiff } from "./InboxDiff";
 import { kindIcon, RiskMark } from "./inbox-marks";
 import {
   ageText,
+  confidenceText,
   itemBody,
   itemHint,
   itemTitle,
-  kindLabels,
+  kindWords,
   objectName,
+  probabilityOf,
   verbLabel
 } from "./inbox-model";
 import { isConnection, keyHint } from "./inbox-keys";
@@ -100,8 +102,13 @@ export function InboxDetail({
           <RiskMark t={t} risk={item.risk} />
           <span className="inline-flex items-center gap-1 text-xs text-secondary-foreground">
             <Icon className="size-3.5" aria-hidden="true" />
-            {t(kindLabels[item.kind])}
+            {t(kindWords[item.kind])}
           </span>
+          {item.kind === "suggestion" ? (
+            <span className="text-xs text-secondary-foreground">
+              {confidenceText(t, probabilityOf(item))}
+            </span>
+          ) : null}
           <span className="text-xs text-muted-foreground">{ageText(t, item.at, now)}</span>
         </div>
         <h2 className="m-0 mt-1 font-reading text-2xl font-semibold text-foreground [overflow-wrap:anywhere]">

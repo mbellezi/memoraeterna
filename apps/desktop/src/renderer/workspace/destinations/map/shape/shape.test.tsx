@@ -263,9 +263,10 @@ describe("the table", () => {
 
   it("is beside the chart with Notes, Size and 7 days, the selected row marked", () => {
     const html = view(snapshot({ selectedKey: topicCellKey(shapeId(sample.memory)) }));
-    expect(html).toContain('<col style="width:44px"/>');
-    expect(html).toContain('<col class="max-[1179px]:hidden" style="width:112px"/>');
-    expect(html).toContain('<col style="width:52px"/>');
+    // Notes 52, a 28 px health glyph column (at every width), 7 days 52.
+    expect(html.match(/<col style="width:52px"\/>/g)).toHaveLength(2);
+    expect(html).toContain('<col style="width:28px"/>');
+    expect(html).not.toContain("max-[1179px]:hidden");
     expect(html).toContain("bg-surface-selected");
   });
 
@@ -377,8 +378,8 @@ describe("what changed today", () => {
   it("lists a change with its time, its before and after and an Undo", () => {
     const html = view(snapshot());
     // The sentence's own full stop gives way to the dot before the time.
-    expect(html).toContain("The structure was rebalanced. Items moved: 8");
-    expect(html).not.toContain("Items moved: 8.");
+    expect(html).toContain("8 items moved when the structure was rebalanced");
+    expect(html).not.toContain("rebalanced.<");
     expect(html).toMatch(/· \d{1,2}:\d{2}/);
     expect(html).toContain(">Undo<");
   });
@@ -423,6 +424,8 @@ describe("loading, empty and error states", () => {
     // The header keeps its shape: the view toggle is there, and disabled.
     expect(html).toContain('aria-label="Display"');
     expect(html).toContain("data-disabled");
+    // The description is the same words as once loaded, so the header does not change on arrival.
+    expect(html).toContain("Size and health of the tree.");
   });
 
   it("says in one sentence what failed, what is kept, and offers one retry", () => {
@@ -479,9 +482,9 @@ describe("loading, empty and error states", () => {
       origin: { topicId: shapeId(sample.forgetting), title: "Forgetting curve" }
     });
     const table = html.slice(html.indexOf("<table"));
-    const rows = [
-      ...table.matchAll(/<button type="button" aria-pressed[^>]*>(.*?)<\/button>/gs)
-    ].map((match) => match[1]!);
+    const rows = [...table.matchAll(/<button type="button" data-row[^>]*>(.*?)<\/button>/gs)].map(
+      (match) => match[1]!
+    );
     const marked = rows.filter((inner) => inner.includes("here ↳"));
     expect(marked.length).toBeGreaterThan(0);
     for (const inner of marked) {
@@ -551,11 +554,24 @@ describe("a block's outline and its label (T142 UX round 1)", () => {
     expect(html).toContain("Add a source");
   });
 
-  it("words the size of a topic in the table's short words, under the column's new name", () => {
+  it("words a topic's health as attention, never as a size, and keeps the table's glyph column", () => {
     const html = view(snapshot());
-    expect(html).toContain(">Size<");
-    expect(html).toContain("balanced");
-    expect(html).toContain("too large");
-    expect(html).not.toContain("Needs attention</span>");
+    expect(html).not.toContain("too large");
+    // The health column has no visible title: its words are for a screen reader and the hover.
+    expect(html).toContain('<span class="sr-only">Health</span>');
+    expect(html).toContain('title="needs attention"');
+    expect(html).toContain('<span class="sr-only">balanced</span>');
+    expect(html).toContain('<span class="sr-only">needs attention</span>');
+    // The inspector says it as a sentence.
+    const selected = view(snapshot({ selectedKey: topicCellKey(shapeId(sample.testing)) }));
+    expect(selected).toContain("Needs attention");
+  });
+
+  it("is one tab stop: the selected row, or the first when none is selected", () => {
+    const html = view(snapshot({ selectedKey: topicCellKey(shapeId(sample.forgetting)) }));
+    const table = html.slice(html.indexOf("<table"));
+    const stops = [...table.matchAll(/<button type="button" data-row="" tabindex="(-?\d)"/g)];
+    expect(stops.length).toBeGreaterThan(5);
+    expect(stops.filter((match) => match[1] === "0")).toHaveLength(1);
   });
 });

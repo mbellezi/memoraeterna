@@ -71,12 +71,14 @@ export function InboxView({ rootRef, ...props }: InboxViewProps) {
     (kind) => (counts?.byKind[kind] ?? 0) > 0 || state.filter.kind === kind
   );
   const empty = state.load.status === "ready" && state.items.length === 0;
-  const rows = keyRows(item);
+  const loading = state.load.status === "loading";
+  const rows = keyRows(item, loading);
   const filtered = state.filter.kind !== null || state.filter.risk !== null;
   // Nothing waits and no filter is set, or the read failed: nothing to filter and no key to press.
   const idle = (empty && !filtered) || state.load.status === "error";
   // Many kinds make a second row of chips: past five they fold into the "Tipo" select at any width.
-  const kindsAsSelect = offeredKinds.length > 5;
+  // While the counts are read the control is the select too (disabled), so it keeps its shape.
+  const kindsAsSelect = offeredKinds.length > 5 || loading;
   if (props.compact)
     return (
       <div
@@ -207,6 +209,7 @@ export function InboxView({ rootRef, ...props }: InboxViewProps) {
             {t("inbox.filters.kind")}
             <select
               value={state.filter.kind ?? ""}
+              disabled={loading}
               onChange={(event) =>
                 props.onFilter({ kind: (event.target.value || null) as InboxKind | null })
               }
@@ -226,6 +229,7 @@ export function InboxView({ rootRef, ...props }: InboxViewProps) {
             {t("inbox.filters.risk.label")}
             <select
               value={state.filter.risk ?? ""}
+              disabled={loading}
               onChange={(event) =>
                 props.onFilter({ risk: (event.target.value || null) as ChangeSetRisk | null })
               }
@@ -256,7 +260,7 @@ export function InboxView({ rootRef, ...props }: InboxViewProps) {
         {state.announcement ? t(state.announcement, { values: state.announcementParams }) : ""}
       </p>
 
-      {state.load.status === "loading" ? (
+      {loading ? (
         <InboxLoading t={t} compact={false} listWidth={props.listWidth ?? 320} />
       ) : state.load.status === "error" ? (
         <ErrorState
@@ -327,7 +331,7 @@ export function InboxView({ rootRef, ...props }: InboxViewProps) {
 }
 
 const selectClass =
-  "min-h-[34px] rounded-lg border border-border-strong bg-surface px-2 text-xs text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent";
+  "min-h-[34px] rounded-lg border border-border-strong bg-surface px-2 text-xs text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:opacity-60";
 
 /** "Conexões sugeridas (2)": a select option cannot hold a styled count. */
 const optionText = (label: string, count: number | null, locale: string): string =>

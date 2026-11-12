@@ -6,7 +6,7 @@ import { cn } from "../../../../lib/cn";
 import type { HealthTone } from "../../../../components/topic-page/topic-page-model";
 import { shapeHealth } from "./shape-model";
 
-/** The Map's short size words, which fit the 124 px column of its table. */
+/** The Map's health words: the same as the legend's "needs attention", never a size verdict. */
 export const mapHealthKeys = {
   good: "map.health.good",
   attention: "map.health.attention",
@@ -31,6 +31,7 @@ export function HealthMark({
   health,
   short = false,
   capitalized = false,
+  glyphOnly = false,
   className
 }: {
   t: Translator;
@@ -39,11 +40,20 @@ export function HealthMark({
   short?: boolean;
   /** Starts the word with a capital: the inspector says it as a sentence, the table as a cell. */
   capitalized?: boolean;
+  /** Only the glyph shows: the word is the glyph's title and a screen reader's text. */
+  glyphOnly?: boolean;
   className?: string | undefined;
 }) {
   const view = shapeHealth[health];
   const Icon = toneIcon[view.tone];
   const word = t(short ? mapHealthKeys[health] : view.key);
+  if (glyphOnly)
+    return (
+      <span title={word} className={cn("inline-flex", toneClass[view.tone], className)}>
+        <Icon className="size-3.5" aria-hidden="true" />
+        <span className="sr-only">{word}</span>
+      </span>
+    );
   return (
     <span
       className={cn(

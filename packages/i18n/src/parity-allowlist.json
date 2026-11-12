@@ -136,6 +136,7 @@
     "import.sourceTypes.Video",
     "import.steps.structure",
     "import.steps.type",
+    "inbox.kind.contradiction",
     "inbox.kinds.contradiction",
     "intake.sourceView",
     "integrations.title",

@@ -356,6 +356,17 @@
       "low": "confiance faible ({percent})",
       "unknown": "confiance inconnue"
     },
+    "kind": {
+      "review": "À examiner",
+      "quarantined": "Tâche en échec",
+      "contradiction": "Contradiction",
+      "suggestion": "Lien suggéré",
+      "withdrawn": "Lien retiré",
+      "duplicate": "Doublon",
+      "obsidianConflict": "Conflit Obsidian",
+      "budget": "Limite de dépenses",
+      "backlog": "Nouvel appariement facultatif"
+    },
     "kinds": {
       "review": "À examiner",
       "quarantined": "Tâches en échec",
@@ -415,7 +426,7 @@
         "divergenceBody": "La vue d'ensemble de « {topic} » a été complétée, et de nouvelles preuves divergent de ce qu'elle dit. La divergence reste à côté du texte, sans jamais s'y fondre. Conservez-la, ou écartez cet élément. Points de divergence : {count}."
       },
       "suggestion": {
-        "title": "Lien suggéré · {confidence}",
+        "title": "Garder ce lien ?",
         "body": "Suggestion : « {first} » {relation} « {second} ». Conservez-le pour qu'il compte comme votre décision, ou supprimez-le.",
         "hint": "Rien n'est effacé : seul le lien change. Si vous le supprimez, il ne sera plus suggéré."
       },
@@ -3046,11 +3057,13 @@
         "titles": {
           "build": "Les sujets ont été créés à partir de vos notes.",
           "rebalance": "La structure a été rééquilibrée.",
-          "rebalanceItems": "La structure a été rééquilibrée. Éléments déplacés : {count}.",
+          "rebalanceItems": "{count} éléments ont changé de place quand la structure a été rééquilibrée.",
+          "rebalanceItemsOne": "1 élément a changé de place quand la structure a été rééquilibrée.",
           "audit": "Les redirections d'anciens sujets ont été raccourcies.",
           "areas": "Les domaines ont été regroupés de nouveau.",
           "naming": "Les sujets ont reçu un nom.",
-          "namingCount": "Sujets ayant reçu un nom : {count}.",
+          "namingCount": "{count} sujets ont reçu un nom.",
+          "namingCountOne": "1 sujet a reçu un nom.",
           "human": "Vous avez modifié la structure.",
           "rebuild": "Les sujets ont été reconstruits.",
           "other": "La structure a changé."
@@ -4126,7 +4139,7 @@
       "table": "Tableau seul"
     },
     "health": {
-      "attention": "trop grand",
+      "attention": "demande de l’attention",
       "good": "équilibré",
       "violation": "hors limite"
     },
@@ -4166,7 +4179,7 @@
     "table": {
       "caption": "Les mêmes chiffres que le graphique, une ligne par sujet",
       "growth": "7 jours",
-      "health": "Taille",
+      "health": "Santé",
       "notes": "Notes",
       "topic": "Sujet"
     },

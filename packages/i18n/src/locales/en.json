@@ -356,6 +356,17 @@
       "low": "low confidence ({percent})",
       "unknown": "unknown confidence"
     },
+    "kind": {
+      "review": "To review",
+      "quarantined": "Failed task",
+      "contradiction": "Contradiction",
+      "suggestion": "Suggested connection",
+      "withdrawn": "Withdrawn connection",
+      "duplicate": "Duplicate",
+      "obsidianConflict": "Obsidian conflict",
+      "budget": "Spending limit",
+      "backlog": "Optional re-match"
+    },
     "kinds": {
       "review": "To review",
       "quarantined": "Failed tasks",
@@ -415,7 +426,7 @@
         "divergenceBody": "The overview of “{topic}” was extended, and some new evidence disagrees with what it says. The disagreement is kept beside the text, never merged into it. Keep it there, or dismiss this. Points of disagreement: {count}."
       },
       "suggestion": {
-        "title": "Suggested connection · {confidence}",
+        "title": "Keep this connection?",
         "body": "Suggestion: “{first}” {relation} “{second}”. Keep it to make it your decision, or remove it.",
         "hint": "Nothing is deleted: only the connection changes. If you remove it, it is not suggested again."
       },
@@ -3041,11 +3052,13 @@
         "titles": {
           "build": "Topics were built from your notes.",
           "rebalance": "The structure was rebalanced.",
-          "rebalanceItems": "The structure was rebalanced. Items moved: {count}.",
+          "rebalanceItems": "{count} items moved when the structure was rebalanced.",
+          "rebalanceItemsOne": "1 item moved when the structure was rebalanced.",
           "audit": "Old topic redirects were shortened.",
           "areas": "Areas were regrouped.",
           "naming": "Topics were named.",
-          "namingCount": "Topics named: {count}.",
+          "namingCount": "{count} topics were named.",
+          "namingCountOne": "1 topic was named.",
           "human": "You changed the structure.",
           "rebuild": "Topics were rebuilt.",
           "other": "The structure changed."
@@ -4121,7 +4134,7 @@
       "table": "Table only"
     },
     "health": {
-      "attention": "too large",
+      "attention": "needs attention",
       "good": "balanced",
       "violation": "over the limit"
     },
@@ -4161,7 +4174,7 @@
     "table": {
       "caption": "The same numbers as the chart, one row per topic",
       "growth": "7 days",
-      "health": "Size",
+      "health": "Health",
       "notes": "Notes",
       "topic": "Topic"
     },

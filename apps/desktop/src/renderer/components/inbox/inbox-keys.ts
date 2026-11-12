@@ -131,13 +131,15 @@ export interface InboxKeyRow {
 /**
  * The rows of the `?` sheet for the selected item (all but the keys it does not offer when none is
  * selected): moving, opening, apply, remove, dismiss and edit only where they are offered, retry
- * where it is, undo and the sheet itself.
+ * where it is, undo and the sheet itself. While the items are read it holds the always-valid rows.
  */
 export function keyRows(
-  item: Pick<InboxItem, "kind" | "variant" | "actions"> | null
+  item: Pick<InboxItem, "kind" | "variant" | "actions"> | null,
+  /** Nothing is read yet: only the keys that are valid with no item (moving, opening, undo, help). */
+  loading = false
 ): InboxKeyRow[] {
   const offered = (key: InboxVerbCommand): boolean =>
-    item === null ? key !== "edit" : keyOffered(item, key);
+    loading ? false : item === null ? key !== "edit" : keyOffered(item, key);
   const rows: InboxKeyRow[] = [
     { keys: ["J", "K"], label: "inbox.keys.move", short: "inbox.keys.short.move" },
     { keys: ["Enter"], label: "inbox.keys.open", short: "inbox.keys.short.open" }

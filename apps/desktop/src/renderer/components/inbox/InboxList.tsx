@@ -7,7 +7,7 @@ import { Button } from "../ui/button";
 import type { InboxItemAction } from "./inbox-state";
 import { keyOf } from "./inbox-state";
 import { kindIcon, RiskMark } from "./inbox-marks";
-import { ageText, itemSubject, itemTitle, kindLabels, riskLabels } from "./inbox-model";
+import { ageText, itemSubject, itemTitle, kindWords, riskLabels } from "./inbox-model";
 
 export interface InboxListProps {
   t: Translator;
@@ -101,7 +101,7 @@ export function InboxList({
                 <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-0.5">
                   <span className="inline-flex items-center gap-1.5 text-xs text-secondary-foreground">
                     <Icon className="size-3.5 shrink-0" aria-hidden="true" />
-                    {t(kindLabels[item.kind])}
+                    {t(kindWords[item.kind])}
                   </span>
                   <span className="text-xs text-muted-foreground whitespace-nowrap">
                     {ageText(t, item.at, now)}

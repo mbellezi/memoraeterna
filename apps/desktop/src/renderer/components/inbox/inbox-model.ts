@@ -31,6 +31,19 @@ export const kindLabels = {
   backlog: "inbox.kinds.backlog"
 } as const satisfies Record<InboxKind, MessageKey>;
 
+/** One item's kind in the singular ("Conexão sugerida"); `kindLabels` are the filter's plural groups. */
+export const kindWords = {
+  review: "inbox.kind.review",
+  quarantined: "inbox.kind.quarantined",
+  contradiction: "inbox.kind.contradiction",
+  suggestion: "inbox.kind.suggestion",
+  withdrawn: "inbox.kind.withdrawn",
+  duplicate: "inbox.kind.duplicate",
+  obsidian_conflict: "inbox.kind.obsidianConflict",
+  budget: "inbox.kind.budget",
+  backlog: "inbox.kind.backlog"
+} as const satisfies Record<InboxKind, MessageKey>;
+
 export const riskLabels = {
   high: "inbox.risk.high",
   medium: "inbox.risk.medium",
@@ -179,10 +192,8 @@ export function itemTitle(t: Translator, item: InboxItem): string {
           : "inbox.items.contradiction.title"
       );
     case "suggestion":
-      // The confidence is the fact that puts a suggestion here, so the list row carries it.
-      return t("inbox.items.suggestion.title", {
-        values: { confidence: confidenceText(t, probabilityOf(item)) }
-      });
+      // The title names what is at stake; the confidence is in the detail's risk line.
+      return t("inbox.items.suggestion.title");
     case "withdrawn":
       return t("inbox.items.withdrawn.title");
     case "duplicate":
@@ -315,9 +326,8 @@ export function itemSubject(t: Translator, item: InboxItem): string {
   if (item.kind === "obsidian_conflict") return text(item.params.path);
   if (item.objects.length > 0)
     return item.objects.map((object) => `“${objectName(t, object)}”`).join(" · ");
-  if (item.kind === "review")
-    return reviewVariantLabel(t, item.variant) ?? t(kindLabels[item.kind]);
-  return t(kindLabels[item.kind]);
+  if (item.kind === "review") return reviewVariantLabel(t, item.variant) ?? t(kindWords[item.kind]);
+  return t(kindWords[item.kind]);
 }
 
 // ---------------------------------------------------------------------------

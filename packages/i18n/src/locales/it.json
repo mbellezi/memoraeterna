@@ -356,6 +356,17 @@
       "low": "confidenza bassa ({percent})",
       "unknown": "confidenza sconosciuta"
     },
+    "kind": {
+      "review": "Da rivedere",
+      "quarantined": "Attività non riuscita",
+      "contradiction": "Contraddizione",
+      "suggestion": "Collegamento suggerito",
+      "withdrawn": "Collegamento ritirato",
+      "duplicate": "Duplicato",
+      "obsidianConflict": "Conflitto di Obsidian",
+      "budget": "Limite di spesa",
+      "backlog": "Nuovo abbinamento facoltativo"
+    },
     "kinds": {
       "review": "Da rivedere",
       "quarantined": "Attività non riuscite",
@@ -415,7 +426,7 @@
         "divergenceBody": "La panoramica di “{topic}” è stata ampliata e alcune nuove evidenze non concordano con ciò che dice. Il disaccordo resta accanto al testo, mai fuso con esso. Mantienilo lì oppure scarta questo elemento. Punti di disaccordo: {count}."
       },
       "suggestion": {
-        "title": "Collegamento suggerito · {confidence}",
+        "title": "Mantenere questo collegamento?",
         "body": "Suggerimento: “{first}” {relation} “{second}”. Mantienilo perché conti come una tua decisione, oppure rimuovilo.",
         "hint": "Non viene cancellato nulla: cambia solo il collegamento. Se lo rimuovi, non verrà più suggerito."
       },
@@ -3039,11 +3050,13 @@
         "titles": {
           "build": "Gli argomenti sono stati creati dalle tue note.",
           "rebalance": "La struttura è stata riequilibrata.",
-          "rebalanceItems": "La struttura è stata riequilibrata. Elementi spostati: {count}.",
+          "rebalanceItems": "{count} elementi sono stati spostati quando la struttura è stata riequilibrata.",
+          "rebalanceItemsOne": "1 elemento è stato spostato quando la struttura è stata riequilibrata.",
           "audit": "I reindirizzamenti di vecchi argomenti sono stati accorciati.",
           "areas": "Le aree sono state raggruppate di nuovo.",
           "naming": "Gli argomenti hanno ricevuto un nome.",
-          "namingCount": "Argomenti con un nuovo nome: {count}.",
+          "namingCount": "{count} argomenti hanno ricevuto un nome.",
+          "namingCountOne": "1 argomento ha ricevuto un nome.",
           "human": "Hai modificato la struttura.",
           "rebuild": "Gli argomenti sono stati ricostruiti.",
           "other": "La struttura è cambiata."
@@ -4119,7 +4132,7 @@
       "table": "Solo tabella"
     },
     "health": {
-      "attention": "troppo grande",
+      "attention": "richiede attenzione",
       "good": "equilibrato",
       "violation": "oltre il limite"
     },
@@ -4159,7 +4172,7 @@
     "table": {
       "caption": "Gli stessi numeri del grafico, una riga per argomento",
       "growth": "7 giorni",
-      "health": "Dimensione",
+      "health": "Salute",
       "notes": "Note",
       "topic": "Argomento"
     },

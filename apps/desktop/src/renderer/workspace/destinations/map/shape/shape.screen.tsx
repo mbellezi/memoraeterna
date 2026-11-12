@@ -1,5 +1,6 @@
 import { screenTranslator } from "../../../screen-locale";
 import type { ScreenModule } from "../../../surfaces";
+import { AddSourceContext } from "../../../workspace-bridge";
 import { sampleChangeSet, sampleHistory, sampleShape } from "./shape-fixtures";
 import { ShapeScreen } from "./ShapeScreen";
 
@@ -37,5 +38,9 @@ export const fixtures: ScreenModule["fixtures"] = {
 };
 
 export function render() {
-  return <ShapeScreen t={t} active onNavigate={noop} />;
+  return (
+    <AddSourceContext.Provider value={noop}>
+      <ShapeScreen t={t} active onNavigate={noop} />
+    </AddSourceContext.Provider>
+  );
 }

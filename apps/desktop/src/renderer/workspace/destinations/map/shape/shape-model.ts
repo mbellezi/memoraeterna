@@ -421,14 +421,16 @@ export function changeText(t: Translator, change: TopicChangeSetSummary): string
   if (origin === "rebalance") {
     const items = positiveCount(change.titleParams.items);
     if (items !== null)
-      return t("topics.shape.changed.titles.rebalanceItems", {
-        values: { count: number(t, items) }
-      });
+      return items === 1
+        ? t("topics.shape.changed.titles.rebalanceItemsOne")
+        : t("topics.shape.changed.titles.rebalanceItems", { values: { count: number(t, items) } });
   }
   if (origin === "naming") {
     const topics = positiveCount(change.titleParams.topics);
     if (topics !== null)
-      return t("topics.shape.changed.titles.namingCount", { values: { count: number(t, topics) } });
+      return topics === 1
+        ? t("topics.shape.changed.titles.namingCountOne")
+        : t("topics.shape.changed.titles.namingCount", { values: { count: number(t, topics) } });
   }
   return t(changeKeys[origin]);
 }

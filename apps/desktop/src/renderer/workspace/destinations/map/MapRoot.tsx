@@ -86,7 +86,10 @@ export function MapRoot({ t, address, mode, active, onState, onOpen, current }: 
       data-surface={compact ? compactSurfaceId : surfaceId}
       data-state={state}
       aria-label={t("map.title")}
-      className="flex h-full min-h-0 min-w-0 flex-col gap-4 overflow-y-auto overscroll-contain px-6 py-5 max-[1179px]:px-4"
+      className={`flex h-full min-h-0 min-w-0 flex-col gap-4 overflow-y-auto overscroll-contain py-5 ${
+        // The 240 px previous panel keeps one gutter at every width; the others step in below 1180.
+        compact ? "px-4" : "px-6 max-[1179px]:px-4"
+      }`}
     >
       <header className="flex flex-wrap items-center gap-x-4 gap-y-2">
         <h1 className="m-0 font-reading text-2xl font-semibold text-foreground">

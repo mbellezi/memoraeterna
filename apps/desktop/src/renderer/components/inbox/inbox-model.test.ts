@@ -12,7 +12,9 @@ import {
   confidenceText,
   itemTitle,
   kindLabels,
+  kindWords,
   objectName,
+  probabilityOf,
   previousPanelTarget,
   quarantineReason,
   reviewVariantLabel,
@@ -56,6 +58,7 @@ describe("the Inbox's sentences, in every language", () => {
           if (name !== "hint") expect(text.trim(), where).not.toBe("");
         }
         expect(t(kindLabels[entry.kind])).not.toMatch(/\[\[missing/u);
+        expect(t(kindWords[entry.kind])).not.toMatch(/\[\[missing/u);
       }
       for (const risk of Object.values(riskLabels)) expect(t(risk)).not.toMatch(/\[\[missing/u);
     });
@@ -77,10 +80,8 @@ describe("what an item says", () => {
   });
 
   it("words a suggestion by both notes, its relation and how sure the decider was, with no number when unknown", () => {
-    // The confidence is in the headline, so two rows of the list never read alike.
-    expect(itemTitle(en, item("suggestion"))).toBe(
-      "Suggested connection · medium confidence (64%)"
-    );
+    // The headline names what is at stake; the confidence is in the detail's risk line.
+    expect(itemTitle(en, item("suggestion"))).toBe("Keep this connection?");
     const body = itemBody(en, item("suggestion"));
     expect(body).toContain("“Daylight sets the body clock”");
     expect(body).toContain("“Morning light shifts sleep timing”");
@@ -92,12 +93,9 @@ describe("what an item says", () => {
     const unknownItem = item("suggestion", {
       params: { relationType: "supports", probability: null }
     });
-    const unknown = itemTitle(en, unknownItem);
-    expect(unknown).toBe("Suggested connection · unknown confidence");
-    expect(unknown).not.toMatch(/\d/u);
-    expect(itemTitle(createTranslator("pt-BR"), unknownItem)).toBe(
-      "Conexão sugerida · confiança desconhecida"
-    );
+    expect(itemTitle(en, unknownItem)).not.toMatch(/\d/u);
+    expect(itemTitle(createTranslator("pt-BR"), unknownItem)).toBe("Manter esta conexão?");
+    expect(confidenceText(en, probabilityOf(unknownItem))).toBe("unknown confidence");
     // The word and the number follow the band and the language.
     expect(confidenceText(en, 0.85)).toBe("high confidence (85%)");
     expect(confidenceText(en, 0.5)).toBe("low confidence (50%)");
@@ -112,8 +110,13 @@ describe("what an item says", () => {
     expect(confidenceText(en, 0.9999)).toBe("high confidence (99%)");
     // A probability that is not a number reads as unknown, never as zero.
     expect(
-      itemTitle(en, item("suggestion", { params: { relationType: "supports", probability: "x" } }))
-    ).toContain("unknown confidence");
+      confidenceText(
+        en,
+        probabilityOf(
+          item("suggestion", { params: { relationType: "supports", probability: "x" } })
+        )
+      )
+    ).toBe("unknown confidence");
   });
 
   it("words a quarantined task by its task and why it failed", () => {
@@ -175,6 +178,12 @@ describe("what an item says", () => {
     expect(itemHint(en, item("duplicate"))).toContain("Dismiss");
     expect(itemHint(en, item("obsidian_conflict"))).toContain("Connections");
     expect(itemHint(en, item("review"))).toBeNull();
+  });
+
+  it("says an item's kind in the singular, not as the filter's group", () => {
+    expect(en(kindWords.quarantined)).toBe("Failed task");
+    expect(createTranslator("pt-BR")(kindWords.suggestion)).toBe("Conexão sugerida");
+    expect(createTranslator("pt-BR")(kindLabels.suggestion)).toBe("Conexões sugeridas");
   });
 
   it("lists the objects an item names, or what kind of item it is", () => {

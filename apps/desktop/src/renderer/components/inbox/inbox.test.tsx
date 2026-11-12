@@ -314,7 +314,12 @@ describe("the Inbox screen", () => {
 
   it("shows a suggestion by both notes and its confidence, offering keep and remove and no dismiss", () => {
     const html = view(stateOf([item("suggestion")]));
-    expect(html).toContain("Suggested connection · medium confidence (64%)");
+    // The headline names what is at stake; the risk line of the detail carries kind and confidence.
+    expect(html).toContain("Keep this connection?");
+    expect(html).toMatch(
+      /Suggested connection<\/span><span[^>]*>medium confidence \(64%\)<\/span>/u
+    );
+    expect(html).not.toContain("Suggested connection · ");
     expect(html).toContain("“Daylight sets the body clock”");
     expect(html).toContain("“Morning light shifts sleep timing”");
     expect(html).toContain("medium confidence (64%)");
@@ -500,6 +505,19 @@ describe("the Inbox destination's key bar, risk groups and verdicts (T142 UX rou
     const html = view(initialInboxState(), { listWidth: 300 });
     expect(html).toContain("--inbox-list-w:300px");
     expect(html).toContain("grid-cols-[var(--inbox-list-w)_minmax(0,1fr)]");
+  });
+
+  it("keeps the type control a select and the key bar to the always-valid keys while loading", () => {
+    const html = view(initialInboxState(), { keyBar: true });
+    // The same control as once the items arrive, at every width, disabled until then.
+    expect(html).toContain("gap-2 hidden");
+    expect(html).toMatch(
+      /<select[^>]*disabled=""[^>]*><option value="" selected="">All<\/option>/u
+    );
+    expect(html).not.toContain("text-secondary-foreground min-[1180px]:hidden");
+    for (const word of ["dismiss", "remove", "accept", "retry"])
+      expect(html).not.toContain(`>${word}<`);
+    expect(html).toContain("undo");
   });
 
   it("teaches in the empty state with a dashed outline and the Gardener's promise", () => {

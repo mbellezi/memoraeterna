@@ -8,13 +8,7 @@ import { Button } from "../../../../components/ui/button";
 import { EmptyState } from "../../../../components/ui/empty-state";
 import { ErrorState } from "../../../../components/ui/error-state";
 import { Kbd } from "../../../../components/ui/kbd";
-import {
-  LoadingState,
-  Skeleton,
-  SkeletonRows,
-  skeletonDelayMs,
-  useAfterDelay
-} from "../../../../components/ui/skeleton";
+import { LoadingState, Skeleton, SkeletonRows } from "../../../../components/ui/skeleton";
 import { ToggleGroup, ToggleGroupItem } from "../../../../components/ui/toggle-group";
 import { useViewportWidth } from "../../../use-workspace";
 import { useAddSource } from "../../../workspace-bridge";
@@ -98,15 +92,10 @@ export function ShapeView(props: ShapeViewProps) {
       onKeyDown={(event) => onEscape(event, props)}
     >
       <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
-        {load.status === "loading" ? (
-          <CountSkeleton />
-        ) : (
-          <p className="m-0 text-sm text-secondary-foreground">
-            {ready && items > 0
-              ? mapDescription(t, items, topics)
-              : t("map.shape.descriptionPlain")}
-          </p>
-        )}
+        {/* The header's words are the same while the tree is read: only its numbers arrive. */}
+        <p className="m-0 text-sm text-secondary-foreground">
+          {ready && items > 0 ? mapDescription(t, items, topics) : t("map.shape.descriptionPlain")}
+        </p>
         {(ready && items > 0) || load.status === "loading" ? (
           <ToggleGroup
             label={t("map.display.label")}
@@ -191,12 +180,6 @@ function CompactShape(props: ShapeViewProps & { shape: TopicShape | null }) {
       }}
     />
   );
-}
-
-/** The count line of the header while the tree is read: a bar where the description's numbers will be. */
-function CountSkeleton() {
-  const shown = useAfterDelay(skeletonDelayMs);
-  return shown ? <Skeleton aria-hidden="true" className="h-4 w-72 max-w-full" /> : <span />;
 }
 
 /** The weights of the blocks in the three columns of the loading chart: Áreas, Tópicos, Subtópicos. */

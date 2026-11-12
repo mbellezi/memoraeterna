@@ -356,6 +356,17 @@
       "low": "confianza baja ({percent})",
       "unknown": "confianza desconocida"
     },
+    "kind": {
+      "review": "Por revisar",
+      "quarantined": "Tarea fallida",
+      "contradiction": "Contradicción",
+      "suggestion": "Conexión sugerida",
+      "withdrawn": "Conexión retirada",
+      "duplicate": "Duplicado",
+      "obsidianConflict": "Conflicto de Obsidian",
+      "budget": "Límite de gasto",
+      "backlog": "Nueva comparación opcional"
+    },
     "kinds": {
       "review": "Por revisar",
       "quarantined": "Tareas fallidas",
@@ -415,7 +426,7 @@
         "divergenceBody": "El resumen de «{topic}» se amplió y algunas pruebas nuevas discrepan de lo que dice. La discrepancia queda junto al texto, nunca mezclada con él. Consérvala ahí o descarta este elemento. Puntos de discrepancia: {count}."
       },
       "suggestion": {
-        "title": "Conexión sugerida · {confidence}",
+        "title": "¿Mantener esta conexión?",
         "body": "Sugerencia: «{first}» {relation} «{second}». Consérvala para que cuente como decisión tuya o elimínala.",
         "hint": "No se borra nada: solo cambia la conexión. Si la eliminas, no se vuelve a sugerir."
       },
@@ -3048,11 +3059,13 @@
         "titles": {
           "build": "Los temas se crearon a partir de tus notas.",
           "rebalance": "La estructura se reequilibró.",
-          "rebalanceItems": "La estructura se reequilibró. Elementos movidos: {count}.",
+          "rebalanceItems": "{count} elementos cambiaron de lugar cuando se reequilibró la estructura.",
+          "rebalanceItemsOne": "1 elemento cambió de lugar cuando se reequilibró la estructura.",
           "audit": "Se acortaron las redirecciones de temas antiguos.",
           "areas": "Las áreas se reagruparon.",
           "naming": "Los temas recibieron un nombre.",
-          "namingCount": "Temas que recibieron un nombre: {count}.",
+          "namingCount": "{count} temas recibieron un nombre.",
+          "namingCountOne": "1 tema recibió un nombre.",
           "human": "Cambiaste la estructura.",
           "rebuild": "Los temas se rehicieron.",
           "other": "La estructura cambió."
@@ -4128,7 +4141,7 @@
       "table": "Solo tabla"
     },
     "health": {
-      "attention": "muy grande",
+      "attention": "necesita atención",
       "good": "equilibrado",
       "violation": "sobre el límite"
     },
@@ -4168,7 +4181,7 @@
     "table": {
       "caption": "Los mismos números del gráfico, una fila por tema",
       "growth": "7 días",
-      "health": "Tamaño",
+      "health": "Salud",
       "notes": "Notas",
       "topic": "Tema"
     },
