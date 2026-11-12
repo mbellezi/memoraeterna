@@ -57,7 +57,7 @@ describe("the briefing: each clause is true only when its count is", () => {
     expect(clauses[1]).toEqual({ id: "placement", placed: 29, unplaced: 1 });
     expect(clauses[2]).toEqual({ id: "generating", count: 1 });
     expect(clauses[3]).toEqual({ id: "gardener", count: 9 });
-    expect(clauses[4]).toMatchObject({ id: "decisions", count: 3 });
+    expect(clauses[4]).toMatchObject({ id: "decisions", count: 4 });
   });
 
   it("drops the arrivals and the placement when nothing arrived", () => {
@@ -299,7 +299,7 @@ describe("the Shape strip", () => {
 describe("the columns", () => {
   it("keeps the Inbox rows by risk and then in the digest's order", () => {
     const rows = homeDigest(now).inbox.top;
-    const shuffled = [rows[2]!, rows[0]!, rows[1]!];
+    const shuffled = [rows[3]!, rows[0]!, rows[1]!];
     expect(needRows(shuffled).map((row) => row.risk)).toEqual(["high", "medium", "low"]);
   });
 

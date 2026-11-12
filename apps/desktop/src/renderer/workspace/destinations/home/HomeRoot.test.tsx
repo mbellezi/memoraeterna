@@ -77,7 +77,7 @@ describe("the briefing as the person reads it", () => {
     expect(words).toContain("29 já têm lugar na árvore e 1 ainda procura.");
     expect(words).toContain("Uma fonte ainda está gerando notas.");
     expect(words).toContain("O Jardineiro fez 9 mudanças;");
-    expect(words).toContain("3 decisões esperam por você, entre elas");
+    expect(words).toContain("4 decisões esperam por você, entre elas");
     expect(words).toContain("Nada foi apagado.");
   });
 
@@ -144,7 +144,7 @@ describe("the briefing as the person reads it", () => {
   it("links the counts where there is somewhere to go; the Jardineiro's count takes you to its column", () => {
     const html = view(en, ready(data()), 1440, { go: vi.fn() });
     expect(html).toMatch(/<button[^>]*>3\u00a0sources<\/button>/u);
-    expect(html).toMatch(/<button[^>]*>3\u00a0decisions<\/button>/u);
+    expect(html).toMatch(/<button[^>]*>4\u00a0decisions<\/button>/u);
     expect(html).toMatch(/<button[^>]*>9\u00a0changes<\/button>/u);
     const bare = view(en, ready(data()));
     expect(bare).not.toMatch(/<button[^>]*>3\u00a0sources<\/button>/u);
@@ -216,7 +216,7 @@ describe("the parts of the day's page", () => {
       "Perguntas recentes"
     ])
       expect(words).toContain(title);
-    expect(words).toContain("3 decisões · maior risco primeiro");
+    expect(words).toContain("4 decisões · maior risco primeiro");
     expect(words).toContain("9 mudanças desde a sua última visita");
     expect(words).toContain("3 fontes · 30 notas");
   });
@@ -233,11 +233,29 @@ describe("the parts of the day's page", () => {
     expect(words).toContain("… › Fermentação › Fermentação lática");
   });
 
-  it("says the kind and the impact under each decision, and keeps the object titles for the tooltip", () => {
+  it("says the kind and the impact under each decision, and the titles of what it is about above them", () => {
     expect(words).toContain("Estrutura · 85 notas com caminho novo");
     expect(words).toContain("Contradição · 2 notas");
     expect(words).toContain("Duplicata · 2 notas");
     expect(words).not.toContain("Contradições ·");
+    // Every suggestion reads "Manter esta conexão?": the two notes it joins tell them apart.
+    expect(words).toContain("Manter esta conexão?");
+    expect(words).toContain("“A acidez inibe patógenos” · “Fermentação conserva alimentos”");
+    expect(words).toContain(
+      "“Gordura saturada eleva o LDL (2014)” · “Gordura saturada e coração (2020)”"
+    );
+    expect(words).toContain("“Nutrição”");
+  });
+
+  it("quotes the two notes of a suggestion in the briefing, not the question every suggestion asks", () => {
+    const base = data();
+    const suggestion = base.digest.inbox.top.find((row) => row.kind === "suggestion")!;
+    const lead = { ...base.digest, inbox: { total: 1, top: [suggestion] } };
+    const brief = text(view(pt, ready({ ...base, digest: lead })));
+    expect(brief).toContain(
+      "1 decisão espera por você: “A acidez inibe patógenos · Fermentação conserva alimentos”."
+    );
+    expect(brief).not.toContain("“Manter esta conexão?”");
   });
 
   it("names the topic a question was asked in", () => {

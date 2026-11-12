@@ -6,7 +6,7 @@ import { item, summary, uuid } from "../../../components/inbox/inbox-fixtures";
 /**
  * Home's digest as the tests and the screens tool read it: the design record's day (§17 fixture):
  * three sources arrived since yesterday evening, one still generating, nine changes by the Jardineiro,
- * three decisions and the tree with Nutrição too big. Titles are the person's own content, so they
+ * four decisions and the tree with Nutrição too big. Titles are the person's own content, so they
  * stay in Portuguese in every language.
  */
 
@@ -161,7 +161,7 @@ export function homeDigest(
       calm || empty
         ? { total: 0, top: [] }
         : {
-            total: 3,
+            total: 4,
             top: [
               {
                 kind: "review",
@@ -189,6 +189,19 @@ export function homeDigest(
                   objects: [
                     { kind: "note", id: uuid(21), title: "Gordura saturada eleva o LDL (2014)" },
                     { kind: "note", id: uuid(22), title: "Gordura saturada e coração (2020)" }
+                  ]
+                })
+              },
+              {
+                kind: "suggestion",
+                id: uuid(30),
+                risk: "medium",
+                at: hoursBefore(now, 11),
+                item: item("suggestion", {
+                  id: uuid(30),
+                  objects: [
+                    { kind: "note", id: uuid(31), title: "A acidez inibe patógenos" },
+                    { kind: "note", id: uuid(32), title: "Fermentação conserva alimentos" }
                   ]
                 })
               },
