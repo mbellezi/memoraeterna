@@ -97,7 +97,8 @@
     "gardenerColumn": {
       "all": "Ver todos",
       "proposed": "propuesta · decide en la Bandeja de entrada",
-      "title": "Lo que hizo el Jardinero"
+      "title": "Lo que hizo el Jardinero",
+      "why": "¿Por qué?"
     },
     "greeting": {
       "afternoon": "Buenas tardes.",
@@ -110,6 +111,23 @@
     },
     "label": "Inicio",
     "need": {
+      "impact": {
+        "pathOne": "{count} nota con ruta nueva",
+        "pathOther": "{count} notas con ruta nueva"
+      },
+      "kinds": {
+        "backlog": "Nueva correspondencia opcional",
+        "budget": "Límite de gasto",
+        "contradiction": "Contradicción",
+        "duplicate": "Duplicado",
+        "obsidianConflict": "Conflicto de Obsidian",
+        "quarantined": "Tarea fallida",
+        "review": "Por revisar",
+        "reviewOverview": "Resumen",
+        "reviewRelation": "Conexión",
+        "reviewTopic": "Estructura",
+        "withdrawn": "Conexión retirada"
+      },
       "link": "Bandeja de entrada",
       "risk": {
         "high": "Alto",

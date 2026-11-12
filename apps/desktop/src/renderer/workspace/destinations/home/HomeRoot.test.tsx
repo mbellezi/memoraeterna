@@ -20,6 +20,7 @@ const data = (
   generating: { total: 1, ids: [uuid(101)] },
   progress: { [uuid(101)]: { done: 7, estimate: 18 } },
   lastVisit: new Date(2026, 10, 10, 22, 40).toISOString(),
+  topicTitles: { [uuid(12)]: "Fermentação lática" },
   readAt: now,
   ...rest
 });
@@ -34,7 +35,8 @@ const view = (
   snapshot: HomeSnapshot,
   width = 1440,
   actions: Parameters<typeof HomeView>[0]["actions"] = {}
-) => renderToString(<HomeView t={t} snapshot={snapshot} width={width} actions={actions} />);
+) =>
+  renderToString(<HomeView t={t} snapshot={snapshot} width={width} now={now} actions={actions} />);
 
 /** The text of the html, with tags removed and no-break spaces as plain spaces. */
 const text = (html: string) =>
@@ -231,10 +233,41 @@ describe("the parts of the day's page", () => {
     expect(words).toContain("… › Fermentação › Fermentação lática");
   });
 
-  it("says the kind and the impact under each decision, and names the objects when there is no impact", () => {
-    expect(words).toContain("Estrutura de tópicos · 85 itens");
-    expect(words).toContain("Contradições · “Gordura saturada eleva o LDL (2014)”");
-    expect(words).toContain("Duplicatas · “Kefir de água” · “Kefir de água em casa”");
+  it("says the kind and the impact under each decision, and keeps the object titles for the tooltip", () => {
+    expect(words).toContain("Estrutura · 85 notas com caminho novo");
+    expect(words).toContain("Contradição · 2 notas");
+    expect(words).toContain("Duplicata · 2 notas");
+    expect(words).not.toContain("Contradições ·");
+  });
+
+  it("names the topic a question was asked in", () => {
+    expect(words).toContain("Fermentação lática · ontem");
+    expect(words).not.toContain("Um tópico");
+    const unknown = text(view(pt, ready(data({}, { topicTitles: {} }))));
+    expect(unknown).toContain("Um tópico");
+  });
+
+  it("offers Ver todas and Por quê? on the Jardineiro's column only when something opens the Activity", () => {
+    expect(words).not.toContain("Por quê?");
+    const linked = text(view(pt, ready(data()), 1440, { openActivity: vi.fn() }));
+    expect(linked).toContain("Ver todas");
+    expect(linked.match(/Por quê\?/gu)).toHaveLength(1);
+  });
+
+  it("draws the date line above a failed read", () => {
+    const failed = text(
+      renderToString(
+        <HomeView
+          t={pt}
+          snapshot={{ read: { status: "error", unavailable: false }, undo: {} }}
+          width={1440}
+          now={now}
+          actions={{ retry: vi.fn() }}
+        />
+      )
+    );
+    expect(failed).toContain("Quarta-feira, 11 de novembro");
+    expect(failed).toContain("Tentar de novo");
   });
 
   it("shows no English chrome in pt-BR", () => {

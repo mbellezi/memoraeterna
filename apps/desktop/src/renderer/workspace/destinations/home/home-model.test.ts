@@ -35,6 +35,7 @@ const data = (
   generating: { total: 1, ids: [uuid(101)] },
   progress: {},
   lastVisit: new Date(now - 26 * 3_600_000).toISOString(),
+  topicTitles: { [uuid(12)]: "Fermentação lática" },
   readAt: now,
   ...rest
 });

@@ -42,6 +42,15 @@ export const fixtures: ScreenModule["fixtures"] = {
     "home.digest": () => homeDigest(Date.now()),
     "library.rows": processing,
     "library.sourceProgress": progress,
+    "objects.resolveMany": ({ addresses }: { addresses: string[] }) => ({
+      items: Object.fromEntries(
+        addresses.map((address) => [
+          address,
+          { address, kind: "topic", title: "Fermentação lática", status: "current", preview: "" }
+        ])
+      ),
+      missing: []
+    }),
     "changes.undo": { status: "undone", kind: "topic", id: ids.question }
   },
   empty: {

@@ -52,7 +52,7 @@ export function HomeFirstRun({ t, onAdd }: { t: Translator; onAdd?: (() => void)
         </p>
         <p className="mb-0 mt-3 [text-wrap:pretty]">{t("home.firstRun.next")}</p>
       </EmptyState>
-      <div className="grid min-w-0 gap-8 [grid-template-columns:repeat(auto-fit,minmax(18rem,1fr))]">
+      <div className="grid min-w-0 max-w-3xl gap-8 [grid-template-columns:repeat(auto-fit,minmax(18rem,1fr))]">
         <section aria-labelledby="home-steps" className="grid min-w-0 content-start gap-3">
           <h3 id="home-steps" className="m-0 text-base font-semibold text-foreground">
             {t("home.firstRun.stepsTitle")}

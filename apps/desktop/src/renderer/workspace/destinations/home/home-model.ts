@@ -33,6 +33,8 @@ export interface HomeData {
   generating: { total: number; ids: readonly string[] } | null;
   /** Notes so far and the estimate of a generating source that arrived (`library.sourceProgress`). */
   progress: Readonly<Record<string, { done: number; estimate: number | null }>>;
+  /** Titles of the topics the recent questions were asked in, by topic id (a topic that is gone has none). */
+  topicTitles: Readonly<Record<string, string>>;
   /** `lastHomeOpenAt` the digest was read since; null when Home was never opened (a week back). */
   lastVisit: string | null;
   /** When the data was read: relative days and times are worded from it, never from a timer. */
@@ -314,11 +316,29 @@ export function foldCrumbs(
 }
 
 export type QuestionScopeView =
-  { kind: "library" } | { kind: "topic" } | { kind: "sources"; count: number };
+  | { kind: "library" }
+  | { kind: "topic"; title: string | null }
+  | { kind: "sources"; count: number };
 
-export function questionScope(scope: AskScope): QuestionScopeView {
+/** A question's scope as the row words it; a topic carries its title when it is known. */
+export function questionScope(
+  scope: AskScope,
+  topicTitles: Readonly<Record<string, string>> = {}
+): QuestionScopeView {
   if (scope.kind === "sources") return { kind: "sources", count: scope.sourceIds.length };
-  return { kind: scope.kind };
+  if (scope.kind === "topic") {
+    const title = topicTitles[scope.topicId];
+    return { kind: "topic", title: title === undefined || title === "" ? null : title };
+  }
+  return { kind: "library" };
+}
+
+/** The topics the recent questions were asked in: what the store resolves into titles. */
+export function questionTopicIds(questions: readonly HomeQuestion[]): string[] {
+  const ids = new Set<string>();
+  for (const question of questions)
+    if (question.scope.kind === "topic") ids.add(question.scope.topicId);
+  return [...ids];
 }
 
 export const gardenerRowLimit = 3;

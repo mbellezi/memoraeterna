@@ -20,17 +20,27 @@ function setup(
         steps: { notes: { state: "running", soFar: 7, estimate: 18 } }
       }) as never
   );
+  const resolveMany = vi.fn(
+    async ({ addresses }: { addresses: string[] }) =>
+      ({
+        items: Object.fromEntries(
+          addresses.map((address) => [address, { address, title: "Fermentação lática" }])
+        ),
+        missing: []
+      }) as never
+  );
   const undo = vi.fn(async () => ({ status: "undone", kind: "topic", id: uuid(801) }) as never);
   const api: HomeStoreApi = {
     home: { digest },
     library: { rows, sourceProgress },
     changes: { undo },
+    objects: { resolveMany },
     onAppEvent: bus.api.onAppEvent
   };
   const onFirstRead = vi.fn();
   const since = vi.fn(() => "2026-11-10T22:40:00.000Z" as string | null);
   const store = new HomeStore({ api: () => api, since, now: () => now, onFirstRead });
-  return { store, bus, digest, rows, sourceProgress, undo, onFirstRead, since };
+  return { store, bus, digest, rows, sourceProgress, resolveMany, undo, onFirstRead, since };
 }
 
 describe("Home's store", () => {
@@ -49,6 +59,26 @@ describe("Home's store", () => {
     expect(read.data.readAt).toBe(now);
     expect(sourceProgress).toHaveBeenCalledTimes(1);
     store.stop();
+  });
+
+  it("resolves the titles of the topics the recent questions were asked in, and reads without them when that fails", async () => {
+    const { store, resolveMany } = setup();
+    store.start();
+    await flush();
+    const read = store.getSnapshot().read;
+    if (read.status !== "ready") throw new Error("not ready");
+    expect(resolveMany).toHaveBeenCalledWith({ addresses: [`memora://topic/${uuid(12)}`] });
+    expect(read.data.topicTitles).toEqual({ [uuid(12)]: "Fermentação lática" });
+    store.stop();
+
+    const failing = setup();
+    failing.resolveMany.mockRejectedValue(new Error("down"));
+    failing.store.start();
+    await flush();
+    const after = failing.store.getSnapshot().read;
+    expect(after.status).toBe("ready");
+    if (after.status === "ready") expect(after.data.topicTitles).toEqual({});
+    failing.store.stop();
   });
 
   it("looks back a week when Home was never opened", async () => {

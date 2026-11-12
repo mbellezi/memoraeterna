@@ -97,7 +97,8 @@
     "gardenerColumn": {
       "all": "Vedi tutte",
       "proposed": "proposta · decidi nella Posta in arrivo",
-      "title": "Cosa ha fatto il Giardiniere"
+      "title": "Cosa ha fatto il Giardiniere",
+      "why": "Perché?"
     },
     "greeting": {
       "afternoon": "Buon pomeriggio.",
@@ -110,6 +111,23 @@
     },
     "label": "Home",
     "need": {
+      "impact": {
+        "pathOne": "{count} nota con un nuovo percorso",
+        "pathOther": "{count} note con un nuovo percorso"
+      },
+      "kinds": {
+        "backlog": "Nuova corrispondenza facoltativa",
+        "budget": "Limite di spesa",
+        "contradiction": "Contraddizione",
+        "duplicate": "Duplicato",
+        "obsidianConflict": "Conflitto di Obsidian",
+        "quarantined": "Attività non riuscita",
+        "review": "Da rivedere",
+        "reviewOverview": "Panoramica",
+        "reviewRelation": "Connessione",
+        "reviewTopic": "Struttura",
+        "withdrawn": "Connessione ritirata"
+      },
       "link": "Posta in arrivo",
       "risk": {
         "high": "Alto",

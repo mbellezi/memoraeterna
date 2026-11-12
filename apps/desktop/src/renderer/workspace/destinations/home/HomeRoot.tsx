@@ -33,6 +33,7 @@ import { ShapeStrip } from "./HomeShape";
 import {
   arrivalRows,
   columnAreas,
+  dateLine,
   gardenerRows,
   homeMode,
   isResumeKey,
@@ -57,6 +58,8 @@ export interface HomeActions {
   retry?: () => void;
   /** The first source: the Add flow. */
   addSource?: () => void;
+  /** "Ver todas" of the Jardineiro's column: the Activity drawer, which lists every change. */
+  openActivity?: () => void;
 }
 
 /** The frame state of a snapshot: first run is Home's empty state. */
@@ -78,17 +81,30 @@ function focusGardenerColumn() {
   heading.focus({ preventScroll: true });
 }
 
-/** Home as a pure function of a snapshot, its width and its actions. */
+/**
+ * The Activity drawer is the shell's: its pill (`data-fit="pill"`) is the one control that opens
+ * it, so Home presses that control and the drawer behaves as if the person had. Nothing happens
+ * where no shell hosts Home, and a drawer that is already open stays open.
+ */
+export function openActivityDrawer(root: ParentNode = document) {
+  const pill = root.querySelector<HTMLButtonElement>("button[data-fit='pill']");
+  if (pill && pill.getAttribute("aria-expanded") !== "true") pill.click();
+}
+
+/** Home as a pure function of a snapshot, its width, the day and its actions. */
 export function HomeView({
   t,
   snapshot,
   width,
+  now,
   actions
 }: {
   t: Translator;
   snapshot: HomeSnapshot;
   /** The window's width: below the compact tier Home draws two columns. */
   width: number;
+  /** The day the date line names while the digest is not there (a failed first read). */
+  now: number;
   actions: HomeActions;
 }) {
   const compact = width < layoutConfig.compactBelow;
@@ -105,15 +121,18 @@ export function HomeView({
         {snapshot.read.status === "loading" ? (
           <HomeLoading t={t} compact={compact} />
         ) : snapshot.read.status === "error" ? (
-          <ErrorState
-            t={t}
-            className="max-w-[40rem]"
-            message={t("home.states.error")}
-            kept={t("home.states.errorKept")}
-            retryLabel={t("shell.actions.retry")}
-            {...(actions.retry ? { onRetry: actions.retry } : {})}
-            {...(snapshot.read.unavailable ? { details: t("home.errors.unavailable") } : {})}
-          />
+          <>
+            <p className="m-0 text-sm text-muted-foreground">{dateLine(t.locale, new Date(now))}</p>
+            <ErrorState
+              t={t}
+              className="max-w-[40rem]"
+              message={t("home.states.error")}
+              kept={t("home.states.errorKept")}
+              retryLabel={t("shell.actions.retry")}
+              {...(actions.retry ? { onRetry: actions.retry } : {})}
+              {...(snapshot.read.unavailable ? { details: t("home.errors.unavailable") } : {})}
+            />
+          </>
         ) : homeMode(snapshot.read.data) === "firstRun" ? (
           <HomeFirstRun t={t} onAdd={actions.addSource} />
         ) : (
@@ -244,6 +263,7 @@ function HomeContent({
               undo={undo}
               readAt={data.readAt}
               onUndo={actions.undo}
+              {...(actions.openActivity ? { onAll: actions.openActivity } : {})}
             />
           ) : null}
           {arrivals.length > 0 ? (
@@ -261,6 +281,7 @@ function HomeContent({
             <QuestionsColumn
               t={t}
               questions={questions}
+              topicTitles={data.topicTitles}
               readAt={data.readAt}
               {...(actions.openObject
                 ? {
@@ -375,6 +396,7 @@ export function homeActions({
           }
         }
       : {}),
+    openActivity: () => openActivityDrawer(),
     undo: (change) => void store.undo({ kind: change.kind, id: change.id }),
     retry: () => store.retry(),
     ...(addSource ? { addSource } : {})
@@ -388,6 +410,7 @@ export function HomeRoot({ t, active, onState, onOpen }: PanelProps) {
   const store = useHomeStore(active);
   const snapshot = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);
   const width = useViewportWidth();
+  const [now] = useState(() => Date.now());
   const state = homeState(snapshot);
   useEffect(() => {
     onState(state);
@@ -424,5 +447,5 @@ export function HomeRoot({ t, active, onState, onOpen }: PanelProps) {
     return () => document.removeEventListener("keydown", onKeyDown);
   }, [resumable, addresses, resume]);
 
-  return <HomeView t={t} snapshot={snapshot} width={width} actions={actions} />;
+  return <HomeView t={t} snapshot={snapshot} width={width} now={now} actions={actions} />;
 }

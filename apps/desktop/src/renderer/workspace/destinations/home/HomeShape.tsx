@@ -12,8 +12,7 @@ const nbsp = "\u00a0";
  * The plan's Shape lens on Home, as one strip (design record §7.1): the tree's size in a line, one
  * segment per root topic with its width following its notes, a solid triangle and a warning outline
  * on a root that is too big, the count of topics too big anywhere in the tree, and the way to the
- * Map. A segment too narrow for its label keeps its
- * name for the hover and the screen reader.
+ * Map. A segment's full name and count are also its hover text and its screen-reader name.
  */
 export function ShapeStrip({
   t,
@@ -100,8 +99,10 @@ function Segment({
     .join(" · ");
   return (
     <li
-      className="min-w-32"
-      style={{ flex: `${Math.max(1, Math.round(segment.share * 1000))} 1 8rem` }}
+      className="min-w-24"
+      // Width follows the notes: every segment starts from nothing and grows by its count, so
+      // the strip draws the tree's shape; only a label's own width (two lines) is a floor.
+      style={{ flex: `${Math.max(1, segment.notes)} 1 0%` }}
     >
       <button
         type="button"

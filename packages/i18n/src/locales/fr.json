@@ -97,7 +97,8 @@
     "gardenerColumn": {
       "all": "Tout voir",
       "proposed": "proposition · décidez dans la Boîte de réception",
-      "title": "Ce qu’a fait le Jardinier"
+      "title": "Ce qu’a fait le Jardinier",
+      "why": "Pourquoi ?"
     },
     "greeting": {
       "afternoon": "Bon après-midi.",
@@ -110,6 +111,23 @@
     },
     "label": "Accueil",
     "need": {
+      "impact": {
+        "pathOne": "{count} note avec un nouveau chemin",
+        "pathOther": "{count} notes avec un nouveau chemin"
+      },
+      "kinds": {
+        "backlog": "Nouvelle correspondance facultative",
+        "budget": "Plafond de dépenses",
+        "contradiction": "Contradiction",
+        "duplicate": "Doublon",
+        "obsidianConflict": "Conflit Obsidian",
+        "quarantined": "Tâche échouée",
+        "review": "À examiner",
+        "reviewOverview": "Vue d’ensemble",
+        "reviewRelation": "Connexion",
+        "reviewTopic": "Structure",
+        "withdrawn": "Connexion retirée"
+      },
       "link": "Boîte de réception",
       "risk": {
         "high": "Élevé",

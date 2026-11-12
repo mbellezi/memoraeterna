@@ -97,7 +97,8 @@
     "gardenerColumn": {
       "all": "See all",
       "proposed": "proposal · decide in the Inbox",
-      "title": "What the Gardener did"
+      "title": "What the Gardener did",
+      "why": "Why?"
     },
     "greeting": {
       "afternoon": "Good afternoon.",
@@ -110,6 +111,23 @@
     },
     "label": "Home",
     "need": {
+      "impact": {
+        "pathOne": "{count} note with a new path",
+        "pathOther": "{count} notes with a new path"
+      },
+      "kinds": {
+        "backlog": "Optional re-match",
+        "budget": "Spending limit",
+        "contradiction": "Contradiction",
+        "duplicate": "Duplicate",
+        "obsidianConflict": "Obsidian conflict",
+        "quarantined": "Failed task",
+        "review": "To review",
+        "reviewOverview": "Overview",
+        "reviewRelation": "Connection",
+        "reviewTopic": "Structure",
+        "withdrawn": "Withdrawn connection"
+      },
       "link": "Inbox",
       "risk": {
         "high": "High",

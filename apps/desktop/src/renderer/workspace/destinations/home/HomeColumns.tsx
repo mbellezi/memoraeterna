@@ -1,23 +1,18 @@
 import { Fragment, type ReactNode } from "react";
 import { Undo2 } from "lucide-react";
-import type { ChangeSetSummary, InboxItem } from "@app/domain";
+import type { ChangeSetSummary, InboxItem, InboxKind } from "@app/domain";
 import type { MessageKey, Translator } from "@app/i18n";
 
 import { changeSetTitle } from "../../../components/activity/change-title";
 import { ObjectKindGlyph, objectKindTextClass } from "../../../components/glyphs";
-import {
-  itemTitle,
-  kindLabels,
-  objectName,
-  reviewVariantLabel
-} from "../../../components/inbox/inbox-model";
+import { itemTitle, kindLabels, objectName } from "../../../components/inbox/inbox-model";
 import { riskIcon, riskTone } from "../../../components/inbox/inbox-marks";
 import { Tooltip } from "../../../components/ui/tooltip";
 import { cn } from "../../../lib/cn";
 import type { HomeInboxRow, HomeQuestion } from "../../../../shared/ipc-home";
 import { foldCrumbs, questionScope, type ArrivalRow, type HomeArea } from "./home-model";
 import type { HomeUndo } from "./home-store";
-import { countText, whenText } from "./home-text";
+import { countText, pluralKey, whenText } from "./home-text";
 
 const nbsp = "\u00a0";
 
@@ -99,30 +94,66 @@ const riskWords = {
 const positive = (value: unknown): number | null =>
   typeof value === "number" && Number.isFinite(value) && value > 0 ? value : null;
 
-/** How many things an item touches, when it says so: a proposal's items, a backlog's notes. */
+/** The kind of decision as one singular word ("Contradição"), not the Inbox filter's plural. */
+const needKindWords = {
+  review: "home.need.kinds.review",
+  quarantined: "home.need.kinds.quarantined",
+  contradiction: "home.need.kinds.contradiction",
+  withdrawn: "home.need.kinds.withdrawn",
+  duplicate: "home.need.kinds.duplicate",
+  obsidian_conflict: "home.need.kinds.obsidianConflict",
+  budget: "home.need.kinds.budget",
+  backlog: "home.need.kinds.backlog"
+} as const satisfies Record<InboxKind, MessageKey>;
+
+const reviewKindWords = {
+  topic: "home.need.kinds.reviewTopic",
+  relation: "home.need.kinds.reviewRelation",
+  overview: "home.need.kinds.reviewOverview"
+} as const satisfies Record<string, MessageKey>;
+
+/**
+ * What a decision would change, when it says so: the notes that get a new path in a proposal of
+ * the tree, the items of any other proposal, the notes of a backlog, the notes a contradiction or a
+ * duplicate is about. Null when the item names no count.
+ */
 function impactText(t: Translator, item: InboxItem): string | null {
   const items = positive(item.changeSet?.titleParams.items);
-  if (items !== null) return countText(t, "items", items);
-  const notes = item.kind === "backlog" ? positive(item.params.notes) : null;
-  return notes === null ? null : countText(t, "notes", notes);
+  if (items !== null) {
+    if (item.kind === "review" && item.variant === "topic")
+      return t(
+        pluralKey(t.locale, items, "home.need.impact.pathOne", "home.need.impact.pathOther"),
+        { values: { count: new Intl.NumberFormat(t.locale).format(items) } }
+      );
+    return countText(t, "items", items);
+  }
+  if (item.kind === "backlog") {
+    const notes = positive(item.params.notes);
+    return notes === null ? null : countText(t, "notes", notes);
+  }
+  const noteCount = item.objects.filter((object) => object.kind === "note").length;
+  return noteCount > 0 ? countText(t, "notes", noteCount) : null;
 }
 
 /**
- * The line under a row's title: what kind of decision it is and how much it touches ("Para
- * revisar · 85 itens"). An item that states no impact names the objects it is about instead, and
- * the names are also the row's tooltip.
+ * The line under a row's title: the kind of decision and what it touches ("Estrutura · 85 notas
+ * com caminho novo", "Contradição · 2 notas"). The titles of the objects it is about are the row's
+ * tooltip, not part of the line.
  */
 export function needMeta(t: Translator, row: HomeInboxRow): { line: string; names: string | null } {
-  const kind = t(kindLabels[row.kind]);
   const item = row.item;
-  if (!item) return { line: kind, names: null };
+  if (!item) return { line: t(needKindWords[row.kind]), names: null };
   const names =
     item.objects.length > 0
       ? item.objects.map((object) => `“${objectName(t, object)}”`).join(" · ")
       : null;
-  const variant = item.kind === "review" ? reviewVariantLabel(t, item.variant) : null;
-  const impact = impactText(t, item);
-  const line = [variant ?? kind, impact ?? names].filter((part) => part !== null).join(" · ");
+  const variant =
+    item.kind === "review" && Object.hasOwn(reviewKindWords, item.variant)
+      ? reviewKindWords[item.variant as keyof typeof reviewKindWords]
+      : null;
+  const line = [t(variant ?? needKindWords[row.kind]), impactText(t, item)]
+    .filter((part) => part !== null)
+    .join(" · ");
   return { line, names };
 }
 
@@ -233,11 +264,13 @@ export function GardenerColumn({
       }
     >
       <ol className="relative m-0 grid list-none gap-4 p-0 before:absolute before:bottom-2 before:left-[3.5px] before:top-2 before:w-px before:bg-[var(--thread)]">
-        {changes.map((change) => {
+        {changes.map((change, index) => {
           const key = `${change.kind}:${change.id}`;
           const row = undo[key];
           const proposal = change.status === "pending_review";
           const undone = row?.status === "undone";
+          // "Por quê?" sits under the first row's title, beside its date and Desfazer.
+          const withWhy = index === 0 && onAll !== undefined;
           return (
             <li key={key} className="relative grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 pl-5">
               <span
@@ -250,7 +283,12 @@ export function GardenerColumn({
               <p className="m-0 min-w-0 text-sm text-foreground [text-wrap:pretty]">
                 {changeSetTitle(t, change)}
               </p>
-              <div className="grid justify-items-end gap-0.5 text-xs text-muted-foreground">
+              <div
+                className={cn(
+                  "grid content-start justify-items-end gap-0.5 text-xs text-muted-foreground",
+                  withWhy && "row-span-2"
+                )}
+              >
                 <span className="whitespace-nowrap">{whenText(t, change.at, readAt)}</span>
                 {!proposal && !undone && change.undo === "available" ? (
                   <button
@@ -274,7 +312,12 @@ export function GardenerColumn({
                   </button>
                 ) : null}
               </div>
-              <div className="col-span-2 grid gap-0.5 text-xs text-muted-foreground">
+              <div
+                className={cn(
+                  "grid justify-items-start gap-0.5 text-xs text-muted-foreground",
+                  withWhy ? "col-start-1" : "col-span-2"
+                )}
+              >
                 {proposal ? <span>{t("home.gardenerColumn.proposed")}</span> : null}
                 {undone ? <span role="status">{t("activity.done.undone")}</span> : null}
                 {!proposal && !undone && change.undo === "blocked" && row === undefined ? (
@@ -284,6 +327,18 @@ export function GardenerColumn({
                   <span role="alert" className="text-secondary-foreground">
                     {t(row.messageKey)}
                   </span>
+                ) : null}
+                {withWhy ? (
+                  <button
+                    type="button"
+                    onClick={onAll}
+                    className={cn(
+                      "cursor-pointer rounded-sm border-0 bg-transparent p-0 text-xs font-medium text-accent hover:text-accent-hover",
+                      "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                    )}
+                  >
+                    {t("home.gardenerColumn.why")}
+                  </button>
                 ) : null}
               </div>
             </li>
@@ -330,6 +385,7 @@ export function ArrivedColumn({
       <ul className="m-0 grid list-none p-0">
         {rows.map((row) => {
           const { folded, shown } = foldCrumbs(row.crumbs);
+          const path = row.crumbs.join(" › ");
           return (
             <li key={row.address} className="border-t border-border first:border-t-0">
               <button
@@ -346,7 +402,7 @@ export function ArrivedColumn({
                 <span className="min-w-0 text-sm font-medium text-foreground [text-wrap:balance]">
                   {row.title}
                 </span>
-                <span className="row-span-2 grid content-start justify-items-end text-xs text-muted-foreground">
+                <span className="grid content-start justify-items-end text-xs text-muted-foreground">
                   {row.notes !== null ? (
                     <span className="text-sm font-semibold tabular-nums text-foreground">
                       {row.notes}
@@ -354,7 +410,10 @@ export function ArrivedColumn({
                   ) : null}
                   <span className="whitespace-nowrap">{whenText(t, row.createdAt, readAt)}</span>
                 </span>
-                <span className="col-start-2 min-w-0 text-xs text-muted-foreground">
+                <span
+                  className="col-start-2 col-end-4 min-w-0 text-xs text-muted-foreground"
+                  title={path === "" ? undefined : path}
+                >
                   {row.generating ? (
                     <Progress t={t} progress={row.progress} />
                   ) : shown.length > 0 ? (
@@ -362,13 +421,13 @@ export function ArrivedColumn({
                       <ObjectKindGlyph
                         kind="topic"
                         size={12}
-                        className={cn("mt-0.5", objectKindTextClass.topic)}
+                        className={cn("mt-0.5 shrink-0", objectKindTextClass.topic)}
                       />
-                      <span className="min-w-0 [text-wrap:pretty]">
-                        {folded ? `…${nbsp}›${nbsp}` : null}
+                      <span className="min-w-0 [overflow-wrap:anywhere] [text-wrap:pretty]">
+                        {folded ? `…${nbsp}› ` : null}
                         {shown.map((crumb, index) => (
                           <Fragment key={`${index}:${crumb}`}>
-                            {index > 0 ? `${nbsp}›${nbsp}` : null}
+                            {index > 0 ? `${nbsp}› ` : null}
                             {crumb}
                           </Fragment>
                         ))}
@@ -424,12 +483,15 @@ function Progress({ t, progress }: { t: Translator; progress: ArrivalRow["progre
 export function QuestionsColumn({
   t,
   questions,
+  topicTitles = {},
   readAt,
   onOpen,
   onAll
 }: {
   t: Translator;
   questions: readonly HomeQuestion[];
+  /** The titles of the topics the questions were asked in, by topic id. */
+  topicTitles?: Readonly<Record<string, string>>;
   readAt: number;
   onOpen?: ((id: string) => void) | undefined;
   onAll?: (() => void) | undefined;
@@ -449,22 +511,35 @@ export function QuestionsColumn({
     >
       <ul className="m-0 grid list-none p-0">
         {questions.map((question) => {
-          const scope = questionScope(question.scope);
-          const scopeText =
-            scope.kind === "library"
-              ? t("home.questions.scopeLibrary")
-              : scope.kind === "topic"
-                ? t("home.questions.scopeTopic")
-                : countText(t, "sources", scope.count);
-          const meta = [
-            scopeText,
+          const scope = questionScope(question.scope, topicTitles);
+          const scopeNode: ReactNode =
+            scope.kind === "library" ? (
+              t("home.questions.scopeLibrary")
+            ) : scope.kind === "topic" ? (
+              scope.title === null ? (
+                t("home.questions.scopeTopic")
+              ) : (
+                <span className="inline-flex max-w-full items-baseline gap-1 align-baseline">
+                  <ObjectKindGlyph
+                    kind="topic"
+                    size={12}
+                    className={cn("shrink-0 self-center", objectKindTextClass.topic)}
+                  />
+                  <span className="min-w-0 [overflow-wrap:anywhere]">{scope.title}</span>
+                </span>
+              )
+            ) : (
+              countText(t, "sources", scope.count)
+            );
+          const meta: ReactNode[] = [
+            scopeNode,
             question.status === "running"
               ? t("home.questions.running")
               : question.status === "failed"
                 ? t("home.questions.failed")
                 : null,
             whenText(t, question.createdAt, readAt)
-          ].filter((part): part is string => part !== null);
+          ].filter((part) => part !== null);
           return (
             <li key={question.id} className="border-t border-border first:border-t-0">
               <button
@@ -482,7 +557,12 @@ export function QuestionsColumn({
                   {question.text}
                 </span>
                 <span className="col-start-2 text-xs text-muted-foreground [text-wrap:pretty]">
-                  {meta.join(" · ")}
+                  {meta.map((part, index) => (
+                    <Fragment key={index}>
+                      {index > 0 ? " · " : null}
+                      {part}
+                    </Fragment>
+                  ))}
                 </span>
               </button>
             </li>

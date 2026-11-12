@@ -116,6 +116,8 @@
     "home.counts.notesOther",
     "home.counts.sourcesOne",
     "home.counts.sourcesOther",
+    "home.need.kinds.contradiction",
+    "home.need.kinds.reviewTopic",
     "import.content.labels.articles",
     "import.content.labels.sections",
     "import.fields.doi",

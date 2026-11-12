@@ -1,9 +1,9 @@
-import { parseObjectAddress, type ChangeSetRef } from "@app/domain";
+import { formatObjectAddress, parseObjectAddress, type ChangeSetRef } from "@app/domain";
 import type { MessageKey } from "@app/i18n";
 
 import type { DesktopApi } from "../../../../shared/ipc";
 import { readOnEvents, type ReadOnEvents, type ReadSource } from "../../../lib/status-followers";
-import type { HomeData } from "./home-model";
+import { questionTopicIds, type HomeData } from "./home-model";
 
 /**
  * Home's data outside React, so every rule is tested without a renderer: one read of the digest
@@ -20,6 +20,7 @@ export interface HomeStoreApi {
   home: Pick<DesktopApi["home"], "digest">;
   library: Pick<DesktopApi["library"], "rows" | "sourceProgress">;
   changes: Pick<DesktopApi["changes"], "undo">;
+  objects: Pick<DesktopApi["objects"], "resolveMany">;
   onAppEvent: DesktopApi["onAppEvent"];
 }
 
@@ -189,13 +190,35 @@ export class HomeStore {
         }
       })
     );
+    const topicTitles = await this.readTopicTitles(api, questionTopicIds(digest.questions));
     return {
       digest,
       generating,
       progress,
+      topicTitles,
       lastVisit: since,
       readAt: (this.options.now ?? Date.now)()
     };
+  }
+
+  /** The titles of the topics the questions were asked in; a failed read leaves the rows to say "a topic". */
+  private async readTopicTitles(
+    api: HomeStoreApi,
+    topicIds: readonly string[]
+  ): Promise<Record<string, string>> {
+    if (topicIds.length === 0) return {};
+    try {
+      const addresses = topicIds.map((id) => formatObjectAddress({ kind: "topic", id }));
+      const result = await api.objects.resolveMany({ addresses });
+      const titles: Record<string, string> = {};
+      for (const [index, id] of topicIds.entries()) {
+        const found = result.items[addresses[index] as string];
+        if (found && found.title !== "") titles[id] = found.title;
+      }
+      return titles;
+    } catch {
+      return {};
+    }
   }
 
   private setUndo(key: string, value: HomeUndo): void {
