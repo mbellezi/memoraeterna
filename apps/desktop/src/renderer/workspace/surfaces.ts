@@ -51,6 +51,11 @@ export interface ScreenModule {
      * throws makes its call reject. Absent, every call rejects.
      */
     readonly error?: ScreenFixtureSet;
+    /**
+     * Only for a surface whose loading is a part that reads after the rest is there (a sheet over a
+     * table): the calls named here answer, every other call stays pending. Absent, every call does.
+     */
+    readonly loading?: ScreenFixtureSet;
   };
   /**
    * The surface fills the whole window (the shell, the rail): the screens tool shows it edge to edge
@@ -126,6 +131,19 @@ export const surfaces: readonly SurfaceEntry[] = [
   destination("library", "Library"),
   destination("inbox", "Inbox"),
   destination("map", "Map"),
+  // The Inbox and the Map as the previous panel of a stack: their list and table in the 240 px column.
+  entry(
+    "destination-inbox-compact",
+    "destination",
+    "components/inbox/InboxView.tsx",
+    "workspace/destinations/inbox/inbox-compact.screen.tsx"
+  ),
+  entry(
+    "destination-map-compact",
+    "destination",
+    "workspace/destinations/map/shape/MapTable.tsx",
+    "workspace/destinations/map/map-compact.screen.tsx"
+  ),
   entry(
     "map-relations",
     "destination",
@@ -182,6 +200,34 @@ export const surfaces: readonly SurfaceEntry[] = [
   // The hover card of every object link (T144): a Markdown link, a path crumb, a "where it sits".
   entry("object-card", "overlay", "workspace/ObjectLink.tsx", "workspace/ObjectLink.screen.tsx"),
 
+  entry(
+    "library-peek",
+    "overlay",
+    "workspace/destinations/library/LibraryPeek.tsx",
+    "workspace/destinations/library/library-peek.screen.tsx"
+  ),
+
+  // The Library's other forms: the previous panel's title list, the Perguntas tab and the Compacto
+  // density (T149).
+  entry(
+    "library-compact",
+    "destination",
+    "workspace/destinations/library/LibraryList.tsx",
+    "workspace/destinations/library/library-compact.screen.tsx"
+  ),
+  entry(
+    "library-questions",
+    "destination",
+    "workspace/destinations/library/LibraryQuestions.tsx",
+    "workspace/destinations/library/library-questions.screen.tsx"
+  ),
+  entry(
+    "library-dense",
+    "destination",
+    "workspace/destinations/library/LibraryGrid.tsx",
+    "workspace/destinations/library/library-dense.screen.tsx"
+  ),
+
   // Settings v2: the surface and its seven sections.
   entry("settings", "settings", "settings/SettingsSurface.tsx", "settings/settings.screen.tsx"),
   section("general", "General"),
@@ -198,8 +244,8 @@ export const surfaces: readonly SurfaceEntry[] = [
   entry(
     "shape",
     "hosted",
-    "components/topic-shape/ShapeScreen.tsx",
-    "components/topic-shape/shape.screen.tsx"
+    "workspace/destinations/map/shape/ShapeScreen.tsx",
+    "workspace/destinations/map/shape/shape.screen.tsx"
   ),
   entry(
     "activity",

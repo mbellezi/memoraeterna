@@ -317,6 +317,13 @@
     }
   },
   "inbox": {
+    "consequence": {
+      "keep": "La connexion reste et compte comme votre décision.",
+      "remove": "La connexion disparaît et le Jardinier ne la suggère plus.",
+      "restore": "La connexion revient et compte comme votre décision."
+    },
+    "summary": "{count} décisions · la plus risquée d’abord",
+    "summaryOne": "1 décision vous attend",
     "title": "Boîte de réception",
     "description": "Ce qui demande votre jugement, le plus important d'abord.",
     "badge": "{count} en attente",
@@ -325,14 +332,16 @@
       "error": "Impossible de charger votre boîte de réception.",
       "empty": {
         "title": "Rien ne vous attend",
-        "body": "Votre bibliothèque s'organise toute seule. Quand quelque chose demandera votre jugement, cela apparaîtra ici."
+        "body": "Le Jardinier demande ici quand un changement est risqué."
       },
       "emptyFiltered": "Aucun élément ne correspond à ce filtre.",
       "loadMore": "Charger plus",
       "loadingMore": "Chargement de la suite...",
-      "moreFailed": "Impossible de charger d'autres éléments."
+      "moreFailed": "Impossible de charger d'autres éléments.",
+      "errorKept": "Rien n’a été décidé ni modifié."
     },
     "filters": {
+      "kind": "Catégorie",
       "label": "Filtrer la boîte de réception",
       "all": "Tout",
       "chip": "{kind} : {count}",
@@ -346,6 +355,17 @@
       "medium": "confiance moyenne ({percent})",
       "low": "confiance faible ({percent})",
       "unknown": "confiance inconnue"
+    },
+    "kind": {
+      "review": "À examiner",
+      "quarantined": "Tâche en échec",
+      "contradiction": "Contradiction",
+      "suggestion": "Lien suggéré",
+      "withdrawn": "Lien retiré",
+      "duplicate": "Doublon",
+      "obsidianConflict": "Conflit Obsidian",
+      "budget": "Limite de dépenses",
+      "backlog": "Nouvel appariement facultatif"
     },
     "kinds": {
       "review": "À examiner",
@@ -406,7 +426,7 @@
         "divergenceBody": "La vue d'ensemble de « {topic} » a été complétée, et de nouvelles preuves divergent de ce qu'elle dit. La divergence reste à côté du texte, sans jamais s'y fondre. Conservez-la, ou écartez cet élément. Points de divergence : {count}."
       },
       "suggestion": {
-        "title": "Lien suggéré · {confidence}",
+        "title": "Garder ce lien ?",
         "body": "Suggestion : « {first} » {relation} « {second} ». Conservez-le pour qu'il compte comme votre décision, ou supprimez-le.",
         "hint": "Rien n'est effacé : seul le lien change. Si vous le supprimez, il ne sera plus suggéré."
       },
@@ -481,17 +501,31 @@
       "hide": "Masquer"
     },
     "keys": {
+      "barNote": "Les raccourcis à une touche ne fonctionnent pas dans les champs de texte.",
+      "short": {
+        "apply": "accepter",
+        "dismiss": "écarter",
+        "edit": "modifier",
+        "help": "raccourcis",
+        "move": "naviguer",
+        "open": "ouvrir",
+        "remove": "retirer",
+        "retry": "réessayer",
+        "undo": "annuler"
+      },
       "toggle": "Raccourcis clavier",
       "title": "Raccourcis clavier",
       "move": "Élément suivant ou précédent",
       "open": "Aller aux détails",
       "apply": "Appliquer ou conserver",
-      "dismiss": "Écarter ou supprimer",
+      "dismiss": "Écarter : sort de la boîte et rien ne change",
       "retry": "Réessayer",
       "undo": "Annuler la dernière décision",
       "help": "Afficher ou masquer cette aide",
       "note": "Ces touches fonctionnent quand la liste ou les détails ont le focus, jamais pendant la saisie ni dans une boîte de dialogue.",
-      "money": "Continuer au-delà de la limite de dépenses se fait avec un bouton, jamais avec une touche."
+      "money": "Continuer au-delà de la limite de dépenses se fait avec un bouton, jamais avec une touche.",
+      "remove": "Retirer une connexion : elle n’est plus jamais suggérée",
+      "edit": "Modifier les noms avant d’appliquer"
     },
     "result": {
       "applied": "Appliqué.",
@@ -534,7 +568,8 @@
         "empty": "Pas encore d'aperçu",
         "divergences": "Là où les nouvelles preuves divergent",
         "divergence": "Paragraphes {existing} et {new} : {summary}"
-      }
+      },
+      "legend": "Petits blocs, par lettre"
     },
     "errors": {
       "invalidCursor": "La liste a changé entre-temps. Rechargez-la.",
@@ -740,6 +775,177 @@
       "settingsSaved": "Paramètres enregistrés.",
       "settingsError": "Impossible d'enregistrer les paramètres.",
       "dismiss": "Fermer la notification"
+    }
+  },
+  "libraryTable": {
+    "actions": {
+      "chooseFile": "Choisir un fichier",
+      "generate": "Générer des notes",
+      "generateFor": "Générer des notes pour {title}"
+    },
+    "chips": {
+      "all": "Toutes",
+      "failed": "Bloquées",
+      "label": "État",
+      "needsYou": "Besoin de vous",
+      "processing": "En cours",
+      "storedOnly": "Sans notes",
+      "storedOnlyHint": "Sources en mode Simplement conserver ou Consultable + organisé"
+    },
+    "columns": {
+      "added": "Ajoutée",
+      "answers": "Réponses",
+      "asked": "Posée le",
+      "notes": "Notes",
+      "place": "Emplacement dans l'arbre",
+      "question": "Question",
+      "source": "Source",
+      "state": "État"
+    },
+    "compact": {
+      "label": "Liste des sources",
+      "questionsLabel": "Liste des questions"
+    },
+    "count": {
+      "questionsMany": "{count} questions",
+      "questionsOne": "{count} question",
+      "sourcesMany": "{count} sources",
+      "sourcesOne": "{count} source"
+    },
+    "dates": {
+      "today": "aujourd'hui, {time}",
+      "yesterday": "hier, {time}"
+    },
+    "density": {
+      "comfortable": "Confortable",
+      "compact": "Compact",
+      "label": "Densité"
+    },
+    "filter": {
+      "clear": "Effacer le filtre",
+      "clearAll": "Effacer les filtres",
+      "questionsLabel": "Filtrer les questions",
+      "questionsPlaceholder": "Filtrer par les mots de la question",
+      "sourcesLabel": "Filtrer les sources",
+      "sourcesPlaceholder": "Filtrer par titre"
+    },
+    "keys": {
+      "choose": "choisir",
+      "open": "ouvrir à côté",
+      "peek": "aperçu",
+      "space": "Espace"
+    },
+    "order": {
+      "addedAsc": "les plus anciennes d'abord",
+      "addedDesc": "les plus récentes d'abord",
+      "newest": "les plus récentes d'abord",
+      "notesAsc": "avec le moins de notes d'abord",
+      "notesDesc": "avec le plus de notes d'abord",
+      "statusAsc": "par état, celles qui attendent d'abord",
+      "statusDesc": "par état, les prêtes d'abord",
+      "titleAsc": "par titre, de A à Z",
+      "titleDesc": "par titre, de Z à A",
+      "updatedAsc": "les modifiées il y a longtemps d'abord",
+      "updatedDesc": "les modifiées récemment d'abord"
+    },
+    "peek": {
+      "answersMany": "{count} réponses",
+      "answersOne": "{count} réponse",
+      "close": "fermer",
+      "closes": "ferme",
+      "heading": "Aperçu",
+      "kept": "Elle reste conservée ; rien n’a changé.",
+      "next": "aperçu de la suivante",
+      "noSummaryQuestion": "La réponse apparaît quand Memora l’a terminée.",
+      "noSummarySource": "Le résumé apparaît quand les notes sont terminées.",
+      "notesMany": "{count} notes",
+      "notesOne": "{count} note",
+      "opens": "ouvre à côté",
+      "passagesMany": "{count} passages",
+      "passagesOne": "{count} passage",
+      "stays": "La bibliothèque reste ici ; rien n'a été ouvert.",
+      "title": "Aperçu de {title}",
+      "unavailableQuestion": "Impossible de lire cette question.",
+      "unavailableSource": "Impossible de lire cette source."
+    },
+    "place": {
+      "none": "Sans emplacement",
+      "tentative": "probable :",
+      "tentativeHint": "Emplacement probable, décidé quand les notes seront prêtes"
+    },
+    "questionStatus": {
+      "canceled": "Interrompue",
+      "complete": "Répondue",
+      "failed": "Non terminée",
+      "running": "Réponse en cours"
+    },
+    "reasons": {
+      "failed": "arrêtée ; la source est conservée",
+      "modelMissing": "un modèle doit être installé",
+      "moneyNear": "proche du plafond de dépenses",
+      "moneyReached": "plafond de dépenses atteint",
+      "noRoute": "aucun modèle choisi",
+      "other": "en attente de vous",
+      "signIn": "reconnectez-vous à votre fournisseur d'IA"
+    },
+    "scope": {
+      "library": "Toute la bibliothèque",
+      "sourcesMany": "{count} sources choisies",
+      "sourcesOne": "{count} source choisie",
+      "topic": "Sujet : {title}",
+      "topicGone": "Un sujet qui n'existe plus",
+      "topicPending": "Un sujet"
+    },
+    "states": {
+      "moreError": "Impossible d'en charger plus.",
+      "questionsEmpty": "Aucune question enregistrée pour l'instant.",
+      "questionsEmptyBody": "Posez une question depuis la barre du haut ou depuis une note, un sujet ou une source : chaque question est conservée ici avec ses réponses.",
+      "questionsEmptyShortcut": "Raccourci :",
+      "questionsError": "Impossible de lire les questions enregistrées.",
+      "questionsFiltered": "Aucune question ne correspond à ce filtre.",
+      "questionsKept": "Elles restent enregistrées sur ce Mac.",
+      "sourcesEmpty": "Aucune source pour l'instant.",
+      "sourcesEmptyBody": "Ajoutez un fichier. Memora le lit, rédige les notes et les place dans l'arbre pour vous.",
+      "sourcesEmptyDrop": "Déposez des fichiers ici pour commencer",
+      "sourcesEmptyHint": "Depuis n'importe quel écran, le raccourci est",
+      "sourcesError": "Impossible de lire la bibliothèque.",
+      "sourcesFiltered": "Aucune source ne correspond à ce filtre.",
+      "sourcesKept": "Vos sources et vos notes sont conservées."
+    },
+    "status": {
+      "failed": "Bloquée",
+      "needsYou": "Besoin de vous",
+      "processing": "En cours",
+      "ready": "Prête",
+      "storedOnly": "Conservée, sans notes"
+    },
+    "tabs": {
+      "label": "Vues de la bibliothèque",
+      "questions": "Questions",
+      "sources": "Sources"
+    },
+    "territory": {
+      "fewer": "Afficher moins",
+      "heading": "Par domaine :",
+      "label": "Sources par domaine de l'arbre",
+      "more": "Afficher les {count} domaines",
+      "sourceMany": "sources",
+      "sourceOne": "source",
+      "untitled": "Domaine sans nom"
+    },
+    "title": "Bibliothèque",
+    "types": {
+      "AcademicPaper": "Article académique",
+      "Book": "Livre",
+      "BookChapter": "Chapitre de livre",
+      "DailyNote": "Note quotidienne",
+      "DocumentSection": "Section de document",
+      "GenericDocument": "Document",
+      "PeriodicalIssue": "Numéro de périodique",
+      "PersonalNote": "Note personnelle",
+      "StandaloneArticle": "Article indépendant",
+      "Video": "Vidéo",
+      "WebArticle": "Article web"
     }
   },
   "knowledgeGraph": {
@@ -3215,11 +3421,13 @@
         "titles": {
           "build": "Les sujets ont été créés à partir de vos notes.",
           "rebalance": "La structure a été rééquilibrée.",
-          "rebalanceItems": "La structure a été rééquilibrée. Éléments déplacés : {count}.",
+          "rebalanceItems": "{count} éléments ont changé de place quand la structure a été rééquilibrée.",
+          "rebalanceItemsOne": "1 élément a changé de place quand la structure a été rééquilibrée.",
           "audit": "Les redirections d'anciens sujets ont été raccourcies.",
           "areas": "Les domaines ont été regroupés de nouveau.",
           "naming": "Les sujets ont reçu un nom.",
-          "namingCount": "Sujets ayant reçu un nom : {count}.",
+          "namingCount": "{count} sujets ont reçu un nom.",
+          "namingCountOne": "1 sujet a reçu un nom.",
           "human": "Vous avez modifié la structure.",
           "rebuild": "Les sujets ont été reconstruits.",
           "other": "La structure a changé."
@@ -4210,6 +4418,227 @@
     "stackLabel": "Panneaux ouverts",
     "untitled": "Sans titre"
   },
+  "contextPanel": {
+    "connections": {
+      "actions": {
+        "failed": "Votre choix n'a pas pu être enregistré. Réessayez.",
+        "keep": "Garder",
+        "keepLabel": "Garder la connexion avec {title}",
+        "remove": "Retirer",
+        "removeLabel": "Retirer la connexion avec {title}"
+      },
+      "empty": {
+        "entity": "Aucune autre entité n'apparaît encore dans les mêmes notes.",
+        "note": "Pas encore de connexions. Le Jardinier cherche quand le Mac est au repos.",
+        "question": "Une question n'a pas de connexions propres. Ce qu'elle cite est dans Preuves.",
+        "source": "Pas encore de sources liées. Elles apparaissent quand des notes de celle-ci se relient à celles d'autres.",
+        "topic": "Pas encore de sujets liés. Ils apparaissent quand des notes de celui-ci se relient à celles d'autres."
+      },
+      "foot": {
+        "graph": "Voir dans le Graphe",
+        "map": "Ouvrir dans la Carte"
+      },
+      "groups": {
+        "contradicts": "Contredit cette note",
+        "dependsOnIn": "Dépendent de cette note",
+        "dependsOnLinked": "Liées par dépendance",
+        "dependsOnOut": "Cette note dépend de",
+        "exampleOfIn": "Sont des exemples de cette note",
+        "exampleOfLinked": "Liées par exemple",
+        "exampleOfOut": "Cette note est un exemple de",
+        "extendsIn": "Étendent cette note",
+        "extendsLinked": "Liées par extension",
+        "extendsOut": "Cette note étend",
+        "relatedIn": "Clarifient cette note",
+        "relatedMutual": "Liées à cette note",
+        "relatedOut": "Cette note clarifie",
+        "supportsIn": "Appuient cette note",
+        "supportsLinked": "Liées par appui",
+        "supportsOut": "Cette note appuie"
+      },
+      "groupsOther": {
+        "entities": "Entités qui apparaissent ensemble",
+        "sources": "Sources liées",
+        "topics": "Sujets liés"
+      },
+      "legend": "Les six formes de connexion",
+      "link": "Relier à une autre note",
+      "meta": {
+        "alsoInInbox": "aussi dans la Boîte de réception",
+        "byYou": "vous l'avez gardée",
+        "confidenceHigh": "confiance élevée",
+        "confidenceLow": "confiance faible",
+        "confidenceMedium": "confiance moyenne",
+        "confidenceUnknown": "confiance inconnue",
+        "decideWhenever": "décidez quand vous voulez",
+        "gardener": "Jardinier",
+        "gardenerSuggested": "suggestion du Jardinier",
+        "inCommon": "{notes} en commun"
+      },
+      "question": {
+        "below": "la note ci-dessous",
+        "linked": "{heading} ?",
+        "otherSubject": "{verb} {object} ?",
+        "thisSubject": "{subject} {verb} {object} ?"
+      },
+      "suggestionTag": "suggestion",
+      "suggestionsLabel": "Connexions suggérées"
+    },
+    "count": {
+      "connectionsOne": "{count} connexion",
+      "connectionsOther": "{count} connexions",
+      "mentionsOne": "{count} mention",
+      "mentionsOther": "{count} mentions",
+      "notesOne": "{count} note",
+      "notesOther": "{count} notes",
+      "passagesOne": "{count} passage",
+      "passagesOther": "{count} passages",
+      "questionsOne": "{count} question",
+      "questionsOther": "{count} questions",
+      "sourcesOne": "{count} source",
+      "sourcesOther": "{count} sources",
+      "suggestionsOne": "{count} suggestion",
+      "suggestionsOther": "{count} suggestions"
+    },
+    "errors": {
+      "connections": "Impossible de charger les connexions.",
+      "evidence": "Impossible de charger les preuves.",
+      "graph": "Impossible de charger le graphe.",
+      "kept": {
+        "entity": "L'entité reste ouverte.",
+        "note": "La note reste ouverte.",
+        "question": "La question reste ouverte.",
+        "source": "La source reste ouverte.",
+        "topic": "Le sujet reste ouvert."
+      },
+      "mentions": "Impossible de charger les mentions."
+    },
+    "evidence": {
+      "citedBy": "cité par {parts}",
+      "earlierVersion": "passage d'une version antérieure",
+      "empty": {
+        "entity": "Une entité n'a pas de passages propres. Ouvrez Mentions pour voir les notes qui en ont.",
+        "note": "Cette note n'a plus aucun passage de source. Elle a été gardée d'une source qui n'existe plus.",
+        "question": "Cette réponse ne cite aucune source. Une question encore en cours reçoit ses sources à la fin.",
+        "source": "Aucune note ni question ne cite encore un passage de cette source.",
+        "topic": "Ce sujet n'a pas encore de vue d'ensemble, il n'y a donc pas de passages à montrer."
+      },
+      "noPassage": "aucun passage indiqué",
+      "open": "Ouvrir le passage de {source}",
+      "preserved": "passage gardé d'une source supprimée",
+      "provenance": "Qui l'a écrite",
+      "seeConnections": "Voir les connexions",
+      "stale": "peut être périmée",
+      "unavailable": "ce passage n'est plus dans la bibliothèque"
+    },
+    "graph": {
+      "empty": "Rien à dessiner pour l’instant : aucune note n’est reliée à celle-ci.",
+      "legend": "Formes de connexion",
+      "openMap": "Ouvrir dans la Carte › Graphe",
+      "showList": "Voir sous forme de liste",
+      "unavailable": "Cet ordinateur ne peut pas dessiner le graphe."
+    },
+    "headings": {
+      "connections": {
+        "entity": {
+          "description": "Entités qui apparaissent dans les mêmes notes.",
+          "title": "Connexions de cette entité"
+        },
+        "note": {
+          "description": "Comment cette note se relie aux autres, et qui l'a décidé.",
+          "title": "Connexions de cette note"
+        },
+        "question": {
+          "description": "Une question se relie à ce qu'elle cite. Voir Preuves.",
+          "title": "Connexions de cette question"
+        },
+        "source": {
+          "description": "Sources qui traitent de sujets liés à celle-ci.",
+          "title": "Connexions de cette source"
+        },
+        "topic": {
+          "description": "Sujets liés à celui-ci par les connexions entre les notes.",
+          "title": "Connexions de ce sujet"
+        }
+      },
+      "evidence": {
+        "entity": {
+          "description": "Une entité n'a pas de passages propres. Ce sont ses notes qui en ont.",
+          "title": "Preuves de cette entité"
+        },
+        "note": {
+          "description": "Les passages de source sur lesquels la note repose, dans l'ordre des numéros.",
+          "title": "Preuves de cette note"
+        },
+        "question": {
+          "description": "Les sources citées, dans l'ordre des numéros.",
+          "title": "Preuves de cette réponse"
+        },
+        "source": {
+          "description": "Passages de cette source que des notes et des questions citent.",
+          "title": "Preuves de cette source"
+        },
+        "topic": {
+          "description": "Les passages sur lesquels la vue d'ensemble repose, dans l'ordre des numéros.",
+          "title": "Preuves de ce sujet"
+        }
+      },
+      "graph": {
+        "note": {
+          "description": "Cette note et les notes qui lui sont le plus liées. La liste dans Connexions donne la même chose.",
+          "title": "Graphe de cette note"
+        },
+        "other": {
+          "description": "Le dessin des connexions de cet objet se trouve dans la Carte.",
+          "title": "Graphe"
+        }
+      },
+      "mentions": {
+        "description": "Où cet objet est cité sans connexion.",
+        "title": "Mentions"
+      }
+    },
+    "loadingMore": "Chargement…",
+    "locate": {
+      "alsoIn": "aussi dans",
+      "andMore": "et {count} de plus",
+      "citedBy": "cité par",
+      "citedByOverview": "cité par la vue d’ensemble de",
+      "error": "Impossible de lire l'emplacement.",
+      "label": "Où se trouve-t-il"
+    },
+    "mentions": {
+      "empty": "Rien ne cite ceci hors des connexions. Quand une question, un sujet ou une note le citera, cela apparaîtra ici.",
+      "groups": {
+        "mention": "Notes qui mentionnent cette entité",
+        "overview": "Sujets dont la vue d'ensemble cite cette note",
+        "question": "Questions dont les réponses citent cette note"
+      }
+    },
+    "more": "Plus",
+    "moreFailed": "Impossible de charger la suite.",
+    "moreLabel": "Plus d'onglets du contexte",
+    "none": {
+      "body": "Ouvrez une note, une source, un sujet ou une question et son contexte apparaît ici : connexions, preuves et mentions.",
+      "title": "Rien n'est actif"
+    },
+    "region": "Contexte",
+    "showMore": "Afficher plus",
+    "strip": {
+      "close": "Fermer le contexte",
+      "label": "Contexte",
+      "open": "Ouvrir le contexte : {tab}"
+    },
+    "tablist": "Contexte du panneau actif",
+    "tabs": {
+      "ask": "Demander",
+      "connections": "Connexions",
+      "evidence": "Preuves",
+      "graph": "Graphe",
+      "history": "Historique",
+      "mentions": "Mentions"
+    }
+  },
   "entityPage": {
     "aliases": "Autres noms :",
     "articleLabel": "Entité : {name}",
@@ -4258,6 +4687,99 @@
       "heading": "Sujets",
       "more": "et {count} de plus",
       "mostCited": "la plus citée"
+    }
+  },
+  "palette": {
+    "commands": {
+      "goExplore": "Aller à Explorer",
+      "goHome": "Aller à Accueil",
+      "goInbox": "Aller à la Boîte de réception",
+      "goLibrary": "Aller à la Bibliothèque",
+      "goMap": "Aller à la Carte",
+      "goSettings": "Ouvrir les Réglages",
+      "theme": "Changer de thème",
+      "toggleNavigator": "Afficher ou masquer l’arbre"
+    },
+    "foot": {
+      "all": "tous les résultats",
+      "beside": "ouvrir à côté",
+      "choose": "choisir",
+      "here": "ouvrir dans ce panneau",
+      "label": "Raccourcis",
+      "peek": "aperçu",
+      "resultsMany": "{count} résultats · {ms} ms",
+      "resultsOne": "{count} résultat · {ms} ms",
+      "shortAll": "tous",
+      "shortBeside": "à côté",
+      "shortHere": "ce panneau"
+    },
+    "groups": {
+      "best": "Meilleur résultat",
+      "do": "Faire",
+      "entity": "Entités",
+      "note": "Notes",
+      "pinned": "Épinglés",
+      "question": "Questions",
+      "recent": "Récents",
+      "showMore": "voir plus ({count})",
+      "sourceEntity": "Sources et entités",
+      "topic": "Sujets"
+    },
+    "label": "Chercher, ouvrir ou demander",
+    "listLabel": "Résultats",
+    "meta": {
+      "itemsMany": "{count} éléments",
+      "itemsOne": "{count} élément",
+      "notesMany": "{count} notes",
+      "notesOne": "{count} note",
+      "snippet": "extrait :",
+      "sourcesMany": "{count} sources",
+      "sourcesOne": "{count} source"
+    },
+    "placeholder": "Chercher, ouvrir ou demander…",
+    "prefixes": {
+      "actions": "actions",
+      "actionsLabel": "Actions seulement",
+      "ask": "demander",
+      "askLabel": "Demander à la bibliothèque",
+      "entities": "entités",
+      "entitiesLabel": "Entités seulement",
+      "label": "Préfixes :",
+      "none": "sans préfixe : tout",
+      "topics": "sujets",
+      "topicsLabel": "Sujets seulement"
+    },
+    "results": {
+      "compactLabel": "Résultats pour “{query}”",
+      "countFirst": "Les {count} premiers résultats",
+      "countMany": "{count} résultats",
+      "countOne": "{count} résultat",
+      "degradedAnn": "La recherche par sens n’est pas disponible pour l’instant ; seules les correspondances de mots sont affichées.",
+      "degradedFts": "Cette recherche n’a aucun mot à chercher dans les textes ; seuls les titres et les noms sont affichés.",
+      "emptyAsk": "Demander à la bibliothèque",
+      "emptyBody": "Essayez avec moins de mots, ou interrogez la bibliothèque avec vos propres mots.",
+      "errorKept": "Rien n’a été modifié.",
+      "errorMessage": "Impossible de chercher pour l’instant.",
+      "filterAll": "Tout",
+      "filterEntity": "Entités",
+      "filterNote": "Notes",
+      "filterQuestion": "Questions",
+      "filterSource": "Sources",
+      "filterTopic": "Sujets",
+      "filtersLabel": "Afficher seulement",
+      "heading": "Résultats pour “{query}”",
+      "passage": "Extrait de la source",
+      "title": "Résultats de la recherche"
+    },
+    "rows": {
+      "ask": "Demander à la bibliothèque : “{question}”"
+    },
+    "states": {
+      "askHint": "Écrivez votre question. Entrée ouvre un panneau Question qui y répond.",
+      "error": "Impossible de chercher pour l’instant.",
+      "errorKept": "Rien n’a été modifié, et les actions fonctionnent toujours.",
+      "noCommand": "Aucune action ne correspond à “{query}”.",
+      "noResult": "Rien pour “{query}”."
     }
   },
   "askPanel": {
@@ -4793,6 +5315,91 @@
     "uploadCopies": {
       "help": "Une seconde copie de chaque original dans un dossier à vous, en dehors de la base de données de Memora.",
       "label": "Garder une copie des fichiers importés"
+    }
+  },
+  "map": {
+    "band": {
+      "action": "Retour",
+      "back": "revient à {topic}, où vous étiez.",
+      "whole": "Vous voyez l’arbre entier."
+    },
+    "chart": {
+      "columns": {
+        "areas": "Domaines",
+        "subtopics": "Sous-sujets",
+        "topics": "Sujets"
+      },
+      "deeper": "{count} sujets sont plus profonds : le tableau les liste tous et Entrée agrandit une branche.",
+      "deeperOne": "1 sujet est plus profond : le tableau le liste et Entrée agrandit une branche.",
+      "here": "ici",
+      "label": "Arbre des sujets. Chaque bloc est un bouton qui sélectionne un sujet : les flèches déplacent et Entrée agrandit.",
+      "legend": {
+        "attention": "demande de l’attention",
+        "direct": "notes placées directement dans le sujet",
+        "height": "Hauteur = notes",
+        "here": "ici = contient où vous étiez",
+        "selected": "sélectionné"
+      },
+      "merged": "Les petits blocs sont regroupés ; le tableau liste chacun d’eux.",
+      "moreTopics": "{count} de plus · {notes}"
+    },
+    "count": {
+      "topics": "{count} sujets",
+      "topicsOne": "1 sujet"
+    },
+    "display": {
+      "both": "Graphique et tableau",
+      "label": "Affichage",
+      "table": "Tableau seul"
+    },
+    "health": {
+      "attention": "demande de l’attention",
+      "good": "équilibré",
+      "violation": "hors limite"
+    },
+    "inspector": {
+      "next": "Prochaine étape",
+      "nextInbox": "Voir la proposition dans la Boîte de réception",
+      "selected": "Sélectionné",
+      "table": "Les mêmes chiffres en tableau"
+    },
+    "lens": {
+      "label": "Vues de la carte",
+      "relations": "Graphe",
+      "shape": "Arbre"
+    },
+    "relations": {
+      "action": "Voir l’arbre",
+      "body": "Il montrera comment vos sujets sont reliés. D’ici là, l’Arbre montre leur taille et leur santé.",
+      "headline": "Le graphe des connexions arrive bientôt"
+    },
+    "selected": {
+      "growth": "{growth} notes en {days} jours",
+      "growthOne": "{growth} note en {days} jours",
+      "subtopics": "{count} sous-sujets directs",
+      "subtopicsOne": "1 sous-sujet direct"
+    },
+    "shape": {
+      "description": "Taille et santé de l’arbre : {notes} dans {topics}",
+      "descriptionPlain": "Taille et santé de l’arbre."
+    },
+    "states": {
+      "empty": "La carte apparaît quand il y a des sujets.",
+      "emptyAdd": "Ajouter une source",
+      "emptyBody": "Quand votre première source devient des notes, les sujets naissent d’eux-mêmes et la carte les montre ici.",
+      "error": "La carte n’a pas pu être chargée.",
+      "errorKept": "Vos sources et vos notes sont intactes."
+    },
+    "table": {
+      "caption": "Les mêmes chiffres que le graphique, une ligne par sujet",
+      "growth": "7 jours",
+      "health": "Santé",
+      "notes": "Notes",
+      "topic": "Sujet"
+    },
+    "title": "Carte",
+    "warnings": {
+      "dismiss": "Écarter"
     }
   }
 }

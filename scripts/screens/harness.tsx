@@ -100,7 +100,8 @@ async function mount(
   const fake = createFakeApi(
     mode,
     mode === "success" || mode === "empty" ? module.fixtures[mode] : {},
-    mode === "error" ? module.fixtures.error : {}
+    mode === "error" ? module.fixtures.error : {},
+    mode === "loading" ? module.fixtures.loading : {}
   );
   (window as unknown as { app: unknown }).app = fake.app;
   host = document.createElement("div");

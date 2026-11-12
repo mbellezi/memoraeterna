@@ -317,6 +317,13 @@
     }
   },
   "inbox": {
+    "consequence": {
+      "keep": "La conexión se queda y cuenta como decisión tuya.",
+      "remove": "La conexión se va y el Jardinero no vuelve a sugerirla.",
+      "restore": "La conexión vuelve y cuenta como decisión tuya."
+    },
+    "summary": "{count} decisiones · la más arriesgada primero",
+    "summaryOne": "1 decisión te espera",
     "title": "Bandeja de entrada",
     "description": "Lo que necesita tu criterio, lo más importante primero.",
     "badge": "{count} en espera",
@@ -325,14 +332,16 @@
       "error": "No se pudo cargar tu bandeja de entrada.",
       "empty": {
         "title": "Nada te necesita",
-        "body": "Tu biblioteca se organiza sola. Cuando algo necesite tu criterio, aparecerá aquí."
+        "body": "El Jardinero pregunta aquí cuando un cambio es arriesgado."
       },
       "emptyFiltered": "Nada coincide con este filtro.",
       "loadMore": "Cargar más",
       "loadingMore": "Cargando más...",
-      "moreFailed": "No se pudieron cargar más elementos."
+      "moreFailed": "No se pudieron cargar más elementos.",
+      "errorKept": "No se decidió ni cambió nada."
     },
     "filters": {
+      "kind": "Tipo",
       "label": "Filtrar la bandeja de entrada",
       "all": "Todo",
       "chip": "{kind}: {count}",
@@ -346,6 +355,17 @@
       "medium": "confianza media ({percent})",
       "low": "confianza baja ({percent})",
       "unknown": "confianza desconocida"
+    },
+    "kind": {
+      "review": "Por revisar",
+      "quarantined": "Tarea fallida",
+      "contradiction": "Contradicción",
+      "suggestion": "Conexión sugerida",
+      "withdrawn": "Conexión retirada",
+      "duplicate": "Duplicado",
+      "obsidianConflict": "Conflicto de Obsidian",
+      "budget": "Límite de gasto",
+      "backlog": "Nueva comparación opcional"
     },
     "kinds": {
       "review": "Por revisar",
@@ -406,7 +426,7 @@
         "divergenceBody": "El resumen de «{topic}» se amplió y algunas pruebas nuevas discrepan de lo que dice. La discrepancia queda junto al texto, nunca mezclada con él. Consérvala ahí o descarta este elemento. Puntos de discrepancia: {count}."
       },
       "suggestion": {
-        "title": "Conexión sugerida · {confidence}",
+        "title": "¿Mantener esta conexión?",
         "body": "Sugerencia: «{first}» {relation} «{second}». Consérvala para que cuente como decisión tuya o elimínala.",
         "hint": "No se borra nada: solo cambia la conexión. Si la eliminas, no se vuelve a sugerir."
       },
@@ -481,17 +501,31 @@
       "hide": "Ocultar"
     },
     "keys": {
+      "barNote": "Los atajos de una tecla no funcionan dentro de campos de texto.",
+      "short": {
+        "apply": "aceptar",
+        "dismiss": "descartar",
+        "edit": "editar",
+        "help": "atajos",
+        "move": "navegar",
+        "open": "abrir",
+        "remove": "quitar",
+        "retry": "reintentar",
+        "undo": "deshacer"
+      },
       "toggle": "Atajos de teclado",
       "title": "Atajos de teclado",
       "move": "Elemento siguiente o anterior",
       "open": "Ir a los detalles",
       "apply": "Aplicar o conservar",
-      "dismiss": "Descartar o eliminar",
+      "dismiss": "Descartar: sale de la bandeja y nada cambia",
       "retry": "Reintentar",
       "undo": "Deshacer la última decisión",
       "help": "Mostrar u ocultar esta ayuda",
       "note": "Estas teclas funcionan mientras la lista o los detalles tienen el foco, nunca mientras escribes ni dentro de un diálogo.",
-      "money": "Continuar más allá del límite de gasto es un botón, nunca una tecla."
+      "money": "Continuar más allá del límite de gasto es un botón, nunca una tecla.",
+      "remove": "Quitar una conexión: no vuelve a sugerirse",
+      "edit": "Editar los nombres antes de aplicar"
     },
     "result": {
       "applied": "Aplicado.",
@@ -534,7 +568,8 @@
         "empty": "Aún no hay resumen",
         "divergences": "Dónde discrepan las nuevas pruebas",
         "divergence": "Párrafos {existing} y {new}: {summary}"
-      }
+      },
+      "legend": "Bloques pequeños, por letra"
     },
     "errors": {
       "invalidCursor": "La lista cambió mientras tanto. Vuelve a cargarla.",
@@ -740,6 +775,177 @@
       "settingsSaved": "Configuracion guardada.",
       "settingsError": "No se pudo guardar la configuracion.",
       "dismiss": "Descartar notificacion"
+    }
+  },
+  "libraryTable": {
+    "actions": {
+      "chooseFile": "Elegir archivo",
+      "generate": "Generar notas",
+      "generateFor": "Generar notas de {title}"
+    },
+    "chips": {
+      "all": "Todas",
+      "failed": "Bloqueadas",
+      "label": "Estado",
+      "needsYou": "Te necesita",
+      "processing": "Generando",
+      "storedOnly": "Sin notas",
+      "storedOnlyHint": "Fuentes en los modos Solo guardar o Buscable + organizado"
+    },
+    "columns": {
+      "added": "Añadida",
+      "answers": "Respuestas",
+      "asked": "Hecha el",
+      "notes": "Notas",
+      "place": "Lugar en el árbol",
+      "question": "Pregunta",
+      "source": "Fuente",
+      "state": "Estado"
+    },
+    "compact": {
+      "label": "Lista de fuentes",
+      "questionsLabel": "Lista de preguntas"
+    },
+    "count": {
+      "questionsMany": "{count} preguntas",
+      "questionsOne": "{count} pregunta",
+      "sourcesMany": "{count} fuentes",
+      "sourcesOne": "{count} fuente"
+    },
+    "dates": {
+      "today": "hoy, {time}",
+      "yesterday": "ayer, {time}"
+    },
+    "density": {
+      "comfortable": "Cómoda",
+      "compact": "Compacta",
+      "label": "Densidad"
+    },
+    "filter": {
+      "clear": "Borrar filtro",
+      "clearAll": "Borrar filtros",
+      "questionsLabel": "Filtrar preguntas",
+      "questionsPlaceholder": "Filtrar por las palabras de la pregunta",
+      "sourcesLabel": "Filtrar fuentes",
+      "sourcesPlaceholder": "Filtrar por título"
+    },
+    "keys": {
+      "choose": "elegir",
+      "open": "abrir al lado",
+      "peek": "ojear",
+      "space": "Espacio"
+    },
+    "order": {
+      "addedAsc": "las más antiguas primero",
+      "addedDesc": "las más nuevas primero",
+      "newest": "las más nuevas primero",
+      "notesAsc": "con menos notas primero",
+      "notesDesc": "con más notas primero",
+      "statusAsc": "por estado, las que te necesitan primero",
+      "statusDesc": "por estado, las listas primero",
+      "titleAsc": "por título, de A a Z",
+      "titleDesc": "por título, de Z a A",
+      "updatedAsc": "las modificadas hace más primero",
+      "updatedDesc": "las modificadas hace menos primero"
+    },
+    "peek": {
+      "answersMany": "{count} respuestas",
+      "answersOne": "{count} respuesta",
+      "close": "cerrar",
+      "closes": "cierra",
+      "heading": "Ojeando",
+      "kept": "Sigue guardada; no ha cambiado nada.",
+      "next": "ojear la siguiente",
+      "noSummaryQuestion": "La respuesta aparece cuando Memora la termine.",
+      "noSummarySource": "El resumen aparece cuando terminen las notas.",
+      "notesMany": "{count} notas",
+      "notesOne": "{count} nota",
+      "opens": "abre al lado",
+      "passagesMany": "{count} pasajes",
+      "passagesOne": "{count} pasaje",
+      "stays": "La Biblioteca sigue aquí; no se abrió nada.",
+      "title": "Ojeando {title}",
+      "unavailableQuestion": "No se pudo leer esta pregunta.",
+      "unavailableSource": "No se pudo leer esta fuente."
+    },
+    "place": {
+      "none": "Sin lugar",
+      "tentative": "probable:",
+      "tentativeHint": "Lugar probable, se decide cuando terminen las notas"
+    },
+    "questionStatus": {
+      "canceled": "Interrumpida",
+      "complete": "Respondida",
+      "failed": "Sin terminar",
+      "running": "Respondiendo"
+    },
+    "reasons": {
+      "failed": "se detuvo; la fuente sigue guardada",
+      "modelMissing": "hay que instalar un modelo",
+      "moneyNear": "cerca del límite de gasto",
+      "moneyReached": "límite de gasto alcanzado",
+      "noRoute": "falta elegir un modelo",
+      "other": "esperando por ti",
+      "signIn": "vuelve a iniciar sesión en tu proveedor de IA"
+    },
+    "scope": {
+      "library": "Toda la Biblioteca",
+      "sourcesMany": "{count} fuentes elegidas",
+      "sourcesOne": "{count} fuente elegida",
+      "topic": "Tema: {title}",
+      "topicGone": "Un tema que ya no existe",
+      "topicPending": "Un tema"
+    },
+    "states": {
+      "moreError": "No se pudo cargar más.",
+      "questionsEmpty": "Todavía no hay preguntas guardadas.",
+      "questionsEmptyBody": "Pregunta desde la barra superior o desde cualquier nota, tema o fuente, y cada pregunta se guarda aquí con sus respuestas.",
+      "questionsEmptyShortcut": "Atajo:",
+      "questionsError": "No se pudieron leer las preguntas guardadas.",
+      "questionsFiltered": "Ninguna pregunta con ese filtro.",
+      "questionsKept": "Siguen guardadas en este Mac.",
+      "sourcesEmpty": "Todavía no hay fuentes.",
+      "sourcesEmptyBody": "Añade un archivo. Memora lo lee, escribe las notas y las coloca en el árbol por ti.",
+      "sourcesEmptyDrop": "Suelta archivos aquí para empezar",
+      "sourcesEmptyHint": "Desde cualquier pantalla, el atajo es",
+      "sourcesError": "No se pudo leer la Biblioteca.",
+      "sourcesFiltered": "Ninguna fuente con ese filtro.",
+      "sourcesKept": "Tus fuentes y notas están a salvo."
+    },
+    "status": {
+      "failed": "Bloqueada",
+      "needsYou": "Te necesita",
+      "processing": "Generando",
+      "ready": "Lista",
+      "storedOnly": "Guardada, sin notas"
+    },
+    "tabs": {
+      "label": "Vistas de la Biblioteca",
+      "questions": "Preguntas",
+      "sources": "Fuentes"
+    },
+    "territory": {
+      "fewer": "Mostrar menos",
+      "heading": "Por área:",
+      "label": "Fuentes por área del árbol",
+      "more": "Mostrar las {count} áreas",
+      "sourceMany": "fuentes",
+      "sourceOne": "fuente",
+      "untitled": "Área sin nombre"
+    },
+    "title": "Biblioteca",
+    "types": {
+      "AcademicPaper": "Artículo académico",
+      "Book": "Libro",
+      "BookChapter": "Capítulo de libro",
+      "DailyNote": "Nota diaria",
+      "DocumentSection": "Sección de documento",
+      "GenericDocument": "Documento",
+      "PeriodicalIssue": "Número de publicación periódica",
+      "PersonalNote": "Nota personal",
+      "StandaloneArticle": "Artículo independiente",
+      "Video": "Vídeo",
+      "WebArticle": "Artículo web"
     }
   },
   "knowledgeGraph": {
@@ -3217,11 +3423,13 @@
         "titles": {
           "build": "Los temas se crearon a partir de tus notas.",
           "rebalance": "La estructura se reequilibró.",
-          "rebalanceItems": "La estructura se reequilibró. Elementos movidos: {count}.",
+          "rebalanceItems": "{count} elementos cambiaron de lugar cuando se reequilibró la estructura.",
+          "rebalanceItemsOne": "1 elemento cambió de lugar cuando se reequilibró la estructura.",
           "audit": "Se acortaron las redirecciones de temas antiguos.",
           "areas": "Las áreas se reagruparon.",
           "naming": "Los temas recibieron un nombre.",
-          "namingCount": "Temas que recibieron un nombre: {count}.",
+          "namingCount": "{count} temas recibieron un nombre.",
+          "namingCountOne": "1 tema recibió un nombre.",
           "human": "Cambiaste la estructura.",
           "rebuild": "Los temas se rehicieron.",
           "other": "La estructura cambió."
@@ -4212,6 +4420,227 @@
     "stackLabel": "Paneles abiertos",
     "untitled": "Sin título"
   },
+  "contextPanel": {
+    "connections": {
+      "actions": {
+        "failed": "No se pudo guardar tu elección. Inténtalo de nuevo.",
+        "keep": "Mantener",
+        "keepLabel": "Mantener la conexión con {title}",
+        "remove": "Quitar",
+        "removeLabel": "Quitar la conexión con {title}"
+      },
+      "empty": {
+        "entity": "Ninguna otra entidad aparece aún en las mismas notas.",
+        "note": "Aún sin conexiones. El Jardinero busca cuando el Mac está inactivo.",
+        "question": "Una pregunta no tiene conexiones propias. Lo que cita está en Evidencia.",
+        "source": "Aún sin fuentes relacionadas. Aparecen cuando notas de esta fuente se enlazan con notas de otras.",
+        "topic": "Aún sin temas enlazados. Aparecen cuando notas de este tema se enlazan con notas de otros."
+      },
+      "foot": {
+        "graph": "Ver en el Grafo",
+        "map": "Abrir en el Mapa"
+      },
+      "groups": {
+        "contradicts": "Contradice esta nota",
+        "dependsOnIn": "Dependen de esta nota",
+        "dependsOnLinked": "Enlazadas por dependencia",
+        "dependsOnOut": "Esta nota depende de",
+        "exampleOfIn": "Son ejemplos de esta nota",
+        "exampleOfLinked": "Enlazadas por ejemplo",
+        "exampleOfOut": "Esta nota es un ejemplo de",
+        "extendsIn": "Extienden esta nota",
+        "extendsLinked": "Enlazadas por extensión",
+        "extendsOut": "Esta nota extiende",
+        "relatedIn": "Aclaran esta nota",
+        "relatedMutual": "Relacionadas con esta nota",
+        "relatedOut": "Esta nota aclara",
+        "supportsIn": "Apoyan esta nota",
+        "supportsLinked": "Enlazadas por apoyo",
+        "supportsOut": "Esta nota apoya"
+      },
+      "groupsOther": {
+        "entities": "Entidades que aparecen juntas",
+        "sources": "Fuentes relacionadas",
+        "topics": "Temas enlazados"
+      },
+      "legend": "Las seis formas de conexión",
+      "link": "Vincular con otra nota",
+      "meta": {
+        "alsoInInbox": "también en la Bandeja de entrada",
+        "byYou": "tú la mantuviste",
+        "confidenceHigh": "confianza alta",
+        "confidenceLow": "confianza baja",
+        "confidenceMedium": "confianza media",
+        "confidenceUnknown": "confianza desconocida",
+        "decideWhenever": "decide cuando quieras",
+        "gardener": "Jardinero",
+        "gardenerSuggested": "sugerencia del Jardinero",
+        "inCommon": "{notes} en común"
+      },
+      "question": {
+        "below": "la nota de abajo",
+        "linked": "¿{heading}?",
+        "otherSubject": "¿{verb} {object}?",
+        "thisSubject": "¿{subject} {verb} {object}?"
+      },
+      "suggestionTag": "sugerencia",
+      "suggestionsLabel": "Conexiones sugeridas"
+    },
+    "count": {
+      "connectionsOne": "{count} conexión",
+      "connectionsOther": "{count} conexiones",
+      "mentionsOne": "{count} mención",
+      "mentionsOther": "{count} menciones",
+      "notesOne": "{count} nota",
+      "notesOther": "{count} notas",
+      "passagesOne": "{count} pasaje",
+      "passagesOther": "{count} pasajes",
+      "questionsOne": "{count} pregunta",
+      "questionsOther": "{count} preguntas",
+      "sourcesOne": "{count} fuente",
+      "sourcesOther": "{count} fuentes",
+      "suggestionsOne": "{count} sugerencia",
+      "suggestionsOther": "{count} sugerencias"
+    },
+    "errors": {
+      "connections": "No se pudieron cargar las conexiones.",
+      "evidence": "No se pudo cargar la evidencia.",
+      "graph": "No se pudo cargar el grafo.",
+      "kept": {
+        "entity": "La entidad sigue abierta.",
+        "note": "La nota sigue abierta.",
+        "question": "La pregunta sigue abierta.",
+        "source": "La fuente sigue abierta.",
+        "topic": "El tema sigue abierto."
+      },
+      "mentions": "No se pudieron cargar las menciones."
+    },
+    "evidence": {
+      "citedBy": "citado por {parts}",
+      "earlierVersion": "pasaje de una versión anterior",
+      "empty": {
+        "entity": "Una entidad no tiene pasajes propios. Abre Menciones para ver las notas que los tienen.",
+        "note": "Esta nota ya no tiene ningún pasaje de fuente. Se conservó de una fuente que ya no existe.",
+        "question": "Esta respuesta no cita ninguna fuente. Una pregunta aún en curso recibe sus fuentes al terminar.",
+        "source": "Ninguna nota o pregunta ha citado aún un pasaje de esta fuente.",
+        "topic": "Este tema aún no tiene visión general, así que no hay pasajes que mostrar."
+      },
+      "noPassage": "sin pasaje indicado",
+      "open": "Abrir el pasaje de {source}",
+      "preserved": "pasaje conservado de una fuente borrada",
+      "provenance": "Quién la escribió",
+      "seeConnections": "Ver las conexiones",
+      "stale": "puede estar desactualizada",
+      "unavailable": "este pasaje ya no está en la biblioteca"
+    },
+    "graph": {
+      "empty": "Aún no hay nada que dibujar: ninguna nota está vinculada a esta.",
+      "legend": "Formas de conexión",
+      "openMap": "Abrir en el Mapa › Grafo",
+      "showList": "Ver como lista",
+      "unavailable": "Este equipo no puede dibujar el grafo."
+    },
+    "headings": {
+      "connections": {
+        "entity": {
+          "description": "Entidades que aparecen en las mismas notas.",
+          "title": "Conexiones de esta entidad"
+        },
+        "note": {
+          "description": "Cómo se enlaza esta nota con otras, y quién lo decidió.",
+          "title": "Conexiones de esta nota"
+        },
+        "question": {
+          "description": "Una pregunta se enlaza con lo que cita. Mira Evidencia.",
+          "title": "Conexiones de esta pregunta"
+        },
+        "source": {
+          "description": "Fuentes que tratan temas relacionados con esta.",
+          "title": "Conexiones de esta fuente"
+        },
+        "topic": {
+          "description": "Temas enlazados con este por las conexiones entre notas.",
+          "title": "Conexiones de este tema"
+        }
+      },
+      "evidence": {
+        "entity": {
+          "description": "Una entidad no tiene pasajes propios. Los tienen sus notas.",
+          "title": "Evidencia de esta entidad"
+        },
+        "note": {
+          "description": "Los pasajes de fuente en los que se apoya la nota, en el orden de sus números.",
+          "title": "Evidencia de esta nota"
+        },
+        "question": {
+          "description": "Las fuentes citadas, en el orden de los números.",
+          "title": "Evidencia de esta respuesta"
+        },
+        "source": {
+          "description": "Pasajes de esta fuente que citan notas y preguntas.",
+          "title": "Evidencia de esta fuente"
+        },
+        "topic": {
+          "description": "Los pasajes en los que se apoya la visión general, en el orden de sus números.",
+          "title": "Evidencia de este tema"
+        }
+      },
+      "graph": {
+        "note": {
+          "description": "Esta nota y las notas más enlazadas con ella. La lista en Conexiones trae lo mismo.",
+          "title": "Grafo de esta nota"
+        },
+        "other": {
+          "description": "El dibujo de las conexiones de este objeto está en el Mapa.",
+          "title": "Grafo"
+        }
+      },
+      "mentions": {
+        "description": "Dónde se cita este objeto sin una conexión.",
+        "title": "Menciones"
+      }
+    },
+    "loadingMore": "Cargando más…",
+    "locate": {
+      "alsoIn": "también en",
+      "andMore": "y {count} más",
+      "citedBy": "citado por",
+      "citedByOverview": "citado por la visión general de",
+      "error": "No se pudo leer el lugar.",
+      "label": "Dónde está"
+    },
+    "mentions": {
+      "empty": "Nada cita esto fuera de las conexiones. Cuando lo cite una pregunta, un tema o una nota, aparece aquí.",
+      "groups": {
+        "mention": "Notas que mencionan esta entidad",
+        "overview": "Temas cuya visión general cita esta nota",
+        "question": "Preguntas cuyas respuestas citan esta nota"
+      }
+    },
+    "more": "Más",
+    "moreFailed": "No se pudo cargar más.",
+    "moreLabel": "Más pestañas del contexto",
+    "none": {
+      "body": "Abre una nota, fuente, tema o pregunta y su contexto aparece aquí: conexiones, evidencia y menciones.",
+      "title": "Nada en foco"
+    },
+    "region": "Contexto",
+    "showMore": "Mostrar más",
+    "strip": {
+      "close": "Cerrar el contexto",
+      "label": "Contexto",
+      "open": "Abrir el contexto: {tab}"
+    },
+    "tablist": "Contexto del panel en foco",
+    "tabs": {
+      "ask": "Preguntar",
+      "connections": "Conexiones",
+      "evidence": "Evidencia",
+      "graph": "Grafo",
+      "history": "Historial",
+      "mentions": "Menciones"
+    }
+  },
   "entityPage": {
     "aliases": "Otros nombres:",
     "articleLabel": "Entidad: {name}",
@@ -4260,6 +4689,99 @@
       "heading": "Temas",
       "more": "y {count} más",
       "mostCited": "más citada"
+    }
+  },
+  "palette": {
+    "commands": {
+      "goExplore": "Ir a Explorar",
+      "goHome": "Ir a Inicio",
+      "goInbox": "Ir a la Bandeja de entrada",
+      "goLibrary": "Ir a la Biblioteca",
+      "goMap": "Ir al Mapa",
+      "goSettings": "Abrir Ajustes",
+      "theme": "Cambiar de tema",
+      "toggleNavigator": "Mostrar u ocultar el árbol"
+    },
+    "foot": {
+      "all": "todos los resultados",
+      "beside": "abrir al lado",
+      "choose": "elegir",
+      "here": "abrir en este panel",
+      "label": "Atajos",
+      "peek": "echar un vistazo",
+      "resultsMany": "{count} resultados · {ms} ms",
+      "resultsOne": "{count} resultado · {ms} ms",
+      "shortAll": "todos",
+      "shortBeside": "al lado",
+      "shortHere": "este panel"
+    },
+    "groups": {
+      "best": "Mejor resultado",
+      "do": "Hacer",
+      "entity": "Entidades",
+      "note": "Notas",
+      "pinned": "Fijados",
+      "question": "Preguntas",
+      "recent": "Recientes",
+      "showMore": "mostrar más ({count})",
+      "sourceEntity": "Fuentes y entidades",
+      "topic": "Temas"
+    },
+    "label": "Buscar, abrir o preguntar",
+    "listLabel": "Resultados",
+    "meta": {
+      "itemsMany": "{count} elementos",
+      "itemsOne": "{count} elemento",
+      "notesMany": "{count} notas",
+      "notesOne": "{count} nota",
+      "snippet": "pasaje:",
+      "sourcesMany": "{count} fuentes",
+      "sourcesOne": "{count} fuente"
+    },
+    "placeholder": "Buscar, abrir o preguntar…",
+    "prefixes": {
+      "actions": "acciones",
+      "actionsLabel": "Solo acciones",
+      "ask": "preguntar",
+      "askLabel": "Preguntar a la biblioteca",
+      "entities": "entidades",
+      "entitiesLabel": "Solo entidades",
+      "label": "Prefijos:",
+      "none": "sin prefijo: todo",
+      "topics": "temas",
+      "topicsLabel": "Solo temas"
+    },
+    "results": {
+      "compactLabel": "Resultados para “{query}”",
+      "countFirst": "Los primeros {count} resultados",
+      "countMany": "{count} resultados",
+      "countOne": "{count} resultado",
+      "degradedAnn": "La búsqueda por significado no está disponible ahora; se muestran solo las coincidencias de palabras.",
+      "degradedFts": "Esta búsqueda no tiene palabras que buscar dentro de los textos; se muestran solo títulos y nombres.",
+      "emptyAsk": "Preguntar a la biblioteca",
+      "emptyBody": "Prueba con menos palabras o pregunta a la biblioteca con tus propias palabras.",
+      "errorKept": "No se cambió nada.",
+      "errorMessage": "No se pudo buscar ahora.",
+      "filterAll": "Todo",
+      "filterEntity": "Entidades",
+      "filterNote": "Notas",
+      "filterQuestion": "Preguntas",
+      "filterSource": "Fuentes",
+      "filterTopic": "Temas",
+      "filtersLabel": "Mostrar solo",
+      "heading": "Resultados para “{query}”",
+      "passage": "Pasaje de la fuente",
+      "title": "Resultados de la búsqueda"
+    },
+    "rows": {
+      "ask": "Preguntar a la biblioteca: “{question}”"
+    },
+    "states": {
+      "askHint": "Escribe tu pregunta. Intro abre un panel de Pregunta que la responde.",
+      "error": "No se pudo buscar ahora.",
+      "errorKept": "No se cambió nada y las acciones siguen funcionando.",
+      "noCommand": "Ninguna acción coincide con “{query}”.",
+      "noResult": "Nada con “{query}”."
     }
   },
   "askPanel": {
@@ -4795,6 +5317,91 @@
     "uploadCopies": {
       "help": "Una segunda copia de cada original en una carpeta tuya, fuera de la base de datos de Memora.",
       "label": "Guardar una copia de los archivos subidos"
+    }
+  },
+  "map": {
+    "band": {
+      "action": "Volver",
+      "back": "vuelve a {topic}, donde estabas.",
+      "whole": "Estás viendo el árbol entero."
+    },
+    "chart": {
+      "columns": {
+        "areas": "Áreas",
+        "subtopics": "Subtemas",
+        "topics": "Temas"
+      },
+      "deeper": "{count} temas están más abajo: la tabla los lista todos e Intro amplía una rama.",
+      "deeperOne": "1 tema está más abajo: la tabla lo lista e Intro amplía una rama.",
+      "here": "aquí",
+      "label": "Árbol de temas. Cada bloque es un botón que selecciona un tema: las flechas se mueven e Intro amplía.",
+      "legend": {
+        "attention": "necesita atención",
+        "direct": "notas colocadas directamente en el tema",
+        "height": "Altura = notas",
+        "here": "aquí = contiene dónde estabas",
+        "selected": "seleccionado"
+      },
+      "merged": "Los bloques pequeños aparecen agrupados; la tabla lista cada uno.",
+      "moreTopics": "{count} más · {notes}"
+    },
+    "count": {
+      "topics": "{count} temas",
+      "topicsOne": "1 tema"
+    },
+    "display": {
+      "both": "Gráfico y tabla",
+      "label": "Visualización",
+      "table": "Solo tabla"
+    },
+    "health": {
+      "attention": "necesita atención",
+      "good": "equilibrado",
+      "violation": "sobre el límite"
+    },
+    "inspector": {
+      "next": "Siguiente paso",
+      "nextInbox": "Ver la propuesta en la Bandeja de entrada",
+      "selected": "Seleccionado",
+      "table": "Los mismos números en tabla"
+    },
+    "lens": {
+      "label": "Vistas del mapa",
+      "relations": "Grafo",
+      "shape": "Árbol"
+    },
+    "relations": {
+      "action": "Ver el árbol",
+      "body": "Mostrará cómo se conectan tus temas. Mientras tanto, el Árbol muestra su tamaño y su salud.",
+      "headline": "El grafo de conexiones llegará pronto"
+    },
+    "selected": {
+      "growth": "{growth} notas en {days} días",
+      "growthOne": "{growth} nota en {days} días",
+      "subtopics": "{count} subtemas directos",
+      "subtopicsOne": "1 subtema directo"
+    },
+    "shape": {
+      "description": "Tamaño y salud del árbol: {notes} en {topics}",
+      "descriptionPlain": "Tamaño y salud del árbol."
+    },
+    "states": {
+      "empty": "El mapa aparece cuando haya temas.",
+      "emptyAdd": "Añadir una fuente",
+      "emptyBody": "Cuando tu primera fuente se convierta en notas, los temas nacen solos y el mapa los muestra aquí.",
+      "error": "No se pudo cargar el mapa.",
+      "errorKept": "Tus fuentes y notas siguen intactas."
+    },
+    "table": {
+      "caption": "Los mismos números del gráfico, una fila por tema",
+      "growth": "7 días",
+      "health": "Salud",
+      "notes": "Notas",
+      "topic": "Tema"
+    },
+    "title": "Mapa",
+    "warnings": {
+      "dismiss": "Descartar"
     }
   }
 }

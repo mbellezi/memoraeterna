@@ -837,7 +837,8 @@ describe("the DEV install knob (MEMORA_LOCAL_MODEL_INSTALL)", () => {
     const created = db.profiles.find((candidate) => candidate.localModelId === ids.mlxRanker)!;
     expect(created).toMatchObject({
       name: "Qwen3-Reranker-0.6B (MLX)",
-      privacyMode: "offline_only",
+      // privacy_mode is no longer written (F5 T172): the fake keeps the column default.
+      privacyMode: "allow_remote",
       runtime: "mlx",
       capabilities: ["reranking", "offline", "local-files"],
       isDefault: false

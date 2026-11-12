@@ -317,6 +317,13 @@
     }
   },
   "inbox": {
+    "consequence": {
+      "keep": "The connection stays and counts as your decision.",
+      "remove": "The connection goes, and the Gardener does not suggest it again.",
+      "restore": "The connection comes back and counts as your decision."
+    },
+    "summary": "{count} decisions · riskiest first",
+    "summaryOne": "1 decision waits for you",
     "title": "Inbox",
     "description": "What needs your judgment, the most important first.",
     "badge": "{count} waiting",
@@ -325,14 +332,16 @@
       "error": "Your Inbox could not be loaded.",
       "empty": {
         "title": "Nothing needs you",
-        "body": "Your library organizes itself. When something needs your judgment, it appears here."
+        "body": "The Gardener asks here when a change is risky."
       },
       "emptyFiltered": "Nothing matches this filter.",
       "loadMore": "Load more",
       "loadingMore": "Loading more...",
-      "moreFailed": "More items could not be loaded."
+      "moreFailed": "More items could not be loaded.",
+      "errorKept": "Nothing was decided or changed."
     },
     "filters": {
+      "kind": "Type",
       "label": "Filter the Inbox",
       "all": "All",
       "chip": "{kind}: {count}",
@@ -346,6 +355,17 @@
       "medium": "medium confidence ({percent})",
       "low": "low confidence ({percent})",
       "unknown": "unknown confidence"
+    },
+    "kind": {
+      "review": "To review",
+      "quarantined": "Failed task",
+      "contradiction": "Contradiction",
+      "suggestion": "Suggested connection",
+      "withdrawn": "Withdrawn connection",
+      "duplicate": "Duplicate",
+      "obsidianConflict": "Obsidian conflict",
+      "budget": "Spending limit",
+      "backlog": "Optional re-match"
     },
     "kinds": {
       "review": "To review",
@@ -406,7 +426,7 @@
         "divergenceBody": "The overview of “{topic}” was extended, and some new evidence disagrees with what it says. The disagreement is kept beside the text, never merged into it. Keep it there, or dismiss this. Points of disagreement: {count}."
       },
       "suggestion": {
-        "title": "Suggested connection · {confidence}",
+        "title": "Keep this connection?",
         "body": "Suggestion: “{first}” {relation} “{second}”. Keep it to make it your decision, or remove it.",
         "hint": "Nothing is deleted: only the connection changes. If you remove it, it is not suggested again."
       },
@@ -481,17 +501,31 @@
       "hide": "Hide"
     },
     "keys": {
+      "barNote": "Single-key shortcuts do not work inside text fields.",
+      "short": {
+        "apply": "accept",
+        "dismiss": "dismiss",
+        "edit": "edit",
+        "help": "shortcuts",
+        "move": "navigate",
+        "open": "open",
+        "remove": "remove",
+        "retry": "retry",
+        "undo": "undo"
+      },
       "toggle": "Keyboard shortcuts",
       "title": "Keyboard shortcuts",
       "move": "Next or previous item",
       "open": "Go to the details",
       "apply": "Apply or keep",
-      "dismiss": "Dismiss or remove",
+      "dismiss": "Dismiss: it leaves the Inbox and nothing changes",
       "retry": "Retry",
       "undo": "Undo the last decision",
       "help": "Show or hide this help",
       "note": "These keys work while the list or the details have focus, never while you type or in a dialog.",
-      "money": "Continuing past the spending limit is a button, never a key."
+      "money": "Continuing past the spending limit is a button, never a key.",
+      "remove": "Remove a connection: it is never suggested again",
+      "edit": "Edit the names before applying"
     },
     "result": {
       "applied": "Applied.",
@@ -534,7 +568,8 @@
         "empty": "No overview yet",
         "divergences": "Where the new evidence disagrees",
         "divergence": "Paragraphs {existing} and {new}: {summary}"
-      }
+      },
+      "legend": "Small blocks, by letter"
     },
     "errors": {
       "invalidCursor": "The list changed meanwhile. Load it again.",
@@ -740,6 +775,177 @@
       "settingsSaved": "Settings saved.",
       "settingsError": "The settings could not be saved.",
       "dismiss": "Dismiss notification"
+    }
+  },
+  "libraryTable": {
+    "actions": {
+      "chooseFile": "Choose a file",
+      "generate": "Generate notes",
+      "generateFor": "Generate notes for {title}"
+    },
+    "chips": {
+      "all": "All",
+      "failed": "Blocked",
+      "label": "State",
+      "needsYou": "Needs you",
+      "processing": "Generating",
+      "storedOnly": "No notes",
+      "storedOnlyHint": "Sources kept in Just store or Searchable + organized mode"
+    },
+    "columns": {
+      "added": "Added",
+      "answers": "Answers",
+      "asked": "Asked",
+      "notes": "Notes",
+      "place": "Place in the tree",
+      "question": "Question",
+      "source": "Source",
+      "state": "State"
+    },
+    "compact": {
+      "label": "List of sources",
+      "questionsLabel": "List of questions"
+    },
+    "count": {
+      "questionsMany": "{count} questions",
+      "questionsOne": "{count} question",
+      "sourcesMany": "{count} sources",
+      "sourcesOne": "{count} source"
+    },
+    "dates": {
+      "today": "today, {time}",
+      "yesterday": "yesterday, {time}"
+    },
+    "density": {
+      "comfortable": "Comfortable",
+      "compact": "Compact",
+      "label": "Density"
+    },
+    "filter": {
+      "clear": "Clear filter",
+      "clearAll": "Clear filters",
+      "questionsLabel": "Filter questions",
+      "questionsPlaceholder": "Filter by the words of the question",
+      "sourcesLabel": "Filter sources",
+      "sourcesPlaceholder": "Filter by title"
+    },
+    "keys": {
+      "choose": "choose",
+      "open": "open beside",
+      "peek": "peek",
+      "space": "Space"
+    },
+    "order": {
+      "addedAsc": "oldest first",
+      "addedDesc": "newest first",
+      "newest": "newest first",
+      "notesAsc": "fewest notes first",
+      "notesDesc": "most notes first",
+      "statusAsc": "by state, needs you first",
+      "statusDesc": "by state, ready first",
+      "titleAsc": "by title, A to Z",
+      "titleDesc": "by title, Z to A",
+      "updatedAsc": "changed longest ago first",
+      "updatedDesc": "changed most recently first"
+    },
+    "peek": {
+      "answersMany": "{count} answers",
+      "answersOne": "{count} answer",
+      "close": "close",
+      "closes": "closes",
+      "heading": "Peeking",
+      "kept": "It is still kept; nothing changed.",
+      "next": "peek the next",
+      "noSummaryQuestion": "The answer appears when Memora finishes it.",
+      "noSummarySource": "The summary appears when the notes are done.",
+      "notesMany": "{count} notes",
+      "notesOne": "{count} note",
+      "opens": "opens beside",
+      "passagesMany": "{count} passages",
+      "passagesOne": "{count} passage",
+      "stays": "The Library stays here; nothing was opened.",
+      "title": "Peek at {title}",
+      "unavailableQuestion": "This question could not be read.",
+      "unavailableSource": "This source could not be read."
+    },
+    "place": {
+      "none": "No place",
+      "tentative": "likely:",
+      "tentativeHint": "Likely place, decided when the notes are done"
+    },
+    "questionStatus": {
+      "canceled": "Stopped",
+      "complete": "Answered",
+      "failed": "Not finished",
+      "running": "Answering"
+    },
+    "reasons": {
+      "failed": "stopped; the source is kept",
+      "modelMissing": "a model needs installing",
+      "moneyNear": "near the spending limit",
+      "moneyReached": "spending limit reached",
+      "noRoute": "no model chosen yet",
+      "other": "waiting for you",
+      "signIn": "sign in to your AI provider again"
+    },
+    "scope": {
+      "library": "Whole library",
+      "sourcesMany": "{count} sources chosen",
+      "sourcesOne": "{count} source chosen",
+      "topic": "Topic: {title}",
+      "topicGone": "A topic that no longer exists",
+      "topicPending": "A topic"
+    },
+    "states": {
+      "moreError": "Could not load more.",
+      "questionsEmpty": "No saved questions yet.",
+      "questionsEmptyBody": "Ask from the bar at the top or from any note, topic or source, and each question is saved here with its answers.",
+      "questionsEmptyShortcut": "Shortcut:",
+      "questionsError": "Could not read your saved questions.",
+      "questionsFiltered": "No questions match this filter.",
+      "questionsKept": "They are still stored on this Mac.",
+      "sourcesEmpty": "No sources yet.",
+      "sourcesEmptyBody": "Add a file. Memora reads it, writes the notes and places them in the tree for you.",
+      "sourcesEmptyDrop": "Drop files here to start",
+      "sourcesEmptyHint": "From any screen, the shortcut is",
+      "sourcesError": "Could not read the Library.",
+      "sourcesFiltered": "No sources match this filter.",
+      "sourcesKept": "Your sources and notes are safe."
+    },
+    "status": {
+      "failed": "Blocked",
+      "needsYou": "Needs you",
+      "processing": "Generating",
+      "ready": "Ready",
+      "storedOnly": "Stored, no notes"
+    },
+    "tabs": {
+      "label": "Library views",
+      "questions": "Questions",
+      "sources": "Sources"
+    },
+    "territory": {
+      "fewer": "Show fewer",
+      "heading": "By area:",
+      "label": "Sources by area of the tree",
+      "more": "Show all {count} areas",
+      "sourceMany": "sources",
+      "sourceOne": "source",
+      "untitled": "Untitled area"
+    },
+    "title": "Library",
+    "types": {
+      "AcademicPaper": "Academic paper",
+      "Book": "Book",
+      "BookChapter": "Book chapter",
+      "DailyNote": "Daily note",
+      "DocumentSection": "Document section",
+      "GenericDocument": "Document",
+      "PeriodicalIssue": "Periodical issue",
+      "PersonalNote": "Personal note",
+      "StandaloneArticle": "Standalone article",
+      "Video": "Video",
+      "WebArticle": "Web article"
     }
   },
   "knowledgeGraph": {
@@ -3210,11 +3416,13 @@
         "titles": {
           "build": "Topics were built from your notes.",
           "rebalance": "The structure was rebalanced.",
-          "rebalanceItems": "The structure was rebalanced. Items moved: {count}.",
+          "rebalanceItems": "{count} items moved when the structure was rebalanced.",
+          "rebalanceItemsOne": "1 item moved when the structure was rebalanced.",
           "audit": "Old topic redirects were shortened.",
           "areas": "Areas were regrouped.",
           "naming": "Topics were named.",
-          "namingCount": "Topics named: {count}.",
+          "namingCount": "{count} topics were named.",
+          "namingCountOne": "1 topic was named.",
           "human": "You changed the structure.",
           "rebuild": "Topics were rebuilt.",
           "other": "The structure changed."
@@ -4205,6 +4413,227 @@
     "stackLabel": "Open panels",
     "untitled": "Untitled"
   },
+  "contextPanel": {
+    "connections": {
+      "actions": {
+        "failed": "Your choice could not be saved. Try again.",
+        "keep": "Keep",
+        "keepLabel": "Keep the connection with {title}",
+        "remove": "Remove",
+        "removeLabel": "Remove the connection with {title}"
+      },
+      "empty": {
+        "entity": "No other entity appears in the same notes yet.",
+        "note": "No connections yet. The Gardener looks when the Mac is idle.",
+        "question": "A question has no connections of its own. What it cites is under Evidence.",
+        "source": "No related sources yet. They appear when notes of this source link to notes of others.",
+        "topic": "No linked topics yet. They appear when notes of this topic link to notes of others."
+      },
+      "foot": {
+        "graph": "See in the Graph",
+        "map": "Open in the Map"
+      },
+      "groups": {
+        "contradicts": "Contradicts this note",
+        "dependsOnIn": "Notes that depend on this one",
+        "dependsOnLinked": "Linked by dependence",
+        "dependsOnOut": "This note depends on",
+        "exampleOfIn": "Examples of this note",
+        "exampleOfLinked": "Linked by example",
+        "exampleOfOut": "This note is an example of",
+        "extendsIn": "Notes that extend this one",
+        "extendsLinked": "Linked by extension",
+        "extendsOut": "This note extends",
+        "relatedIn": "Notes that clarify this one",
+        "relatedMutual": "Related to this note",
+        "relatedOut": "This note clarifies",
+        "supportsIn": "Notes that support this one",
+        "supportsLinked": "Linked by support",
+        "supportsOut": "This note supports"
+      },
+      "groupsOther": {
+        "entities": "Entities that appear together",
+        "sources": "Related sources",
+        "topics": "Linked topics"
+      },
+      "legend": "The six kinds of connection",
+      "link": "Link to another note",
+      "meta": {
+        "alsoInInbox": "also in the Inbox",
+        "byYou": "you kept it",
+        "confidenceHigh": "high confidence",
+        "confidenceLow": "low confidence",
+        "confidenceMedium": "medium confidence",
+        "confidenceUnknown": "confidence unknown",
+        "decideWhenever": "decide whenever you like",
+        "gardener": "Gardener",
+        "gardenerSuggested": "suggested by the Gardener",
+        "inCommon": "{notes} in common"
+      },
+      "question": {
+        "below": "the note below",
+        "linked": "{heading}?",
+        "otherSubject": "{verb} {object}?",
+        "thisSubject": "{subject} {verb} {object}?"
+      },
+      "suggestionTag": "suggestion",
+      "suggestionsLabel": "Suggested connections"
+    },
+    "count": {
+      "connectionsOne": "{count} connection",
+      "connectionsOther": "{count} connections",
+      "mentionsOne": "{count} mention",
+      "mentionsOther": "{count} mentions",
+      "notesOne": "{count} note",
+      "notesOther": "{count} notes",
+      "passagesOne": "{count} passage",
+      "passagesOther": "{count} passages",
+      "questionsOne": "{count} question",
+      "questionsOther": "{count} questions",
+      "sourcesOne": "{count} source",
+      "sourcesOther": "{count} sources",
+      "suggestionsOne": "{count} suggestion",
+      "suggestionsOther": "{count} suggestions"
+    },
+    "errors": {
+      "connections": "Could not load the connections.",
+      "evidence": "Could not load the evidence.",
+      "graph": "Could not load the graph.",
+      "kept": {
+        "entity": "The entity stays open.",
+        "note": "The note stays open.",
+        "question": "The question stays open.",
+        "source": "The source stays open.",
+        "topic": "The topic stays open."
+      },
+      "mentions": "Could not load the mentions."
+    },
+    "evidence": {
+      "citedBy": "cited by {parts}",
+      "earlierVersion": "passage of an earlier version",
+      "empty": {
+        "entity": "An entity has no passages of its own. Open Mentions to see the notes that carry them.",
+        "note": "This note has no source passage left. It was kept from a source that is gone.",
+        "question": "This answer cites no source. A question that is still being answered gets its sources when it ends.",
+        "source": "No note or question cites a passage of this source yet.",
+        "topic": "This topic has no overview yet, so there are no passages to show."
+      },
+      "noPassage": "no passage named",
+      "open": "Open the passage of {source}",
+      "preserved": "passage kept from a deleted source",
+      "provenance": "Who wrote it",
+      "seeConnections": "See the connections",
+      "stale": "may be out of date",
+      "unavailable": "this passage is no longer in the library"
+    },
+    "graph": {
+      "empty": "Nothing to draw yet: no note is linked to this one.",
+      "legend": "Kinds of connection",
+      "openMap": "Open in the Map › Graph",
+      "showList": "See as a list",
+      "unavailable": "This computer cannot draw the graph."
+    },
+    "headings": {
+      "connections": {
+        "entity": {
+          "description": "Entities that appear in the same notes.",
+          "title": "Connections of this entity"
+        },
+        "note": {
+          "description": "How this note links to others, and who decided.",
+          "title": "Connections of this note"
+        },
+        "question": {
+          "description": "A question links to what it cites. See Evidence.",
+          "title": "Connections of this question"
+        },
+        "source": {
+          "description": "Sources that deal with related subjects.",
+          "title": "Connections of this source"
+        },
+        "topic": {
+          "description": "Topics linked to this one through the connections between notes.",
+          "title": "Connections of this topic"
+        }
+      },
+      "evidence": {
+        "entity": {
+          "description": "An entity has no passages of its own. Its notes carry them.",
+          "title": "Evidence of this entity"
+        },
+        "note": {
+          "description": "The source passages the note rests on, in the order of its numbers.",
+          "title": "Evidence of this note"
+        },
+        "question": {
+          "description": "The cited sources, in the order of the numbers.",
+          "title": "Evidence of this answer"
+        },
+        "source": {
+          "description": "Passages of this source that notes and questions cite.",
+          "title": "Evidence of this source"
+        },
+        "topic": {
+          "description": "The passages the overview rests on, in the order of its numbers.",
+          "title": "Evidence of this topic"
+        }
+      },
+      "graph": {
+        "note": {
+          "description": "This note and the notes most linked to it. The list in Connections has the same information.",
+          "title": "Graph of this note"
+        },
+        "other": {
+          "description": "The drawing of this object's connections lives in the Map.",
+          "title": "Graph"
+        }
+      },
+      "mentions": {
+        "description": "Where this object is cited without a connection.",
+        "title": "Mentions"
+      }
+    },
+    "loadingMore": "Loading more…",
+    "locate": {
+      "alsoIn": "also in",
+      "andMore": "and {count} more",
+      "citedBy": "cited by",
+      "citedByOverview": "cited by the overview of",
+      "error": "Could not read the place.",
+      "label": "Where this is"
+    },
+    "mentions": {
+      "empty": "Nothing cites this outside its connections. When a question, a topic or a note does, it shows here.",
+      "groups": {
+        "mention": "Notes that mention this entity",
+        "overview": "Topics whose overview cites this note",
+        "question": "Questions whose answers cite this note"
+      }
+    },
+    "more": "More",
+    "moreFailed": "Could not load more.",
+    "moreLabel": "More context tabs",
+    "none": {
+      "body": "Open a note, source, topic or question and its context appears here: connections, evidence and mentions.",
+      "title": "Nothing in focus"
+    },
+    "region": "Context",
+    "showMore": "Show more",
+    "strip": {
+      "close": "Close the context",
+      "label": "Context",
+      "open": "Open the context: {tab}"
+    },
+    "tablist": "Context of the focused panel",
+    "tabs": {
+      "ask": "Ask",
+      "connections": "Connections",
+      "evidence": "Evidence",
+      "graph": "Graph",
+      "history": "History",
+      "mentions": "Mentions"
+    }
+  },
   "entityPage": {
     "aliases": "Other names:",
     "articleLabel": "Entity: {name}",
@@ -4253,6 +4682,99 @@
       "heading": "Topics",
       "more": "and {count} more",
       "mostCited": "most cited"
+    }
+  },
+  "palette": {
+    "commands": {
+      "goExplore": "Go to Explore",
+      "goHome": "Go to Home",
+      "goInbox": "Go to the Inbox",
+      "goLibrary": "Go to the Library",
+      "goMap": "Go to the Map",
+      "goSettings": "Open Settings",
+      "theme": "Switch theme",
+      "toggleNavigator": "Show or hide the tree"
+    },
+    "foot": {
+      "all": "all results",
+      "beside": "open beside",
+      "choose": "choose",
+      "here": "open in this panel",
+      "label": "Keys",
+      "peek": "peek",
+      "resultsMany": "{count} results · {ms} ms",
+      "resultsOne": "{count} result · {ms} ms",
+      "shortAll": "all",
+      "shortBeside": "beside",
+      "shortHere": "this panel"
+    },
+    "groups": {
+      "best": "Best result",
+      "do": "Do",
+      "entity": "Entities",
+      "note": "Notes",
+      "pinned": "Pinned",
+      "question": "Questions",
+      "recent": "Recent",
+      "showMore": "show more ({count})",
+      "sourceEntity": "Sources and entities",
+      "topic": "Topics"
+    },
+    "label": "Search, open or ask",
+    "listLabel": "Results",
+    "meta": {
+      "itemsMany": "{count} items",
+      "itemsOne": "{count} item",
+      "notesMany": "{count} notes",
+      "notesOne": "{count} note",
+      "snippet": "passage:",
+      "sourcesMany": "{count} sources",
+      "sourcesOne": "{count} source"
+    },
+    "placeholder": "Search, open or ask…",
+    "prefixes": {
+      "actions": "actions",
+      "actionsLabel": "Actions only",
+      "ask": "ask",
+      "askLabel": "Ask the library",
+      "entities": "entities",
+      "entitiesLabel": "Entities only",
+      "label": "Prefixes:",
+      "none": "no prefix: everything",
+      "topics": "topics",
+      "topicsLabel": "Topics only"
+    },
+    "results": {
+      "compactLabel": "Results for “{query}”",
+      "countFirst": "The first {count} results",
+      "countMany": "{count} results",
+      "countOne": "{count} result",
+      "degradedAnn": "Searching by meaning is not available right now; showing word matches only.",
+      "degradedFts": "This search has no word to look for inside the texts; showing titles and names only.",
+      "emptyAsk": "Ask the library",
+      "emptyBody": "Try fewer words, or ask the library in your own words.",
+      "errorKept": "Nothing was changed.",
+      "errorMessage": "The search could not be done right now.",
+      "filterAll": "All",
+      "filterEntity": "Entities",
+      "filterNote": "Notes",
+      "filterQuestion": "Questions",
+      "filterSource": "Sources",
+      "filterTopic": "Topics",
+      "filtersLabel": "Show only",
+      "heading": "Results for “{query}”",
+      "passage": "Source passage",
+      "title": "Search results"
+    },
+    "rows": {
+      "ask": "Ask the library: “{question}”"
+    },
+    "states": {
+      "askHint": "Type your question. Enter opens an Ask panel that answers it.",
+      "error": "The search could not be done right now.",
+      "errorKept": "Nothing was changed, and the actions still work.",
+      "noCommand": "No action matches “{query}”.",
+      "noResult": "Nothing with “{query}”."
     }
   },
   "askPanel": {
@@ -4788,6 +5310,91 @@
     "uploadCopies": {
       "help": "A second copy of each original in a folder of yours, outside Memora’s database.",
       "label": "Keep a copy of uploaded files"
+    }
+  },
+  "map": {
+    "band": {
+      "action": "Back",
+      "back": "goes back to {topic}, where you were.",
+      "whole": "You are seeing the whole tree."
+    },
+    "chart": {
+      "columns": {
+        "areas": "Areas",
+        "subtopics": "Subtopics",
+        "topics": "Topics"
+      },
+      "deeper": "{count} topics sit deeper: the table lists them all, and Enter zooms into a branch.",
+      "deeperOne": "1 topic sits deeper: the table lists it, and Enter zooms into a branch.",
+      "here": "here",
+      "label": "Topic tree. Each block is a button that selects a topic: arrows move, Enter zooms in.",
+      "legend": {
+        "attention": "needs attention",
+        "direct": "notes placed directly in the topic",
+        "height": "Height = notes",
+        "here": "here = holds where you were",
+        "selected": "selected"
+      },
+      "merged": "Small blocks are grouped; the table lists each one.",
+      "moreTopics": "{count} more · {notes}"
+    },
+    "count": {
+      "topics": "{count} topics",
+      "topicsOne": "1 topic"
+    },
+    "display": {
+      "both": "Chart and table",
+      "label": "Display",
+      "table": "Table only"
+    },
+    "health": {
+      "attention": "needs attention",
+      "good": "balanced",
+      "violation": "over the limit"
+    },
+    "inspector": {
+      "next": "Next step",
+      "nextInbox": "See the proposal in the Inbox",
+      "selected": "Selected",
+      "table": "The same numbers as a table"
+    },
+    "lens": {
+      "label": "Map views",
+      "relations": "Graph",
+      "shape": "Tree"
+    },
+    "relations": {
+      "action": "See the Tree",
+      "body": "It will show how your topics connect. Until then, the Tree shows their size and health.",
+      "headline": "The graph of connections is on its way"
+    },
+    "selected": {
+      "growth": "{growth} notes in {days} days",
+      "growthOne": "{growth} note in {days} days",
+      "subtopics": "{count} direct subtopics",
+      "subtopicsOne": "1 direct subtopic"
+    },
+    "shape": {
+      "description": "Size and health of the tree: {notes} in {topics}",
+      "descriptionPlain": "Size and health of the tree."
+    },
+    "states": {
+      "empty": "The map appears when there are topics.",
+      "emptyAdd": "Add a source",
+      "emptyBody": "When your first source becomes notes, topics are born on their own and the map shows them here.",
+      "error": "The map could not be loaded.",
+      "errorKept": "Your sources and notes are untouched."
+    },
+    "table": {
+      "caption": "The same numbers as the chart, one row per topic",
+      "growth": "7 days",
+      "health": "Health",
+      "notes": "Notes",
+      "topic": "Topic"
+    },
+    "title": "Map",
+    "warnings": {
+      "dismiss": "Dismiss"
     }
   }
 }

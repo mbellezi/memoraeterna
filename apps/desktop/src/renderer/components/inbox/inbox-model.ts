@@ -31,6 +31,19 @@ export const kindLabels = {
   backlog: "inbox.kinds.backlog"
 } as const satisfies Record<InboxKind, MessageKey>;
 
+/** One item's kind in the singular ("Conexão sugerida"); `kindLabels` are the filter's plural groups. */
+export const kindWords = {
+  review: "inbox.kind.review",
+  quarantined: "inbox.kind.quarantined",
+  contradiction: "inbox.kind.contradiction",
+  suggestion: "inbox.kind.suggestion",
+  withdrawn: "inbox.kind.withdrawn",
+  duplicate: "inbox.kind.duplicate",
+  obsidian_conflict: "inbox.kind.obsidianConflict",
+  budget: "inbox.kind.budget",
+  backlog: "inbox.kind.backlog"
+} as const satisfies Record<InboxKind, MessageKey>;
+
 export const riskLabels = {
   high: "inbox.risk.high",
   medium: "inbox.risk.medium",
@@ -73,13 +86,6 @@ export function verbLabel(
     kind === "contradiction" && variant === "divergence" ? divergenceVerbLabels : verbLabels[kind];
   return t(labels[verb] ?? "inbox.verbs.dismiss");
 }
-
-/** The key that carries each verb out, as it is shown. */
-export const verbKeys: Readonly<Record<InboxVerb, string>> = {
-  apply: "A",
-  dismiss: "X",
-  retry: "R"
-};
 
 export function objectName(t: Translator, object: InboxObject): string {
   if (object.title !== null && object.title.trim() !== "") return object.title;
@@ -186,10 +192,8 @@ export function itemTitle(t: Translator, item: InboxItem): string {
           : "inbox.items.contradiction.title"
       );
     case "suggestion":
-      // The confidence is the fact that puts a suggestion here, so the list row carries it.
-      return t("inbox.items.suggestion.title", {
-        values: { confidence: confidenceText(t, probabilityOf(item)) }
-      });
+      // The title names what is at stake; the confidence is in the detail's risk line.
+      return t("inbox.items.suggestion.title");
     case "withdrawn":
       return t("inbox.items.withdrawn.title");
     case "duplicate":
@@ -322,9 +326,8 @@ export function itemSubject(t: Translator, item: InboxItem): string {
   if (item.kind === "obsidian_conflict") return text(item.params.path);
   if (item.objects.length > 0)
     return item.objects.map((object) => `“${objectName(t, object)}”`).join(" · ");
-  if (item.kind === "review")
-    return reviewVariantLabel(t, item.variant) ?? t(kindLabels[item.kind]);
-  return t(kindLabels[item.kind]);
+  if (item.kind === "review") return reviewVariantLabel(t, item.variant) ?? t(kindWords[item.kind]);
+  return t(kindWords[item.kind]);
 }
 
 // ---------------------------------------------------------------------------
@@ -346,4 +349,21 @@ export function ageText(t: Translator, at: string, now: number): string {
     -Math.floor(elapsed / size),
     unit
   );
+}
+
+/**
+ * What choosing a row of the item list opens beside the Inbox when it is the previous panel
+ * (design record §8, rule 1): the first object the item names, or Settings for an Obsidian
+ * conflict, which is solved there. An item that names no object has nothing to open.
+ */
+export type PreviousPanelTarget =
+  { type: "object"; object: InboxObject } | { type: "settings" } | null;
+
+export function previousPanelTarget(
+  item: Pick<InboxItem, "kind" | "objects"> | undefined
+): PreviousPanelTarget {
+  if (!item) return null;
+  const [first] = item.objects;
+  if (first) return { type: "object", object: first };
+  return item.kind === "obsidian_conflict" ? { type: "settings" } : null;
 }
