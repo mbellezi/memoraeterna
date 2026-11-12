@@ -55,7 +55,7 @@ export function DropOverlay({
     >
       <div
         aria-hidden="true"
-        className="absolute inset-3 rounded-2xl border-2 border-dashed border-accent"
+        className="absolute inset-1 rounded-2xl border-2 border-dashed border-accent"
       />
       <div
         role="status"
@@ -82,17 +82,14 @@ export function DropOverlay({
             {t("addFlow.drop.modeError")}
           </p>
         ) : (
-          <div className="grid gap-1 text-sm text-secondary-foreground [text-wrap:pretty]">
-            <p className="m-0">
-              {t("addFlow.drop.modeLabel")}{" "}
-              <strong className="font-semibold text-foreground">{t(copy.name)}</strong>
-            </p>
-            <p className="m-0 first-letter:uppercase">
-              {t("addFlow.drop.modeNote", { values: { hint: t(modeHintKey(mode)) } })}
-            </p>
-          </div>
+          <p className="m-0 text-sm text-secondary-foreground [text-wrap:balance]">
+            {t("addFlow.drop.modeLabel")}{" "}
+            <strong className="font-semibold text-foreground">{t(copy.name)}</strong>
+            {": "}
+            {t("addFlow.drop.modeNote", { values: { hint: t(modeHintKey(mode)) } })}
+          </p>
         )}
-        <p className="m-0 max-w-prose text-xs text-muted-foreground [text-wrap:pretty]">
+        <p className="m-0 max-w-prose text-xs text-muted-foreground [text-wrap:balance]">
           {t("addFlow.drop.after")}
         </p>
       </div>

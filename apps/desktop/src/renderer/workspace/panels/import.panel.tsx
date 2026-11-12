@@ -7,6 +7,7 @@ import { ImportView } from "../../components/ImportView";
 import { Button } from "../../components/ui/button";
 import { EmptyState } from "../../components/ui/empty-state";
 import { ErrorState } from "../../components/ui/error-state";
+import { ScrollArea } from "../../components/ui/scroll-area";
 import { NoteLeaveDialog, type LeaveCopy } from "../../components/note-page/NoteLeaveDialog";
 import { LoadingState, Skeleton, SkeletonLines } from "../../components/ui/skeleton";
 import type { PanelLoadState } from "../PanelFrame";
@@ -92,6 +93,25 @@ export const loadStateOf = (data: Data): PanelLoadState =>
 
 function Body({ children }: { children: React.ReactNode }) {
   return <div className="min-w-0 max-w-[57rem]">{children}</div>;
+}
+
+/**
+ * The wizard's footer is `sticky bottom-0`, which sticks to the edge of its own scroll box. The
+ * frame's body pads its end (3 rem) and its top (1.25 rem) and scrolls with that padding inside, so
+ * the footer would stop above the panel's bottom edge with the form showing beneath it. This box
+ * takes the padding back (and the body's side padding, so the scroll bar is at the panel's edge)
+ * and scrolls on its own, so the footer sits on the panel's bottom edge and nothing renders below
+ * it. The form keeps a form's width, not the full width of a wide panel.
+ */
+function Scroller({ children }: { children: React.ReactNode }) {
+  return (
+    <ScrollArea
+      className="-mx-(--top-pl) -mb-12 -mt-5 h-[calc(100%+4.25rem)]"
+      viewportClassName="[&>div]:block!"
+    >
+      <div className="max-w-[48rem] px-(--top-pl) pb-3 pt-5">{children}</div>
+    </ScrollArea>
+  );
 }
 
 const leaveCopy: LeaveCopy = {
@@ -180,18 +200,20 @@ export function Component({ t, address, active, onState, onOpen, onLeaveGuard }:
     );
   return (
     <>
-      <ImportView
-        t={t}
-        active={active}
-        metadataEnrichmentEnabled={data.metadataEnrichmentEnabled}
-        {...(data.source ? { editing: data.source } : {})}
-        onDirtyChange={guard.setDirty}
-        // A saved source replaces this panel: the person lands on it, with its generation strip.
-        onSaved={(sourceItemId) => {
-          guard.setDirty(false);
-          onOpen(formatObjectAddress({ kind: "source", id: sourceItemId }), { replace: true });
-        }}
-      />
+      <Scroller>
+        <ImportView
+          t={t}
+          active={active}
+          metadataEnrichmentEnabled={data.metadataEnrichmentEnabled}
+          {...(data.source ? { editing: data.source } : {})}
+          onDirtyChange={guard.setDirty}
+          // A saved source replaces this panel: the person lands on it, with its generation strip.
+          onSaved={(sourceItemId) => {
+            guard.setDirty(false);
+            onOpen(formatObjectAddress({ kind: "source", id: sourceItemId }), { replace: true });
+          }}
+        />
+      </Scroller>
       {guard.leaving ? (
         <NoteLeaveDialog
           t={t}

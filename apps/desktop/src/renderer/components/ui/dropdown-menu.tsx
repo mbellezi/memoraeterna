@@ -2,6 +2,7 @@ import type { ComponentPropsWithoutRef, ReactNode } from "react";
 import { DropdownMenu as MenuPrimitive } from "radix-ui";
 import { Check, Circle } from "lucide-react";
 import { cn } from "../../lib/cn";
+import { Kbd } from "./kbd";
 import { popSurface } from "./popover";
 
 /*
@@ -31,7 +32,7 @@ export function MenuItemBody({
   icon?: ReactNode;
   /** A second, quieter line under the label. */
   description?: ReactNode;
-  /** The shortcut as text ("⌘N"); it is drawn as plain keycap text, not a variable message part. */
+  /** The shortcut as text ("⌘N"); it is drawn as a keycap (`Kbd`), not a variable message part. */
   shortcut?: string;
   children?: ReactNode;
 }) {
@@ -46,9 +47,7 @@ export function MenuItemBody({
           </span>
         ) : null}
       </span>
-      {shortcut ? (
-        <span className="shrink-0 text-xs tabular-nums text-secondary-foreground">{shortcut}</span>
-      ) : null}
+      {shortcut ? <Kbd className="shrink-0">{shortcut}</Kbd> : null}
     </>
   );
 }

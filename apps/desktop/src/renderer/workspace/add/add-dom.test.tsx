@@ -3,6 +3,7 @@ import { createTestDom, type TestDom } from "../test-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createTranslator } from "@app/i18n";
 
+import { AddFailureNotice } from "./AddFailureNotice";
 import { AddMenu } from "./AddMenu";
 import { AddFlow } from "./add-flow";
 import { useWindowDrop } from "./use-window-drop";
@@ -117,5 +118,79 @@ describe("a drag over the window, in the DOM", () => {
     expect(shown()).toBe("idle");
     await fire("drop", transfer(["Files"], [{ name: "a.pdf" }]));
     expect(onFiles).not.toHaveBeenCalled();
+  });
+});
+
+const reject = () => Promise.reject(new Error("nope"));
+const pending = () => new Promise<never>(() => undefined);
+
+function flowWith(api: unknown) {
+  return new AddFlow({
+    api: () => api as never,
+    openSource: vi.fn(),
+    openImportPanel: vi.fn(),
+    storage: null
+  });
+}
+
+describe("what the Add menu says when something fails", () => {
+  it("marks no import mode while the first read is out, so the choice cannot jump", async () => {
+    const flow = flowWith({
+      ai: {
+        listProfiles: pending,
+        listProfileTasks: pending,
+        listTaskRoutes: pending,
+        listProviders: pending
+      },
+      localModels: { statuses: pending }
+    });
+    void flow.ensureReadiness();
+    await dom.render(<AddMenu t={en} flow={flow} portal={false} openMenu />);
+    const radios = Array.from(dom.document.querySelectorAll('[role="menuitemradio"]'));
+    expect(radios).toHaveLength(3);
+    expect(radios.every((radio) => radio.getAttribute("aria-checked") === "false")).toBe(true);
+  });
+
+  it("tells an unreadable mode inside the menu in a quiet line with one retry", async () => {
+    const flow = flowWith({
+      ai: {
+        listProfiles: reject,
+        listProfileTasks: reject,
+        listTaskRoutes: reject,
+        listProviders: reject
+      },
+      localModels: { statuses: reject }
+    });
+    await flow.ensureReadiness();
+    await dom.render(<AddMenu t={en} flow={flow} portal={false} openMenu />);
+    const menu = dom.document.querySelector('[role="menu"]') as HTMLElement;
+    expect(menu.textContent).toContain("Retry");
+    expect(menu.querySelectorAll('[role="alert"]')).toHaveLength(0);
+    expect(menu.textContent?.match(/Retry/gu)).toHaveLength(1);
+  });
+
+  it("tells a failed pick once, in the status slot's notice, not inside the button or the menu", async () => {
+    const flow = flowWith({
+      ai: {
+        listProfiles: async () => [],
+        listProfileTasks: async () => [],
+        listTaskRoutes: async () => [],
+        listProviders: async () => []
+      },
+      localModels: { statuses: async () => [] },
+      ingestion: { extractFileMetadata: reject }
+    });
+    await flow.pickFile();
+    await dom.render(
+      <>
+        <AddFailureNotice t={en} flow={flow} />
+        <AddMenu t={en} flow={flow} portal={false} />
+      </>
+    );
+    const alerts = Array.from(dom.document.querySelectorAll('[role="alert"]'));
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0]?.textContent).toContain("could not be added");
+    expect(alerts[0]?.textContent).toContain("Retry");
+    expect(alerts[0]?.className ?? "").not.toContain("shadow");
   });
 });
