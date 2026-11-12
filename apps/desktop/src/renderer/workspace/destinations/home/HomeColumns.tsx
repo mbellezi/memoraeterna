@@ -1,12 +1,18 @@
 import { Fragment, type ReactNode } from "react";
 import { Undo2 } from "lucide-react";
-import type { ChangeSetSummary } from "@app/domain";
+import type { ChangeSetSummary, InboxItem } from "@app/domain";
 import type { MessageKey, Translator } from "@app/i18n";
 
 import { changeSetTitle } from "../../../components/activity/change-title";
 import { ObjectKindGlyph, objectKindTextClass } from "../../../components/glyphs";
-import { itemSubject, itemTitle, kindLabels } from "../../../components/inbox/inbox-model";
+import {
+  itemTitle,
+  kindLabels,
+  objectName,
+  reviewVariantLabel
+} from "../../../components/inbox/inbox-model";
 import { riskIcon, riskTone } from "../../../components/inbox/inbox-marks";
+import { Tooltip } from "../../../components/ui/tooltip";
 import { cn } from "../../../lib/cn";
 import type { HomeInboxRow, HomeQuestion } from "../../../../shared/ipc-home";
 import { foldCrumbs, questionScope, type ArrivalRow, type HomeArea } from "./home-model";
@@ -30,7 +36,10 @@ export function ColumnHeader({
   return (
     <header className="grid gap-0.5">
       <div className="flex items-baseline justify-between gap-3">
-        <h3 id={id} className="m-0 min-w-0 text-base font-semibold text-foreground">
+        <h3
+          id={id}
+          className="m-0 min-w-0 rounded-sm text-base font-semibold text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+        >
           {title}
         </h3>
         {link?.onClick ? (
@@ -87,6 +96,36 @@ const riskWords = {
 // ---------------------------------------------------------------------------
 // Precisa de você
 
+const positive = (value: unknown): number | null =>
+  typeof value === "number" && Number.isFinite(value) && value > 0 ? value : null;
+
+/** How many things an item touches, when it says so: a proposal's items, a backlog's notes. */
+function impactText(t: Translator, item: InboxItem): string | null {
+  const items = positive(item.changeSet?.titleParams.items);
+  if (items !== null) return countText(t, "items", items);
+  const notes = item.kind === "backlog" ? positive(item.params.notes) : null;
+  return notes === null ? null : countText(t, "notes", notes);
+}
+
+/**
+ * The line under a row's title: what kind of decision it is and how much it touches ("Para
+ * revisar · 85 itens"). An item that states no impact names the objects it is about instead, and
+ * the names are also the row's tooltip.
+ */
+export function needMeta(t: Translator, row: HomeInboxRow): { line: string; names: string | null } {
+  const kind = t(kindLabels[row.kind]);
+  const item = row.item;
+  if (!item) return { line: kind, names: null };
+  const names =
+    item.objects.length > 0
+      ? item.objects.map((object) => `“${objectName(t, object)}”`).join(" · ")
+      : null;
+  const variant = item.kind === "review" ? reviewVariantLabel(t, item.variant) : null;
+  const impact = impactText(t, item);
+  const line = [variant ?? kind, impact ?? names].filter((part) => part !== null).join(" · ");
+  return { line, names };
+}
+
 export function NeedColumn({
   t,
   rows,
@@ -117,31 +156,38 @@ export function NeedColumn({
         {rows.map((row) => {
           const Icon = riskIcon[row.risk];
           const title = row.item ? itemTitle(t, row.item) : t(kindLabels[row.kind]);
-          const meta = row.item ? itemSubject(t, row.item) : null;
+          const meta = needMeta(t, row);
+          const button = (
+            <button
+              type="button"
+              className={rowButton}
+              onClick={onOpen ? () => onOpen(row) : undefined}
+              disabled={!onOpen}
+            >
+              <span
+                className={cn(
+                  "inline-flex items-center gap-1 text-xs font-medium",
+                  riskTone[row.risk]
+                )}
+              >
+                <Icon aria-hidden="true" className="size-3.5" />
+                {t(riskWords[row.risk])}
+              </span>
+              <span className="text-sm font-medium text-foreground [text-wrap:pretty]">
+                {title}
+              </span>
+              <span className="text-xs text-muted-foreground [text-wrap:pretty]">{meta.line}</span>
+            </button>
+          );
           return (
             <li key={`${row.kind}:${row.id}`} className="border-t border-border first:border-t-0">
-              <button
-                type="button"
-                className={rowButton}
-                onClick={onOpen ? () => onOpen(row) : undefined}
-                disabled={!onOpen}
-              >
-                <span
-                  className={cn(
-                    "inline-flex items-center gap-1 text-xs font-medium",
-                    riskTone[row.risk]
-                  )}
-                >
-                  <Icon aria-hidden="true" className="size-3.5" />
-                  {t(riskWords[row.risk])}
-                </span>
-                <span className="text-sm font-medium text-foreground [text-wrap:pretty]">
-                  {title}
-                </span>
-                {meta ? (
-                  <span className="text-xs text-muted-foreground [text-wrap:pretty]">{meta}</span>
-                ) : null}
-              </button>
+              {meta.names ? (
+                <Tooltip label={meta.names} side="top">
+                  {button}
+                </Tooltip>
+              ) : (
+                button
+              )}
             </li>
           );
         })}
@@ -300,7 +346,7 @@ export function ArrivedColumn({
                 <span className="min-w-0 text-sm font-medium text-foreground [text-wrap:balance]">
                   {row.title}
                 </span>
-                <span className="grid justify-items-end text-xs text-muted-foreground">
+                <span className="row-span-2 grid content-start justify-items-end text-xs text-muted-foreground">
                   {row.notes !== null ? (
                     <span className="text-sm font-semibold tabular-nums text-foreground">
                       {row.notes}
@@ -312,14 +358,21 @@ export function ArrivedColumn({
                   {row.generating ? (
                     <Progress t={t} progress={row.progress} />
                   ) : shown.length > 0 ? (
-                    <span className="[text-wrap:pretty]">
-                      {folded ? `…${nbsp}›${nbsp}` : null}
-                      {shown.map((crumb, index) => (
-                        <Fragment key={`${index}:${crumb}`}>
-                          {index > 0 ? `${nbsp}›${nbsp}` : null}
-                          {crumb}
-                        </Fragment>
-                      ))}
+                    <span className="flex items-start gap-1">
+                      <ObjectKindGlyph
+                        kind="topic"
+                        size={12}
+                        className={cn("mt-0.5", objectKindTextClass.topic)}
+                      />
+                      <span className="min-w-0 [text-wrap:pretty]">
+                        {folded ? `…${nbsp}›${nbsp}` : null}
+                        {shown.map((crumb, index) => (
+                          <Fragment key={`${index}:${crumb}`}>
+                            {index > 0 ? `${nbsp}›${nbsp}` : null}
+                            {crumb}
+                          </Fragment>
+                        ))}
+                      </span>
                     </span>
                   ) : (
                     t("home.arrived.noPlace")

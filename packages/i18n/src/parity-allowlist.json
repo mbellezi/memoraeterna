@@ -5,6 +5,7 @@
     "backup.title",
     "debug.finalScore",
     "debug.rerankScore",
+    "home.counts.itemsOne",
     "import.badges.container",
     "import.fields.doi",
     "import.fields.isbn",

@@ -4,7 +4,7 @@ import { destinationRoots } from "../../destinations";
 import { screenTranslator } from "../../screen-locale";
 import { layoutCustomProperties } from "../../shell-model";
 import { defaultWorkspace } from "../../state";
-import { WorkspaceBridgeContext } from "../../workspace-bridge";
+import { AddSourceContext, WorkspaceBridgeContext } from "../../workspace-bridge";
 import type { ScreenModule } from "../../surfaces";
 import { homeDigest, ids } from "./home-fixtures";
 import { HomeRoot } from "./HomeRoot";
@@ -60,31 +60,33 @@ const bridge = {
   dispatch: noop
 };
 
-/** Home in the panel stack's root slot, with the rail's width beside it as in the window. */
+/** Home in the panel stack's root slot (the app provides the Add command, so the first run's button is live), with the rail's width beside it as in the window. */
 export function render() {
   return (
     <WorkspaceBridgeContext.Provider value={bridge}>
-      <div
-        className="flex h-screen bg-background text-foreground"
-        style={layoutCustomProperties(window.innerWidth) as CSSProperties}
-      >
+      <AddSourceContext.Provider value={noop}>
         <div
-          aria-hidden="true"
-          className="shrink-0 border-r border-border bg-surface"
-          style={{ width: "var(--rail-w)" }}
-        />
-        <div className="min-w-0 flex-1">
-          <HomeRoot
-            t={t}
-            address={destinationRoots.home}
-            mode="full"
-            active
-            onState={noop}
-            onPlace={noop}
-            onOpen={noop}
+          className="flex h-screen bg-background text-foreground"
+          style={layoutCustomProperties(window.innerWidth) as CSSProperties}
+        >
+          <div
+            aria-hidden="true"
+            className="shrink-0 border-r border-border bg-surface"
+            style={{ width: "var(--rail-w)" }}
           />
+          <div className="min-w-0 flex-1">
+            <HomeRoot
+              t={t}
+              address={destinationRoots.home}
+              mode="full"
+              active
+              onState={noop}
+              onPlace={noop}
+              onOpen={noop}
+            />
+          </div>
         </div>
-      </div>
+      </AddSourceContext.Provider>
     </WorkspaceBridgeContext.Provider>
   );
 }

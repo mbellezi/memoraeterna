@@ -64,6 +64,8 @@ export function GardenerWord({ t }: { t: Translator }) {
 export interface BriefActions {
   openLibrary?: () => void;
   openInbox?: () => void;
+  /** The count of the Jardineiro's changes: brings its column into view and puts focus on it. */
+  openChanges?: () => void;
   resume?: () => void;
 }
 
@@ -145,7 +147,11 @@ function clauseText(t: Translator, clause: BriefingClause, actions: BriefActions
     case "gardener":
       return slotted(t("home.briefing.gardener", { values: slotValues("gardener", "changes") }), {
         gardener: <GardenerWord t={t} />,
-        changes: <strong className="font-semibold">{countText(t, "changes", clause.count)}</strong>
+        changes: (
+          <InlineLink onClick={actions.openChanges}>
+            {countText(t, "changes", clause.count)}
+          </InlineLink>
+        )
       });
     case "decisions": {
       const title = clause.top ? itemTitle(t, clause.top) : null;

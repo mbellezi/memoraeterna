@@ -30,6 +30,7 @@ export function HomeFirstRun({ t, onAdd }: { t: Translator; onAdd?: (() => void)
     <div className="grid min-w-0 gap-8">
       <EmptyState
         variant="page"
+        className="max-w-3xl"
         icon={<FilePlus2 aria-hidden="true" />}
         headline={t("home.firstRun.headline")}
         action={

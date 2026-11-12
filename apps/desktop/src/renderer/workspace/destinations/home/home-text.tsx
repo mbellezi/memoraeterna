@@ -10,6 +10,7 @@ const countKeys = {
   newNotes: ["home.counts.newNotesOne", "home.counts.newNotesOther"],
   changes: ["home.counts.changesOne", "home.counts.changesOther"],
   decisions: ["home.counts.decisionsOne", "home.counts.decisionsOther"],
+  items: ["home.counts.itemsOne", "home.counts.itemsOther"],
   topics: ["home.counts.topicsOne", "home.counts.topicsOther"],
   levels: ["home.counts.levelsOne", "home.counts.levelsOther"],
   weekNotes: ["home.counts.weekNotesOne", "home.counts.weekNotesOther"]

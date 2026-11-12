@@ -69,6 +69,15 @@ export function homeState(snapshot: HomeSnapshot): PanelLoadState {
 const contentWrap = (compact: boolean) =>
   cn("mx-auto grid w-full max-w-[1136px] content-start gap-8 py-8", compact ? "px-8" : "px-12");
 
+/** The briefing's "9 mudanças": the Jardineiro's column scrolls into view and its heading takes focus. */
+function focusGardenerColumn() {
+  const heading = document.getElementById("home-gard");
+  if (!heading) return;
+  heading.tabIndex = -1;
+  heading.scrollIntoView({ block: "center" });
+  heading.focus({ preventScroll: true });
+}
+
 /** Home as a pure function of a snapshot, its width and its actions. */
 export function HomeView({
   t,
@@ -94,7 +103,7 @@ export function HomeView({
     >
       <div className={contentWrap(compact)}>
         {snapshot.read.status === "loading" ? (
-          <HomeLoading t={t} />
+          <HomeLoading t={t} compact={compact} />
         ) : snapshot.read.status === "error" ? (
           <ErrorState
             t={t}
@@ -154,6 +163,7 @@ function HomeContent({
   const briefActions: BriefActions = {
     ...(go ? { openLibrary: () => go(homeAddresses.library) } : {}),
     ...(go ? { openInbox: () => go(homeAddresses.inbox) } : {}),
+    ...(gardener.length > 0 ? { openChanges: focusGardenerColumn } : {}),
     ...(actions.resume && trail.length > 0
       ? { resume: () => actions.resume?.(trail.map((entry) => entry.address)) }
       : {})
@@ -269,8 +279,11 @@ function HomeContent({
   );
 }
 
-/** The skeleton in the shape of Home: the brief with its card, the strip and three columns. */
-function HomeLoading({ t }: { t: Translator }) {
+/**
+ * The skeleton in the shape of Home: the brief with its card, the strip and the columns (three, or
+ * two in two rows below the compact tier, as the content will be drawn).
+ */
+function HomeLoading({ t, compact }: { t: Translator; compact: boolean }) {
   return (
     <LoadingState t={t} className="gap-8">
       <div className="grid min-w-0 items-start gap-12 [grid-template-columns:minmax(0,7fr)_minmax(0,5fr)]">
@@ -288,8 +301,13 @@ function HomeLoading({ t }: { t: Translator }) {
         <Skeleton className="w-72" />
         <Skeleton className="h-11 w-full rounded-md" />
       </div>
-      <div className="grid grid-cols-3 gap-x-10 border-t border-border pt-6">
-        {[0, 1, 2].map((column) => (
+      <div
+        className={cn(
+          "grid gap-x-10 gap-y-8 border-t border-border pt-6",
+          compact ? "grid-cols-2" : "grid-cols-3"
+        )}
+      >
+        {(compact ? [0, 1, 2, 3] : [0, 1, 2]).map((column) => (
           <div key={column} className="grid content-start gap-3">
             <Skeleton className="w-40" />
             <SkeletonRows rows={3} />

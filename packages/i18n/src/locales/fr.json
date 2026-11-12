@@ -51,6 +51,8 @@
       "changesOther": "{count} changements",
       "decisionsOne": "{count} décision",
       "decisionsOther": "{count} décisions",
+      "itemsOne": "{count} élément",
+      "itemsOther": "{count} éléments",
       "levelsOne": "{count} niveau de profondeur",
       "levelsOther": "{count} niveaux de profondeur",
       "newNotesOne": "{count} nouvelle note",

@@ -139,11 +139,11 @@ describe("the briefing as the person reads it", () => {
     expect(words).toContain("6 já têm lugar na árvore e 1 ainda procura.");
   });
 
-  it("links the counts only where there is somewhere to go, and keeps the Jardineiro's count plain", () => {
+  it("links the counts where there is somewhere to go; the Jardineiro's count takes you to its column", () => {
     const html = view(en, ready(data()), 1440, { go: vi.fn() });
     expect(html).toMatch(/<button[^>]*>3\u00a0sources<\/button>/u);
     expect(html).toMatch(/<button[^>]*>3\u00a0decisions<\/button>/u);
-    expect(html).toContain("<strong");
+    expect(html).toMatch(/<button[^>]*>9\u00a0changes<\/button>/u);
     const bare = view(en, ready(data()));
     expect(bare).not.toMatch(/<button[^>]*>3\u00a0sources<\/button>/u);
   });
@@ -229,6 +229,12 @@ describe("the parts of the day's page", () => {
     expect(words).toContain("7 de ~18");
     expect(words).toContain("Teoria musical › Ritmo");
     expect(words).toContain("… › Fermentação › Fermentação lática");
+  });
+
+  it("says the kind and the impact under each decision, and names the objects when there is no impact", () => {
+    expect(words).toContain("Estrutura de tópicos · 85 itens");
+    expect(words).toContain("Contradições · “Gordura saturada eleva o LDL (2014)”");
+    expect(words).toContain("Duplicatas · “Kefir de água” · “Kefir de água em casa”");
   });
 
   it("shows no English chrome in pt-BR", () => {
