@@ -245,6 +245,7 @@ export function ActivityPill({
           type="button"
           data-fit="pill"
           data-fit-level={level}
+          data-glyph={view.glyph}
           aria-expanded={open}
           aria-controls={open ? drawerId : undefined}
           aria-label={needsYou ? `${name} ${needsYou}` : name}

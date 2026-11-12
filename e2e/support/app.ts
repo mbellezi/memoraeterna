@@ -15,7 +15,13 @@ import { assertLocalModelSeeded, findLocalModelCatalogEntry, LocalModelSeedError
 import { machineRunsMlx, presetCatalogIds } from "@app/domain";
 import { _electron, type ElectronApplication, type Page } from "@playwright/test";
 
-import { scanContrast, settleAnimations, type ContrastResult } from "./contrast.js";
+import {
+  readDrawnTheme,
+  scanContrast,
+  settleAnimations,
+  themeMismatch,
+  type ContrastResult
+} from "./contrast.js";
 import { stubOpenDialog } from "./dialog.js";
 import {
   assertJourneysScratchPath,
@@ -48,6 +54,35 @@ export function firstRunModelIds(
     embedding: presetCatalogIds.embedding,
     ranker: machineRunsMlx(machine) ? presetCatalogIds.rankerMlx : presetCatalogIds.rankerGguf
   };
+}
+
+/**
+ * The environment that makes a launch install the first-run ranker from the seed folder. With a
+ * cassette on, the app disables `FirstRunRanker` (`enabled: aiCassette === null`), so it never asks
+ * for the ranker itself; the DEV knob `MEMORA_LOCAL_MODEL_INSTALL` installs it at start instead.
+ */
+export function firstRunRankerEnv(ranker = firstRunModelIds().ranker): Record<string, string> {
+  return { MEMORA_LOCAL_MODEL_INSTALL: ranker };
+}
+
+export interface ListedLocalModel {
+  catalogId: string;
+  status: string;
+  capabilities: readonly string[];
+  lastError: string | null;
+}
+
+/**
+ * Where the first-run ranker stands in `localModels.list`: `ready` once it is installed and validated
+ * for reranking, null while it is on its way, and a thrown error when its install failed.
+ */
+export function firstRunRankerState(
+  models: readonly ListedLocalModel[],
+  ranker = firstRunModelIds().ranker
+): "ready" | null {
+  const model = models.find((entry) => entry.catalogId === ranker);
+  if (model?.status === "failed") throw new Error(`${ranker} failed: ${model.lastError}`);
+  return model?.status === "ready" && model.capabilities.includes("reranking") ? "ready" : null;
 }
 
 /**
@@ -167,6 +202,21 @@ export async function cassetteMisses(
 }
 
 /** The plan of the fake remote providers a journey may start (zero faults, fixed latency). */
+/**
+ * BASE-J's signed-in Codex writer (a stub credential) from the run's `base-j.json`: the one real
+ * configuration the DEV fake remote's "no real provider is reachable" check is told to admit
+ * (`MEMORA_JOURNEYS_ADMIT_WRITER`). A journey that uses the fake remote runs on a clone of BASE-J with
+ * `cassette: false`, `fakeRemote: true` and `env: { MEMORA_JOURNEYS_ADMIT_WRITER: <this> }`.
+ */
+export async function journeysWriterConfigId(scratchDir: string): Promise<string> {
+  const record = JSON.parse(await readFile(join(scratchDir, "base-j.json"), "utf8")) as {
+    writer?: { providerConfigId?: string };
+  };
+  const id = record.writer?.providerConfigId;
+  if (!id) throw new Error("base-j.json names no writer configuration");
+  return id;
+}
+
 export const fakeRemotePlan = join("e2e", "support", "fake-remote-plan.json");
 
 export async function launchMemora(options: LaunchOptions): Promise<MemoraSession> {
@@ -240,19 +290,69 @@ export async function openClone(
 
 export type Theme = "light" | "dark";
 
-/** Switches the window's theme the way the system would (`nativeTheme.themeSource`). */
+/**
+ * Switches the window's theme: the colour scheme is emulated on the page and the native theme follows.
+ * `nativeTheme.themeSource` alone is not enough: a window shown inactive (or covered by another app)
+ * keeps `prefers-color-scheme: light` in the renderer although `nativeTheme.shouldUseDarkColors` is
+ * true, so a "dark" capture would be a light page.
+ */
 export async function setTheme(session: Pick<MemoraSession, "electronApp" | "page">, theme: Theme) {
   await session.electronApp.evaluate(({ nativeTheme }, source) => {
     nativeTheme.themeSource = source;
   }, theme);
+  await session.page.emulateMedia({ colorScheme: theme });
   await session.page.waitForFunction(
     (dark) => window.matchMedia("(prefers-color-scheme: dark)").matches === dark,
-    theme === "dark"
+    theme === "dark",
+    { polling: 100 }
   );
-  // Two frames: the styles that follow the media query are applied and painted.
-  await session.page.evaluate(
-    () => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)))
-  );
+  // The colour transitions that switch started end (an endless spinner or pulse is not waited for),
+  // then two frames paint the last colours: a scan never reads a colour half way between themes.
+  await settleAnimations(session.page);
+}
+
+/**
+ * Makes the app's own theme follow the window's colour scheme ("system"), so that `setTheme` decides
+ * the theme each scan is drawn in. The app's default is dark (Q39), whose root class no colour-scheme
+ * switch moves: a journey that scans both themes calls this once, explicitly, before its first step,
+ * and so never depends on the default or on what the profile stored. Then it proves both switches
+ * reach the page.
+ *
+ * The renderer follows a change made outside it only once it has loaded its settings
+ * (`useFollowSavedSettings` is enabled then): a change announced before that is dropped, and saving
+ * "system" again announces nothing, since no value moved. So when the page has not followed within
+ * `askAgainMs`, the theme is stored as the scheme asked for and then as "system" again: two real
+ * changes, each drawn in the wanted theme, until it follows or `timeoutMs` runs out.
+ */
+export async function followSystemTheme(
+  session: Pick<MemoraSession, "electronApp" | "page">,
+  timeoutMs = 15_000,
+  askAgainMs = 3_000
+) {
+  await invokeApp(session.page, "settings.updateApp", { themeMode: "system" });
+  for (const theme of ["light", "dark"] as const) {
+    await setTheme(session, theme);
+    const deadline = Date.now() + timeoutMs;
+    const slice = () => Math.max(0, Math.min(askAgainMs, deadline - Date.now()));
+    let drawn = await waitForDrawnTheme(session.page, theme, slice());
+    while (drawn !== theme && Date.now() < deadline) {
+      await invokeApp(session.page, "settings.updateApp", { themeMode: theme });
+      await invokeApp(session.page, "settings.updateApp", { themeMode: "system" });
+      drawn = await waitForDrawnTheme(session.page, theme, slice());
+    }
+    if (drawn !== theme)
+      throw new Error(`The app did not follow the colour scheme to ${theme}: it is drawn ${drawn}`);
+  }
+}
+
+/** Polls the theme the page is drawn in until it is `wanted` or the time is up; returns the last. */
+async function waitForDrawnTheme(page: Page, wanted: Theme, timeoutMs: number): Promise<Theme> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const drawn = await page.evaluate(readDrawnTheme);
+    if (drawn === wanted || Date.now() >= deadline) return drawn;
+    await new Promise((done) => setTimeout(done, 100));
+  }
 }
 
 /** Sets the window's content size (the minimum width is 960 px). */
@@ -278,7 +378,7 @@ export interface StepRecord {
 /**
  * One journey step's evidence: a screenshot in light and in dark
  * (`.cache/f5/journeys/<run>/<spec>/<nn>-<step>-<theme>.png`) and the contrast scan of each, written
- * next to them as JSON. Returns the record; the caller asserts on `contrast.*.failures`.
+ * next to them as JSON. Returns the record; the caller asserts on `stepFailures(record)`.
  */
 export async function captureStep(
   session: MemoraSession,
@@ -296,9 +396,8 @@ export async function captureStep(
     contrast: {} as StepRecord["contrast"]
   };
   for (const theme of themes) {
+    // setTheme waits for the switch's colour transitions before the screenshot and the scan.
     await setTheme(session, theme);
-    // The colour transitions the switch starts end before the screenshot and the scan.
-    await settleAnimations(session.page);
     const path = join(folder, `${base}-${theme}.png`);
     await session.page.screenshot({ path });
     record.screenshots.push(path);
@@ -306,6 +405,26 @@ export async function captureStep(
   }
   await writeFile(join(folder, `${base}.json`), `${JSON.stringify(record, null, 2)}\n`);
   return record;
+}
+
+/**
+ * The X12 failures of one captured step, each named `<step> <theme>: ...`: a scan drawn in another
+ * theme than it was asked for (a "light" scan of a page that stayed dark proves nothing about light),
+ * then every contrast finding of that theme. Every consumer of `captureStep` asserts on this list.
+ */
+export function stepFailures(record: Pick<StepRecord, "step" | "contrast">): string[] {
+  const failures: string[] = [];
+  for (const theme of ["light", "dark"] as const) {
+    const scan = record.contrast[theme];
+    if (!scan) continue;
+    const mismatch = themeMismatch(theme, scan.drawnTheme);
+    if (mismatch) failures.push(`${record.step} ${theme}: ${mismatch}`);
+    for (const failure of scan.failures)
+      failures.push(
+        `${record.step} ${theme}: "${failure.text}" ${failure.ratio}:1 < ${failure.required}:1`
+      );
+  }
+  return failures;
 }
 
 /**

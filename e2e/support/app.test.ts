@@ -16,9 +16,16 @@ import {
   cassetteMisses,
   fakeRemotePlan,
   firstRunModelIds,
+  firstRunRankerEnv,
+  firstRunRankerState,
+  followSystemTheme,
   journeyEnvironment,
-  secondSourceKey
+  journeysWriterConfigId,
+  secondSourceKey,
+  setTheme,
+  stepFailures
 } from "./app.js";
+import { readDrawnTheme, settleInPage } from "./contrast.js";
 import { repositoryRoot } from "./profile.js";
 
 describe("journeyEnvironment", () => {
@@ -114,6 +121,163 @@ describe("the first-run models a journey installs", () => {
       ).rejects.toThrow(new RegExp(`cannot install ${ranker}`, "u"));
     } finally {
       await rm(seed, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("the first-run ranker a journey waits for", () => {
+  const { ranker } = firstRunModelIds();
+  const listed = (status: string, capabilities: string[] = [], lastError: string | null = null) => [
+    { catalogId: "other", status: "ready", capabilities: ["reranking"], lastError: null },
+    { catalogId: ranker, status, capabilities, lastError }
+  ];
+
+  it("is installed at launch by the DEV knob, because the cassette turns the app's own install off", () => {
+    expect(firstRunRankerEnv()).toEqual({ MEMORA_LOCAL_MODEL_INSTALL: ranker });
+  });
+
+  it("is ready only when installed and validated for reranking", () => {
+    expect(firstRunRankerState([])).toBeNull();
+    expect(firstRunRankerState(listed("installing"))).toBeNull();
+    expect(firstRunRankerState(listed("ready", ["embedding"]))).toBeNull();
+    expect(firstRunRankerState(listed("ready", ["reranking"]))).toBe("ready");
+  });
+
+  it("stops the wait with the install's error when it failed", () => {
+    expect(() => firstRunRankerState(listed("failed", [], "bad checksum"))).toThrow(
+      new RegExp(`${ranker} failed: bad checksum`, "u")
+    );
+  });
+});
+
+describe("setTheme", () => {
+  const fakeSession = () => {
+    const calls: string[] = [];
+    const session = {
+      electronApp: {
+        evaluate: async (_run: unknown, theme: string) => calls.push(`native ${theme}`)
+      },
+      page: {
+        emulateMedia: async (options: { colorScheme: string }) =>
+          calls.push(`emulate ${options.colorScheme}`),
+        waitForFunction: async (_check: unknown, dark: boolean) => calls.push(`wait dark=${dark}`),
+        evaluate: async (run: unknown) => calls.push(run === settleInPage ? "settle" : "other")
+      }
+    };
+    return { calls, session };
+  };
+
+  it("emulates the colour scheme on the page, because the native theme alone does not reach a window shown inactive", async () => {
+    const { calls, session } = fakeSession();
+    await setTheme(session as never, "dark");
+    expect(calls).toEqual(["native dark", "emulate dark", "wait dark=true", "settle"]);
+    calls.length = 0;
+    await setTheme(session as never, "light");
+    expect(calls.slice(0, 3)).toEqual(["native light", "emulate light", "wait dark=false"]);
+  });
+});
+
+describe("followSystemTheme", () => {
+  // `followsFrom`: the number of settings saves after which the page follows the scheme (the renderer
+  // drops the changes announced before it loaded its settings); Infinity never follows.
+  const fakeSession = (follows: boolean, followsFrom = 1) => {
+    const calls: string[] = [];
+    let scheme = "light";
+    let saves = 0;
+    const session = {
+      electronApp: { evaluate: async () => undefined },
+      page: {
+        emulateMedia: async (options: { colorScheme: string }) => {
+          scheme = options.colorScheme;
+        },
+        waitForFunction: async () => undefined,
+        evaluate: async (run: unknown, input: unknown) => {
+          if (run === readDrawnTheme) return follows && saves >= followsFrom ? scheme : "dark";
+          if (run === settleInPage) return 0;
+          const call = input as { path?: string; args?: unknown[] };
+          if (call?.path) {
+            saves += 1;
+            calls.push(`${call.path} ${JSON.stringify(call.args)}`);
+          }
+          return undefined;
+        }
+      }
+    };
+    return { calls, session };
+  };
+
+  it("asks again with a real change when the first one was announced before the renderer listened", async () => {
+    const { calls, session } = fakeSession(true, 2);
+    await followSystemTheme(session as never, 5_000, 150);
+    expect(calls).toEqual([
+      'settings.updateApp [{"themeMode":"system"}]',
+      'settings.updateApp [{"themeMode":"light"}]',
+      'settings.updateApp [{"themeMode":"system"}]'
+    ]);
+  });
+
+  it("sets the app's theme to follow the system, explicitly, and proves both schemes reach the page", async () => {
+    const { calls, session } = fakeSession(true);
+    await followSystemTheme(session as never);
+    expect(calls).toEqual(['settings.updateApp [{"themeMode":"system"}]']);
+  });
+
+  it("stops when the page stays dark after a light switch (the default would have decided it)", async () => {
+    const { session } = fakeSession(false);
+    await expect(followSystemTheme(session as never, 300)).rejects.toThrow(
+      /did not follow the colour scheme to light: it is drawn dark/u
+    );
+  });
+});
+
+describe("stepFailures", () => {
+  const scan = (drawnTheme: "light" | "dark" | undefined, failures: unknown[] = []) => ({
+    checked: 3,
+    failures,
+    unverifiable: [],
+    drawnTheme
+  });
+
+  it("fails a scan labelled light that was drawn dark, and passes scans drawn as asked", () => {
+    expect(
+      stepFailures({
+        step: "home",
+        contrast: { light: scan("light"), dark: scan("dark") }
+      } as never)
+    ).toEqual([]);
+    const failures = stepFailures({
+      step: "home",
+      contrast: { light: scan("dark"), dark: scan("dark") }
+    } as never);
+    expect(failures).toHaveLength(1);
+    expect(failures[0]).toMatch(/^home light: the page was drawn in dark, not light/u);
+  });
+
+  it("names every contrast finding with its step, theme and ratio", () => {
+    const failures = stepFailures({
+      step: "explore",
+      contrast: {
+        light: scan("light"),
+        dark: scan("dark", [{ text: "Fontes", ratio: 1.2, required: 3 }])
+      }
+    } as never);
+    expect(failures).toEqual(['explore dark: "Fontes" 1.2:1 < 3:1']);
+  });
+});
+
+describe("journeysWriterConfigId", () => {
+  it("reads BASE-J's Codex writer from base-j.json, and refuses a record that names none", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "journeys-writer-"));
+    try {
+      await writeFile(
+        join(dir, "base-j.json"),
+        JSON.stringify({ writer: { providerConfigId: "7f6c0f3e-1111-4222-8333-444455556666" } })
+      );
+      expect(await journeysWriterConfigId(dir)).toBe("7f6c0f3e-1111-4222-8333-444455556666");
+      await writeFile(join(dir, "base-j.json"), JSON.stringify({ writer: {} }));
+      await expect(journeysWriterConfigId(dir)).rejects.toThrow(/names no writer configuration/u);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
     }
   });
 });

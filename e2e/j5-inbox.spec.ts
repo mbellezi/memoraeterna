@@ -34,10 +34,10 @@ import {
   expectStack,
   noteAddress,
   openObject,
-  pressMenuShortcut,
   StepLog,
   surface
 } from "./support/workspace-steps.js";
+import { pressShortcut } from "./support/shortcuts.js";
 
 interface ListedItem {
   key: string;
@@ -180,7 +180,7 @@ test("J5 Inbox triage: seeded through the real writers, D33 routing, D34 keys, e
     const steps = new StepLog(session, "j5");
 
     // 1. The Inbox (Cmd-4) lists what the seed wrote and counts it.
-    await pressMenuShortcut(session, "4");
+    await pressShortcut(session, "Meta+4");
     await expect(inboxRoot(page), "the Inbox did not reach success").toHaveAttribute(
       "data-state",
       "success",

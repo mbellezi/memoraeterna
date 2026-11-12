@@ -77,7 +77,10 @@ export function ToastViewport({
 }) {
   if (toasts.length === 0) return null;
   return (
-    <div className="pointer-events-none fixed bottom-4 right-4 z-[60] grid w-80 gap-2">
+    <div
+      data-toast-viewport
+      className="pointer-events-none fixed bottom-4 right-4 z-[60] grid w-80 gap-2"
+    >
       {toasts.map((toast) => {
         const tone = toneStyles[toast.tone];
         const Icon = tone.icon;

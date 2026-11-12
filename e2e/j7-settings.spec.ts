@@ -47,7 +47,8 @@ import { invokeApp, launchMemora, setContentSize, waitForDatabase } from "./supp
 import { openProfileDb, type ProfileDb } from "./support/db.js";
 import { installGestureCounter, readGestures, resetGestures } from "./support/gestures.js";
 import { cloneProfile, journeysRun, profileDir } from "./support/profile.js";
-import { pressMenuShortcut, StepLog, surface } from "./support/workspace-steps.js";
+import { pressShortcut } from "./support/shortcuts.js";
+import { StepLog, surface } from "./support/workspace-steps.js";
 
 // ---------------------------------------------------------------------------------------------
 // The held-out queries (T109's fixture, committed by T161) and the ids it names differently.
@@ -291,11 +292,11 @@ async function openSettings(page: Page): Promise<void> {
   );
 }
 
-type Session = Parameters<typeof pressMenuShortcut>[0];
+type Session = Parameters<typeof pressShortcut>[0];
 
 /** Leaves Settings for Home (Cmd-1), the way a person goes elsewhere; the Settings frame hides. */
 async function leaveSettings(session: Session): Promise<void> {
-  await pressMenuShortcut(session, "1");
+  await pressShortcut(session, "Meta+1");
   await expect(settingsRoot(session.page), "Settings stayed on screen").toBeHidden();
 }
 
@@ -372,7 +373,8 @@ test("J7 Settings: search, the changed marker and restore, asks before deleting,
     await expect(surface(page, "shell").first()).toBeVisible({ timeout: 60_000 });
     db = await openProfileDb(userDataDir);
     await installGestureCounter(page);
-    const steps = new StepLog(session, "j7");
+    // J7 sets the theme itself: it proves the theme row first, then picks "system".
+    const steps = new StepLog(session, "j7", { themeSetByJourney: true });
 
     // The window speaks pt-BR (the harness's `--lang`), which the pt-BR parts rely on.
     expect((await invokeApp<{ language: string }>(page, "settings.getApp")).language).toBe("pt-BR");
@@ -772,7 +774,7 @@ test("J7 Settings: search, the changed marker and restore, asks before deleting,
 
     for (const entry of registry) {
       // From another place: Home.
-      await pressMenuShortcut(session, "1");
+      await pressShortcut(session, "Meta+1");
       await expect(settingsRoot(page)).toBeHidden({ timeout: 10_000 });
       const queries = enQueries.get(entry.id) ?? [];
       if (queries.length === 0) noQuery.push(entry.id);
@@ -828,7 +830,7 @@ test("J7 Settings: search, the changed marker and restore, asks before deleting,
 
       // The same entry by rail -> section, for the entries outside Advanced's disclosure.
       if (!entry.advanced && entry.section !== "advanced") {
-        await pressMenuShortcut(session, "1");
+        await pressShortcut(session, "Meta+1");
         await expect(settingsRoot(page)).toBeHidden({ timeout: 10_000 });
         await resetGestures(page);
         await railSettings(page).click();

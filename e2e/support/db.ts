@@ -89,6 +89,19 @@ export async function countRows(
   return Number(row?.count ?? 0);
 }
 
+/**
+ * The newest source's type, language and title, for a failure message: a journey that imports through
+ * the Add flow needs a cassette recorded for the descriptor the Add flow derives (`descriptorFromFile`),
+ * and that is not the golden descriptor BASE-J's source was imported with. Reads the stored row, so the
+ * next red run names what the app derived instead of leaving it an inference.
+ */
+export async function newestSourceSummary(db: ProfileDb): Promise<string> {
+  const [row] = await db.query<{ type: string; language: string; title: string }>(
+    "select type::text as type, language, title from source_items order by created_at desc limit 1"
+  );
+  return row ? `${row.type} / ${row.language} / ${JSON.stringify(row.title)}` : "no source";
+}
+
 /** An unfinished job as the settle wait reads it. */
 export interface UnfinishedJob extends Record<string, unknown> {
   type: string;
