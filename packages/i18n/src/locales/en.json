@@ -4349,6 +4349,7 @@
       "scopeTopic": "scope: topic {title}"
     },
     "missing": {
+      "action": "See Questions",
       "body": "It may have been deleted. Your notes and sources are as they were.",
       "headline": "This question is no longer in the library."
     },
@@ -4358,6 +4359,8 @@
       "hint": "The numbers are those of the citations.",
       "label": "Passages cited by this answer",
       "open": "Open the passage beside",
+      "passagesMany": "{count} passages cited",
+      "passagesOne": "{count} passage cited",
       "readFailed": "The passage could not be read.",
       "reading": "reading…",
       "removed": "passage removed",

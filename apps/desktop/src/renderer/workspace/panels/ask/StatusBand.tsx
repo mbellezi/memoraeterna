@@ -3,6 +3,7 @@ import type { Translator } from "@app/i18n";
 
 import { Button } from "../../../components/ui/button";
 import { Kbd } from "../../../components/ui/kbd";
+import { SolidTriangle } from "../../../components/ui/solid-glyphs";
 import { cn } from "../../../lib/cn";
 import type { AnswerStage } from "./answer-model";
 import { MetaClauses } from "./MetaClauses";
@@ -74,6 +75,8 @@ export function StatusBand(props: StatusBandProps) {
   const live = stage === "retrieving" || stage === "answering" || stage === "waitingForProvider";
   const date = answerDate(t, completedAt);
 
+  // A stored answer whose source changed says so as the band's own line, with the date after it.
+  const outdated = stale && stage === "done";
   let lead: ReactNode;
   const rest: ReactNode[] = [];
   let action: ReactNode = null;
@@ -108,6 +111,12 @@ export function StatusBand(props: StatusBandProps) {
       );
   } else {
     lead = date ? t("askPanel.band.doneOn", { values: { date } }) : t("askPanel.answer.label");
+    if (outdated)
+      rest.unshift(
+        <span key="done" className="text-secondary-foreground">
+          {lead}
+        </span>
+      );
     if (sources > 0)
       rest.push(
         <span className="text-secondary-foreground">
@@ -121,6 +130,13 @@ export function StatusBand(props: StatusBandProps) {
         </Button>
       );
   }
+  if (outdated)
+    lead = (
+      <span className="inline-flex items-start gap-1.5">
+        <SolidTriangle className="mt-0.5 text-warning" />
+        <span>{t("askPanel.band.stale")}</span>
+      </span>
+    );
   if (live && canStop)
     action = (
       <Button variant="secondary" onClick={onStop} className="h-7 min-h-0 gap-2 px-2.5">
@@ -151,11 +167,6 @@ export function StatusBand(props: StatusBandProps) {
         </span>
         {action}
       </div>
-      {stale && stage === "done" ? (
-        <p className="m-0 flex min-w-0 items-start gap-2 text-sm text-warning [text-wrap:pretty]">
-          {t("askPanel.band.stale")}
-        </p>
-      ) : null}
       {props.actionFailed ? (
         <p role="status" className="m-0 text-xs text-secondary-foreground">
           {t(props.actionFailed === "stop" ? "askPanel.failed.stop" : "askPanel.failed.again")}

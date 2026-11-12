@@ -81,8 +81,8 @@ export function CitationChip({
       onFocus={() => onActivate(number)}
       onClick={() => onOpen(number)}
       className={cn(
-        "mx-px inline-flex h-5 scroll-mb-40 items-center gap-0.5 rounded-sm border px-1 align-baseline font-sans text-xs leading-none font-medium tabular-nums",
-        "cursor-pointer transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent",
+        "ml-[0.12em] inline-flex h-5 scroll-mb-40 items-center gap-0.5 rounded-sm border px-1 align-baseline font-sans text-xs leading-none font-medium tabular-nums",
+        "cursor-pointer transition-colors focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-accent",
         active
           ? "border-accent bg-accent-soft text-accent"
           : "border-border bg-soft text-secondary-foreground hover:border-accent hover:text-accent"
@@ -103,6 +103,8 @@ export interface AnswerParagraphProps extends Omit<
   activeNumber: number | null;
   numberOf: ReadonlyMap<number, number>;
   entryId: (number: number) => string;
+  /** This is the last paragraph so far and more is being written: a caret follows its words. */
+  writing?: boolean;
 }
 
 export function AnswerParagraphView({
@@ -110,6 +112,7 @@ export function AnswerParagraphView({
   numberOf,
   entryId,
   activeNumber,
+  writing = false,
   ...chip
 }: AnswerParagraphProps) {
   const pieces = splitParagraph(paragraph, numberOf);
@@ -134,6 +137,13 @@ export function AnswerParagraphView({
           </Fragment>
         )
       )}
+      {writing ? (
+        <span
+          aria-hidden="true"
+          data-answer-caret=""
+          className="ml-1 inline-block h-[1.05em] w-0.5 translate-y-[0.2em] rounded-full bg-accent"
+        />
+      ) : null}
     </p>
   );
 }

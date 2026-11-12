@@ -4,6 +4,7 @@ import type { Translator } from "@app/i18n";
 
 import { Button } from "../../../components/ui/button";
 import { Kbd } from "../../../components/ui/kbd";
+import { Tooltip } from "../../../components/ui/tooltip";
 import { cn } from "../../../lib/cn";
 import { askTextState, questionAskTextLimits } from "./ask-scope";
 
@@ -75,6 +76,21 @@ export function AskComposer({
     if (canSend) onSend();
   };
 
+  const sendButton = (
+    <Button
+      type="button"
+      variant="primary"
+      aria-label={sendLabel}
+      disabled={!canSend}
+      aria-busy={busy}
+      onClick={onSend}
+      className="h-8 shrink-0 px-2.5"
+    >
+      <ArrowUp aria-hidden="true" />
+      {roomy ? sendLabel : null}
+    </Button>
+  );
+
   return (
     <div className={cn("grid min-w-0 max-w-(--measure) gap-1.5", className)}>
       <div
@@ -101,18 +117,14 @@ export function AskComposer({
             roomy ? "max-h-48 min-h-20" : "max-h-32 min-h-8 text-base"
           )}
         />
-        <Button
-          type="button"
-          variant="primary"
-          aria-label={sendLabel}
-          disabled={!canSend}
-          aria-busy={busy}
-          onClick={onSend}
-          className="h-8 shrink-0 px-2.5"
-        >
-          <ArrowUp aria-hidden="true" />
-          {roomy ? sendLabel : null}
-        </Button>
+        {roomy ? (
+          sendButton
+        ) : (
+          // The span keeps the tooltip reachable while the button is disabled (an empty field).
+          <Tooltip label={sendLabel} shortcut="↵">
+            <span className="inline-flex shrink-0">{sendButton}</span>
+          </Tooltip>
+        )}
       </div>
       {note ? (
         <p id={noteId} className="m-0 text-xs text-secondary-foreground">

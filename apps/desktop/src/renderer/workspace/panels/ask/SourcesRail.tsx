@@ -6,7 +6,7 @@ import { Skeleton } from "../../../components/ui/skeleton";
 import { cn } from "../../../lib/cn";
 import { useObjectPreview } from "../../ObjectLink";
 import { titleOf } from "../../ObjectLinkModel";
-import { citationObject, type SourceEntry } from "./answer-model";
+import { citationObject, citedObjectCount, type SourceEntry } from "./answer-model";
 
 /**
  * The sources of an answer (design record §6.4, §10.3): "Evidência desta resposta", a numbered list
@@ -63,11 +63,21 @@ export interface SourceEntryRowProps {
   entry: SourceEntry;
   idBase: string;
   active: boolean;
+  /** The passage is read in the tray at the panel's foot: the entry marks itself but stays closed. */
+  tray: boolean;
   onActivate: (number: number) => void;
   onOpen: (address: string) => void;
 }
 
-function SourceEntryRow({ t, entry, idBase, active, onActivate, onOpen }: SourceEntryRowProps) {
+function SourceEntryRow({
+  t,
+  entry,
+  idBase,
+  active,
+  tray,
+  onActivate,
+  onOpen
+}: SourceEntryRowProps) {
   const passage = useEntryPassage(t, entry);
   const id = entryElementId(idBase, entry.number);
   const object = citationObject(entry.citation);
@@ -76,6 +86,8 @@ function SourceEntryRow({ t, entry, idBase, active, onActivate, onOpen }: Source
   const gone = passage.status === "gone";
   // A removed passage still leads to its source when the source is there.
   const target = gone ? object : entry.open;
+  // The passage opens in place only where there is no tray: one passage is never drawn twice.
+  const expanded = active && !tray;
 
   return (
     <li className="min-w-0">
@@ -84,7 +96,7 @@ function SourceEntryRow({ t, entry, idBase, active, onActivate, onOpen }: Source
         id={id}
         data-source-entry={entry.number}
         data-active={active ? "" : undefined}
-        aria-describedby={active && passage.status === "ready" ? `${id}-passage` : undefined}
+        aria-describedby={expanded && passage.status === "ready" ? `${id}-passage` : undefined}
         disabled={target === null}
         onFocus={() => onActivate(entry.number)}
         onClick={() => target !== null && onOpen(target)}
@@ -114,7 +126,7 @@ function SourceEntryRow({ t, entry, idBase, active, onActivate, onOpen }: Source
                 {t("askPanel.sources.reading")}
               </span>
             ) : null}
-            {!active && passage.status === "ready" && passage.text !== "" ? (
+            {!expanded && passage.status === "ready" && passage.text !== "" ? (
               <span className="mt-0.5 line-clamp-1 block font-reading text-sm text-secondary-foreground italic">
                 {passage.text}
               </span>
@@ -137,7 +149,7 @@ function SourceEntryRow({ t, entry, idBase, active, onActivate, onOpen }: Source
             ) : null}
           </span>
         </span>
-        {active && passage.status === "ready" ? (
+        {expanded && passage.status === "ready" ? (
           <span className="grid gap-1.5 pl-7">
             <span id={`${id}-passage`}>
               <Passage text={passage.text} />
@@ -148,7 +160,7 @@ function SourceEntryRow({ t, entry, idBase, active, onActivate, onOpen }: Source
             </span>
           </span>
         ) : null}
-        {active && passage.status === "error" ? (
+        {expanded && passage.status === "error" ? (
           <span className="pl-7 text-xs text-secondary-foreground">
             {t("askPanel.sources.readFailed")}
           </span>
@@ -169,6 +181,8 @@ export interface SourcesRailProps {
   headingId: string;
   /** The line under the heading: what the numbers are, or how to read a passage in the tray. */
   hint: string;
+  /** Below 1280 px the passage of the active entry is read in the tray, not in the list. */
+  tray: boolean;
 }
 
 /** The numbered list of an answer's sources. It is empty only while the answer has cited nothing. */
@@ -180,13 +194,26 @@ export function SourcesRail({
   onActivate,
   onOpen,
   headingId,
-  hint
+  hint,
+  tray
 }: SourcesRailProps) {
   if (sources.length === 0) return null;
+  // What the stored answer knows: the passages it cites and the sources they sit in.
+  const passages = sources.length;
+  const cited = citedObjectCount(sources);
   return (
     <section aria-labelledby={headingId} className="grid min-w-0 max-w-(--measure) gap-1">
       <h2 id={headingId} className="m-0 grid gap-0.5 text-sm font-semibold text-foreground">
         {t("askPanel.sources.heading")}
+        <span className="text-xs font-normal text-secondary-foreground">
+          {t(passages === 1 ? "askPanel.sources.passagesOne" : "askPanel.sources.passagesMany", {
+            values: { count: passages }
+          })}
+          {" · "}
+          {t(cited === 1 ? "askPanel.band.sourcesOne" : "askPanel.band.sourcesMany", {
+            values: { count: cited }
+          })}
+        </span>
         <span className="text-xs font-normal text-muted-foreground [text-wrap:pretty]">{hint}</span>
       </h2>
       <ol aria-label={t("askPanel.sources.label")} className="m-0 -mx-1 grid list-none gap-0.5 p-0">
@@ -197,6 +224,7 @@ export function SourcesRail({
             entry={entry}
             idBase={idBase}
             active={active === entry.number}
+            tray={tray}
             onActivate={onActivate}
             onOpen={onOpen}
           />
@@ -234,7 +262,7 @@ export function PassageTray({ t, entry }: PassageTrayProps) {
       // padding, so the tray reaches past it to rest on the panel's foot.
       className="sticky [bottom:-3rem] z-[1] mt-6 max-h-32 overflow-hidden border-t border-border bg-surface py-2.5 [box-shadow:var(--shadow-edge-up)]"
     >
-      <div className="grid gap-1">
+      <div className="grid max-w-(--measure) gap-1">
         <p className="m-0 flex min-w-0 items-baseline gap-1.5 text-xs font-medium text-foreground">
           <span className="shrink-0">
             {t("askPanel.tray.heading", { values: { number: entry.number } })}

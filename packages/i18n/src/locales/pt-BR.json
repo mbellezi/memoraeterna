@@ -4321,7 +4321,7 @@
         "message": "Não foi possível enviar a pergunta."
       },
       "heading": "Pergunte à sua biblioteca",
-      "hintAsk": "pergunta",
+      "hintAsk": "perguntar",
       "hintNewline": "nova linha",
       "lead": "A resposta cita os trechos exatos em que se apoia. Fica salva em Perguntas e nunca altera suas notas.",
       "long": "Use no máximo 1.000 caracteres.",
@@ -4352,6 +4352,7 @@
       "scopeTopic": "escopo: tópico {title}"
     },
     "missing": {
+      "action": "Ver Perguntas",
       "body": "Ela pode ter sido apagada. Suas notas e fontes continuam como estavam.",
       "headline": "Esta pergunta não está mais na biblioteca."
     },
@@ -4361,6 +4362,8 @@
       "hint": "Os números são os das citações.",
       "label": "Trechos citados por esta resposta",
       "open": "Abrir o trecho ao lado",
+      "passagesMany": "{count} trechos citados",
+      "passagesOne": "{count} trecho citado",
       "readFailed": "Não foi possível ler o trecho.",
       "reading": "lendo…",
       "removed": "trecho removido",

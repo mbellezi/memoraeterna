@@ -4354,6 +4354,7 @@
       "scopeTopic": "périmètre : sujet {title}"
     },
     "missing": {
+      "action": "Voir les Questions",
       "body": "Elle a peut-être été supprimée. Vos notes et vos sources sont restées telles quelles.",
       "headline": "Cette question n’est plus dans la bibliothèque."
     },
@@ -4363,6 +4364,8 @@
       "hint": "Les numéros sont ceux des citations.",
       "label": "Passages cités par cette réponse",
       "open": "Ouvrir le passage à côté",
+      "passagesMany": "{count} passages cités",
+      "passagesOne": "{count} passage cité",
       "readFailed": "Impossible de lire le passage.",
       "reading": "lecture…",
       "removed": "passage supprimé",

@@ -110,6 +110,19 @@ export function QuestionPageView(props: QuestionPageViewProps) {
         variant={compact ? "compact" : "inline"}
         className="max-w-(--measure)"
         headline={t("askPanel.missing.headline")}
+        // The way out: the stored Questions are where an answer that is still there lives.
+        {...(compact
+          ? {}
+          : {
+              action: (
+                <Button
+                  variant="secondary"
+                  onClick={() => props.onOpen(formatView({ view: "library", tab: "questions" }))}
+                >
+                  {t("askPanel.missing.action")}
+                </Button>
+              )
+            })}
       >
         {t("askPanel.missing.body")}
       </EmptyState>
@@ -403,6 +416,8 @@ function LoadedQuestion({
                 onActivate={setActive}
                 onOpen={openCitation}
                 activeNumber={active}
+                // The caret says the next words are coming, at the place the eye is reading.
+                writing={shown.live && index === shown.paragraphs.length - 1}
               />
             ))
           ) : shown.live ? (
@@ -435,6 +450,7 @@ function LoadedQuestion({
         headingId={headingId}
         hint={t(viewportWidth < trayBelow ? "askPanel.tray.empty" : "askPanel.sources.hint")}
         active={active}
+        tray={viewportWidth < trayBelow}
         onActivate={setActive}
         onOpen={(address) => open(address)()}
       />

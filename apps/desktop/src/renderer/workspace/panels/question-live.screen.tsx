@@ -6,7 +6,13 @@ import {
   questionFixture,
   questionPanelFixtures
 } from "./ask/ask-fixtures";
-import { PanelStackScreen, deliverEvents, t, useFocusCitation } from "./ask/ask-screen-parts";
+import {
+  PanelStackScreen,
+  deliverEvents,
+  openedFrom,
+  t,
+  useFocusCitation
+} from "./ask/ask-screen-parts";
 import type { QuestionPageViewProps } from "./ask/QuestionPageView";
 
 export const surface = "question-live";
@@ -37,7 +43,7 @@ const writing: QuestionPageViewProps["snapshot"]["stream"]["stage"] = "answering
 
 function Screen() {
   useFocusCitation(1);
-  return <PanelStackScreen {...frame} />;
+  return <PanelStackScreen {...frame} previous={openedFrom} />;
 }
 
 export function render() {

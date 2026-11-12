@@ -136,8 +136,63 @@ describe("citation chips, in the DOM", () => {
     expect(text).toContain("Food microbiology, ch. 3");
     expect(text).toContain("Lactic acid bacteria lower the pH");
     expect(text).toContain("open the passage beside");
-    // The same passage is open in the list.
+    // The list marks the entry but stays closed: one passage is never drawn twice.
     expect(entry(1).hasAttribute("data-active")).toBe(true);
+    expect(entry(1).querySelector("mark")).toBeNull();
+    expect(entry(1).textContent).not.toContain("Open the passage beside");
+    expect(dom.document.querySelectorAll("mark")).toHaveLength(1);
+  });
+
+  it("keeps the tray on the answer's measure, with the edge still full width", async () => {
+    await dom.render(<QuestionPageView {...props(done(), { viewportWidth: trayBelow - 1 })} />);
+    await settle();
+    await hover(chip(1));
+    await settle();
+    const inner = tray()?.firstElementChild as HTMLElement;
+    expect(inner.className).toContain("max-w-(--measure)");
+  });
+
+  it("counts the passages and the sources the answer cites, under the heading", async () => {
+    await dom.render(<QuestionPageView {...props(done())} />);
+    const heading = dom.document.querySelector("section h2")?.textContent ?? "";
+    expect(heading.replaceAll("\u00a0", " ")).toContain("3 passages cited · 2 sources");
+  });
+
+  it("gives every chip the same lead and puts no margin after it", async () => {
+    await dom.render(<QuestionPageView {...props(done())} />);
+    const classes = [1, 2, 3].map((number) => chip(number).className);
+    expect(
+      new Set(classes.map((value) => value.replace(/border-\S+|bg-\S+|text-\S+/g, ""))).size
+    ).toBe(1);
+    expect(classes.join(" ")).not.toContain("mx-px");
+  });
+
+  it("puts a caret after the last paragraph only while the answer is written", async () => {
+    const stream = applyStatus(
+      applyDelta(emptyStream, {
+        requestId: request,
+        paragraphs: deltaParagraphs(2),
+        restart: false
+      }),
+      { requestId: request, stage: "answering" }
+    );
+    await dom.render(<QuestionPageView {...props(snapshot(questionFixture("running"), stream))} />);
+    const carets = dom.document.querySelectorAll("[data-answer-caret]");
+    expect(carets).toHaveLength(1);
+    expect(carets[0]?.closest("p")).toBe(
+      dom.document.querySelectorAll("[data-answer-paragraph]")[1]
+    );
+    await dom.render(<QuestionPageView {...props(done())} />);
+    expect(dom.document.querySelector("[data-answer-caret]")).toBeNull();
+  });
+
+  it("names the send arrow of the follow-up with a tooltip's label and its key", async () => {
+    await dom.render(<QuestionPageView {...props(done())} />);
+    const send = dom.document.querySelector('button[aria-label="Ask"]') as HTMLElement;
+    expect(send).not.toBeNull();
+    dom.focus(send);
+    await settle();
+    expect(dom.document.body.textContent).toContain("↵");
   });
 
   it("draws no tray from 1280 px, where the list is read beside the answer", async () => {
@@ -246,7 +301,11 @@ describe("the page while the answer is written", () => {
 describe("the page after the answer", () => {
   it("offers Ask again on a finished answer, and says it may be outdated when a source changed", async () => {
     await dom.render(<QuestionPageView {...props(snapshot(questionFixture("stale")))} />);
-    expect(dom.document.body.textContent).toContain("May be outdated: a cited source changed");
+    // The band says it itself, with the date after it and Ask again at its end: one status line.
+    const band = dom.document.querySelector("[data-stage]") as HTMLElement;
+    expect(band.textContent).toContain("May be outdated: a cited source changed");
+    expect(band.textContent).toContain("Answered");
+    expect(dom.document.querySelectorAll('[role="status"]')).toHaveLength(0);
     expect(dom.document.querySelector("[data-stage]")?.getAttribute("data-stage")).toBe("done");
     const again = [...dom.document.querySelectorAll("button")].find(
       (node) => node.textContent === "Ask again"
@@ -442,7 +501,20 @@ describe("the four states", () => {
     const quiet = draw(snapshot(null, emptyStream, { status: "error" }), "compact");
     expect(quiet).toContain("Could not open.");
     expect(quiet).not.toContain("Retry");
-    expect(draw(snapshot(null))).toContain("This question is no longer in the library.");
+    const missing = draw(snapshot(null));
+    expect(missing).toContain("This question is no longer in the library.");
+    // A way out: the stored Questions, in the full form only.
+    expect(missing).toContain("See Questions");
+    expect(draw(snapshot(null), "compact")).not.toContain("See Questions");
+  });
+
+  it("opens Library › Questions from a Question that is gone", async () => {
+    await dom.render(<QuestionPageView {...props(snapshot(null))} />);
+    const action = [...dom.document.querySelectorAll("button")].find(
+      (node) => node.textContent === "See Questions"
+    ) as HTMLElement;
+    await dom.act(() => action.click());
+    expect(opened).toEqual(["memora://library?tab=questions"]);
   });
 
   it("speaks every language in every state, with no missing message and no raw key", () => {

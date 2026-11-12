@@ -4325,7 +4325,7 @@
         "message": "No se pudo enviar la pregunta."
       },
       "heading": "Pregunta a tu biblioteca",
-      "hintAsk": "pregunta",
+      "hintAsk": "preguntar",
       "hintNewline": "nueva línea",
       "lead": "La respuesta cita los fragmentos exactos en los que se apoya. Se guarda en Preguntas y nunca cambia tus notas.",
       "long": "Usa 1.000 caracteres como máximo.",
@@ -4356,6 +4356,7 @@
       "scopeTopic": "ámbito: tema {title}"
     },
     "missing": {
+      "action": "Ver Preguntas",
       "body": "Puede que se haya borrado. Tus notas y fuentes siguen como estaban.",
       "headline": "Esta pregunta ya no está en la biblioteca."
     },
@@ -4365,6 +4366,8 @@
       "hint": "Los números son los de las citas.",
       "label": "Fragmentos citados por esta respuesta",
       "open": "Abrir el fragmento al lado",
+      "passagesMany": "{count} pasajes citados",
+      "passagesOne": "{count} pasaje citado",
       "readFailed": "No se pudo leer el fragmento.",
       "reading": "leyendo…",
       "removed": "fragmento eliminado",

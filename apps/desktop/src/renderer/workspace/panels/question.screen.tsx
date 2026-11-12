@@ -1,7 +1,7 @@
 import type { ScreenModule } from "../surfaces";
 import { Component } from "./question.panel";
 import { askFixture, questionFixture, questionPanelFixtures } from "./ask/ask-fixtures";
-import { PanelStackScreen, t, useFocusCitation } from "./ask/ask-screen-parts";
+import { PanelStackScreen, openedFrom, t, useFocusCitation } from "./ask/ask-screen-parts";
 
 export const surface = "question";
 
@@ -27,7 +27,7 @@ const frame = {
 
 function Screen() {
   useFocusCitation(2);
-  return <PanelStackScreen {...frame} />;
+  return <PanelStackScreen {...frame} previous={openedFrom} />;
 }
 
 export function render() {

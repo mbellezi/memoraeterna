@@ -2,7 +2,7 @@ import type { ScreenModule } from "../surfaces";
 import { Component } from "./ask.panel";
 import { askPanelFixtures } from "./ask/ask-fixtures";
 import { forgetAsks } from "./ask/ask-session";
-import { PanelStackScreen, t } from "./ask/ask-screen-parts";
+import { PanelStackScreen, openedFrom, t } from "./ask/ask-screen-parts";
 
 export const surface = "ask";
 
@@ -32,5 +32,5 @@ const frame = {
 export function render() {
   // Each mount is a new window: nothing was asked yet.
   forgetAsks();
-  return <PanelStackScreen {...frame} />;
+  return <PanelStackScreen {...frame} previous={openedFrom} />;
 }

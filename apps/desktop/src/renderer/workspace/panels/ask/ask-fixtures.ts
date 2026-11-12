@@ -228,7 +228,8 @@ export function questionPanelFixtures(question: QuestionView) {
     "questions.ask": { questionId: askFixture.questionId, requestId: askFixture.requestId },
     "questions.askAgain": { requestId: askFixture.requestId },
     "questions.cancel": null,
-    "objects.locate": () => located,
+    // An answer that cites nothing has no place (S4): the ribbon reads "Sem lugar".
+    "objects.locate": () => (question.errorKey === undefined ? located : null),
     "objects.resolveMany": (input: ObjectResolveManyInput) => {
       const items: Record<string, ObjectResolved> = {};
       const missing: string[] = [];
