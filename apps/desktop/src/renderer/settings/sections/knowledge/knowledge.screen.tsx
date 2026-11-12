@@ -5,6 +5,7 @@ import { settingsRegistryV2, type Json } from "../../../../shared/settings-regis
 import { screenTranslator } from "../../../workspace/screen-locale";
 import type { ScreenModule } from "../../../workspace/surfaces";
 import { SettingsSurface } from "../../SettingsSurface";
+import { section } from "./KnowledgeSection";
 
 /** Settings fills the content area of the window: the rail's width stands empty beside it. */
 export const fullWindow = true;
@@ -94,6 +95,7 @@ function Screen() {
         t={t}
         surface={surface}
         initialSection="knowledge"
+        sections={{ knowledge: section }}
         initialQuery={query ?? ""}
         onOpenClassic={noop}
       />

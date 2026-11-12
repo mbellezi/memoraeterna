@@ -188,7 +188,6 @@ function KnowledgeRow({
   const { t } = settings;
   const label = labelOf(t, entry);
   const description = settings.describe(entry.id);
-  const wait = ready === null;
   const bar = (className: string) => <Skeleton className={className} />;
 
   switch (entry.id) {
