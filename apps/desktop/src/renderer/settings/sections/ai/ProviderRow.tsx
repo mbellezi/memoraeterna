@@ -79,7 +79,17 @@ export function ProviderRow({
           <>
             <Button
               aria-label={`${primary}: ${row.label}`}
-              onClick={() => setMode(codex ? "signIn" : hasCredential ? "replace" : "add")}
+              onClick={() =>
+                setMode(
+                  codex
+                    ? view.configs.length > 0
+                      ? "signIn"
+                      : "add"
+                    : hasCredential
+                      ? "replace"
+                      : "add"
+                )
+              }
             >
               {codex ? <LogIn aria-hidden="true" /> : null}
               {primary}
@@ -108,7 +118,7 @@ export function ProviderRow({
               configs={view.configs}
               controller={controller}
               canAdd={mode === null}
-              onAdd={() => setMode(codex ? "signIn" : "add")}
+              onAdd={() => setMode("add")}
             />
           ) : null}
           <AreaNotice message={notice} />
@@ -265,6 +275,9 @@ function ProviderForm({
   const [saving, setSaving] = useState(false);
   const [signedIn, setSignedIn] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
+  // A key belongs to one server address: replacing it touches the models on that address only.
+  const addresses = [...new Set(configs.map((config) => config.baseUrl ?? ""))];
+  const [target, setTarget] = useState(addresses[0] ?? "");
 
   const fail = (error: unknown, fallback: MessageKey = "settingsAi.errors.write") =>
     setProblem(t(errorKeyOf(error, fallback)));
@@ -293,10 +306,13 @@ function ProviderForm({
     try {
       const models = await controller.app.ai.connectOpenAiCodex();
       setFound(models);
-      setModelId((current) => current || models[0] || "");
+      // A model to add is one that is not on the list yet; renewing keeps the one that is.
+      const fresh = models.find((model) => !configs.some((config) => config.modelId === model));
+      setModelId((current) => current || (mode === "add" ? (fresh ?? "") : (models[0] ?? "")));
       setSignedIn(true);
-      // Signing in again for models already added renews their sign-in and is done.
-      if (configs[0]) {
+      // Signing in again for models already added renews their sign-in and is done; adding a model
+      // keeps the form open to pick it, and its save keeps the new sign-in with the new model.
+      if (mode === "signIn" && configs[0]) {
         const first = configs[0];
         const ok = await controller.mutate("providers", () =>
           controller.app.ai.saveProvider({
@@ -325,7 +341,7 @@ function ProviderForm({
     setProblem(null);
     const ok = await controller.mutate("providers", async () => {
       if (mode === "replace") {
-        for (const config of configs)
+        for (const config of configs.filter((item) => (item.baseUrl ?? "") === target))
           await controller.app.ai.saveProvider({
             id: config.id,
             provider: config.provider,
@@ -395,6 +411,31 @@ function ProviderForm({
         </div>
       ) : (
         <>
+          {mode === "replace" && addresses.length > 1 ? (
+            <div
+              role="group"
+              aria-label={t("settingsAi.providers.form.address")}
+              className="grid gap-1"
+            >
+              <span className="text-xs font-medium text-secondary-foreground">
+                {t("settingsAi.providers.form.address")}
+              </span>
+              <div className="flex flex-wrap items-center gap-2">
+                {addresses.map((address) => (
+                  <Button
+                    key={address}
+                    variant="chip"
+                    size="sm"
+                    aria-pressed={target === address}
+                    className="max-w-full break-all"
+                    onClick={() => setTarget(address)}
+                  >
+                    {address || "—"}
+                  </Button>
+                ))}
+              </div>
+            </div>
+          ) : null}
           {kind === "openai-compatible" && mode !== "replace" ? (
             <Field
               label={t("settingsAi.providers.form.address")}
@@ -428,7 +469,7 @@ function ProviderForm({
         </>
       )}
 
-      {mode !== "replace" && (!codex || signedIn) ? (
+      {mode === "add" && (!codex || signedIn) ? (
         <div className="grid gap-3">
           <Field
             label={t("settingsAi.providers.form.model")}
@@ -487,9 +528,13 @@ function ProviderForm({
       {problem ? <AreaNotice message={problem} /> : null}
 
       <div className="flex flex-wrap gap-2">
-        <Button type="submit" disabled={!canSave}>
-          {saving ? t("settingsAi.providers.action.saving") : t("settingsAi.providers.action.save")}
-        </Button>
+        {mode === "signIn" ? null : (
+          <Button type="submit" disabled={!canSave}>
+            {saving
+              ? t("settingsAi.providers.action.saving")
+              : t("settingsAi.providers.action.save")}
+          </Button>
+        )}
         <Button variant="ghost" onClick={onClose}>
           {t("shell.actions.cancel")}
         </Button>

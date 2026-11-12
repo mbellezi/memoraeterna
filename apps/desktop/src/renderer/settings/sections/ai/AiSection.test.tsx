@@ -12,8 +12,10 @@ import { section } from "./AiSection";
 import {
   aiCalls,
   decisionsFixture,
+  describeFixture,
   hardwareFixture,
   ids,
+  providersFixture,
   routesFixture,
   tierIds
 } from "./ai-fixtures";
@@ -220,6 +222,27 @@ describe("the setup", () => {
     expect(spies["ai.applyPreset"]).not.toHaveBeenCalled();
   });
 
+  it("asks before Restore default puts the recommended setup back, and applies only on the yes", async () => {
+    await mount(
+      ai({
+        "settings.describe": {
+          entries: describeFixture({
+            "ai.preset.v1": { value: "custom", default: "hybrid" },
+            "ai.provider.openai-codex": { value: true, default: null }
+          })
+        }
+      })
+    );
+    const preset = row("ai.preset.v1")!;
+    await click(byLabel("Restore default", preset)!);
+    expect(spies["ai.applyPreset"]).not.toHaveBeenCalled();
+    expect(spies["settings.reset"]).not.toHaveBeenCalled();
+    expect(dom.document.body.textContent).toContain("Switch to Hybrid?");
+    await click(byText("Apply and test")!);
+    await flush();
+    expect(spies["ai.applyPreset"]).toHaveBeenCalledWith({ preset: "hybrid", test: false });
+  });
+
   it("applies Custom at once, and cannot choose Local on a Mac that cannot run it, saying why", async () => {
     await mount(ai({ "hardware.profile": hardwareFixture("mac-intel") }));
     const local = [...dom.document.querySelectorAll('[role="radio"]')][0]!;
@@ -389,6 +412,90 @@ describe("providers and credentials", () => {
     );
     expect(dom.document.body.textContent).not.toContain("AIza-secret-key");
     expect(google.querySelector("form")).toBeNull();
+  });
+});
+
+describe("providers: adding a model and replacing a key", () => {
+  it("adds a second ChatGPT model after a sign-in instead of renewing the first one", async () => {
+    const saved = vi.fn(async () => ({}));
+    await mount(
+      ai({
+        "ai.saveProvider": saved,
+        "ai.connectOpenAiCodex": ["gpt-5.6-luna", "gpt-5.6-terra"]
+      })
+    );
+    const codex = row("ai.provider.openai-codex")!;
+    await click(byText("Add a model…", codex)!);
+    await click(byText("Sign in…", codex)!);
+    await flush();
+    // The form stays open to pick the model, and nothing was saved yet.
+    expect(saved).not.toHaveBeenCalled();
+    const model = codex.querySelector("input[list]") as HTMLInputElement;
+    expect(model).not.toBeNull();
+    // It offers the model that is not on the list yet.
+    expect(model.value).toBe("gpt-5.6-terra");
+    await submit(codex.querySelector("form")!);
+    await flush();
+    expect(saved).toHaveBeenCalledTimes(1);
+    const sent = (saved.mock.calls[0] as unknown as [Record<string, unknown>])[0];
+    expect(sent).toMatchObject({ provider: "openai-codex", modelId: "gpt-5.6-terra" });
+    expect(sent).not.toHaveProperty("id");
+    expect(codex.querySelector("form")).toBeNull();
+  });
+
+  it("renews the sign-in of the models already added when the person signs in again", async () => {
+    const saved = vi.fn(async () => ({}));
+    await mount(ai({ "ai.saveProvider": saved, "ai.connectOpenAiCodex": ["gpt-5.6-luna"] }));
+    const codex = row("ai.provider.openai-codex")!;
+    await click(byText("Sign in again", codex)!);
+    await click(byText("Sign in…", codex.querySelector("form")!)!);
+    await flush();
+    expect(saved).toHaveBeenCalledWith(
+      expect.objectContaining({ id: ids.providerCodex, modelId: "gpt-5.6-luna" })
+    );
+    expect(codex.querySelector("form")).toBeNull();
+  });
+
+  it("replaces a key only for the models on the address the person names", async () => {
+    const saved = vi.fn(async () => ({}));
+    const other = {
+      ...providersFixture[1]!,
+      id: "00000000-0000-4000-8000-0000000000aa",
+      baseUrl: "https://openrouter.example/v1",
+      modelId: "other-model",
+      displayName: "other-model"
+    };
+    await mount(ai({ "ai.saveProvider": saved, "ai.listProviders": [...providersFixture, other] }));
+    const compat = row("ai.provider.openai-compatible")!;
+    await click(byText("Replace key…", compat)!);
+    const form = () => compat.querySelector("form")!;
+    const chips = [...form().querySelectorAll("button[aria-pressed]")];
+    expect(chips.map((chip) => chip.textContent)).toEqual([
+      "https://api.openai.com/v1",
+      "https://openrouter.example/v1"
+    ]);
+    await type(form().querySelector('input[type="password"]')!, "new-key");
+    await submit(form());
+    await flush();
+    expect(saved).toHaveBeenCalledTimes(1);
+    expect(saved).toHaveBeenCalledWith(
+      expect.objectContaining({ id: ids.providerCompat, apiKey: "new-key" })
+    );
+
+    saved.mockClear();
+    await click(byText("Replace key…", compat)!);
+    await click(
+      [...form().querySelectorAll("button[aria-pressed]")].find(
+        (chip) => chip.textContent === "https://openrouter.example/v1"
+      )!
+    );
+    await type(form().querySelector('input[type="password"]')!, "router-key");
+    await submit(form());
+    await flush();
+    expect(saved).toHaveBeenCalledTimes(1);
+    expect(saved).toHaveBeenCalledWith(
+      expect.objectContaining({ id: other.id, apiKey: "router-key" })
+    );
   });
 });
 

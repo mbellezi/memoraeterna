@@ -288,9 +288,17 @@ function PresetRow({
     recommended === "local" || recommended === "hybrid" || recommended === "cloud"
       ? t(setupNameKeys[recommended])
       : undefined;
+  // Putting the recommended setup back replaces every route, so it asks the way a card does.
+  const restore =
+    cards !== null &&
+    (recommended === "local" || recommended === "hybrid" || recommended === "cloud")
+      ? () => controller.selectSetup(recommended)
+      : undefined;
   return (
     <SettingRow
       {...row}
+      onReset={restore}
+      confirmReset={false}
       stack
       defaultLabel={defaultName}
       control={
