@@ -414,7 +414,7 @@ describe("the Inbox destination's key bar, risk groups and verdicts (T142 UX rou
     const html = view(stateOf(mixed), { keyBar: true });
     expect(html).toContain("<footer");
     expect(html).toContain("h-10");
-    for (const word of ["navigate", "open", "accept", "dismiss", "undo", "shortcuts"])
+    for (const word of ["navigate", "open", "apply", "dismiss", "undo", "shortcuts"])
       expect(html).toContain(`>${word}<`);
     // Backspace and e are the sheet's and the bar's only where they are offered: the review item
     // offers no remove, and nothing offers the names.

@@ -529,7 +529,7 @@ describe("Note page relation graph tabs (F3 D43)", () => {
   it("offers List and Graph tabs, with the list shown and selected by default", () => {
     const html = render(ready(), { graph });
     expect(html).toContain('role="tablist"');
-    expect(html).toContain('aria-label="Relations view"');
+    expect(html).toContain('aria-label="Connections view"');
     const tabs = [...html.matchAll(/<button[^>]*role="tab"[^>]*>/g)].map((match) => match[0]);
     expect(tabs).toHaveLength(2);
     expect(tabs[0]).toContain('aria-selected="true"');
@@ -582,7 +582,7 @@ describe("Note page relation graph tabs (F3 D43)", () => {
     expect(graphTab).toContain('aria-disabled="true"');
     expect(html).toContain('role="status"');
     expect(html).toContain(
-      "The graph cannot be drawn on this computer, so the relations are listed instead."
+      "The graph cannot be drawn on this computer, so the connections are listed instead."
     );
     const available = renderToString(
       <ViewTabs

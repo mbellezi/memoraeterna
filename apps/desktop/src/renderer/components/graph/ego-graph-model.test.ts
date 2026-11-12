@@ -270,13 +270,13 @@ describe("what the card and a screen reader say", () => {
   it("says the direction only when one is known, and the state in words, in every interface language", () => {
     const en = createTranslator("en");
     expect(egoEdgeDescription(model.edges[0]!, titleOf, en)).toBe(
-      "Note 2 supports Note 1. Suggestion: nobody has kept this relation yet."
+      "Note 2 supports Note 1. Suggestion: nobody has kept this connection yet."
     );
     expect(egoEdgeDescription(model.edges[1]!, titleOf, en)).toBe(
-      "Note 1 and Note 3 are linked: depends on. You kept this relation."
+      "Note 1 and Note 3 are linked: depends on. You kept this connection."
     );
     expect(egoEdgeDescription(model.edges[2]!, titleOf, en)).toBe(
-      "Note 2 contradicts Note 3. This relation is applied."
+      "Note 2 contradicts Note 3. This connection is applied."
     );
     for (const locale of supportedLanguageCodes) {
       const t = createTranslator(locale);
@@ -297,14 +297,14 @@ describe("what the card and a screen reader say", () => {
   });
 });
 
-describe("countsText: two counted parts, never '1 relações'", () => {
+describe("countsText: two counted parts, never '1 conexões'", () => {
   it("says each count in its own singular or plural", () => {
     const en = createTranslator("en");
     const pt = createTranslator("pt-BR");
-    expect(countsText(en, 1, 1)).toBe("1 note · 1 relation");
-    expect(countsText(en, 3, 2)).toBe("3 notes · 2 relations");
-    expect(countsText(pt, 2, 1)).toBe("2 notas · 1 relação");
-    expect(countsText(pt, 1, 3)).toBe("1 nota · 3 relações");
-    expect(countsText(createTranslator("it"), 1, 1)).toBe("1 nota · 1 relazione");
+    expect(countsText(en, 1, 1)).toBe("1 note · 1 connection");
+    expect(countsText(en, 3, 2)).toBe("3 notes · 2 connections");
+    expect(countsText(pt, 2, 1)).toBe("2 notas · 1 conexão");
+    expect(countsText(pt, 1, 3)).toBe("1 nota · 3 conexões");
+    expect(countsText(createTranslator("it"), 1, 1)).toBe("1 nota · 1 connessione");
   });
 });

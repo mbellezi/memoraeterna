@@ -64,7 +64,7 @@ export function KeySheet({
 }
 
 /**
- * The 40 px key bar at the foot of the destination: "↑↓ J K navegar · ↵ abrir · A aceitar · …
+ * The 40 px key bar at the foot of the destination: "↑↓ J K navegar · ↵ abrir · A aplicar · …
  * ? atalhos", and at the right the note that one-key shortcuts stay out of text fields (dropped
  * below 1180 px). The `?` entry is the button that opens the sheet.
  */

@@ -436,19 +436,32 @@ function LoadedPage({
             ))}
           </ul>
           {sourcesPartial ? (
-            // The list is built from the mentions loaded so far: a quiet button loads more of them.
-            <Button
-              variant="ghost"
-              size="sm"
-              className="-ml-2.5 justify-self-start text-left"
-              disabled={more === "loading"}
-              aria-busy={more === "loading"}
-              onClick={onLoadMore}
-            >
-              {more === "loading"
-                ? t("entityPage.mentions.moreLoading")
-                : t("entityPage.sources.partial")}
-            </Button>
+            // The list is built from the notes shown so far: a sentence says so, and a quiet button
+            // with the mentions' own label loads more of them.
+            <div className="mt-1 grid min-w-0 gap-0.5">
+              <p className="m-0 text-xs leading-5 text-muted-foreground [text-wrap:pretty]">
+                {t("entityPage.sources.partial")}
+              </p>
+              {remaining > 0 && page.mentions.next !== undefined ? (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="-ml-2.5 justify-self-start text-left"
+                  disabled={more === "loading"}
+                  aria-busy={more === "loading"}
+                  onClick={onLoadMore}
+                >
+                  {more === "loading"
+                    ? t("entityPage.mentions.moreLoading")
+                    : plural(
+                        t,
+                        remaining,
+                        "entityPage.mentions.moreOne",
+                        "entityPage.mentions.moreMany"
+                      )}
+                </Button>
+              ) : null}
+            </div>
           ) : null}
         </section>
       ) : null}

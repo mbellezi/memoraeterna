@@ -23,7 +23,7 @@ export const egoGraphLimits = {
 } as const;
 
 /**
- * "2 notes · 1 relation": two counted parts, each in its own singular or plural (never "1 relações"),
+ * "2 notes · 1 relation": two counted parts, each in its own singular or plural (never "1 connections"),
  * joined by a middle dot.
  */
 export function countsText(t: Translator, notes: number, relations: number): string {
@@ -32,7 +32,7 @@ export function countsText(t: Translator, notes: number, relations: number): str
     values: { count: notes }
   });
   const relationWords = t(
-    relations === 1 ? "notePage.graph.relationsOne" : "notePage.graph.relationsMany",
+    relations === 1 ? "notePage.graph.connectionsOne" : "notePage.graph.connectionsMany",
     { values: { count: relations } }
   );
   return `${noteWords} · ${relationWords}`;

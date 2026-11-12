@@ -238,7 +238,7 @@ function TableRow({
       <NoteCell title={row.first.title} onOpen={() => onOpen(row.first.id)} />
       <td className="px-3 py-2 align-top">
         <span className="flex flex-wrap items-baseline gap-x-1.5">
-          <RelationStanceLabel type={row.type} t={t} size={12} className="font-semibold" />
+          <RelationStanceLabel type={row.stance} t={t} size={12} className="font-semibold" />
           {row.suggested ? (
             <span className="text-xs font-normal text-muted-foreground">
               <span aria-hidden="true">· </span>

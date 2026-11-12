@@ -239,8 +239,6 @@
     "notePage.evidence.passage",
     "notePage.graph.notesMany",
     "notePage.graph.notesOne",
-    "notePage.graph.relationsMany",
-    "notePage.graph.relationsOne",
     "notePage.kind",
     "notePage.relations.title",
     "objects.kinds.note",

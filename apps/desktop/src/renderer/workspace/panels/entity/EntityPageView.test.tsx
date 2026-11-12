@@ -85,7 +85,7 @@ describe("the entity page", () => {
     expect(html).toContain("Topics");
     expect(html).toContain("most cited");
     expect(html).toContain("Sources");
-    expect(html).toContain("Sources of the mentions loaded so far.");
+    expect(html).toContain("These are the sources of the notes shown so far.");
   });
 
   it("gives every row a peek address, as the Space bar reads it", () => {
@@ -103,7 +103,9 @@ describe("the entity page", () => {
     const partial = strip(view());
     expect(partial).toContain("3 of 4");
     expect(partial).not.toMatch(/Sources<span[^>]*>4</);
-    expect(partial).toMatch(/<button[^>]*>Sources of the mentions loaded so far\./);
+    expect(partial).toContain("These are the sources of the notes shown so far.");
+    // The note is a sentence; the quiet button after it carries the mentions' own label.
+    expect(partial).toMatch(/shown so far\.<\/p><button[^>]*>Show \d+ more notes?/);
     expect(strip(view({ t: pt }))).toContain("3 de 4");
     // Loading disables the button and says so.
     expect(strip(view({ load: ready(entityFirstPage, "loading") }))).toMatch(
@@ -112,7 +114,7 @@ describe("the entity page", () => {
     // Every mention loaded: the heading counts the sources, and there is no button for them.
     const all = strip(view({ load: ready(appendMentions(entityFirstPage, entitySecondPage)) }));
     expect(all).toMatch(/Sources<span[^>]*>4</);
-    expect(all).not.toContain("Sources of the mentions loaded so far.");
+    expect(all).not.toContain("These are the sources of the notes shown so far.");
   });
 
   it("reads in the person's language, with no English left", () => {

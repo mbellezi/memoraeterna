@@ -50,9 +50,11 @@ describe("the entity page, in the DOM", () => {
 
   it("loads more mentions from the quiet button under a partial Fontes list", async () => {
     await dom.render(<EntityPageView {...props(ready(entityFirstPage))} />);
-    const button = [...dom.document.querySelectorAll("button")].find((node) =>
-      node.textContent?.startsWith("Sources of the mentions loaded so far")
-    ) as HTMLElement;
+    // The quiet button is the last one: it sits under the Fontes list, after the mentions' own.
+    const button = [...dom.document.querySelectorAll("button")]
+      .filter((node) => node.textContent?.startsWith("Show"))
+      .at(-1) as HTMLElement;
+    expect(button.closest("section")?.textContent).toContain("These are the sources");
     await dom.act(() => button.click());
     expect(loadMore).toBe(1);
   });

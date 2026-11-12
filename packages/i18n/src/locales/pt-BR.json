@@ -190,7 +190,7 @@
         "only_ac_on_battery": "O trabalho em segundo plano espera o computador ser ligado na tomada."
       },
       "no_model": {
-        "no_route": "Nenhum modelo de {routeClass} está configurado. Escolha um em Configurações para continuar.",
+        "no_route": "Nenhum modelo de {routeClass} está configurado. Escolha um em Ajustes para continuar.",
         "model_missing": "Um modelo necessário não está instalado. Instale-o em Modelos locais para continuar.",
         "no_decider": "Nenhum modelo de ranqueamento está pronto ainda. As notas difíceis de colocar esperam por um.",
         "signin_required": "Seu provedor de IA precisa que você entre novamente. Faça login para continuar.",
@@ -237,8 +237,8 @@
       },
       "actions": {
         "resume": "Retomar",
-        "open_controls": "Alterar configurações",
-        "open_ai_settings": "Abrir configurações de IA",
+        "open_controls": "Alterar ajustes",
+        "open_ai_settings": "Abrir Ajustes › IA",
         "open_local_models": "Abrir modelos locais",
         "sign_in": "Entrar",
         "continue_budget": "Continuar",
@@ -454,7 +454,7 @@
           "deleted": "“{path}” foi excluído no Obsidian, mas alterado no app.",
           "projection": "“{path}” foi gerado pelo app e editado no cofre."
         },
-        "where": "Resolva em Configurações, em Conexões."
+        "where": "Resolva em Ajustes › Conexões."
       },
       "budget": {
         "title": {
@@ -463,8 +463,8 @@
         },
         "body": "{spent} de {cap} usados neste mês.",
         "hint": {
-          "money80": "Continue para deixar o trabalho em segundo plano rodar até o limite ou aumente o limite em Configurações.",
-          "money100": "O trabalho em segundo plano volta no próximo mês ou quando você aumentar o limite em Configurações."
+          "money80": "Continue para deixar o trabalho em segundo plano rodar até o limite ou aumente o limite em Ajustes.",
+          "money100": "O trabalho em segundo plano volta no próximo mês ou quando você aumentar o limite em Ajustes."
         }
       },
       "backlog": {
@@ -479,7 +479,7 @@
       "empty": "Selecione um item para ver do que se trata.",
       "involves": "Envolve",
       "open": "Abrir “{name}”",
-      "openSettings": "Abrir Conexões nas Configurações",
+      "openSettings": "Abrir Conexões em Ajustes",
       "unnamed": "Sem título",
       "working": "Trabalhando...",
       "connection": "Conexão: {type}",
@@ -503,7 +503,7 @@
     "keys": {
       "barNote": "Atalhos de uma tecla não funcionam dentro de campos de texto.",
       "short": {
-        "apply": "aceitar",
+        "apply": "aplicar",
         "dismiss": "dispensar",
         "edit": "editar",
         "help": "atalhos",
@@ -690,7 +690,7 @@
     },
     "menu": {
       "about": "Sobre o {app}",
-      "settings": "Configurações…",
+      "settings": "Ajustes…",
       "services": "Serviços",
       "hide": "Ocultar o {app}",
       "hideOthers": "Ocultar Outros",
@@ -752,7 +752,7 @@
       "review": "Revisar notas",
       "jobs": "Tarefas",
       "knowledgeGraph": "Grafo do Conhecimento",
-      "settings": "Configurações"
+      "settings": "Ajustes"
     },
     "actions": {
       "expandNavigation": "Expandir menu principal",
@@ -772,8 +772,8 @@
       "saved": "Salvo."
     },
     "toasts": {
-      "settingsSaved": "Configurações salvas.",
-      "settingsError": "Não foi possível salvar as configurações.",
+      "settingsSaved": "Ajustes salvos.",
+      "settingsError": "Não foi possível salvar os ajustes.",
       "dismiss": "Dispensar notificação"
     }
   },
@@ -1381,7 +1381,7 @@
     "continue": "Continuar",
     "languages": {
       "title": "Quais idiomas você usa?",
-      "description": "Escolha o idioma da interface e o idioma em que seus tópicos e notas são escritos. Você pode mudar os dois depois, em Configurações.",
+      "description": "Escolha o idioma da interface e o idioma em que seus tópicos e notas são escritos. Você pode mudar os dois depois, em Ajustes.",
       "interface": "Idioma da interface",
       "content": "Idioma do conteúdo",
       "contentHint": "Os nomes e as visões gerais dos tópicos são escritos neste idioma, qualquer que seja o idioma da fonte.",
@@ -1390,7 +1390,7 @@
     },
     "mode": {
       "title": "Como a IA deve trabalhar?",
-      "description": "Escolha onde o trabalho acontece. Você pode mudar isso depois, em Configurações.",
+      "description": "Escolha onde o trabalho acontece. Você pode mudar isso depois, em Ajustes.",
       "card": {
         "title": "Este computador",
         "loading": "Lendo este computador…",
@@ -1459,7 +1459,7 @@
         "eta": "faltam {minutes} min"
       },
       "rankerWaiting": "As relações esperam o ranqueador. A busca e a leitura já funcionam.",
-      "rankerFailed": "Não foi possível instalar o ranqueador, então as relações esperam por ele. Você pode tentar de novo em Modelos, nas Configurações.",
+      "rankerFailed": "Não foi possível instalar o ranqueador, então as relações esperam por ele. Você pode tentar de novo em Ajustes › Modelos.",
       "tests": {
         "title": "Verificações",
         "waiting": "Aguardando",
@@ -1482,8 +1482,8 @@
         "localUnavailable": "O modo Local exige um Mac com Apple silicon."
       },
       "summaryOk": "Tudo funciona.",
-      "summaryProblems": "{count} verificações precisam de atenção. Você pode corrigi-las depois, em Configurações.",
-      "summaryProblemsOne": "1 verificação precisa de atenção. Você pode corrigi-la depois, em Configurações.",
+      "summaryProblems": "{count} verificações precisam de atenção. Você pode corrigi-las depois, em Ajustes.",
+      "summaryProblemsOne": "1 verificação precisa de atenção. Você pode corrigi-la depois, em Ajustes.",
       "retry": "Tentar de novo",
       "continueAnyway": "Continuar sem isso"
     },
@@ -1734,7 +1734,7 @@
     "stageCount": "{count} etapas neste plano",
     "profileNotice": "Usa seu perfil de IA configurado",
     "noAiNotice": "Nenhuma chamada de IA é necessária",
-    "writerRouteMissing": "Nenhum modelo de IA está pronto para escrever, então o processamento padrão torna as fontes pesquisáveis. Configure um modelo em Configurações para construir seu segundo cérebro.",
+    "writerRouteMissing": "Nenhum modelo de IA está pronto para escrever, então o processamento padrão torna as fontes pesquisáveis. Configure um modelo em Ajustes para construir seu segundo cérebro.",
     "presets": {
       "import_only": {
         "title": "Só guardar",
@@ -3186,7 +3186,7 @@
       "building": "Organizando sua biblioteca em tópicos ({placed} de {items} colocados).",
       "buildingStart": "Organizando sua biblioteca em tópicos...",
       "blocked": {
-        "no_embedding_route": "Os tópicos esperam um modelo de embeddings. Escolha um em Configurações.",
+        "no_embedding_route": "Os tópicos esperam um modelo de embeddings. Escolha um em Ajustes.",
         "space_changed": "O modelo de embeddings mudou. Os tópicos continuam quando os embeddings das suas notas forem refeitos.",
         "waiting_for_embeddings": "As notas ainda estão sendo preparadas. Os tópicos acompanham conforme elas terminam.",
         "no_decider": "Ainda não há um modelo de reranking pronto: as notas difíceis de colocar iniciam novos tópicos e são colocadas de novo quando houver um."
@@ -4144,7 +4144,7 @@
       "citedIn": "Citada em"
     },
     "evidence": {
-      "title": "Evidências",
+      "title": "Evidência",
       "hint": "o trecho e o intervalo exatos que sustentam a nota",
       "passage": "trecho {number}",
       "page": "p. {page}",
@@ -4176,37 +4176,37 @@
       "earlierHint": "Relações com uma nota que uma versão mais nova substituiu, ou cuja fonte não existe mais. Ficam fora do grafo e das contagens."
     },
     "graph": {
-      "tabs": "Visualização das relações",
+      "tabs": "Visualização das conexões",
       "list": "Lista",
       "graph": "Grafo",
-      "unavailable": "O grafo não pode ser desenhado neste computador; as relações aparecem em lista.",
-      "loading": "Carregando o grafo de relações…",
-      "error": "Não foi possível carregar o grafo de relações.",
-      "rereadError": "Não foi possível atualizar o grafo; ele ainda mostra as últimas relações lidas.",
+      "unavailable": "O grafo não pode ser desenhado neste computador; as conexões aparecem em lista.",
+      "loading": "Carregando o grafo de conexões…",
+      "error": "Não foi possível carregar o grafo de conexões.",
+      "rereadError": "Não foi possível atualizar o grafo; ele ainda mostra as últimas conexões lidas.",
       "contextLost": "O grafo parou de ser desenhado.",
-      "empty": "Esta nota ainda não tem relações para desenhar. Elas aparecem aqui quando outras notas forem ligadas a ela.",
-      "depthTwo": "Incluir as relações das notas relacionadas",
+      "empty": "Esta nota ainda não tem conexões para desenhar. Elas aparecem aqui quando outras notas forem ligadas a ela.",
+      "depthTwo": "Incluir as conexões das notas ligadas",
       "showList": "Ver como lista",
-      "label": "Grafo de relações: {notes} notas e {relations} relações. Arraste o fundo para mover; a Lista mostra em texto as relações desta nota.",
-      "keyboardHint": "Teclado: use Tab até o grafo; as setas passam entre notas e relações, Enter abre uma nota e Esc fecha o cartão.",
+      "label": "Grafo de conexões: {notes} notas e {relations} conexões. Arraste o fundo para mover; a Lista mostra em texto as conexões desta nota.",
+      "keyboardHint": "Teclado: use Tab até o grafo; as setas passam entre notas e conexões, Enter abre uma nota e Esc fecha o cartão.",
       "legend": "Legenda",
-      "legendKept": "Linha contínua: uma relação que você manteve ou que foi aplicada",
+      "legendKept": "Linha contínua: uma conexão que você manteve ou que foi aplicada",
       "legendSuggested": "Linha tracejada: uma sugestão que ninguém manteve ainda",
-      "legendArrow": "Seta: a relação vai de uma nota para a outra",
+      "legendArrow": "Seta: a conexão vai de uma nota para a outra",
       "legendFocus": "Nó maior: esta nota",
-      "truncated": "Mostrando {shown} de {total} notas relacionadas. A Lista tem todas.",
-      "omitted": "Relações entre estas notas que não foram desenhadas: {count}.",
+      "truncated": "Mostrando {shown} de {total} notas ligadas. A Lista tem todas.",
+      "omitted": "Conexões entre estas notas que não foram desenhadas: {count}.",
       "thisNote": "Esta nota: {title}",
       "noteCard": "Nota: {title}",
       "thisNoteHint": "Você está nesta nota.",
       "openHint": "Clique, ou pressione Enter, para abrir esta nota.",
-      "stateSuggested": "Sugestão: ninguém manteve esta relação ainda.",
-      "stateKept": "Você manteve esta relação.",
-      "stateApplied": "Esta relação foi aplicada.",
+      "stateSuggested": "Sugestão: ninguém manteve esta conexão ainda.",
+      "stateKept": "Você manteve esta conexão.",
+      "stateApplied": "Esta conexão foi aplicada.",
       "notesOne": "{count} nota",
       "notesMany": "{count} notas",
-      "relationsOne": "{count} relação",
-      "relationsMany": "{count} relações"
+      "connectionsOne": "{count} conexão",
+      "connectionsMany": "{count} conexões"
     },
     "linkedStance": "ligadas: {type}",
     "stance": {
@@ -4300,10 +4300,10 @@
       "relationMatched": "Conexões verificadas para “{note}”",
       "relationSuggested": "{n} conexões sugeridas para “{source}”",
       "overview": {
-        "write": "Visão geral do tema reescrita",
-        "patch": "Visão geral do tema ampliada",
-        "rewrite": "Reescrita da visão geral do tema",
-        "undo": "Visão geral do tema restaurada"
+        "write": "Visão geral do tópico reescrita",
+        "patch": "Visão geral do tópico ampliada",
+        "rewrite": "Reescrita da visão geral do tópico",
+        "undo": "Visão geral do tópico restaurada"
       }
     },
     "blockers": {
@@ -4916,7 +4916,7 @@
     "sources": {
       "countPartial": "{shown} de {total}",
       "heading": "Fontes",
-      "partial": "Fontes das menções já carregadas. Mostre mais menções para ver as demais."
+      "partial": "Estas são as fontes das notas já mostradas."
     },
     "topics": {
       "heading": "Tópicos",
@@ -4937,6 +4937,7 @@
     },
     "foot": {
       "all": "todos os resultados",
+      "ask": "perguntar",
       "beside": "abrir ao lado",
       "choose": "escolher",
       "here": "abrir neste painel",
@@ -5649,8 +5650,8 @@
       "zoomOut": "Afastar"
     },
     "depth": {
-      "help": "Qual nível de subtópicos dá a cor aos pontos",
-      "label": "Cor por subtópico de",
+      "help": "Qual nível de subtópicos agrupa os pontos e dá a cor a cada grupo",
+      "label": "Agrupar por",
       "one": "1º nível",
       "three": "3º nível",
       "two": "2º nível"

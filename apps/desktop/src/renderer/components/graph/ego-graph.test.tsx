@@ -71,19 +71,19 @@ describe("the relation graph states", () => {
     const html = render({ status: "loading" });
     expect(html).toContain('role="status"');
     expect(html).toContain('aria-busy="true"');
-    expect(text(html)).toContain("Loading the relation graph…");
+    expect(text(html)).toContain("Loading the connection graph…");
   });
 
   it("is a retryable alert when the answer failed", () => {
     const html = render({ status: "error" });
     expect(html).toContain('role="alert"');
-    expect(text(html)).toContain("The relation graph could not be loaded.");
+    expect(text(html)).toContain("The connection graph could not be loaded.");
     expect(html).toContain(">Retry<");
   });
 
   it("says there is nothing to draw for a note with no shown relation, and offers the list", () => {
     const html = render(ready(answer({ nodes: [node(1, 0)], edges: [], neighbourTotal: 0 })));
-    expect(text(html)).toContain("This note has no relations to draw yet.");
+    expect(text(html)).toContain("This note has no connections to draw yet.");
     expect(text(html)).toContain("See as a list");
     expect(html).not.toContain('role="application"');
   });
@@ -93,9 +93,9 @@ describe("the relation graph states", () => {
     expect(html).toContain('role="application"');
     expect(html).toContain('tabindex="0"');
     expect(html).toContain(
-      'aria-label="Relation graph: 3 notes and 2 relations. Drag the background to pan; the List shows this note&#x27;s relations as text."'
+      'aria-label="Connection graph: 3 notes and 2 connections. Drag the background to pan; the List shows this note&#x27;s connections as text."'
     );
-    expect(text(html)).toContain("3 notes · 2 relations");
+    expect(text(html)).toContain("3 notes · 2 connections");
     // One word to show the list, the context panel's own.
     expect(text(html)).toContain("See as a list");
     expect(text(html)).toContain("Keyboard: Tab to the graph");
@@ -111,7 +111,7 @@ describe("the relation graph states", () => {
     expect(render(ready())).toContain('aria-pressed="false"');
     // The toggle says what is drawn: a graph of depth 2 is pressed.
     expect(render(ready(answer({ depth: 2 })))).toContain('aria-pressed="true"');
-    expect(text(render(ready()))).toContain("Include the relations of related notes");
+    expect(text(render(ready()))).toContain("Include the connections of linked notes");
   });
 });
 
@@ -134,7 +134,7 @@ describe("a read made while the graph is shown", () => {
     expect(html).toContain('role="application"');
     const notice = /<div role="status"[^>]*>(?:(?!<\/div>).)*<\/div>/u.exec(html)?.[0] ?? "";
     expect(text(notice)).toContain(
-      "The graph could not be updated, so it still shows the last relations it read."
+      "The graph could not be updated, so it still shows the last connections it read."
     );
     expect(notice).toContain(">Retry<");
     expect(text(render(ready()))).not.toContain("could not be updated");
@@ -143,7 +143,7 @@ describe("a read made while the graph is shown", () => {
   it("says when relations among the notes were left out of the drawing", () => {
     const many = Array.from({ length: 130 }, (_, n) => edge(n + 10, 2, 3, { id: id(500 + n) }));
     const html = render(ready(answer({ edges: [edge(1, 1, 2), ...many] })));
-    expect(text(html)).toContain("Relations between these notes that are not drawn: 11.");
+    expect(text(html)).toContain("Connections between these notes that are not drawn: 11.");
     expect(text(render(ready()))).not.toContain("not drawn");
   });
 });
@@ -151,11 +151,11 @@ describe("a read made while the graph is shown", () => {
 describe("the legend", () => {
   it("tells suggestions from kept relations in words and in a pattern, not by colour alone", () => {
     const html = render(ready());
-    expect(text(html)).toContain("Solid line: a relation you kept or that was applied");
+    expect(text(html)).toContain("Solid line: a connection you kept or that was applied");
     expect(text(html)).toContain("Dashed line: a suggestion nobody has kept yet");
     // The dashed sample is the pattern the canvas draws.
     expect(html).toContain('stroke-dasharray="7 5"');
-    expect(text(html)).toContain("Arrow: the relation reads from one note to the other");
+    expect(text(html)).toContain("Arrow: the connection reads from one note to the other");
     // Each stance drawn has its word and glyph next to its colour.
     expect(text(html)).toContain("supports");
     expect(text(html)).toContain("contradicts");
@@ -189,7 +189,7 @@ describe("the legend", () => {
 
   it("says how many related notes the list has beyond the ones drawn", () => {
     expect(text(render(ready(answer({ neighbourTotal: 57, truncated: true }))))).toContain(
-      "Showing 2 of 57 related notes. The List has all of them."
+      "Showing 2 of 57 linked notes. The List has all of them."
     );
     expect(text(render(ready()))).not.toContain("related notes. The List has");
   });

@@ -503,7 +503,7 @@
     "keys": {
       "barNote": "Les raccourcis à une touche ne fonctionnent pas dans les champs de texte.",
       "short": {
-        "apply": "accepter",
+        "apply": "appliquer",
         "dismiss": "écarter",
         "edit": "modifier",
         "help": "raccourcis",
@@ -4176,37 +4176,37 @@
       "earlierHint": "Relations avec une note qu’une version plus récente a remplacée, ou dont la source n’existe plus. Elles restent hors du graphe et des totaux."
     },
     "graph": {
-      "tabs": "Affichage des relations",
+      "tabs": "Affichage des connexions",
       "list": "Liste",
       "graph": "Graphe",
-      "unavailable": "Le graphe ne peut pas être dessiné sur cet ordinateur ; les relations sont donc affichées en liste.",
-      "loading": "Chargement du graphe des relations…",
-      "error": "Le graphe des relations n’a pas pu être chargé.",
-      "rereadError": "Le graphe n’a pas pu être mis à jour ; il montre toujours les dernières relations lues.",
+      "unavailable": "Le graphe ne peut pas être dessiné sur cet ordinateur ; les connexions sont donc affichées en liste.",
+      "loading": "Chargement du graphe des connexions…",
+      "error": "Le graphe des connexions n’a pas pu être chargé.",
+      "rereadError": "Le graphe n’a pas pu être mis à jour ; il montre toujours les dernières connexions lues.",
       "contextLost": "Le graphe a cessé de s’afficher.",
-      "empty": "Cette note n’a pas encore de relation à dessiner. Elles apparaissent ici quand d’autres notes lui sont liées.",
-      "depthTwo": "Inclure les relations des notes liées",
+      "empty": "Cette note n’a pas encore de connexion à dessiner. Elles apparaissent ici quand d’autres notes lui sont liées.",
+      "depthTwo": "Inclure les connexions des notes liées",
       "showList": "Voir sous forme de liste",
-      "label": "Graphe des relations : {notes} notes et {relations} relations. Faites glisser l’arrière-plan pour vous déplacer ; la liste montre en texte les relations de cette note.",
-      "keyboardHint": "Clavier : Tab jusqu’au graphe ; les flèches passent d’une note ou d’une relation à l’autre, Entrée ouvre une note et Échap ferme la fiche.",
+      "label": "Graphe des connexions : {notes} notes et {relations} connexions. Faites glisser l’arrière-plan pour vous déplacer ; la liste montre en texte les connexions de cette note.",
+      "keyboardHint": "Clavier : Tab jusqu’au graphe ; les flèches passent d’une note ou d’une connexion à l’autre, Entrée ouvre une note et Échap ferme la fiche.",
       "legend": "Légende",
-      "legendKept": "Trait plein : une relation que vous avez conservée ou qui a été appliquée",
+      "legendKept": "Trait plein : une connexion que vous avez conservée ou qui a été appliquée",
       "legendSuggested": "Trait en pointillés : une suggestion que personne n’a encore conservée",
-      "legendArrow": "Flèche : la relation va d’une note à l’autre",
+      "legendArrow": "Flèche : la connexion va d’une note à l’autre",
       "legendFocus": "Nœud plus grand : cette note",
       "truncated": "{shown} notes liées affichées sur {total}. La liste les contient toutes.",
-      "omitted": "Relations entre ces notes qui ne sont pas dessinées : {count}.",
+      "omitted": "Connexions entre ces notes qui ne sont pas dessinées : {count}.",
       "thisNote": "Cette note : {title}",
       "noteCard": "Note : {title}",
       "thisNoteHint": "Vous êtes sur cette note.",
       "openHint": "Cliquez, ou appuyez sur Entrée, pour ouvrir cette note.",
-      "stateSuggested": "Suggestion : personne n’a encore conservé cette relation.",
-      "stateKept": "Vous avez conservé cette relation.",
-      "stateApplied": "Cette relation est appliquée.",
+      "stateSuggested": "Suggestion : personne n’a encore conservé cette connexion.",
+      "stateKept": "Vous avez conservé cette connexion.",
+      "stateApplied": "Cette connexion est appliquée.",
       "notesOne": "{count} note",
       "notesMany": "{count} notes",
-      "relationsOne": "{count} relation",
-      "relationsMany": "{count} relations"
+      "connectionsOne": "{count} connexion",
+      "connectionsMany": "{count} connexions"
     },
     "linkedStance": "liées : {type}",
     "stance": {
@@ -4916,7 +4916,7 @@
     "sources": {
       "countPartial": "{shown} sur {total}",
       "heading": "Sources",
-      "partial": "Sources des mentions chargées jusqu’ici. Affichez plus de mentions pour voir le reste."
+      "partial": "Voici les sources des notes affichées jusqu’ici."
     },
     "topics": {
       "heading": "Sujets",
@@ -4937,6 +4937,7 @@
     },
     "foot": {
       "all": "tous les résultats",
+      "ask": "demander",
       "beside": "ouvrir à côté",
       "choose": "choisir",
       "here": "ouvrir dans ce panneau",
@@ -5649,8 +5650,8 @@
       "zoomOut": "Dézoomer"
     },
     "depth": {
-      "help": "Quel niveau de sous-thèmes donne leur couleur aux points",
-      "label": "Couleur par sous-thème de",
+      "help": "Quel niveau de sous-thèmes regroupe les points et colore chaque groupe",
+      "label": "Grouper par",
       "one": "1er niveau",
       "three": "3e niveau",
       "two": "2e niveau"

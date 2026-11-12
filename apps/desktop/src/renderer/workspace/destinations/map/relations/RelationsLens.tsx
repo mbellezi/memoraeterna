@@ -512,7 +512,8 @@ export function RelationsLegend({ t, model }: { t: Translator; model: BranchMode
           >
             <StanceGlyph stance={stance} size={12} />
             <span className="text-secondary-foreground">
-              {t(relationTypeView(model.stanceTypes[stance] ?? "related").wordKey)}
+              {/* The legend names the stance, as every connection legend does. */}
+              {t(relationTypeView(stance).wordKey)}
             </span>
           </li>
         ))}
