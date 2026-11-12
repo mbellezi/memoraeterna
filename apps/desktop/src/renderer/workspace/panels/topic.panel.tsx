@@ -1,5 +1,5 @@
 import { useCallback } from "react";
-import { parseObjectAddress, type ObjectSummary } from "@app/domain";
+import { formatObjectAddress, parseObjectAddress, type ObjectSummary } from "@app/domain";
 
 import { TopicPage } from "../../components/topic-page/TopicPage";
 import type { OpenableNavigation } from "../../components/WhereIsThis";
@@ -41,6 +41,12 @@ export function Component({ t, address, mode, active, onState, onOpen, current }
     },
     [onOpen]
   );
+  // A merged topic's page found its successor: the stack holds the current id, not the retired one.
+  const redirect = useCallback(
+    (topicId: string) =>
+      onOpen(formatObjectAddress({ kind: "topic", id: topicId }), { replace: true }),
+    [onOpen]
+  );
   if (id === null) return null;
   return (
     <TopicPage
@@ -52,6 +58,7 @@ export function Component({ t, address, mode, active, onState, onOpen, current }
       current={current}
       onHoist={bridge ? (topicId) => bridge.dispatch({ type: "hoist", topicId }) : undefined}
       onLoadState={report}
+      onRedirect={redirect}
       onNavigate={openNavigation}
       onOpenAddress={(next) => onOpen(next)}
     />
