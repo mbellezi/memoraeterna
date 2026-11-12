@@ -69,6 +69,28 @@ export function watchDeepLinks(
   };
 }
 
+/** What the app gives a link that arrives. */
+export interface DeepLinkHandlers {
+  dispatch: (action: WorkspaceAction) => void;
+  onNotice: (notice: "retiredWiki") => void;
+  /** An old screen covers the stack: the link uncovers it. */
+  onShowStack?: (() => void) | undefined;
+}
+
+/** Applies a link to the workspace: uncovers the stack, runs the plan's actions, tells the notice. */
+export function applyDeepLink(
+  link: DeepLink,
+  workspace: WorkspaceState,
+  handlers: DeepLinkHandlers
+): DeepLinkPlan {
+  const plan = planDeepLink(link, workspace);
+  // An old screen (Import, Search, Review, Jobs, Debug) covers the stack: the link uncovers it.
+  handlers.onShowStack?.();
+  for (const action of plan.actions) handlers.dispatch(action);
+  if (plan.notice) handlers.onNotice(plan.notice);
+  return plan;
+}
+
 /**
  * Opens the links from outside in the workspace. `workspace` is read when a link arrives, so the
  * subscription lives as long as the window.
@@ -76,13 +98,12 @@ export function watchDeepLinks(
 export function useDeepLinks(
   workspace: WorkspaceState,
   dispatch: (action: WorkspaceAction) => void,
-  onNotice: (notice: "retiredWiki") => void
+  onNotice: (notice: "retiredWiki") => void,
+  onShowStack?: () => void
 ): void {
-  const open = useStableCallback((link: DeepLink) => {
-    const plan = planDeepLink(link, workspace);
-    for (const action of plan.actions) dispatch(action);
-    if (plan.notice) onNotice(plan.notice);
-  });
+  const open = useStableCallback((link: DeepLink) =>
+    applyDeepLink(link, workspace, { dispatch, onNotice, onShowStack })
+  );
   useEffect(
     () =>
       watchDeepLinks(

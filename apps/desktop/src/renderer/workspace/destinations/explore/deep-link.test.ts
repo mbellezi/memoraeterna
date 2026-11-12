@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { parseDeepLink, type DeepLink } from "../../../../shared/obsidian-deep-link";
 import { defaultWorkspace, reduce, type WorkspaceAction, type WorkspaceState } from "../../state";
-import { planDeepLink, watchDeepLinks, type DeepLinkApi } from "./deep-link";
+import { applyDeepLink, planDeepLink, watchDeepLinks, type DeepLinkApi } from "./deep-link";
 
 const uuid = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
 const link = (raw: string): DeepLink => {
@@ -132,5 +132,25 @@ describe("following the links the main process sends", () => {
         () => undefined
       )()
     ).not.toThrow();
+  });
+});
+
+describe("a link that arrives while an old screen is open", () => {
+  it("uncovers the stack before it opens the object, also when the destination is already Explore", () => {
+    const events: string[] = [];
+    const state = inPlace("explore");
+    applyDeepLink(link(`memora://source/${uuid(11)}`), state, {
+      dispatch: (action) => events.push(action.type),
+      onNotice: () => events.push("notice"),
+      onShowStack: () => events.push("showStack")
+    });
+    expect(events).toEqual(["showStack", "open"]);
+    const retired: string[] = [];
+    applyDeepLink(link(`memora://open/wiki/${uuid(9)}`), inPlace("map"), {
+      dispatch: (action) => retired.push(action.type),
+      onNotice: () => retired.push("notice"),
+      onShowStack: () => retired.push("showStack")
+    });
+    expect(retired).toEqual(["showStack", "go", "notice"]);
   });
 });

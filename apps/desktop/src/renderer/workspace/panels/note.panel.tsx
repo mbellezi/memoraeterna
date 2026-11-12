@@ -13,7 +13,9 @@ import { addressForNavigation, addressForPassage, frameState } from "./object-op
  * draws the kind, the history arrows, Foco, the pin, the close and the path ribbon; this file
  * registers the panel by file and turns what the page opens (a note, a passage in its source, a
  * topic) into addresses pushed beside the panel, so a click never changes the destination. The
- * page stays mounted in the previous panel's compact form, so an unsaved edit is kept.
+ * page stays mounted in the previous panel's compact form, so an unsaved edit is kept; where the
+ * workspace would unmount it (the panel closes, steps back or is folded into a spine) the page's
+ * leave guard, registered through `onLeaveGuard`, asks first.
  */
 
 export const kind = "note";
@@ -27,7 +29,7 @@ export function title(summary: ObjectSummary | null): string {
   return summary?.title ?? "";
 }
 
-export function Component({ t, address, mode, active, onState, onOpen }: PanelProps) {
+export function Component({ t, address, mode, active, onState, onOpen, onLeaveGuard }: PanelProps) {
   const id = parseObjectAddress(address)?.id ?? null;
   const docked = useContextDocked();
   const report = useCallback(
@@ -65,6 +67,7 @@ export function Component({ t, address, mode, active, onState, onOpen }: PanelPr
       onOpenNote={openNote}
       onOpenPassage={openPassage}
       onNavigate={openNavigation}
+      {...(onLeaveGuard ? { onLeaveGuard } : {})}
     />
   );
 }

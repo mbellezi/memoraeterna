@@ -74,8 +74,8 @@ deep links.
 ## Deep links and bundles
 
 - `memora://` links are parsed only by `normalizeMemoraLink` (canonical and
-  legacy forms), open only an object, respect the single-instance lock and wait
-  while the user is editing. Packaged builds register the scheme; DEV never
-  changes OS protocol associations.
+  legacy forms), open only an object, respect the single-instance lock and ask
+  before they would discard an unsaved edit. Packaged builds register the
+  scheme; DEV never changes OS protocol associations.
 - The Obsidian plugin ships as a bundled CommonJS artifact built after its
   contracts and translations; type checking must not replace that bundle.

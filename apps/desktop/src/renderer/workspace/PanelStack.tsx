@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useRef,
   useState,
   type ComponentType,
   type Dispatch,
@@ -15,11 +16,12 @@ import { Skeleton } from "../components/ui/skeleton";
 import { useAppEvent } from "../lib/app-events";
 import { cn } from "../lib/cn";
 import { destinationIds, type DestinationId } from "./destinations";
-import { pinOf } from "./pin-object";
+import { panelKey, setDrawnProbe, setPanelGuard, type LeaveGuard } from "./panel-guards";
+import type { PinControl } from "./pin-object";
 import { PanelFrame, type PanelLoadState } from "./PanelFrame";
 import { destinationGlyphs } from "./Rail";
 import type { RibbonPlace } from "./PathRibbon";
-import { destinationTitleKeys } from "./shell-model";
+import { destinationTitleKeys, hasNavigator } from "./shell-model";
 import {
   layout,
   type LayoutChrome,
@@ -75,6 +77,12 @@ export interface PanelProps {
   onOpen: (address: PanelAddress, options?: { replace?: boolean }) => void;
   /** For a root in its compact form: the address of the panel it opened (`aria-current`). */
   current?: PanelAddress;
+  /**
+   * A panel that can hold unsaved work registers its guard here (null withdraws it): the workspace
+   * asks it before a move that would unmount the panel (close, Back, a fold into a spine). The
+   * callback is stable for the panel's life.
+   */
+  onLeaveGuard?: (guard: LeaveGuard | null) => void;
 }
 
 /** A panel kind, as its `*.panel.tsx` module exports it. */
@@ -289,9 +297,11 @@ export interface PanelStackProps {
   onToggleFocusMode?: () => void;
   /** The panel modules; the files of `panels/` by default (a screen or a test passes its own). */
   registry?: readonly PanelModule[];
+  /** The pin of the top panel's object; absent, the frame draws no pin. */
+  pin?: PinControl;
 }
 
-const itemKey = (destination: DestinationId, panel: Panel) => `${destination}:${panel.id}`;
+const itemKey = (destination: DestinationId, panel: Panel) => panelKey(destination, panel.id);
 const addressOf = (panel: Panel): PanelAddress => panel.history[panel.index] ?? "";
 
 interface ItemContext {
@@ -309,7 +319,8 @@ export function PanelStack({
   shown = true,
   focusMode = false,
   onToggleFocusMode,
-  registry = panelRegistry
+  registry = panelRegistry,
+  pin
 }: PanelStackProps) {
   const place = workspace.destination;
   const current: DestinationId | null = place === "settings" ? null : place;
@@ -336,6 +347,16 @@ export function PanelStack({
     },
     [choosers]
   );
+  // One stable guard setter per panel key (a panel's effect depends on it).
+  const [guardSetters] = useState(() => new Map<string, (guard: LeaveGuard | null) => void>());
+  const guardSetterFor = (key: string) => {
+    let setter = guardSetters.get(key);
+    if (!setter) {
+      setter = (guard) => setPanelGuard(key, guard);
+      guardSetters.set(key, setter);
+    }
+    return setter;
+  };
   const report = useCallback((key: string, state: PanelLoadState) => {
     setStates((map) => {
       if (map.get(key) === state) return map;
@@ -364,6 +385,34 @@ export function PanelStack({
   const view: StackView = activeStack
     ? stackView(activeStack, viewportWidth, chrome, noCompact, focusMode)
     : { items: [], merged: [], mergedAhead: [], top: -1 };
+  // How a state would be laid out, for the workspace's question "would this move unmount a panel
+  // that holds unsaved work?" (panel-guards.ts): the keys of the panels drawn full or compact.
+  const drawnKeys = (state: WorkspaceState): ReadonlySet<string> => {
+    const keys = new Set<string>();
+    if (state.destination === "settings") return keys;
+    const destination = state.destination;
+    const stack = state.stacks[destination];
+    const navigator =
+      state.navigator[destination] === workspace.navigator[destination]
+        ? chrome.navigator
+        : shown && hasNavigator(destination) && state.navigator[destination] && !focusMode;
+    const noRootCompact = new Set<number>();
+    if (moduleFor(stack.root)?.compact === false) noRootCompact.add(-1);
+    for (const item of stackView(
+      stack,
+      viewportWidth,
+      { ...chrome, navigator },
+      noRootCompact,
+      focusMode
+    ).items) {
+      const panel = stack.panels[item.panel];
+      if (panel && !item.merged && item.mode !== "spine") keys.add(panelKey(destination, panel.id));
+    }
+    return keys;
+  };
+  const probeNow = useRef(drawnKeys);
+  probeNow.current = drawnKeys;
+  useEffect(() => setDrawnProbe((state) => probeNow.current(state)), []);
   const { summaries, status: titlesStatus } = useSummaries(
     activeStack ? activeStack.panels.map(addressOf) : [],
     shown && activeStack !== null
@@ -566,7 +615,7 @@ export function PanelStack({
     const onScreen = active && drawn;
     const shownPlace = places.get(key);
     // The pin of the top panel's object: a view address has nothing to pin.
-    const pin = pinOf(address);
+    const pinnable = pin !== undefined && addressKind(address) !== null;
     if (!module) return null;
     const Component = module.Component;
     return (
@@ -605,7 +654,9 @@ export function PanelStack({
             focusMode={focusMode}
             {...(onToggleFocusMode ? { onToggleFocusMode } : {})}
             onOpen={openFrom(index)}
-            {...(pin ? { onPin: pin } : {})}
+            {...(pinnable
+              ? { onPin: () => pin.toggle(address), pinned: pin.isPinned(address) }
+              : {})}
             {...(panel.scroll !== undefined ? { scroll: panel.scroll } : {})}
             onScrollEnd={(top) => dispatch({ type: "scroll", panel: index, top })}
           >
@@ -617,6 +668,7 @@ export function PanelStack({
               onState={(state) => report(key, state)}
               onPlace={(place) => reportPlace(key, place)}
               onOpen={openFrom(index)}
+              onLeaveGuard={guardSetterFor(key)}
               {...(mode === "compact" && stack.panels[index + 1]
                 ? { current: addressOf(stack.panels[index + 1] as Panel) }
                 : {})}

@@ -51,6 +51,8 @@ import { useFirstRun } from "./components/onboarding/use-first-run";
 import { ToastViewport, useToasts } from "./components/ui/toast";
 import type { KnowledgeGraphViewState } from "./components/KnowledgeGraphDashboard";
 import { useDeepLinks } from "./workspace/destinations/explore/deep-link";
+import { usePins } from "./workspace/pin-object";
+import { viewHistoryBounds } from "../shared/view-history";
 import * as exploreRoot from "./workspace/destinations/explore/ExploreRoot";
 import { ExploreActionsContext } from "./workspace/destinations/explore/explore-actions";
 import { ExploreNavigator, hoistAction } from "./workspace/destinations/explore/ExploreNavigator";
@@ -260,7 +262,25 @@ export function App({
   });
   // A link from Obsidian or the system opens its object as a panel (D10); a page of the retired
   // wiki says so in a notice.
-  useDeepLinks(workspace, dispatch, () => pushToast(t("topics.placeholder.notice"), "info"));
+  useDeepLinks(
+    workspace,
+    dispatch,
+    () => pushToast(t("topics.placeholder.notice"), "info"),
+    // The object opens in the stack, which an old screen would cover: the link shows the stack.
+    () => setLegacyView(null)
+  );
+  // The pin of the top panel's object (the frame's pin and Cmd-D), wherever the person is.
+  const pin = usePins(
+    workspace,
+    legacyView === null && workspace.destination !== "settings",
+    (failure) =>
+      pushToast(
+        failure === "limit"
+          ? t("viewHistory.pinLimit", { values: { count: viewHistoryBounds.pinMax } })
+          : t("viewHistory.changeFailed"),
+        "error"
+      )
+  );
   // The old Wiki's own links: a topic opens beside, a source or note in the Library.
   const openWikiObject = useStableCallback((navigation: OpenableNavigation) => {
     if (navigation.type === "topic") openTopic(navigation.topicId);
@@ -735,6 +755,7 @@ export function App({
                 focusMode={focusMode}
                 onToggleFocusMode={toggleFocusMode}
                 registry={stackRegistry}
+                pin={pin}
               />
             </ContextDockContext.Provider>
           </ExploreActionsContext.Provider>

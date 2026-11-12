@@ -3,7 +3,6 @@ import { formatObjectAddress, parseObjectAddress } from "@app/domain";
 import type { Translator } from "@app/i18n";
 
 import { TopicNavigator } from "../../../components/topics/TopicNavigator";
-import { usePinShortcut } from "../../pin-object";
 import type { WorkspaceAction, WorkspaceState } from "../../state";
 
 /**
@@ -35,7 +34,6 @@ export interface ExploreNavigatorProps {
 }
 
 export function ExploreNavigator({ t, workspace, dispatch }: ExploreNavigatorProps) {
-  usePinShortcut(workspace);
   const openBeside = (address: string) =>
     dispatch({
       type: "open",

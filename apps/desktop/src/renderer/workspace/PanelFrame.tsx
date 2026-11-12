@@ -52,6 +52,8 @@ export interface PanelFrameProps {
   onToggleFocusMode?: () => void;
   /** "Fixar no navegador"; absent until the navigator's pins land, so no control does nothing. */
   onPin?: () => void;
+  /** The object is pinned: the pin is drawn pressed (`aria-pressed`, the accent fill). */
+  pinned?: boolean;
   /** Opens an address beside this panel (a ribbon crumb). */
   onOpen: (address: string) => void;
   ribbonPlace?: RibbonPlace;
@@ -91,12 +93,15 @@ export function pressFocusesPanel(target: unknown, frame: unknown): boolean {
   return false;
 }
 
-const iconButton = cn(
-  "inline-grid size-7 shrink-0 place-items-center rounded-md text-secondary-foreground",
-  "transition-colors hover:bg-surface-hover hover:text-foreground",
+const iconButtonBase = cn(
+  "inline-grid size-7 shrink-0 place-items-center rounded-md transition-colors",
   "focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-accent",
   "[&>svg]:size-4"
 );
+const iconButtonIdle = "text-secondary-foreground hover:bg-surface-hover hover:text-foreground";
+const iconButton = cn(iconButtonBase, iconButtonIdle);
+/** The pressed pin: the accent colour and its soft fill (the idle colours are not on it). */
+const iconButtonPressed = cn(iconButtonBase, "bg-accent-soft text-accent hover:bg-accent-soft");
 
 export function PanelFrame({
   t,
@@ -118,6 +123,7 @@ export function PanelFrame({
   focusMode = false,
   onToggleFocusMode,
   onPin,
+  pinned = false,
   onOpen,
   ribbonPlace,
   onChoosePlace,
@@ -249,10 +255,11 @@ export function PanelFrame({
             <button
               type="button"
               aria-label={t("panelFrame.pin")}
-              className={iconButton}
+              aria-pressed={pinned}
+              className={pinned ? iconButtonPressed : iconButton}
               onClick={onPin}
             >
-              <Pin aria-hidden="true" />
+              <Pin aria-hidden="true" className={cn(pinned && "fill-current")} />
             </button>
           </Tooltip>
         ) : null}
