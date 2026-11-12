@@ -165,7 +165,8 @@
       "emptyFiltered": "Nothing matches this filter.",
       "loadMore": "Load more",
       "loadingMore": "Loading more...",
-      "moreFailed": "More items could not be loaded."
+      "moreFailed": "More items could not be loaded.",
+      "errorKept": "Nothing was decided or changed."
     },
     "filters": {
       "label": "Filter the Inbox",

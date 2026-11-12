@@ -19,6 +19,7 @@ import { MapTable } from "./MapTable";
 import { ShapeChanges } from "./ShapeChanges";
 import type { ShapeSnapshot } from "./shape-controller";
 import {
+  defaultSelection,
   mapDescription,
   panelModel,
   resolveSelection,
@@ -241,7 +242,12 @@ function ShapeReady(props: ShapeViewProps & { shape: TopicShape }) {
     () => buildIcicle(shape.nodes, { wholeTree, sortBySize: true }),
     [shape.nodes, wholeTree]
   );
-  const selectedKey = resolveSelection(layout, snapshot.selectedKey);
+  const originKey = props.origin ? topicCellKey(props.origin.topicId) : null;
+  const selectedKey = resolveSelection(
+    layout,
+    snapshot.selectedKey,
+    defaultSelection(layout, originKey)
+  );
   const panel =
     selectedKey === null
       ? null
@@ -251,13 +257,17 @@ function ShapeReady(props: ShapeViewProps & { shape: TopicShape }) {
     [t, layout, wholeTree, levelOffset, growth]
   );
   const warnings = warningViews(t, shape.warnings, layout, wholeTree);
-  const originKey = props.origin ? topicCellKey(props.origin.topicId) : null;
   const here = useMemo(
     () =>
       originKey && layout.byKey.has(originKey)
         ? {
             chart: new Set(drawnTrail(layout, originKey)),
-            table: new Set(cellTrail(layout, originKey).map((cell) => cell.key))
+            // The root holds everything: marking it says nothing.
+            table: new Set(
+              cellTrail(layout, originKey)
+                .map((cell) => cell.key)
+                .filter((key) => key !== layout.rootKey)
+            )
           }
         : { chart: new Set<string>(), table: new Set<string>() },
     [layout, originKey]

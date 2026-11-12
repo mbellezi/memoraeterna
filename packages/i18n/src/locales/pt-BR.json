@@ -165,7 +165,8 @@
       "emptyFiltered": "Nada corresponde a este filtro.",
       "loadMore": "Carregar mais",
       "loadingMore": "Carregando mais...",
-      "moreFailed": "Não foi possível carregar mais itens."
+      "moreFailed": "Não foi possível carregar mais itens.",
+      "errorKept": "Nada foi decidido nem alterado."
     },
     "filters": {
       "label": "Filtrar a caixa de entrada",

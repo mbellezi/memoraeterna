@@ -48,11 +48,17 @@ const ringColour: Record<TopicHealth, string | null> = {
 };
 
 /** The selection's 2 px accent outline, with the health ring inside it: both show at once. */
-function ringOf(selected: boolean, health: TopicHealth, here: boolean): string | undefined {
+function ringOf(
+  selected: boolean,
+  health: TopicHealth,
+  here: boolean,
+  short: boolean
+): string | undefined {
   const rings: string[] = [];
   if (selected) rings.push("inset 0 0 0 2px var(--accent)");
   const mark = ringColour[health];
-  if (mark) rings.push(`inset 0 0 0 ${selected ? 4 : 2}px ${mark}`);
+  // A block too short for two rings keeps the selection's: its glyph and word carry the health.
+  if (mark && !(short && selected)) rings.push(`inset 0 0 0 ${selected ? 4 : 2}px ${mark}`);
   // The ancestor that holds where the person was: a 3 px bar on its left edge.
   if (here) rings.push("inset 3px 0 0 0 var(--accent)");
   return rings.length === 0 ? undefined : rings.join(", ");
@@ -209,7 +215,7 @@ export function MapChart({
           <span className="inline-flex items-center gap-1.5">
             <span
               aria-hidden="true"
-              className="h-3 w-4 rounded-sm"
+              className="h-3 w-4 rounded-sm bg-surface-selected"
               style={{ boxShadow: "inset 3px 0 0 0 var(--accent)" }}
             />
             {t("map.chart.legend.here")}
@@ -324,11 +330,13 @@ function Block({
       style={{
         ...rect(box),
         background: fillOf(cell.row, selected),
-        boxShadow: ringOf(selected, health, here)
+        boxShadow: ringOf(selected, health, here, box.h < 24)
       }}
       className={cn(
         "absolute flex min-w-0 overflow-hidden rounded-md border-0 px-2 text-left text-xs text-foreground",
-        form === "stacked" ? "flex-col justify-center gap-0.5" : "items-center gap-1.5",
+        form === "stacked"
+          ? "flex-col justify-center gap-0.5 leading-4"
+          : "items-center gap-1.5 leading-none",
         "focus-visible:-outline-offset-2 focus-visible:outline-foreground"
       )}
     >
@@ -349,13 +357,16 @@ function Block({
                 aria-hidden="true"
               />
             ) : null}
-            {here ? (
+            {here && form !== "stacked" ? (
               <span className="shrink-0 font-semibold text-accent">{`${t("map.chart.here")} ↳`}</span>
             ) : null}
           </span>
           {form === "nameCount" || form === "stacked" ? (
-            <span className="shrink-0 whitespace-nowrap text-secondary-foreground tabular-nums">
+            <span className="flex shrink-0 items-center gap-1.5 whitespace-nowrap text-secondary-foreground tabular-nums">
               {count}
+              {here && form === "stacked" ? (
+                <span className="font-semibold text-accent">{`${t("map.chart.here")} ↳`}</span>
+              ) : null}
             </span>
           ) : null}
         </>

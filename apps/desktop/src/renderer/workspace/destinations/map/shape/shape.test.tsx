@@ -116,11 +116,22 @@ describe("the Shape view", () => {
     ).toHaveLength(1);
   });
 
-  it("selects the root when nothing is selected or the selection is gone", () => {
+  it("selects the topic that needs attention when nothing is selected or the selection is gone", () => {
     for (const selectedKey of [null, "topic:gone"]) {
       const html = view(snapshot({ selectedKey }));
-      expect(html).toMatch(/<h2[^>]*>Topics<\/h2>/);
+      expect(html).toMatch(/<h2[^>]*>Testing effect<\/h2>/);
     }
+  });
+
+  it("selects the topic the person came from first, and the whole tree when nothing needs attention", () => {
+    const origin = { topicId: shapeId(sample.retrieval), title: "Retrieval practice" };
+    expect(view(snapshot(), { origin, onBack: noop })).toMatch(/<h2[^>]*>Retrieval practice<\/h2>/);
+    const healthy = sampleShape({
+      nodes: sampleNodes().map((node) => ({ ...node, health: "good" as const }))
+    });
+    expect(view(snapshot({ load: { status: "ready", shape: healthy } }))).toMatch(
+      /<h2[^>]*>Topics<\/h2>/
+    );
   });
 
   it("has one tab stop in the chart: the selected block, otherwise the first one drawn", () => {
@@ -201,7 +212,7 @@ describe("the zoom-out band and Esc", () => {
     expect(html).toContain("goes back to Forgetting curve, where you were.");
     expect(html).toContain(">Back<");
     expect(html).toContain("here = holds where you were");
-    // The ancestors in the chart and the rows of the table carry the marker.
+    // The ancestors in the chart and the rows of the table carry the marker, the root does not.
     expect(html).toContain("Forgetting curve, 26 items, level 2, health: good, here");
     expect(html).toContain("Memory and learning, 90 items, level 1, health: good, here");
     expect(html).toContain("inset 3px 0 0 0 var(--accent)");
@@ -249,7 +260,7 @@ describe("the table", () => {
   it("is beside the chart with Notes, Health and 7 days, the selected row marked", () => {
     const html = view(snapshot({ selectedKey: topicCellKey(shapeId(sample.memory)) }));
     expect(html).toContain('<col style="width:52px"/>');
-    expect(html).toContain('<col style="width:124px"/>');
+    expect(html).toContain('<col class="max-[1179px]:hidden" style="width:124px"/>');
     expect(html).toContain('<col style="width:64px"/>');
     expect(html).toContain("bg-surface-selected");
   });

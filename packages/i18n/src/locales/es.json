@@ -165,7 +165,8 @@
       "emptyFiltered": "Nada coincide con este filtro.",
       "loadMore": "Cargar más",
       "loadingMore": "Cargando más...",
-      "moreFailed": "No se pudieron cargar más elementos."
+      "moreFailed": "No se pudieron cargar más elementos.",
+      "errorKept": "No se decidió ni cambió nada."
     },
     "filters": {
       "label": "Filtrar la bandeja de entrada",

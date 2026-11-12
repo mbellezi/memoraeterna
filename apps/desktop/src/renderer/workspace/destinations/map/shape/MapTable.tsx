@@ -55,7 +55,7 @@ export function MapTable({
           <colgroup>
             <col />
             <col style={{ width: 52 }} />
-            {compact ? null : <col style={{ width: 124 }} />}
+            {compact ? null : <col className="max-[1179px]:hidden" style={{ width: 124 }} />}
             {compact ? null : <col style={{ width: 64 }} />}
           </colgroup>
           <thead className="sticky top-0 bg-soft">
@@ -67,7 +67,7 @@ export function MapTable({
                 {t("map.table.notes")}
               </th>
               {compact ? null : (
-                <th scope="col" className={cn(head, "text-left")}>
+                <th scope="col" className={cn(head, "text-left max-[1179px]:hidden")}>
                   {t("map.table.health")}
                 </th>
               )}
@@ -114,7 +114,7 @@ export function MapTable({
                     {number.format(row.items)}
                   </td>
                   {compact ? null : (
-                    <td className="px-2 py-1 whitespace-nowrap">
+                    <td className="px-2 py-1 whitespace-nowrap max-[1179px]:hidden">
                       {row.health ? <HealthMark t={t} health={row.health} /> : "—"}
                     </td>
                   )}

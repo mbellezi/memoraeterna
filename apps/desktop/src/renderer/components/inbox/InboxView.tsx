@@ -4,6 +4,8 @@ import type { ChangeSetRisk, InboxKind, InboxObject, InboxVerb } from "@app/doma
 import type { Translator } from "@app/i18n";
 
 import { Button } from "../ui/button";
+import { ErrorState } from "../ui/error-state";
+import { SkeletonRows } from "../ui/skeleton";
 import { InboxDetail, UndoBanner } from "./InboxDetail";
 import { InboxList } from "./InboxList";
 import { keyRows } from "./inbox-keys";
@@ -221,17 +223,18 @@ export function InboxView({ rootRef, ...props }: InboxViewProps) {
       </p>
 
       {state.load.status === "loading" ? (
-        <p role="status" className="text-sm text-muted-foreground">
-          {t("inbox.states.loading")}
-        </p>
-      ) : state.load.status === "error" ? (
-        <div role="alert" className="flex flex-wrap items-center gap-2 text-sm text-danger">
-          <p>{t("inbox.states.error")}</p>
-          <Button type="button" onClick={props.onRetry}>
-            <RefreshCw aria-hidden="true" />
-            {t("shell.actions.retry")}
-          </Button>
+        <div role="status" aria-busy="true" className="flex flex-col gap-3">
+          <p className="m-0 text-sm text-muted-foreground">{t("inbox.states.loading")}</p>
+          <SkeletonRows rows={6} />
         </div>
+      ) : state.load.status === "error" ? (
+        <ErrorState
+          t={t}
+          message={t("inbox.states.error")}
+          kept={t("inbox.states.errorKept")}
+          retryLabel={t("shell.actions.retry")}
+          onRetry={props.onRetry}
+        />
       ) : empty ? (
         <div
           role="status"

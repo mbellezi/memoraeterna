@@ -165,7 +165,8 @@
       "emptyFiltered": "Nessun elemento corrisponde a questo filtro.",
       "loadMore": "Carica altri",
       "loadingMore": "Caricamento di altri...",
-      "moreFailed": "Impossibile caricare altri elementi."
+      "moreFailed": "Impossibile caricare altri elementi.",
+      "errorKept": "Non è stato deciso né modificato nulla."
     },
     "filters": {
       "label": "Filtra la posta in arrivo",

@@ -165,7 +165,8 @@
       "emptyFiltered": "Aucun élément ne correspond à ce filtre.",
       "loadMore": "Charger plus",
       "loadingMore": "Chargement de la suite...",
-      "moreFailed": "Impossible de charger d'autres éléments."
+      "moreFailed": "Impossible de charger d'autres éléments.",
+      "errorKept": "Rien n’a été décidé ni modifié."
     },
     "filters": {
       "label": "Filtrer la boîte de réception",

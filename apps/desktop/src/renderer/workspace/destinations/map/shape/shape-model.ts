@@ -119,9 +119,30 @@ export function managementMark(t: Translator, management: TopicManagement): stri
 }
 
 /** The block to show as selected: the one asked for when it is still there, otherwise the root. */
-export function resolveSelection(layout: IcicleLayout, selectedKey: string | null): string | null {
+export function resolveSelection(
+  layout: IcicleLayout,
+  selectedKey: string | null,
+  preferredKey: string | null = null
+): string | null {
   if (selectedKey !== null && layout.byKey.has(selectedKey)) return selectedKey;
+  if (preferredKey !== null && layout.byKey.has(preferredKey)) return preferredKey;
   return layout.rootKey;
+}
+
+/**
+ * The block shown as selected before the person picks one: the topic they came from when they came
+ * from an object, else the first topic that needs attention (the largest, as the chart sorts), else
+ * nothing (the view then shows the whole tree).
+ */
+export function defaultSelection(layout: IcicleLayout, originKey: string | null): string | null {
+  if (originKey !== null && layout.byKey.has(originKey)) return originKey;
+  const needs = layout.order.find((key) => {
+    const cell = layout.byKey.get(key);
+    return (
+      cell?.kind === "topic" && cell.row > 0 && cell.node !== null && cell.node.health !== "good"
+    );
+  });
+  return needs ?? null;
 }
 
 // ---------------------------------------------------------------------------
