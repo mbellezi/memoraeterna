@@ -137,6 +137,7 @@ import {
   type AiModelParameterCapabilities,
   type AiOutputContract,
   type AiOutputSchema,
+  type AiPresetId,
   type AiSchemaMode,
   type BudgetClass,
   type DecisionsStatus,
@@ -1247,6 +1248,11 @@ export class AiService {
 
   public applyPreset(input: AiApplyPresetInput): Promise<AiApplyPresetResult> {
     return this.classRouteService().applyPreset(input);
+  }
+
+  /** What a setup gives per route and for the decider, read without writing (F5 T160). */
+  public presetDefaults(preset: AiPresetId) {
+    return this.classRouteService().presetDefaults(preset);
   }
 
   public testClassRoute(route: AiClassRouteTarget): Promise<AiClassRoutes> {

@@ -435,6 +435,37 @@ describe.skipIf(!sidecarInstalled)("workload class routes on a real PostgreSQL d
       expect(gate?.profileId).toBe(ranker);
     }, 60_000);
 
+    it("reads what a setup gives per route without writing anything", async () => {
+      const ids = await splitLibrary();
+      const ranker = await localProfile(presetCatalogIds.rankerMlx, "mlx", ["reranking"]);
+      await route("class:decide", ranker);
+      const { ai } = fakeAi();
+      await service(ai).view();
+      const before = await routes();
+      const cloud = await service(ai).presetDefaults("cloud");
+      expect(cloud.deciderMode).toBe("ranker-else-generative");
+      expect(cloud.routes).toMatchObject({
+        "write-fast": ids.summary,
+        answer: ids.summary,
+        judge: ids.summary,
+        embed: ids.embed,
+        decide: ranker
+      });
+      // Hybrid needs the local embedding model, which is not installed: that route has no profile
+      // to point at yet, and creating one is the setup's job, not a read's.
+      const hybrid = await service(ai).presetDefaults("hybrid");
+      expect(hybrid.deciderMode).toBe("ranker");
+      expect(hybrid.routes.embed).toBeUndefined();
+      // Local off Apple silicon names nothing.
+      expect(await service(ai, intel).presetDefaults("local")).toEqual({
+        routes: {},
+        deciderMode: null
+      });
+      expect(await routes()).toEqual(before);
+      expect(await settings.get(presetSettingKey)).toBeNull();
+      expect(await settings.get(deciderModeSettingKey)).toBeNull();
+    }, 60_000);
+
     it("a failed test leaves the class unverified with its reason and keeps its route", async () => {
       const ids = await splitLibrary();
       const { ai } = fakeAi({ "structured-output": new Error("errors.ai.providerUnavailable") });

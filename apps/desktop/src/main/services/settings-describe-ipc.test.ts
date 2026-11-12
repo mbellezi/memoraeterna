@@ -9,7 +9,10 @@ function register() {
   const ipc = { handle: (channel: string, handler: never) => handlers.set(channel, handler) };
   const settings = {
     describe: vi.fn(async () => ({ entries: [] })),
-    reset: vi.fn(async (input: { id: string }) => ({ id: input.id, value: null }))
+    reset: vi.fn(async (input: { id: string; confirmed?: boolean }) => ({
+      id: input.id,
+      value: null
+    }))
   };
   registerSettingsDescribeIpc(ipc as unknown as Pick<IpcMain, "handle">, settings);
   const call = async (channel: string, ...args: unknown[]) => handlers.get(channel)!({}, ...args);
@@ -29,6 +32,11 @@ describe("registerSettingsDescribeIpc", () => {
       value: null
     });
     expect(settings.reset).toHaveBeenCalledWith({ id: "themeMode" });
+    await call(settingsDescribeChannels.reset, { id: "processingPresets", confirmed: true });
+    expect(settings.reset).toHaveBeenLastCalledWith({ id: "processingPresets", confirmed: true });
+    await expect(
+      call(settingsDescribeChannels.reset, { id: "a", confirmed: "yes" })
+    ).rejects.toThrow();
   });
 
   it("refuses a request the schema does not accept before the service sees it", async () => {

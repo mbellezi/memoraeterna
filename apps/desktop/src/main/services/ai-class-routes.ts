@@ -176,6 +176,28 @@ export class AiClassRouteService {
     return { applied: true, blocked: [], view: await this.readView() };
   }
 
+  /**
+   * What a setup gives, read without writing: the profile each route would point at when one
+   * already exists (a route that needs a profile created, a model not yet installed or a blocked
+   * setup has none) and the note decider mode the setup stores. Settings v2 uses it to mark a route
+   * "changed" and to put one route back (F5 T160); nothing is created or written here.
+   */
+  public async presetDefaults(preset: AiPresetId): Promise<{
+    routes: Partial<Record<RouteName, string>>;
+    deciderMode: NoteDeciderMode | null;
+  }> {
+    await this.options.ensureLegacyMapping?.();
+    const planned = planAiPreset(preset, this.machine());
+    if (!planned.ok) return { routes: {}, deciderMode: null };
+    const resolution = await this.resolve(planned.plan);
+    const routes: Partial<Record<RouteName, string>> = {};
+    for (const route of routeNames) {
+      const resolved = resolution.resolved[route];
+      if (resolved && "profile" in resolved) routes[route] = resolved.profile.id;
+    }
+    return { routes, deciderMode: planned.plan.deciderMode };
+  }
+
   /** Runs one test call for a class (or the judge) and records the outcome. */
   public async testClassRoute(route: RouteName): Promise<AiClassRoutes> {
     await this.options.ensureLegacyMapping?.();

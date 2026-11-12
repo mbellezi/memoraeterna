@@ -33,7 +33,7 @@ export const SettingsJsonSchema: z.ZodType<SettingsJson> = z.lazy(() =>
  * One stored setting. `value` is what the control shows, never a secret and never a filesystem path
  * (a credential or a folder reads `true` once set and `null` while it is not: the renderer asks the
  * existing getters for more). `default` is the value a reset restores, or null when the default
- * depends on the machine or on another setting and the main process cannot name one (a class route).
+ * depends on the machine or on another setting and the main process cannot name one; a class route names the profile its setup gives, when that profile exists.
  * `changed` is the marker of Settings v2.
  */
 export const SettingDescriptionSchema = z
@@ -56,13 +56,20 @@ export const SettingsDescribeResultSchema = z
   .strict();
 export type SettingsDescribeResult = z.infer<typeof SettingsDescribeResultSchema>;
 
-export const SettingsResetInputSchema = z.object({ id: z.string().min(1).max(200) }).strict();
+/**
+ * `confirmed` is the person's yes to a reset that throws away something they built (their saved
+ * import plans); without it that reset writes nothing and answers `pending`.
+ */
+export const SettingsResetInputSchema = z
+  .object({ id: z.string().min(1).max(200), confirmed: z.boolean().optional() })
+  .strict();
 export type SettingsResetInput = z.infer<typeof SettingsResetInputSchema>;
 
 /**
  * The value after the reset. `pending` is true when the setting moves only after a step the person
- * confirms (the Obsidian layout is a journaled migration of the vault's folders: the reset prepares
- * it and the value stays until it is applied).
+ * confirms: the Obsidian layout is a journaled migration of the vault's folders (the reset prepares
+ * it and the value stays until it is applied); saved import plans are emptied only with `confirmed`;
+ * a provider's key goes with its configuration on the Providers page, one confirmed step each.
  */
 export const SettingsResetResultSchema = z
   .object({

@@ -1,8 +1,13 @@
 import { createSettingsRepository, type Queryable } from "@app/db";
-import { recommendedMatchingPresetId, type AiPresetId, type KnowledgeControls } from "@app/domain";
+import {
+  recommendedMatchingPresetId,
+  type AiPresetId,
+  type KnowledgeControls,
+  type NoteDeciderMode
+} from "@app/domain";
 
 import type { AppEvent } from "../../shared/app-events.js";
-import type { AppSettings, StorageSettings } from "../../shared/ipc.js";
+import type { AiClassRouteTarget, AppSettings, StorageSettings } from "../../shared/ipc.js";
 import type {
   SettingDescription,
   SettingsDescribeResult,
@@ -45,13 +50,14 @@ export interface SettingsResetPorts {
   ai: () => Pick<
     AiService,
     | "classRoutes"
+    | "presetDefaults"
     | "applyPreset"
+    | "setClassRoute"
     | "setDeciderMode"
     | "decisionsStatus"
     | "setDecisionsEnabled"
     | "removeDecisionsKey"
     | "listProviders"
-    | "deleteProvider"
   > | null;
   /** The setup this Mac's hardware recommends (informative; decision 26); null when unknown. */
   recommendedPreset: () => Promise<AiPresetId | null>;
@@ -74,6 +80,12 @@ export interface SettingsResetPorts {
   logger?: Pick<Console, "warn">;
 }
 
+type SetupDefaults = Awaited<
+  ReturnType<NonNullable<ReturnType<SettingsResetPorts["ai"]>>["presetDefaults"]>
+>;
+
+const noDefaults: SetupDefaults = { routes: {}, deciderMode: null };
+
 interface Reading {
   value: Json;
   /** Null when the default depends on the machine or on another setting. */
@@ -83,15 +95,21 @@ interface Reading {
 
 /** One setting kind: how it is read and how it is put back. */
 interface Adapter {
-  /** The store to announce after a reset; absent when the writer announces itself. */
-  announces?: AnnouncedStore;
+  /** The store to announce after a reset, per entry; absent when the writer announces itself. */
+  announces?: AnnouncedStore | ((entry: SettingEntryV2) => AnnouncedStore);
+  /** The other settings the writer moves besides the entry (they go in the same event's keys). */
+  moves?: (entry: SettingEntryV2) => readonly string[];
   read(entry: SettingEntryV2, context: Context): Promise<Reading>;
-  /** Writes the default through the setting's writer; `pending` when a confirmed step remains. */
+  /**
+   * Writes the default through the setting's writer. `pending` when a confirmed step remains;
+   * `wrote: false` when nothing was written (the step needs the person's confirmation first).
+   */
   write(
     entry: SettingEntryV2,
     context: Context,
-    before: Reading
-  ): Promise<{ pending?: true } | void>;
+    before: Reading,
+    confirmed: boolean
+  ): Promise<{ pending?: true; wrote?: false } | void>;
 }
 
 /** The stores of one describe or one reset, each read at most once. */
@@ -100,6 +118,12 @@ interface Context {
   app(): Promise<AppSettings>;
   storage(): Promise<StorageSettings>;
   routes(): Promise<Awaited<ReturnType<AiService["classRoutes"]>>>;
+  /** The setup the person is on (null on Custom or before any); the routes' own default is it. */
+  currentSetup(): Promise<AiPresetId | null>;
+  /** What the setup of the routes gives (the current one; on Custom the recommended one), read only. */
+  setupDefaults(): Promise<SetupDefaults>;
+  /** What the person's current setup gives; empty on Custom or before any setup. */
+  currentDefaults(): Promise<SetupDefaults>;
   decisions(): Promise<Awaited<ReturnType<AiService["decisionsStatus"]>>>;
   controls(): Promise<KnowledgeControls>;
   ai(): NonNullable<ReturnType<SettingsResetPorts["ai"]>>;
@@ -127,11 +151,31 @@ function createContext(ports: SettingsResetPorts): Context {
     (() => {
       throw missing();
     })();
+  const routes = once(async () => ai().classRoutes());
+  const currentSetup = once(async () => {
+    const preset = (await routes()).preset;
+    return preset !== null && preset !== "custom" ? preset : null;
+  });
+  const currentDefaults = once(async () => {
+    const setup = await currentSetup();
+    return setup ? ai().presetDefaults(setup) : noDefaults;
+  });
+  const setupDefaults = once(async () => {
+    if (await currentSetup()) return currentDefaults();
+    // Routes pointed by hand (Custom) are compared with what the recommended setup gives; before
+    // any setup the routes come from the legacy mapping and no default is claimed for them.
+    if ((await routes()).preset !== "custom") return noDefaults;
+    const recommended = await ports.recommendedPreset().catch(() => null);
+    return recommended ? ai().presetDefaults(recommended) : noDefaults;
+  });
   return {
     ports,
     app: once(() => ports.settings.getApp()),
     storage: once(() => ports.settings.get()),
-    routes: once(async () => ai().classRoutes()),
+    routes,
+    currentSetup,
+    currentDefaults,
+    setupDefaults,
     decisions: once(async () => ai().decisionsStatus()),
     controls: once(async () => {
       const controls = ports.knowledgeControls();
@@ -174,8 +218,10 @@ const appPreference: Adapter = {
       "osLocale" in entry.default ? context.ports.settings.osLanguage() : defaultValue(entry);
     return { value: stored, default: fallback, changed: !same(stored, fallback) };
   },
-  async write(entry, context) {
+  async write(entry, context, _before, confirmed) {
     const name = key(entry);
+    // A list the person built (their saved import plans) is not emptied without their yes.
+    if (Object.hasOwn(emptyValues, name) && !confirmed) return { pending: true, wrote: false };
     const value =
       "unset" in entry.default
         ? emptyValues[name]
@@ -310,8 +356,21 @@ async function applySetup(context: Context, preset: AiPresetId): Promise<void> {
   if (!result.applied) throw new Error("errors.ai.noCompatibleModel");
 }
 
+/** Every setting a setup writes: the setup, the six routes and the note decider mode. */
+const setupMoves = [
+  "ai.preset.v1",
+  "ai.route.embed",
+  "ai.route.decide",
+  "ai.route.write-fast",
+  "ai.route.write-quality",
+  "ai.route.answer",
+  "ai.route.judge",
+  "relations.deciderMode"
+] as const;
+
 const aiPreset: Adapter = {
   announces: "ai",
+  moves: () => setupMoves,
   async read(_entry, context) {
     const value = (await context.routes()).preset;
     const recommended = await context.ports.recommendedPreset().catch(() => null);
@@ -328,25 +387,34 @@ const aiPreset: Adapter = {
   }
 };
 
+const routeName = (entry: SettingEntryV2): AiClassRouteTarget =>
+  key(entry).replace(/^class:/u, "") as AiClassRouteTarget;
+
 const aiRoute: Adapter = {
   announces: "ai",
+  // A route written by hand is the Custom setup, which the writer records with it.
+  moves: () => ["ai.preset.v1"],
   async read(entry, context) {
     const routes = await context.routes();
-    const name = key(entry).replace(/^class:/u, "");
+    const name = routeName(entry);
     const route =
       name === "judge" ? routes.judge : routes.classes.find((candidate) => candidate.id === name);
-    // The default is the profile the setup gives, which depends on the setup and on this Mac: it is
-    // not named. A route is "changed" once the person pointed one by hand (the Custom setup).
-    return { value: route?.profileId ?? null, default: null, changed: routes.preset === "custom" };
+    const value = route?.profileId ?? null;
+    // The default is the profile of the setup this person is on (the recommended one on Custom),
+    // when one exists already; a route that is not set, or whose setup would first need a profile
+    // made, has no default to go back to and reads as unchanged.
+    const fallback = (await context.setupDefaults()).routes[name] ?? null;
+    return {
+      value,
+      default: fallback,
+      changed: value !== null && fallback !== null && value !== fallback
+    };
   },
-  async write(_entry, context) {
-    // The setups seed every route together, so a route goes back to what its setup gives by
-    // applying the setup again (the recommended one after a hand edit: Custom remembers none).
-    const { preset } = await context.routes();
-    const setup =
-      preset !== null && preset !== "custom" ? preset : await context.ports.recommendedPreset();
-    if (!setup) throw new Error("errors.ai.noCompatibleModel");
-    await applySetup(context, setup);
+  async write(entry, context, before) {
+    // One route goes back through the writer of one route, never through the whole setup: the other
+    // routes, the decider and the setup keep what the person chose.
+    if (typeof before.default !== "string") throw new Error("errors.ai.noCompatibleModel");
+    await context.ai().setClassRoute({ route: routeName(entry), profileId: before.default });
   }
 };
 
@@ -354,10 +422,13 @@ const deciderMode: Adapter = {
   announces: "ai",
   async read(_entry, context) {
     const value = (await context.routes()).judge.deciderMode;
-    return { value, default: null, changed: value !== null };
+    // A setup stores the mode its plan names; that is what the setting holds by default. With no
+    // setup behind it (Custom) the mode is derived from the routes, which an unset mode stands for.
+    const fallback = (await context.currentDefaults()).deciderMode;
+    return { value, default: fallback, changed: value !== fallback };
   },
-  async write(_entry, context) {
-    await context.ai().setDeciderMode(null);
+  async write(_entry, context, before) {
+    await context.ai().setDeciderMode((before.default as NoteDeciderMode | null) ?? null);
   }
 };
 
@@ -413,8 +484,13 @@ const credentialWriters: Readonly<
   }
 };
 
+/** The store a credential's status is read from: a consumer of that store reads it again. */
+const credentialStores: Readonly<Record<string, AnnouncedStore>> = {
+  "metadata:google-books": "app"
+};
+
 const credential: Adapter = {
-  announces: "ai",
+  announces: (entry) => credentialStores[entry.id] ?? "ai",
   async read(entry, context) {
     const reader = credentialReaders[entry.id];
     const set = reader
@@ -427,11 +503,10 @@ const credential: Adapter = {
   async write(entry, context) {
     const writer = credentialWriters[entry.id];
     if (writer) return writer(context, entry);
-    // A provider's key is removed with its configuration: the AI service has no other writer.
-    const ai = context.ai();
-    for (const provider of await ai.listProviders())
-      if (provider.provider === providerKind(entry) && provider.id)
-        await ai.deleteProvider(provider.id);
+    // A provider's key lives in its configuration and the AI service has no writer for the key
+    // alone: removing it means deleting a configuration, which unlinks the profiles on it. That is
+    // the Providers page's confirmed, per-configuration step, so a reset only points there.
+    return { pending: true, wrote: false };
   }
 };
 
@@ -553,19 +628,29 @@ export class SettingsReset {
    * default is left alone. The settings service announces its own writes; every other adapter
    * publishes `settings.changed` for its store after the write committed.
    */
-  public async reset(input: { id: string }): Promise<SettingsResetResult> {
+  public async reset(input: {
+    id: string;
+    confirmed?: boolean | undefined;
+  }): Promise<SettingsResetResult> {
     const entry = this.registry.find((candidate) => candidate.id === input.id);
     if (!entry) throw new Error("errors.common.notFound");
     const adapter = this.adapterOf(entry);
     if (!adapter) throw new Error("errors.common.validationFailed");
     const before = await adapter.read(entry, createContext(this.ports));
     if (!before.changed) return { id: entry.id, value: before.value };
-    const outcome = await adapter.write(entry, createContext(this.ports), before);
-    if (adapter.announces)
+    const outcome = await adapter.write(
+      entry,
+      createContext(this.ports),
+      before,
+      input.confirmed === true
+    );
+    if (adapter.announces && outcome?.wrote !== false)
       (this.ports.publish ?? ((event) => appEventPort.publish(event)))({
         type: "settings.changed",
-        stores: [adapter.announces],
-        keys: [entry.id]
+        stores: [
+          typeof adapter.announces === "function" ? adapter.announces(entry) : adapter.announces
+        ],
+        keys: [...new Set([entry.id, ...(adapter.moves?.(entry) ?? [])])]
       });
     const after = await adapter.read(entry, createContext(this.ports));
     return {

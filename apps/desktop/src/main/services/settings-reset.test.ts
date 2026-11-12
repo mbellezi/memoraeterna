@@ -43,7 +43,15 @@ function fakePool() {
 function fakeWorld() {
   const state = {
     preset: null as string | null,
-    routeProfile: "profile-1" as string | null,
+    /** The profile behind each route, as the writers leave it. */
+    routes: {
+      embed: "p-embed",
+      decide: "p-ranker",
+      "write-fast": "p-writer",
+      "write-quality": "p-writer",
+      answer: "p-writer",
+      judge: "p-writer"
+    } as Record<string, string | null>,
     deciderMode: null as string | null,
     decisionsEnabled: false,
     decisionsKey: false,
@@ -57,21 +65,71 @@ function fakeWorld() {
     layout: null as { version: 2; language: string; attachments: "omit" | "copy" } | null,
     blockedSetups: false
   };
+  /** What each setup gives: the profile per route, and the decider mode its plan stores. */
+  const setups: Record<string, { routes: Record<string, string>; deciderMode: string }> = {
+    hybrid: {
+      routes: {
+        embed: "p-embed",
+        decide: "p-ranker",
+        "write-fast": "p-writer",
+        "write-quality": "p-writer",
+        answer: "p-writer",
+        judge: "p-writer"
+      },
+      deciderMode: "ranker"
+    },
+    cloud: {
+      routes: {
+        embed: "p-remote-embed",
+        decide: "p-ranker",
+        "write-fast": "p-remote",
+        "write-quality": "p-remote",
+        answer: "p-remote",
+        judge: "p-remote"
+      },
+      deciderMode: "ranker-else-generative"
+    },
+    local: {
+      routes: {
+        embed: "p-embed",
+        decide: "p-ranker",
+        "write-fast": "p-local",
+        "write-quality": "p-local",
+        answer: "p-local",
+        judge: "p-local"
+      },
+      deciderMode: "ranker"
+    }
+  };
   const ai = {
     classRoutes: vi.fn(async () => ({
       preset: state.preset,
       presets: [],
       classes: ["embed", "decide", "write-fast", "write-quality", "answer"].map((id) => ({
         id,
-        profileId: state.routeProfile
+        profileId: state.routes[id] ?? null
       })),
-      judge: { profileId: state.routeProfile, deciderMode: state.deciderMode }
+      judge: { profileId: state.routes.judge ?? null, deciderMode: state.deciderMode }
     })),
+    presetDefaults: vi.fn(async (preset: string) => ({
+      routes: { ...setups[preset]?.routes },
+      deciderMode: setups[preset]?.deciderMode ?? null
+    })),
+    // The real writer seeds every route, the decider mode and the setup together.
     applyPreset: vi.fn(async (input: { preset: string }) => {
       if (state.blockedSetups) return { applied: false, blocked: [], view: null };
+      const setup = setups[input.preset];
       state.preset = input.preset;
-      state.routeProfile = "profile-from-setup";
+      if (setup) {
+        state.routes = { ...setup.routes };
+        state.deciderMode = setup.deciderMode;
+      }
       return { applied: true, blocked: [], view: null };
+    }),
+    // The real writer points one route and records the Custom setup, nothing else.
+    setClassRoute: vi.fn(async (input: { route: string; profileId: string }) => {
+      state.routes[input.route] = input.profileId;
+      state.preset = "custom";
     }),
     setDeciderMode: vi.fn(async (mode: string | null) => {
       state.deciderMode = mode;
@@ -302,16 +360,63 @@ describe("settings.describe", () => {
     });
   });
 
-  it("marks the class routes by what the setup says, and names no default for them", async () => {
+  it("marks each class route against the profile its setup gives, one by one", async () => {
     const { reset, world } = await setup();
+    // Before any setup the routes come from the legacy mapping: no default is claimed.
     expect(await described(reset, "ai.route.embed")).toEqual({
       id: "ai.route.embed",
-      value: "profile-1",
+      value: "p-embed",
       default: null,
       changed: false
     });
+    // On a setup its routes are its own, and the answer is the profile the setup gives.
+    world.state.preset = "hybrid";
+    expect(await described(reset, "ai.route.embed")).toEqual({
+      id: "ai.route.embed",
+      value: "p-embed",
+      default: "p-embed",
+      changed: false
+    });
+    // Custom with nothing edited: every route still reads as the recommended setup's.
     world.state.preset = "custom";
-    expect(await described(reset, "ai.route.judge")).toMatchObject({ changed: true });
+    const all = (await reset.describe()).entries.filter((entry) =>
+      entry.id.startsWith("ai.route.")
+    );
+    expect(all).toHaveLength(6);
+    expect(all.every((entry) => !entry.changed)).toBe(true);
+    // One route edited by hand: only that one is changed.
+    world.state.routes["write-fast"] = "p-other";
+    const marked = (await reset.describe()).entries
+      .filter((entry) => entry.id.startsWith("ai.route.") && entry.changed)
+      .map((entry) => entry.id);
+    expect(marked).toEqual(["ai.route.write-fast"]);
+    // A route with no profile yet, or one the setup would first have to create, has no default.
+    world.state.routes.embed = null;
+    expect(await described(reset, "ai.route.embed")).toMatchObject({ value: null, changed: false });
+  });
+
+  it("marks the decider mode against the mode the setup stores", async () => {
+    const { reset, world } = await setup();
+    // First run applies Hybrid and never touches the decider: nothing is changed.
+    world.state.preset = "hybrid";
+    world.state.deciderMode = "ranker";
+    expect(await described(reset, "relations.deciderMode")).toEqual({
+      id: "relations.deciderMode",
+      value: "ranker",
+      default: "ranker",
+      changed: false
+    });
+    world.state.deciderMode = "generative";
+    expect(await described(reset, "relations.deciderMode")).toMatchObject({ changed: true });
+    // With no setup behind it the mode is derived from the routes: a stored one is a hand choice.
+    world.state.preset = "custom";
+    world.state.deciderMode = "ranker";
+    expect(await described(reset, "relations.deciderMode")).toMatchObject({
+      default: null,
+      changed: true
+    });
+    world.state.deciderMode = null;
+    expect(await described(reset, "relations.deciderMode")).toMatchObject({ changed: false });
   });
 
   it("leaves out the entries of a store that cannot be read, and says so once", async () => {
@@ -338,7 +443,6 @@ describe("settings.reset", () => {
       expect(used.has(id), id).toBe(true);
     // Every stored entry resets without error when it holds its default (a no-op) ...
     for (const entry of settingsRegistryV2.filter((candidate) => candidate.store.kind !== "none")) {
-      if (entry.id === "ai.provider.openai-compatible") continue;
       await expect(reset.reset({ id: entry.id }), entry.id).resolves.toMatchObject({
         id: entry.id
       });
@@ -393,7 +497,14 @@ describe("settings.reset", () => {
       value: true,
       changed: true
     });
+    // Saved import plans are the person's own work: emptied only with their yes.
     expect(await reset.reset({ id: "processingPresets" })).toEqual({
+      id: "processingPresets",
+      value: true,
+      pending: true
+    });
+    expect((await settings.getApp()).processingPresets).toHaveLength(1);
+    expect(await reset.reset({ id: "processingPresets", confirmed: true })).toEqual({
       id: "processingPresets",
       value: null
     });
@@ -533,9 +644,24 @@ describe("settings.reset", () => {
     expect(SettingsResetResultSchema.safeParse(result).success).toBe(true);
     expect(result).toEqual({ id: "ai.preset.v1", value: "hybrid" });
     expect(world.ai.applyPreset).toHaveBeenCalledWith({ preset: "hybrid", test: false });
+    // A setup moves the routes and the decider with it: the event names all of them.
     expect(published).toEqual([
-      { type: "settings.changed", stores: ["ai"], keys: ["ai.preset.v1"] }
+      {
+        type: "settings.changed",
+        stores: ["ai"],
+        keys: [
+          "ai.preset.v1",
+          "ai.route.embed",
+          "ai.route.decide",
+          "ai.route.write-fast",
+          "ai.route.write-quality",
+          "ai.route.answer",
+          "ai.route.judge",
+          "relations.deciderMode"
+        ]
+      }
     ]);
+    expect(AppEventSchema.safeParse(published[0]).success).toBe(true);
   });
 
   it("ai-preset: writes nothing when the setup is blocked, and says why", async () => {
@@ -549,27 +675,66 @@ describe("settings.reset", () => {
     expect(published).toEqual([]);
   });
 
-  it("ai-route: applies the setup again, the one the person chose or else the recommended one", async () => {
-    const { reset, world } = await setup();
+  it("ai-route: puts one route back through the route writer and leaves the rest as chosen", async () => {
+    const { reset, world, published } = await setup();
+    // A person on Custom pointed embed, answer and the judge by hand and the decider too.
     world.state.preset = "custom";
-    expect(await reset.reset({ id: "ai.route.write-quality" })).toEqual({
-      id: "ai.route.write-quality",
-      value: "profile-from-setup"
+    world.state.routes = { ...world.state.routes, embed: "p-x", answer: "p-y", judge: "p-z" };
+    world.state.deciderMode = "generative";
+    expect(await reset.reset({ id: "ai.route.answer" })).toEqual({
+      id: "ai.route.answer",
+      value: "p-writer"
     });
-    expect(world.ai.applyPreset).toHaveBeenLastCalledWith({ preset: "hybrid", test: false });
-    expect(world.state.preset).toBe("hybrid");
-    expect(await described(reset, "ai.route.judge")).toMatchObject({ changed: false });
+    expect(world.ai.setClassRoute).toHaveBeenCalledTimes(1);
+    expect(world.ai.setClassRoute).toHaveBeenCalledWith({ route: "answer", profileId: "p-writer" });
+    expect(world.ai.applyPreset).not.toHaveBeenCalled();
+    // The other routes, the decider mode and the Custom setup keep what the person chose.
+    expect(world.state.routes).toMatchObject({ embed: "p-x", answer: "p-writer", judge: "p-z" });
+    expect(world.state.deciderMode).toBe("generative");
+    expect(world.state.preset).toBe("custom");
+    // The event names the route and the setup the writer recorded.
+    expect(published).toEqual([
+      { type: "settings.changed", stores: ["ai"], keys: ["ai.route.answer", "ai.preset.v1"] }
+    ]);
+    expect(await described(reset, "ai.route.embed")).toMatchObject({ changed: true });
+    expect(await described(reset, "ai.route.answer")).toMatchObject({ changed: false });
   });
 
-  it("decider-mode and decisions-opt-in: clear the mode and turn the opt-in off", async () => {
+  it("ai-route: a route whose setup has no profile yet cannot be put back", async () => {
+    const { reset, world, published } = await setup();
+    world.state.preset = "custom";
+    world.state.routes["write-fast"] = "p-other";
+    world.ai.presetDefaults.mockResolvedValueOnce({ routes: {}, deciderMode: "ranker" });
+    // Nothing to go back to: the route reads as unchanged and a reset writes nothing.
+    expect(await reset.reset({ id: "ai.route.write-fast" })).toEqual({
+      id: "ai.route.write-fast",
+      value: "p-other"
+    });
+    expect(world.ai.setClassRoute).not.toHaveBeenCalled();
+    expect(published).toEqual([]);
+  });
+
+  it("decider-mode: goes back to the mode of its setup, or to derived when there is none", async () => {
     const { reset, world } = await setup();
-    world.state.deciderMode = "generative";
-    world.state.decisionsEnabled = true;
+    world.state.preset = "cloud";
+    world.state.deciderMode = "ranker";
+    expect(await reset.reset({ id: "relations.deciderMode" })).toEqual({
+      id: "relations.deciderMode",
+      value: "ranker-else-generative"
+    });
+    expect(world.ai.setDeciderMode).toHaveBeenLastCalledWith("ranker-else-generative");
+    world.state.preset = "custom";
+    expect(await described(reset, "relations.deciderMode")).toMatchObject({ changed: true });
     expect(await reset.reset({ id: "relations.deciderMode" })).toEqual({
       id: "relations.deciderMode",
       value: null
     });
-    expect(world.ai.setDeciderMode).toHaveBeenCalledWith(null);
+    expect(world.ai.setDeciderMode).toHaveBeenLastCalledWith(null);
+  });
+
+  it("decisions-opt-in: turns the opt-in off", async () => {
+    const { reset, world } = await setup();
+    world.state.decisionsEnabled = true;
     expect(await reset.reset({ id: "relations.decisions" })).toEqual({
       id: "relations.decisions",
       value: false
@@ -596,14 +761,34 @@ describe("settings.reset", () => {
     expect(pool.rows.has("local-models.repository-token-ref")).toBe(false);
   });
 
-  it("credential: a provider's key leaves with the providers of its kind", async () => {
-    const { reset, world } = await setup();
-    expect(await reset.reset({ id: "ai.provider.openai-compatible" })).toMatchObject({
-      value: null
+  it("credential: a provider's key is not deleted by a reset; the Providers page owns that step", async () => {
+    const { reset, world, published } = await setup();
+    world.state.providers.push({
+      id: "p-local",
+      provider: "openai-compatible",
+      secretConfigured: false
     });
-    expect(world.ai.deleteProvider).toHaveBeenCalledTimes(1);
-    expect(world.ai.deleteProvider).toHaveBeenCalledWith("p-compat");
-    expect(world.state.providers.map((provider) => provider.id)).toEqual(["p-google"]);
+    expect(await reset.reset({ id: "ai.provider.openai-compatible" })).toEqual({
+      id: "ai.provider.openai-compatible",
+      value: true,
+      pending: true
+    });
+    // No configuration is deleted and no profile unlinked, and nothing moved to announce.
+    expect(world.ai.deleteProvider).not.toHaveBeenCalled();
+    expect(world.state.providers).toHaveLength(3);
+    expect(published).toEqual([]);
+  });
+
+  it("credential: announces the store its status is read from", async () => {
+    const { reset, world, published } = await setup();
+    world.state.googleBooks = true;
+    world.state.decisionsKey = true;
+    await reset.reset({ id: "metadata:google-books" });
+    await reset.reset({ id: "ai:decisions-openai-platform" });
+    expect(published.map((event) => event.type === "settings.changed" && event.stores)).toEqual([
+      ["app"],
+      ["ai"]
+    ]);
   });
 
   it("obsidian-wiki-scope: empties the sources or restores the descendants, each alone", async () => {

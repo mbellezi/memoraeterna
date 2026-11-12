@@ -908,10 +908,11 @@ void app.whenReady().then(() => {
   registerInboxIpc(ipcMain, inboxService);
   // The hardware profile and the setup recommended for it (F4 D32, T97): probed on the first read,
   // cached under userData/hardware, informative only (decision 26).
-  registerHardwareIpc(
-    ipcMain,
-    new HardwareService({ userDataPath: app.getPath("userData"), logger: console })
-  );
+  const hardwareService = new HardwareService({
+    userDataPath: app.getPath("userData"),
+    logger: console
+  });
+  registerHardwareIpc(ipcMain, hardwareService);
   // F4 D31: whether the first-run view is due (an empty library and no record), and how it ended.
   registerOnboardingIpc(
     ipcMain,
@@ -929,9 +930,8 @@ void app.whenReady().then(() => {
     new SettingsReset({
       settings: settingsService,
       ai: () => aiService,
-      recommendedPreset: async () =>
-        (await new HardwareService({ userDataPath: app.getPath("userData") }).profile())
-          .recommendation.recommended,
+      // The one hardware service: its memo and its in-flight probe serve every caller.
+      recommendedPreset: async () => (await hardwareService.profile()).recommendation.recommended,
       knowledgeControls: () => backgroundPolicy?.controls ?? null,
       treeShapeChanged: () => void topicTreeServices?.shapeChanged(),
       obsidian: () => obsidianSyncService,
