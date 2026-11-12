@@ -9,6 +9,7 @@ import {
   groupLinks,
   moveRow,
   outsideTopics,
+  revealWithin,
   selectionFromRow,
   tablePageSize,
   tabStopRow,
@@ -249,5 +250,34 @@ describe("what the read left out", () => {
     expect(
       branchNotices(model(sampleBranch({ truncated: true, outside: list(branchListCaps.outside) })))
     ).toEqual(["truncated"]);
+  });
+});
+
+describe("revealWithin", () => {
+  // A box whose content starts at the box's top edge; its header covers the first 30 px.
+  const box = (scrollTop: number) => ({
+    scrollTop,
+    clientTop: 1,
+    clientHeight: 200,
+    getBoundingClientRect: () => ({ top: 100 })
+  });
+  const row = (top: number, bottom: number) => ({ getBoundingClientRect: () => ({ top, bottom }) });
+
+  it("moves only the box's own scrollTop, and never asks the page to scroll", () => {
+    const scrolled: string[] = [];
+    const target = { ...row(400, 440), scrollIntoView: () => scrolled.push("page") };
+    const scroller = box(0);
+    revealWithin(scroller, target);
+    expect(scrolled).toEqual([]);
+    expect(scroller.scrollTop).toBe(440 - (100 + 1 + 200));
+  });
+
+  it("scrolls up past a sticky header, and leaves a row in view where it is", () => {
+    const up = box(80);
+    revealWithin(up, row(110, 150), 30);
+    expect(up.scrollTop).toBe(80 - (101 + 30 - 110));
+    const still = box(80);
+    revealWithin(still, row(150, 190), 30);
+    expect(still.scrollTop).toBe(80);
   });
 });

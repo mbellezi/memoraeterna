@@ -45,6 +45,12 @@ describe("the relations table", () => {
     expect(html).toContain("suggested");
   });
 
+  it("names each row by its sentence, so a screen reader hears the connection whole", () => {
+    const html = table();
+    expect(html.match(/<tr[^>]*aria-label="[^"]+"/g)).toHaveLength(7);
+    expect(html).toMatch(/<tr[^>]*aria-label="[^"]*supports/);
+  });
+
   it("holds one tab stop, on the first row when nothing is selected", () => {
     const html = table();
     expect(html.match(/tabindex="0"/g)).toHaveLength(1);
@@ -110,6 +116,7 @@ describe("the lens controls", () => {
     expect(html).toContain("2 conexões");
     expect(html).toContain("Ver o ramo História da ciência");
     expect(html).not.toContain("mais conectados");
+    expect(html).not.toContain("truncate");
     const capped = built(
       pt,
       sampleBranch({

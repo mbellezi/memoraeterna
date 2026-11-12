@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Info, LayoutPanelLeft, Table2 } from "lucide-react";
 import type { Translator } from "@app/i18n";
 
+import { cn } from "../../../../lib/cn";
 import { ObjectKindGlyph } from "../../../../components/glyphs";
 import { Button } from "../../../../components/ui/button";
 import { ToggleGroup, ToggleGroupItem } from "../../../../components/ui/toggle-group";
@@ -63,8 +64,8 @@ export function BranchNotices({ t, model }: { t: Translator; model: BranchModel 
           <span className="min-w-0 [text-wrap:pretty]">
             {t(
               notice === "truncated"
-                ? "mapRelations.notice.truncated"
-                : "mapRelations.notice.groupLines"
+                ? "mapRelationsTable.notice.truncated"
+                : "mapRelationsTable.notice.groupLines"
             )}
           </span>
         </p>
@@ -86,11 +87,14 @@ export function GroupLinks({ t, model }: { t: Translator; model: BranchModel }) 
   if (links.length === 0) return null;
   const shown = all ? links : links.slice(0, groupLinksShown);
   return (
-    <section aria-label={t("mapRelations.groups.title")} className="flex min-w-0 flex-col gap-2">
+    <section
+      aria-label={t("mapRelationsTable.groups.title")}
+      className="flex min-w-0 flex-col gap-2"
+    >
       <h3 className="m-0 text-sm font-semibold text-foreground">
-        {t("mapRelations.groups.title")}
+        {t("mapRelationsTable.groups.title")}
       </h3>
-      <p className="m-0 text-xs text-secondary-foreground">{t("mapRelations.groups.body")}</p>
+      <p className="m-0 text-xs text-secondary-foreground">{t("mapRelationsTable.groups.body")}</p>
       <ul className="m-0 grid list-none gap-1 p-0">
         {shown.map((link) => (
           <li
@@ -102,13 +106,13 @@ export function GroupLinks({ t, model }: { t: Translator; model: BranchModel }) 
               <span aria-hidden="true" className="px-1.5 text-muted-foreground">
                 ↔
               </span>
-              <span className="sr-only">{t("mapRelations.groups.and")}</span>
+              <span className="sr-only">{t("mapRelationsTable.groups.and")}</span>
               {link.second}
             </span>
             <span className="shrink-0 text-xs tabular-nums text-secondary-foreground">
               {link.weight === 1
-                ? t("mapRelations.table.countOne")
-                : t("mapRelations.table.count", { values: { count: link.weight } })}
+                ? t("mapRelationsTable.countOne")
+                : t("mapRelationsTable.count", { values: { count: link.weight } })}
             </span>
           </li>
         ))}
@@ -117,17 +121,24 @@ export function GroupLinks({ t, model }: { t: Translator; model: BranchModel }) 
         <div>
           <Button type="button" variant="secondary" onClick={() => setAll((value) => !value)}>
             {all
-              ? t("mapRelations.groups.fewer")
-              : t("mapRelations.groups.all", { values: { count: links.length } })}
+              ? t("mapRelationsTable.groups.fewer")
+              : t("mapRelationsTable.groups.all", { values: { count: links.length } })}
           </Button>
         </div>
       ) : null}
       {model.superEdgesCapped ? (
-        <p className="m-0 text-xs text-muted-foreground">{t("mapRelations.groups.capped")}</p>
+        <p className="m-0 text-xs text-muted-foreground">{t("mapRelationsTable.groups.capped")}</p>
       ) : null}
     </section>
   );
 }
+
+/** A topic outside the branch: its title wraps at word boundaries, so a keyboard user reads it whole. */
+const outsideTopicClass = cn(
+  "flex w-full min-w-0 items-baseline gap-2 rounded-md border border-transparent bg-soft",
+  "px-3 py-1.5 text-left text-sm text-foreground outline-offset-[-2px]",
+  "hover:border-border-strong focus-visible:outline-2 focus-visible:outline-accent"
+);
 
 /**
  * "Fora do ramo": the topics the drawn notes connect to that the branch does not hold, most
@@ -146,26 +157,31 @@ export function OutsideTopics({
   const topics = outsideTopics(model);
   if (topics.length === 0) return null;
   return (
-    <section aria-label={t("mapRelations.outside.title")} className="flex min-w-0 flex-col gap-2">
+    <section
+      aria-label={t("mapRelationsTable.outside.title")}
+      className="flex min-w-0 flex-col gap-2"
+    >
       <h3 className="m-0 text-sm font-semibold text-foreground">
-        {t("mapRelations.outside.title")}
+        {t("mapRelationsTable.outside.title")}
       </h3>
-      <p className="m-0 text-xs text-secondary-foreground">{t("mapRelations.outside.body")}</p>
+      <p className="m-0 text-xs text-secondary-foreground">{t("mapRelationsTable.outside.body")}</p>
       <ul className="m-0 grid list-none gap-1 p-0">
         {topics.map((topic) => (
           <li key={topic.topicId} className="min-w-0">
             <button
               type="button"
-              title={t("mapRelations.outside.action", { values: { title: topic.title } })}
+              title={t("mapRelationsTable.outside.action", { values: { title: topic.title } })}
               onClick={() => onChoose({ kind: "topic", id: topic.topicId })}
-              className="flex w-full min-w-0 items-baseline gap-2 rounded-md border border-transparent bg-soft px-3 py-1.5 text-left text-sm text-foreground outline-offset-[-2px] hover:border-border-strong focus-visible:outline-2 focus-visible:outline-accent"
+              className={outsideTopicClass}
             >
               <ObjectKindGlyph kind="topic" className="shrink-0 self-center text-object-topic" />
-              <span className="min-w-0 flex-1 truncate">{topic.title}</span>
+              <span className="min-w-0 flex-1 break-words leading-snug [text-wrap:pretty]">
+                {topic.title}
+              </span>
               <span className="shrink-0 text-xs tabular-nums text-secondary-foreground">
                 {topic.edgeCount === 1
-                  ? t("mapRelations.table.countOne")
-                  : t("mapRelations.table.count", { values: { count: topic.edgeCount } })}
+                  ? t("mapRelationsTable.countOne")
+                  : t("mapRelationsTable.count", { values: { count: topic.edgeCount } })}
               </span>
             </button>
           </li>
@@ -173,7 +189,7 @@ export function OutsideTopics({
       </ul>
       {model.outsideCapped ? (
         <p className="m-0 text-xs text-muted-foreground">
-          {t("mapRelations.outside.capped", { values: { count: topics.length } })}
+          {t("mapRelationsTable.outside.capped", { values: { count: topics.length } })}
         </p>
       ) : null}
     </section>

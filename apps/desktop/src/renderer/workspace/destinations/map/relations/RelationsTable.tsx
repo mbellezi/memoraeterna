@@ -18,6 +18,7 @@ import { GroupLinks, OutsideTopics, type BranchChoose } from "./lens-controls";
 import {
   buildRelationRows,
   moveRow,
+  revealWithin,
   selectionFromRow,
   tabStopRow,
   tableSync,
@@ -73,7 +74,12 @@ export function RelationsTable({
   const sync = useMemo(() => tableSync(rows, selected), [rows, selected]);
   const [limit, setLimit] = useState(tablePageSize);
   const shown = visibleRowCount(rows, sync.selectedRowId, limit);
+  const box = useRef<HTMLDivElement>(null);
   const nodes = useRef(new Map<string, HTMLTableRowElement>());
+  const reveal = (node: HTMLTableRowElement | undefined) => {
+    if (!node || !box.current) return;
+    revealWithin(box.current, node, box.current.querySelector("thead")?.offsetHeight ?? 0);
+  };
   const pendingFocus = useRef<string | null>(null);
   const tabStop = tabStopRow(rows.slice(0, shown), sync.selectedRowId);
 
@@ -85,13 +91,15 @@ export function RelationsTable({
     if (!node) return;
     pendingFocus.current = null;
     node.focus({ preventScroll: true });
-    node.scrollIntoView?.({ block: "nearest" });
+    reveal(node);
   });
 
-  // A choice made on the canvas is brought into view without taking the focus from the canvas.
+  // A choice made on the canvas is brought into view in the table's own box only: neither the
+  // focus nor the page's scroll leaves the canvas.
   useEffect(() => {
     if (sync.revealRowId === null) return;
-    nodes.current.get(sync.revealRowId)?.scrollIntoView?.({ block: "nearest" });
+    reveal(nodes.current.get(sync.revealRowId));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `reveal` only reads refs
   }, [sync.revealRowId]);
 
   const onKeyDown = (event: KeyboardEvent<HTMLTableSectionElement>) => {
@@ -126,13 +134,14 @@ export function RelationsTable({
   return (
     <div className="flex min-w-0 flex-col gap-2">
       <div
+        ref={box}
         className={cn(
           "overflow-auto overscroll-contain rounded-lg border border-border bg-surface",
           alone ? "max-h-[max(20rem,70vh)]" : tableMaxHeight
         )}
       >
         <table role="grid" className="w-full table-fixed border-collapse text-sm">
-          <caption className="sr-only">{t("mapRelations.table.caption")}</caption>
+          <caption className="sr-only">{t("mapRelationsTable.caption")}</caption>
           <colgroup>
             <col />
             <col style={{ width: "7.5rem" }} />
@@ -141,13 +150,13 @@ export function RelationsTable({
           <thead className="sticky top-0 z-10 bg-soft">
             <tr>
               <th scope="col" className={head}>
-                {t("mapRelations.table.from")}
+                {t("mapRelationsTable.from")}
               </th>
               <th scope="col" className={head}>
-                {t("mapRelations.table.link")}
+                {t("mapRelationsTable.link")}
               </th>
               <th scope="col" className={head}>
-                {t("mapRelations.table.to")}
+                {t("mapRelationsTable.to")}
               </th>
             </tr>
           </thead>
@@ -179,8 +188,8 @@ export function RelationsTable({
       <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-xs text-secondary-foreground">
         <span className="tabular-nums">
           {count === 1
-            ? t("mapRelations.table.countOne")
-            : t("mapRelations.table.count", { values: { count } })}
+            ? t("mapRelationsTable.countOne")
+            : t("mapRelationsTable.count", { values: { count } })}
         </span>
         {count > shown ? (
           <Button
@@ -188,7 +197,7 @@ export function RelationsTable({
             variant="secondary"
             onClick={() => setLimit((current) => current + tablePageSize)}
           >
-            {t("mapRelations.table.more", { values: { count: count - shown } })}
+            {t("mapRelationsTable.more", { values: { count: count - shown } })}
           </Button>
         ) : null}
       </div>
@@ -217,6 +226,7 @@ function TableRow({
     <tr
       ref={register}
       data-row-id={row.id}
+      aria-label={row.sentence}
       aria-selected={state === "selected"}
       tabIndex={tabbable ? 0 : -1}
       onClick={onClick}
@@ -230,7 +240,7 @@ function TableRow({
         <RelationStanceLabel type={row.type} t={t} size={12} className="font-semibold" />
         {row.suggested ? (
           <span className="mt-0.5 block text-xs font-normal text-muted-foreground">
-            {t("mapRelations.table.suggested")}
+            {t("mapRelationsTable.suggested")}
           </span>
         ) : null}
       </td>
@@ -266,7 +276,7 @@ export function RelationsAside({
 }: RelationsTableProps & { onChoose: BranchChoose; alone?: boolean }) {
   return (
     <aside
-      aria-label={t("mapRelations.table.title")}
+      aria-label={t("mapRelationsTable.title")}
       className={
         alone
           ? "grid min-w-0 max-w-6xl gap-5 min-[1180px]:grid-cols-[minmax(0,1fr)_22rem] min-[1180px]:items-start"
@@ -275,7 +285,7 @@ export function RelationsAside({
     >
       <div className="flex min-w-0 flex-col gap-2">
         <h2 className="m-0 text-sm font-semibold text-foreground">
-          {t("mapRelations.table.title")}
+          {t("mapRelationsTable.title")}
         </h2>
         <RelationsTable
           t={t}
@@ -287,13 +297,13 @@ export function RelationsAside({
         />
         <p className="m-0 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-muted-foreground">
           <Kbd>↑↓</Kbd>
-          {t("mapRelations.table.keyMove")}
+          {t("mapRelationsTable.keyMove")}
           <span aria-hidden="true">·</span>
           <Kbd>↵</Kbd>
-          {t("mapRelations.table.keyOpen")}
+          {t("mapRelationsTable.keyOpen")}
           <span aria-hidden="true">·</span>
           <Kbd>⇧↵</Kbd>
-          {t("mapRelations.table.keyOpenSecond")}
+          {t("mapRelationsTable.keyOpenSecond")}
         </p>
       </div>
       <div className="flex min-w-0 flex-col gap-4">

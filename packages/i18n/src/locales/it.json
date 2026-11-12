@@ -5089,14 +5089,6 @@
     "group": {
       "description": "{topic}. Note nel grafo: {notes}. Connessioni con altri argomenti: {count}."
     },
-    "groups": {
-      "all": "Mostra tutte e {count}",
-      "and": "e",
-      "body": "Le linee che il grafo disegna da lontano, una per coppia di argomenti.",
-      "capped": "Sono elencati solo i collegamenti più forti.",
-      "fewer": "Mostra meno",
-      "title": "Tra gli argomenti"
-    },
     "legend": {
       "direct": "{topic} (note dirette)",
       "label": "Legenda",
@@ -5110,16 +5102,6 @@
       "description": "{title}. Argomento: {topic}. Connessioni: {count}.",
       "meta": "Argomento: {topic} · Connessioni: {count}"
     },
-    "notice": {
-      "groupLines": "Da lontano si disegnano solo i collegamenti più forti tra argomenti.",
-      "truncated": "Questo ramo è più grande di quanto il grafo possa contenere: mostra le note e le connessioni più collegate. Scegli un ramo più piccolo per vedere tutto."
-    },
-    "outside": {
-      "action": "Vedi il ramo {title}",
-      "body": "Argomenti esterni collegati a note di questo ramo. Clicca per vedere il loro ramo.",
-      "capped": "I {count} argomenti più collegati.",
-      "title": "Fuori dal ramo"
-    },
     "scope": {
       "above": "Sopra",
       "areas": "Aree",
@@ -5130,20 +5112,38 @@
       "source": "Fonte: {title}",
       "sourceUnnamed": "questa fonte"
     },
-    "table": {
-      "caption": "Le stesse connessioni del grafo, una riga per connessione",
-      "count": "{count} connessioni",
-      "countOne": "1 connessione",
-      "from": "Da",
-      "keyMove": "scegliere",
-      "keyOpen": "aprire la prima nota accanto",
-      "keyOpenSecond": "la seconda",
-      "link": "Connessione",
-      "more": "Mostra altre {count}",
-      "suggested": "suggerita",
-      "title": "Stesse connessioni in tabella",
-      "to": "A"
-    },
     "untitledTopic": "Argomento senza nome"
+  },
+  "mapRelationsTable": {
+    "caption": "Le stesse connessioni del grafo, una riga per connessione",
+    "count": "{count} connessioni",
+    "countOne": "1 connessione",
+    "from": "Da",
+    "groups": {
+      "all": "Mostra tutte e {count}",
+      "and": "e",
+      "body": "Le linee che il grafo disegna da lontano, una per coppia di argomenti.",
+      "capped": "Sono elencati solo i collegamenti più forti.",
+      "fewer": "Mostra meno",
+      "title": "Tra gli argomenti"
+    },
+    "keyMove": "scegliere",
+    "keyOpen": "aprire la prima nota accanto",
+    "keyOpenSecond": "la seconda",
+    "link": "Connessione",
+    "more": "Mostra altre {count}",
+    "notice": {
+      "groupLines": "Da lontano si disegnano solo i collegamenti più forti tra argomenti.",
+      "truncated": "Questo ramo è più grande di quanto il grafo possa contenere: mostra le note e le connessioni più collegate. Scegli un ramo più piccolo per vedere tutto."
+    },
+    "outside": {
+      "action": "Vedi il ramo {title}",
+      "body": "Argomenti esterni collegati a note di questo ramo. Clicca per vedere il loro ramo.",
+      "capped": "I {count} argomenti più collegati.",
+      "title": "Fuori dal ramo"
+    },
+    "suggested": "suggerita",
+    "title": "Stesse connessioni in tabella",
+    "to": "A"
   }
 }

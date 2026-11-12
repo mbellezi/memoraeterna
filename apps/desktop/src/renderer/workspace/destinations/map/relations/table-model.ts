@@ -195,3 +195,29 @@ export function branchNotices(model: BranchModel): BranchNotice[] {
   if (model.superEdgesCapped) notices.push("groupLines");
   return notices;
 }
+
+/** What a scroll box shows of itself: the geometry `revealWithin` reads. */
+export interface ScrollBox {
+  scrollTop: number;
+  clientTop: number;
+  clientHeight: number;
+  getBoundingClientRect(): { top: number };
+}
+
+/**
+ * Brings a row into a scroll box by moving that box alone: `scrollIntoView` would also scroll every
+ * ancestor, and below 1180 px the page itself, away from the canvas a choice was just made on.
+ * `covered` is the height a sticky header hides at the top of the box.
+ */
+export function revealWithin(
+  box: ScrollBox,
+  row: { getBoundingClientRect(): { top: number; bottom: number } },
+  covered = 0
+): void {
+  const rect = row.getBoundingClientRect();
+  const top = box.getBoundingClientRect().top + box.clientTop;
+  const visibleTop = top + covered;
+  const visibleBottom = top + box.clientHeight;
+  if (rect.top < visibleTop) box.scrollTop -= visibleTop - rect.top;
+  else if (rect.bottom > visibleBottom) box.scrollTop += rect.bottom - visibleBottom;
+}

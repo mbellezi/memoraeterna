@@ -18,6 +18,13 @@ describe("the relations table and its controls", () => {
     }
   });
 
+  it("keep every line within the quality ratchet's 200 characters", () => {
+    for (const [file, source] of Object.entries(sources)) {
+      for (const line of source.split("\n"))
+        expect(line.length, `${file}: ${line.slice(0, 50)}`).toBeLessThanOrEqual(200);
+    }
+  });
+
   it("never touch the window history, poll or call the main process", () => {
     for (const [file, source] of Object.entries(sources)) {
       expect(source, file).not.toContain("window.history");

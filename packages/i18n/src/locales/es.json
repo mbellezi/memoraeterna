@@ -5089,14 +5089,6 @@
     "group": {
       "description": "{topic}. Notas en el grafo: {notes}. Conexiones con otros temas: {count}."
     },
-    "groups": {
-      "all": "Ver las {count}",
-      "and": "y",
-      "body": "Las líneas que el grafo dibuja de lejos, una por cada par de temas.",
-      "capped": "Solo están listados los enlaces más fuertes.",
-      "fewer": "Ver menos",
-      "title": "Entre temas"
-    },
     "legend": {
       "direct": "{topic} (notas directas)",
       "label": "Leyenda",
@@ -5110,16 +5102,6 @@
       "description": "{title}. Tema: {topic}. Conexiones: {count}.",
       "meta": "Tema: {topic} · Conexiones: {count}"
     },
-    "notice": {
-      "groupLines": "De lejos, solo se dibujan los enlaces más fuertes entre temas.",
-      "truncated": "Esta rama es más grande de lo que cabe en el grafo, que muestra las notas y conexiones más enlazadas. Elige una rama menor para verlo todo."
-    },
-    "outside": {
-      "action": "Ver la rama {title}",
-      "body": "Temas de fuera que se enlazan con notas de esta rama. Haz clic para ver su rama.",
-      "capped": "Los {count} temas más conectados.",
-      "title": "Fuera de la rama"
-    },
     "scope": {
       "above": "Arriba",
       "areas": "Áreas",
@@ -5130,20 +5112,38 @@
       "source": "Fuente: {title}",
       "sourceUnnamed": "esta fuente"
     },
-    "table": {
-      "caption": "Las mismas conexiones del grafo, una fila por conexión",
-      "count": "{count} conexiones",
-      "countOne": "1 conexión",
-      "from": "De",
-      "keyMove": "elegir",
-      "keyOpen": "abrir la primera nota al lado",
-      "keyOpenSecond": "la segunda",
-      "link": "Conexión",
-      "more": "Mostrar {count} más",
-      "suggested": "sugerida",
-      "title": "Mismas conexiones en tabla",
-      "to": "A"
-    },
     "untitledTopic": "Tema sin nombre"
+  },
+  "mapRelationsTable": {
+    "caption": "Las mismas conexiones del grafo, una fila por conexión",
+    "count": "{count} conexiones",
+    "countOne": "1 conexión",
+    "from": "De",
+    "groups": {
+      "all": "Ver las {count}",
+      "and": "y",
+      "body": "Las líneas que el grafo dibuja de lejos, una por cada par de temas.",
+      "capped": "Solo están listados los enlaces más fuertes.",
+      "fewer": "Ver menos",
+      "title": "Entre temas"
+    },
+    "keyMove": "elegir",
+    "keyOpen": "abrir la primera nota al lado",
+    "keyOpenSecond": "la segunda",
+    "link": "Conexión",
+    "more": "Mostrar {count} más",
+    "notice": {
+      "groupLines": "De lejos, solo se dibujan los enlaces más fuertes entre temas.",
+      "truncated": "Esta rama es más grande de lo que cabe en el grafo, que muestra las notas y conexiones más enlazadas. Elige una rama menor para verlo todo."
+    },
+    "outside": {
+      "action": "Ver la rama {title}",
+      "body": "Temas de fuera que se enlazan con notas de esta rama. Haz clic para ver su rama.",
+      "capped": "Los {count} temas más conectados.",
+      "title": "Fuera de la rama"
+    },
+    "suggested": "sugerida",
+    "title": "Mismas conexiones en tabla",
+    "to": "A"
   }
 }

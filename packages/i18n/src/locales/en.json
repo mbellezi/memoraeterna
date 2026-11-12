@@ -5089,14 +5089,6 @@
     "group": {
       "description": "{topic}. Notes drawn: {notes}. Connections to other topics: {count}."
     },
-    "groups": {
-      "all": "Show all {count}",
-      "and": "and",
-      "body": "The lines the graph draws from far away, one per pair of topics.",
-      "capped": "Only the strongest links are listed.",
-      "fewer": "Show fewer",
-      "title": "Between topics"
-    },
     "legend": {
       "direct": "{topic} (direct notes)",
       "label": "Legend",
@@ -5110,16 +5102,6 @@
       "description": "{title}. Topic: {topic}. Connections: {count}.",
       "meta": "Topic: {topic} · Connections: {count}"
     },
-    "notice": {
-      "groupLines": "From far away, only the strongest links between topics are drawn.",
-      "truncated": "This branch is larger than the graph holds, so it shows the most connected notes and connections. Pick a smaller branch to see everything."
-    },
-    "outside": {
-      "action": "See the branch {title}",
-      "body": "Topics outside this branch that connect to its notes. Click to see their branch.",
-      "capped": "The {count} most connected topics.",
-      "title": "Outside the branch"
-    },
     "scope": {
       "above": "Above",
       "areas": "Areas",
@@ -5130,20 +5112,38 @@
       "source": "Source: {title}",
       "sourceUnnamed": "this source"
     },
-    "table": {
-      "caption": "The same connections as the graph, one row per connection",
-      "count": "{count} connections",
-      "countOne": "1 connection",
-      "from": "From",
-      "keyMove": "choose",
-      "keyOpen": "open the first note beside",
-      "keyOpenSecond": "the second",
-      "link": "Link",
-      "more": "Show {count} more",
-      "suggested": "suggested",
-      "title": "Same connections as a table",
-      "to": "To"
-    },
     "untitledTopic": "Untitled topic"
+  },
+  "mapRelationsTable": {
+    "caption": "The same connections as the graph, one row per connection",
+    "count": "{count} connections",
+    "countOne": "1 connection",
+    "from": "From",
+    "groups": {
+      "all": "Show all {count}",
+      "and": "and",
+      "body": "The lines the graph draws from far away, one per pair of topics.",
+      "capped": "Only the strongest links are listed.",
+      "fewer": "Show fewer",
+      "title": "Between topics"
+    },
+    "keyMove": "choose",
+    "keyOpen": "open the first note beside",
+    "keyOpenSecond": "the second",
+    "link": "Link",
+    "more": "Show {count} more",
+    "notice": {
+      "groupLines": "From far away, only the strongest links between topics are drawn.",
+      "truncated": "This branch is larger than the graph holds, so it shows the most connected notes and connections. Pick a smaller branch to see everything."
+    },
+    "outside": {
+      "action": "See the branch {title}",
+      "body": "Topics outside this branch that connect to its notes. Click to see their branch.",
+      "capped": "The {count} most connected topics.",
+      "title": "Outside the branch"
+    },
+    "suggested": "suggested",
+    "title": "Same connections as a table",
+    "to": "To"
   }
 }
