@@ -4321,7 +4321,6 @@
       "degradedFts": "Questa ricerca non ha parole da cercare nei testi; vengono mostrati solo titoli e nomi.",
       "emptyAsk": "Chiedi alla libreria",
       "emptyBody": "Prova con meno parole, o chiedi alla libreria con parole tue.",
-      "emptyHeadline": "Nessun risultato per “{query}”.",
       "errorKept": "Nulla è stato modificato.",
       "errorMessage": "Non è stato possibile cercare ora.",
       "filterAll": "Tutto",
@@ -4332,7 +4331,7 @@
       "filterTopic": "Argomenti",
       "filtersLabel": "Mostra solo",
       "heading": "Risultati per “{query}”",
-      "passage": "passaggio",
+      "passage": "Passaggio della fonte",
       "title": "Risultati della ricerca"
     },
     "rows": {

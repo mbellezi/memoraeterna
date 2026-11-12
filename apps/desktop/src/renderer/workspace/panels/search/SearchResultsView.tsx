@@ -16,6 +16,7 @@ import { markPieces, queryTerms } from "../../palette/highlight";
 import { rowMeta } from "../../palette/Palette";
 import { useResolved } from "../../palette/use-resolved";
 import { formatView } from "../../route";
+import { useAddSource } from "../../workspace-bridge";
 import { degradedNotice, isPassage, searchLimit, toggleKind, type SearchAsk } from "./search-model";
 
 /**
@@ -91,14 +92,21 @@ function Filters({
     <div
       role="group"
       aria-label={t("palette.results.filtersLabel")}
-      className="flex flex-wrap gap-2"
+      className="flex flex-wrap gap-1.5"
     >
-      <Button aria-pressed={ask.kinds.length === 0} onClick={() => onFilter([])}>
+      <Button
+        variant="chip"
+        size="sm"
+        aria-pressed={ask.kinds.length === 0}
+        onClick={() => onFilter([])}
+      >
         {t("palette.results.filterAll")}
       </Button>
       {filterOrder.map((kind) => (
         <Button
           key={kind}
+          variant="chip"
+          size="sm"
           aria-pressed={ask.kinds.includes(kind)}
           onClick={() => onFilter(toggleKind(ask.kinds, kind))}
         >
@@ -213,6 +221,7 @@ export function SearchResultsView({
     batcher
   );
   const list = useRef<HTMLUListElement>(null);
+  const addSource = useAddSource();
 
   if (compact)
     return (
@@ -229,7 +238,7 @@ export function SearchResultsView({
           </p>
         ) : omni.status === "ready" && items.length === 0 ? (
           <p className="m-0 text-sm text-secondary-foreground">
-            {t("palette.results.emptyHeadline", { values: { query: ask.query } })}
+            {t("palette.states.noResult", { values: { query: ask.query } })}
           </p>
         ) : (
           <ul className="m-0 grid list-none gap-0.5 p-0">
@@ -310,11 +319,18 @@ export function SearchResultsView({
       <div className="grid max-w-(--measure) gap-5">
         {heading}
         <EmptyState
-          headline={t("palette.results.emptyHeadline", { values: { query: ask.query } })}
+          headline={t("palette.states.noResult", { values: { query: ask.query } })}
           action={
-            <Button onClick={() => onOpen(formatView({ view: "ask", question: ask.query }))}>
-              {t("palette.results.emptyAsk")}
-            </Button>
+            <>
+              <Button onClick={() => onOpen(formatView({ view: "ask", question: ask.query }))}>
+                {t("palette.results.emptyAsk")}
+              </Button>
+              {addSource ? (
+                <Button variant="ghost" onClick={addSource}>
+                  {t("workspace.titleBar.addSource")}
+                </Button>
+              ) : null}
+            </>
           }
         >
           {t("palette.results.emptyBody")}

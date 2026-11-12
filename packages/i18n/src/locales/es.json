@@ -4330,7 +4330,6 @@
       "degradedFts": "Esta búsqueda no tiene palabras que buscar dentro de los textos; se muestran solo títulos y nombres.",
       "emptyAsk": "Preguntar a la biblioteca",
       "emptyBody": "Prueba con menos palabras o pregunta a la biblioteca con tus propias palabras.",
-      "emptyHeadline": "No se encontró nada para “{query}”.",
       "errorKept": "No se cambió nada.",
       "errorMessage": "No se pudo buscar ahora.",
       "filterAll": "Todo",
@@ -4341,7 +4340,7 @@
       "filterTopic": "Temas",
       "filtersLabel": "Mostrar solo",
       "heading": "Resultados para “{query}”",
-      "passage": "pasaje",
+      "passage": "Pasaje de la fuente",
       "title": "Resultados de la búsqueda"
     },
     "rows": {

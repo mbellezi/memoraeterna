@@ -7,6 +7,7 @@ import { screenTranslator } from "../screen-locale";
 import { layoutCustomProperties } from "../shell-model";
 import type { ScreenModule } from "../surfaces";
 import { useViewportWidth } from "../use-workspace";
+import { AddSourceContext } from "../workspace-bridge";
 import { Component, title } from "./search.panel";
 import { searchAddress } from "./search/search-model";
 
@@ -82,7 +83,10 @@ function Stack() {
     >
       <div className="w-(--spine-w) shrink-0 border-r border-border" aria-hidden="true" />
       <div className="flex min-w-0 flex-1">
-        <FramedSearch mode="full" />
+        {/* The app provides Add (Cmd-N); the empty state offers it as a quiet second action. */}
+        <AddSourceContext.Provider value={noop}>
+          <FramedSearch mode="full" />
+        </AddSourceContext.Provider>
       </div>
     </div>
   );

@@ -4328,7 +4328,6 @@
       "degradedFts": "Cette recherche n’a aucun mot à chercher dans les textes ; seuls les titres et les noms sont affichés.",
       "emptyAsk": "Demander à la bibliothèque",
       "emptyBody": "Essayez avec moins de mots, ou interrogez la bibliothèque avec vos propres mots.",
-      "emptyHeadline": "Rien trouvé pour “{query}”.",
       "errorKept": "Rien n’a été modifié.",
       "errorMessage": "Impossible de chercher pour l’instant.",
       "filterAll": "Tout",
@@ -4339,7 +4338,7 @@
       "filterTopic": "Sujets",
       "filtersLabel": "Afficher seulement",
       "heading": "Résultats pour “{query}”",
-      "passage": "extrait",
+      "passage": "Extrait de la source",
       "title": "Résultats de la recherche"
     },
     "rows": {

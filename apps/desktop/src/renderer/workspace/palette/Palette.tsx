@@ -7,9 +7,20 @@ import {
   type ReactNode
 } from "react";
 import { Dialog as DialogPrimitive } from "radix-ui";
-import { Search } from "lucide-react";
+import {
+  Columns3,
+  House,
+  Inbox,
+  LayoutDashboard,
+  Library,
+  Plus,
+  Search,
+  Settings,
+  SunMoon
+} from "lucide-react";
 import type { ObjectKind, ObjectResolved } from "@app/domain";
 import type { MessageKey, Translator } from "@app/i18n";
+import type { LucideIcon } from "lucide-react";
 
 import { ObjectKindGlyph, objectKindTextClass } from "../../components/glyphs";
 import { Button } from "../../components/ui/button";
@@ -130,6 +141,22 @@ const prefixCopy: Record<PrefixChar, { word: MessageKey; label: MessageKey }> = 
   "@": { word: "palette.prefixes.entities", label: "palette.prefixes.entitiesLabel" }
 };
 
+/**
+ * The glyph a command wears in the "Fazer" group. Every action row has the 16 px slot, drawn or
+ * empty, so all the titles share one text edge with the rows above (a command with no glyph of
+ * its own leaves the slot empty).
+ */
+const commandGlyphs: Record<string, LucideIcon> = {
+  "add-source": Plus,
+  "go-home": House,
+  "go-explore": Columns3,
+  "go-library": Library,
+  "go-inbox": Inbox,
+  "go-map": LayoutDashboard,
+  "go-settings": Settings,
+  theme: SunMoon
+};
+
 /** Underline and weight, never a colour (design record §11). */
 function Marked({ text, terms }: { text: string; terms: readonly string[] }) {
   return (
@@ -210,8 +237,14 @@ function Row({
   onChoose: (row: PaletteRow) => void;
 }) {
   if (row.type === "action") {
+    const Glyph = commandGlyphs[row.commandId];
     return (
       <CommandItem value={row.id} data-palette-row="action" onSelect={() => onChoose(row)}>
+        {Glyph ? (
+          <Glyph aria-hidden="true" className="text-muted-foreground" />
+        ) : (
+          <span aria-hidden="true" className="size-4 shrink-0" />
+        )}
         <span className="min-w-0 flex-1 truncate">
           <Marked text={row.label} terms={terms} />
         </span>
@@ -336,17 +369,20 @@ function RowSkeletons({ rows = 3 }: { rows?: number }) {
 function PreviewPane({
   t,
   address,
+  loading,
   batcher
 }: {
   t: Translator;
   address: string | null;
+  /** The search has not answered: the column keeps its place with the shape of a preview. */
+  loading: boolean;
   batcher?: PreviewBatcher;
 }) {
   const preview = useObjectPreview(address ?? "", address !== null, batcher);
   const body = (() => {
-    if (address === null) return null;
+    if (address === null && !loading) return null;
     const { state } = preview;
-    if (state.status === "loading")
+    if (address === null || state.status === "loading")
       return (
         <LoadingState t={t} className="gap-3">
           <Skeleton className="h-3 w-20" />
@@ -579,6 +615,12 @@ export function Palette({
     focusInput();
   };
 
+  // While a query is typed in the everything, topics or entities mode the list region keeps one
+  // height and the preview column keeps its place in every state, so the dialog does not change
+  // shape between loading, nothing found, a failure and the results.
+  const stable =
+    parsed.text !== "" &&
+    (parsed.mode === "all" || parsed.mode === "topics" || parsed.mode === "entities");
   const objectRows = view.rows.some((row) => row.type === "result" || row.type === "recent");
   const showPane = parsed.mode === "all" || parsed.mode === "topics" || parsed.mode === "entities";
   const paneAddress =
@@ -593,6 +635,21 @@ export function Palette({
           values: { count: total, ms: omni.tookMs }
         })
       : null;
+
+  const renderGroup = (group: PaletteGroup) => (
+    <GroupBlock
+      key={group.id}
+      t={t}
+      group={group}
+      terms={terms}
+      resolved={resolved}
+      onMore={() => choose(moreEffect(group, parsed))}
+      onChoose={(row) => choose(activate(row, clickedWith.current.alt ? "here" : "beside"))}
+    />
+  );
+  // "Fazer" is always last, below the skeleton rows of a search that has not answered.
+  const listGroups = view.groups.filter((group) => group.id !== "do");
+  const doGroup = view.groups.find((group) => group.id === "do");
 
   const body = (
     <div data-surface="palette" data-state={dataState} className="flex min-h-0 flex-1 flex-col">
@@ -635,6 +692,8 @@ export function Palette({
           {prefixChars.map((prefix) => (
             <Button
               key={prefix}
+              variant="chip"
+              size="sm"
               aria-pressed={parsed.prefix === prefix}
               aria-label={t(prefixCopy[prefix].label)}
               onClick={() => toggleChip(prefix)}
@@ -648,7 +707,14 @@ export function Palette({
             {t("palette.prefixes.none")}
           </span>
         </div>
-        <div className="flex min-h-80 min-w-0 flex-1 max-h-[min(34rem,calc(100vh-15rem))]">
+        <div
+          className={cn(
+            "flex min-w-0",
+            stable
+              ? "h-[min(34rem,calc(100vh-15rem))] shrink-0"
+              : "min-h-80 max-h-[min(34rem,calc(100vh-15rem))] flex-1"
+          )}
+        >
           <CommandList
             aria-label={t("palette.listLabel")}
             onClickCapture={(event) => {
@@ -657,7 +723,7 @@ export function Palette({
             className="min-w-0 flex-1"
           >
             {failed ? (
-              <div className="px-1 pt-3">
+              <div className="px-3 pt-3">
                 <ErrorState
                   t={t}
                   message={t("palette.states.error")}
@@ -668,7 +734,7 @@ export function Palette({
               </div>
             ) : null}
             {view.empty ? (
-              <p className="m-0 px-3 pb-1 pt-5 text-center text-sm text-secondary-foreground [text-wrap:pretty]">
+              <p className="m-0 px-3 pb-1 pt-4 text-sm text-secondary-foreground [text-wrap:pretty]">
                 {t("palette.states.noResult", { values: { query: parsed.text } })}
               </p>
             ) : null}
@@ -682,27 +748,21 @@ export function Palette({
                 {t("palette.states.askHint")}
               </p>
             ) : null}
-            {view.groups.map((group) => (
-              <GroupBlock
-                key={group.id}
-                t={t}
-                group={group}
-                terms={terms}
-                resolved={resolved}
-                onMore={() => choose(moreEffect(group, parsed))}
-                onChoose={(row) =>
-                  choose(activate(row, clickedWith.current.alt ? "here" : "beside"))
-                }
-              />
-            ))}
+            {listGroups.map(renderGroup)}
             {searching && (items.length === 0 || slow) ? (
               <LoadingState t={t} {...(items.length === 0 ? {} : { delayMs: 0 })} className="gap-0">
-                <RowSkeletons rows={items.length === 0 ? 4 : 2} />
+                <RowSkeletons rows={items.length === 0 ? 3 : 2} />
               </LoadingState>
             ) : null}
+            {doGroup ? renderGroup(doGroup) : null}
           </CommandList>
-          {showPane && (objectRows || paneAddress !== null) ? (
-            <PreviewPane t={t} address={paneAddress} {...(batcher ? { batcher } : {})} />
+          {showPane && (objectRows || paneAddress !== null || stable) ? (
+            <PreviewPane
+              t={t}
+              address={paneAddress}
+              loading={dataState === "loading"}
+              {...(batcher ? { batcher } : {})}
+            />
           ) : null}
         </div>
         <FootKeys t={t} count={count} />

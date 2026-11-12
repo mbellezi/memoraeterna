@@ -4323,7 +4323,6 @@
       "degradedFts": "This search has no word to look for inside the texts; showing titles and names only.",
       "emptyAsk": "Ask the library",
       "emptyBody": "Try fewer words, or ask the library in your own words.",
-      "emptyHeadline": "Nothing found for “{query}”.",
       "errorKept": "Nothing was changed.",
       "errorMessage": "The search could not be done right now.",
       "filterAll": "All",
@@ -4334,7 +4333,7 @@
       "filterTopic": "Topics",
       "filtersLabel": "Show only",
       "heading": "Results for “{query}”",
-      "passage": "passage",
+      "passage": "Source passage",
       "title": "Search results"
     },
     "rows": {
