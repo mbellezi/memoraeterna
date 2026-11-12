@@ -269,7 +269,10 @@ export async function setContentSize(session: MemoraSession, width: number, heig
 export interface StepRecord {
   step: string;
   screenshots: string[];
-  contrast: Record<Theme, Pick<ContrastResult, "checked" | "failures" | "unverifiable">>;
+  contrast: Record<
+    Theme,
+    Pick<ContrastResult, "checked" | "failures" | "unverifiable" | "drawnTheme">
+  >;
 }
 
 /**

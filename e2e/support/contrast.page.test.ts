@@ -7,6 +7,7 @@ import { call, electronBinary, runInPage } from "./contrast-page.js";
 import {
   collectInPage,
   evaluateSamples,
+  readDrawnTheme,
   settleInPage,
   type ContrastResult,
   type ContrastSample
@@ -167,6 +168,16 @@ describe.skipIf(!electronAvailable)("the contrast scan on a real page", () => {
       expect(failed("Dim value")).toBeDefined();
     });
   });
+});
+
+describe.skipIf(!electronAvailable)("the theme a page is drawn in", () => {
+  it("is the class the app's theme setting puts on the root, over the OS scheme", async () => {
+    const root = (classes: string) =>
+      `<!doctype html><html class="${classes}"><body>x</body></html>`;
+    const [dark] = await runInPage(root("dark"), [call(readDrawnTheme)]);
+    const [light] = await runInPage(root("light"), [call(readDrawnTheme)]);
+    expect([dark, light]).toEqual(["dark", "light"]);
+  }, 90_000);
 });
 
 describe.skipIf(!electronAvailable)("a theme switch's colour transition", () => {

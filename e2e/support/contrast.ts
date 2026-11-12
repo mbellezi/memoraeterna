@@ -222,6 +222,28 @@ export interface ContrastResult {
   hidden: number;
   failures: ContrastFinding[];
   unverifiable: { text: string; path: string; reason: string }[];
+  /** The theme the page was drawn in when it was scanned (see `readDrawnTheme`), when known. */
+  drawnTheme?: DrawnTheme;
+}
+
+export type DrawnTheme = "light" | "dark";
+
+/**
+ * Runs in the page: the theme the document is drawn in. The app's own theme setting puts a `dark` or
+ * `light` class on the root and that wins; only a root with neither follows the OS colour scheme. A
+ * journey switches the OS scheme, which moves the page only when the setting is "system".
+ */
+export function readDrawnTheme(): DrawnTheme {
+  const classes = document.documentElement.classList;
+  if (classes.contains("dark")) return "dark";
+  if (classes.contains("light")) return "light";
+  return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+}
+
+/** A sentence when the page was drawn in another theme than the scan was asked for, else null. */
+export function themeMismatch(asked: DrawnTheme, drawn: DrawnTheme | undefined): string | null {
+  if (drawn === undefined || drawn === asked) return null;
+  return `the page was drawn in ${drawn}, not ${asked}: the theme setting is not "system", so the colour-scheme switch did not reach it`;
 }
 
 /** AA for this sample: 3:1 for glyphs and large text, 4.5:1 otherwise. */
@@ -587,5 +609,5 @@ export async function settleAnimations(page: Page, timeoutMs = 2_000): Promise<v
 export async function scanContrast(page: Page, limit = 4_000): Promise<ContrastResult> {
   await settleAnimations(page);
   const samples = await page.evaluate(collectInPage, limit);
-  return evaluateSamples(samples);
+  return { ...evaluateSamples(samples), drawnTheme: await page.evaluate(readDrawnTheme) };
 }

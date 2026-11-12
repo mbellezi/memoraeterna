@@ -9,7 +9,7 @@ import { join } from "node:path";
 import { expect, type ElectronApplication, type Locator, type Page } from "@playwright/test";
 
 import type { MemoraSession, StepRecord } from "./app.js";
-import { scanContrast, settleAnimations } from "./contrast.js";
+import { scanContrast, settleAnimations, themeMismatch } from "./contrast.js";
 import { readGestures } from "./gestures.js";
 
 /** The device-local layout key of the workspace (`R/workspace/persist.ts`, D8). */
@@ -178,11 +178,15 @@ export class StepLog {
       .catch(() => undefined);
     await this.session.page.bringToFront().catch(() => undefined);
     const record = await this.capture(name);
-    for (const theme of ["light", "dark"] as const)
+    for (const theme of ["light", "dark"] as const) {
+      // A "light" scan of a page that stayed dark proves nothing about light.
+      const mismatch = themeMismatch(theme, record.contrast[theme].drawnTheme);
+      if (mismatch) this.failures.push(`${name} ${theme}: ${mismatch}`);
       for (const failure of record.contrast[theme].failures)
         this.failures.push(
           `${name} ${theme}: "${failure.text}" ${failure.ratio}:1 < ${failure.required}:1`
         );
+    }
   }
 
   /**

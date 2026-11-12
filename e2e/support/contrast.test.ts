@@ -8,6 +8,7 @@ import {
   isClippedAway,
   parseCssColor,
   requiredRatio,
+  themeMismatch,
   type ClipBox,
   type ContrastSample,
   type ShapePaint
@@ -169,6 +170,18 @@ describe("effectiveColours and evaluateSamples", () => {
     expect(result.failures.map((failure) => failure.text)).toEqual(["small grey", "icon"]);
     expect(result.failures[0]).toMatchObject({ required: 4.5, ratio: 3.84 });
     expect(result.unverifiable.map((entry) => entry.text)).toEqual(["over an image", "odd colour"]);
+  });
+});
+
+describe("themeMismatch", () => {
+  it("is silent when the page was drawn in the theme the scan asked for, or the page did not say", () => {
+    expect(themeMismatch("dark", "dark")).toBeNull();
+    expect(themeMismatch("light", "light")).toBeNull();
+    expect(themeMismatch("light", undefined)).toBeNull();
+  });
+
+  it("says a light scan of a page that stayed dark saw dark, and why", () => {
+    expect(themeMismatch("light", "dark")).toMatch(/drawn in dark, not light.*"system"/u);
   });
 });
 
