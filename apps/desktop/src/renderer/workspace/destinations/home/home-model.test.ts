@@ -174,7 +174,9 @@ describe("words of time", () => {
     expect(whenParts("pt-BR", at, clock).time).toMatch(/09:12|9:12/u);
     expect(whenParts("pt-BR", new Date(2026, 10, 10, 22, 38), clock).day).toBe("ontem");
     expect(whenParts("en", new Date(2026, 10, 10, 22, 38), clock).day).toBe("yesterday");
-    expect(whenParts("pt-BR", new Date(2026, 10, 3, 18, 20), clock).day).toBe("3 de nov.");
+    expect(whenParts("pt-BR", new Date(2026, 10, 3, 18, 20), clock).day).toBe("3\u00a0nov");
+    // The English short date reads the same way: no point, no filler word.
+    expect(whenParts("en", new Date(2026, 10, 3, 18, 20), clock).day).toBe("Nov\u00a03");
   });
 
   it("writes the date line with a capital", () => {

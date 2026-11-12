@@ -3135,12 +3135,12 @@
       "proposal": "Proposed topic reorganization ({items} items)",
       "redirects": "Shortened the redirects of {topics} old topics",
       "naming": "Topic names updated: {topics}",
-      "humanRename": "You renamed a topic.",
-      "humanMove": "You moved a topic.",
-      "humanCreate": "You created a topic.",
-      "humanPin": "You pinned a topic.",
-      "humanUnpin": "You unpinned a topic.",
-      "humanPlace": "You placed a note or source in a topic.",
+      "humanRename": "You renamed a topic",
+      "humanMove": "You moved a topic",
+      "humanCreate": "You created a topic",
+      "humanPin": "You pinned a topic",
+      "humanUnpin": "You unpinned a topic",
+      "humanPlace": "You placed a note or source in a topic",
       "gate": "Checked {items} uncertain placements",
       "areas": "Regrouped the top areas: {areas} areas, {topics} topics moved",
       "undo": "Undid an earlier change to the topics"
@@ -4455,6 +4455,39 @@
     "untitled": "Untitled"
   },
   "contextPanel": {
+    "ask": {
+      "description": {
+        "entity": "The answer uses the whole library and cites each passage. The name is already in the field.",
+        "library": "The answer uses the whole library and cites each passage.",
+        "note": "That is the topic this note is in. The answer uses only what is in it and cites each passage.",
+        "noteUnplaced": "This note is not in a topic yet, so the question covers the whole library.",
+        "pending": "The question needs the topic this note is in.",
+        "source": "The answer uses only the passages of this source and cites each one.",
+        "topic": "The answer uses only what is in this topic and cites each passage."
+      },
+      "earlier": {
+        "heading": "Earlier questions",
+        "label": "Open an earlier question"
+      },
+      "empty": "Nothing asked about this yet. Each question is kept in Library › Questions, with its answer.",
+      "errors": {
+        "earlier": "Could not load the earlier questions.",
+        "earlierKept": "You can still ask.",
+        "scope": "Could not find where this note is, so the question has no scope yet."
+      },
+      "indexedOne": "You can already ask: the passage is indexed.",
+      "indexedOther": "You can already ask: the {count} passages are indexed.",
+      "indexing": "The passages are still being indexed. An answer now may find nothing to cite.",
+      "notesArriving": "The notes are still arriving.",
+      "title": {
+        "entity": "Ask about this entity",
+        "library": "Ask your library",
+        "note": "Ask about {topic}",
+        "pending": "Ask about this note",
+        "source": "Ask this source",
+        "topic": "Ask this topic"
+      }
+    },
     "connections": {
       "actions": {
         "failed": "Your choice could not be saved. Try again.",
@@ -4521,6 +4554,8 @@
       "suggestionsLabel": "Suggested connections"
     },
     "count": {
+      "changesOne": "{count} change",
+      "changesOther": "{count} changes",
       "connectionsOne": "{count} connection",
       "connectionsOther": "{count} connections",
       "mentionsOne": "{count} mention",
@@ -4540,6 +4575,7 @@
       "connections": "Could not load the connections.",
       "evidence": "Could not load the evidence.",
       "graph": "Could not load the graph.",
+      "history": "Could not load the history.",
       "kept": {
         "entity": "The entity stays open.",
         "note": "The note stays open.",
@@ -4629,10 +4665,35 @@
           "title": "Graph"
         }
       },
+      "history": {
+        "description": "Everything that changed in this object, with Undo.",
+        "title": "History"
+      },
       "mentions": {
         "description": "Where this object is cited without a connection.",
         "title": "Mentions"
       }
+    },
+    "history": {
+      "by": {
+        "gardener": "Gardener",
+        "you": "You"
+      },
+      "empty": {
+        "entity": "An entity keeps no history of its own. What changes its notes shows in their History.",
+        "note": "Nothing changed in this note yet. When the Gardener places it or links it, each change shows here, with Undo.",
+        "question": "A question keeps no history of its own. Ask again to write a new version of its answer.",
+        "source": "Nothing changed because of this source yet. Where it is placed in the topics and how it is linked to other sources shows here, with Undo.",
+        "topic": "Nothing changed in this topic yet. Renames, moves and new overviews show here, with Undo."
+      },
+      "label": "Changes to this object",
+      "latest": "The {count} most recent.",
+      "state": {
+        "dismissed": "Dismissed",
+        "undone": "Undone",
+        "waiting": "Waits for your decision in the Inbox"
+      },
+      "undoLabel": "Undo: {title}"
     },
     "loadingMore": "Loading more…",
     "locate": {

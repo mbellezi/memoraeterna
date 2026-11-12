@@ -3135,12 +3135,12 @@
       "proposal": "Reorganização de tópicos proposta ({items} itens)",
       "redirects": "Redirecionamentos encurtados de {topics} tópicos antigos",
       "naming": "Nomes de tópicos atualizados: {topics}",
-      "humanRename": "Você renomeou um tópico.",
-      "humanMove": "Você moveu um tópico.",
-      "humanCreate": "Você criou um tópico.",
-      "humanPin": "Você fixou um tópico.",
-      "humanUnpin": "Você desafixou um tópico.",
-      "humanPlace": "Você colocou uma nota ou fonte em um tópico.",
+      "humanRename": "Você renomeou um tópico",
+      "humanMove": "Você moveu um tópico",
+      "humanCreate": "Você criou um tópico",
+      "humanPin": "Você fixou um tópico",
+      "humanUnpin": "Você desafixou um tópico",
+      "humanPlace": "Você colocou uma nota ou fonte em um tópico",
       "gate": "{items} posicionamentos incertos verificados",
       "areas": "Áreas de topo reagrupadas: {areas} áreas, {topics} tópicos movidos",
       "undo": "Uma alteração anterior dos tópicos foi desfeita"
@@ -4455,6 +4455,39 @@
     "untitled": "Sem título"
   },
   "contextPanel": {
+    "ask": {
+      "description": {
+        "entity": "A resposta usa a biblioteca toda e cita cada trecho. O nome já está no campo.",
+        "library": "A resposta usa a biblioteca toda e cita cada trecho.",
+        "note": "É o tópico em que esta nota está. A resposta usa só o que há nele e cita cada trecho.",
+        "noteUnplaced": "Esta nota ainda não está num tópico, então a pergunta vale para a biblioteca toda.",
+        "pending": "A pergunta precisa do tópico em que esta nota está.",
+        "source": "A resposta usa só os trechos desta fonte e cita cada um.",
+        "topic": "A resposta usa só o que há neste tópico e cita cada trecho."
+      },
+      "earlier": {
+        "heading": "Perguntas anteriores",
+        "label": "Abrir uma pergunta anterior"
+      },
+      "empty": "Nada perguntado sobre isto ainda. Cada pergunta fica em Biblioteca › Perguntas, com a resposta.",
+      "errors": {
+        "earlier": "Não foi possível carregar as perguntas anteriores.",
+        "earlierKept": "Você ainda pode perguntar.",
+        "scope": "Não foi possível ver onde esta nota está, então a pergunta ainda não tem escopo."
+      },
+      "indexedOne": "Já dá para perguntar: o trecho está indexado.",
+      "indexedOther": "Já dá para perguntar: os {count} trechos estão indexados.",
+      "indexing": "Os trechos ainda estão sendo indexados. Uma resposta agora pode não achar o que citar.",
+      "notesArriving": "As notas ainda estão chegando.",
+      "title": {
+        "entity": "Perguntar sobre esta entidade",
+        "library": "Perguntar à biblioteca",
+        "note": "Perguntar sobre {topic}",
+        "pending": "Perguntar sobre esta nota",
+        "source": "Perguntar a esta fonte",
+        "topic": "Perguntar a este tópico"
+      }
+    },
     "connections": {
       "actions": {
         "failed": "Sua escolha não pôde ser salva. Tente de novo.",
@@ -4521,6 +4554,8 @@
       "suggestionsLabel": "Conexões sugeridas"
     },
     "count": {
+      "changesOne": "{count} mudança",
+      "changesOther": "{count} mudanças",
       "connectionsOne": "{count} conexão",
       "connectionsOther": "{count} conexões",
       "mentionsOne": "{count} menção",
@@ -4540,6 +4575,7 @@
       "connections": "Não foi possível carregar as conexões.",
       "evidence": "Não foi possível carregar a evidência.",
       "graph": "Não foi possível carregar o grafo.",
+      "history": "Não foi possível carregar o histórico.",
       "kept": {
         "entity": "A entidade continua aberta.",
         "note": "A nota continua aberta.",
@@ -4629,10 +4665,35 @@
           "title": "Grafo"
         }
       },
+      "history": {
+        "description": "Tudo o que mudou neste objeto, com Desfazer.",
+        "title": "Histórico"
+      },
       "mentions": {
         "description": "Onde este objeto é citado sem uma conexão.",
         "title": "Menções"
       }
+    },
+    "history": {
+      "by": {
+        "gardener": "Jardineiro",
+        "you": "Você"
+      },
+      "empty": {
+        "entity": "Uma entidade não tem histórico próprio. O que muda nas notas dela aparece no Histórico de cada nota.",
+        "note": "Nada mudou nesta nota ainda. Quando o Jardineiro a colocar num tópico ou ligar a outra, cada mudança aparece aqui, com Desfazer.",
+        "question": "Uma pergunta não tem histórico próprio. Pergunte de novo para escrever uma nova versão da resposta.",
+        "source": "Nada mudou por causa desta fonte ainda. Onde ela é colocada nos tópicos e como é ligada a outras fontes aparece aqui, com Desfazer.",
+        "topic": "Nada mudou neste tópico ainda. Renomeações, movimentos e novos resumos aparecem aqui, com Desfazer."
+      },
+      "label": "Mudanças neste objeto",
+      "latest": "As {count} mais recentes.",
+      "state": {
+        "dismissed": "Dispensada",
+        "undone": "Desfeita",
+        "waiting": "Espera sua decisão na Caixa de entrada"
+      },
+      "undoLabel": "Desfazer: {title}"
     },
     "loadingMore": "Carregando mais…",
     "locate": {

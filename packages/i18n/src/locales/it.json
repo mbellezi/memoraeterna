@@ -3135,12 +3135,12 @@
       "proposal": "Riorganizzazione degli argomenti proposta ({items} elementi)",
       "redirects": "Reindirizzamenti accorciati di {topics} vecchi argomenti",
       "naming": "Nomi degli argomenti aggiornati: {topics}",
-      "humanRename": "Hai rinominato un argomento.",
-      "humanMove": "Hai spostato un argomento.",
-      "humanCreate": "Hai creato un argomento.",
-      "humanPin": "Hai fissato un argomento.",
-      "humanUnpin": "Hai rimosso un argomento dai fissati.",
-      "humanPlace": "Hai messo una nota o una fonte in un argomento.",
+      "humanRename": "Hai rinominato un argomento",
+      "humanMove": "Hai spostato un argomento",
+      "humanCreate": "Hai creato un argomento",
+      "humanPin": "Hai fissato un argomento",
+      "humanUnpin": "Hai rimosso un argomento dai fissati",
+      "humanPlace": "Hai messo una nota o una fonte in un argomento",
       "gate": "{items} collocazioni incerte verificate",
       "areas": "Aree principali raggruppate di nuovo: {areas} aree, {topics} argomenti spostati",
       "undo": "Una modifica precedente degli argomenti è stata annullata"
@@ -4455,6 +4455,39 @@
     "untitled": "Senza titolo"
   },
   "contextPanel": {
+    "ask": {
+      "description": {
+        "entity": "La risposta usa tutta la biblioteca e cita ogni passaggio. Il nome è già nel campo.",
+        "library": "La risposta usa tutta la biblioteca e cita ogni passaggio.",
+        "note": "È l’argomento in cui si trova questa nota. La risposta usa solo ciò che contiene e cita ogni passaggio.",
+        "noteUnplaced": "Questa nota non è ancora in un argomento, quindi la domanda vale per tutta la biblioteca.",
+        "pending": "La domanda ha bisogno dell’argomento in cui si trova questa nota.",
+        "source": "La risposta usa solo i passaggi di questa fonte e cita ciascuno.",
+        "topic": "La risposta usa solo ciò che c’è in questo argomento e cita ogni passaggio."
+      },
+      "earlier": {
+        "heading": "Domande precedenti",
+        "label": "Apri una domanda precedente"
+      },
+      "empty": "Non è ancora stato chiesto nulla su questo. Ogni domanda resta in Biblioteca › Domande, con la sua risposta.",
+      "errors": {
+        "earlier": "Impossibile caricare le domande precedenti.",
+        "earlierKept": "Puoi comunque chiedere.",
+        "scope": "Impossibile vedere dove si trova questa nota, quindi la domanda non ha ancora un ambito."
+      },
+      "indexedOne": "Puoi già chiedere: il passaggio è indicizzato.",
+      "indexedOther": "Puoi già chiedere: i {count} passaggi sono indicizzati.",
+      "indexing": "I passaggi sono ancora in fase di indicizzazione. Una risposta ora potrebbe non trovare nulla da citare.",
+      "notesArriving": "Le note stanno ancora arrivando.",
+      "title": {
+        "entity": "Chiedi di questa entità",
+        "library": "Chiedi alla biblioteca",
+        "note": "Chiedi di {topic}",
+        "pending": "Chiedi di questa nota",
+        "source": "Chiedi a questa fonte",
+        "topic": "Chiedi a questo argomento"
+      }
+    },
     "connections": {
       "actions": {
         "failed": "Non è stato possibile salvare la tua scelta. Riprova.",
@@ -4521,6 +4554,8 @@
       "suggestionsLabel": "Connessioni suggerite"
     },
     "count": {
+      "changesOne": "{count} modifica",
+      "changesOther": "{count} modifiche",
       "connectionsOne": "{count} connessione",
       "connectionsOther": "{count} connessioni",
       "mentionsOne": "{count} menzione",
@@ -4540,6 +4575,7 @@
       "connections": "Impossibile caricare le connessioni.",
       "evidence": "Impossibile caricare le evidenze.",
       "graph": "Impossibile caricare il grafo.",
+      "history": "Impossibile caricare la cronologia.",
       "kept": {
         "entity": "L'entità resta aperta.",
         "note": "La nota resta aperta.",
@@ -4629,10 +4665,35 @@
           "title": "Grafo"
         }
       },
+      "history": {
+        "description": "Tutto ciò che è cambiato in questo oggetto, con Annulla.",
+        "title": "Cronologia"
+      },
       "mentions": {
         "description": "Dove questo oggetto è citato senza una connessione.",
         "title": "Menzioni"
       }
+    },
+    "history": {
+      "by": {
+        "gardener": "Giardiniere",
+        "you": "Tu"
+      },
+      "empty": {
+        "entity": "Un’entità non ha una cronologia propria. Ciò che cambia nelle sue note compare nella Cronologia di ogni nota.",
+        "note": "In questa nota non è ancora cambiato nulla. Quando il Giardiniere la colloca in un argomento o la collega a un’altra, ogni modifica compare qui, con Annulla.",
+        "question": "Una domanda non ha una cronologia propria. Chiedi di nuovo per scrivere una nuova versione della risposta.",
+        "source": "Non è ancora cambiato nulla per questa fonte. Dove viene collocata negli argomenti e come si collega ad altre fonti compare qui, con Annulla.",
+        "topic": "In questo argomento non è ancora cambiato nulla. Cambi di nome, spostamenti e nuovi riassunti compaiono qui, con Annulla."
+      },
+      "label": "Modifiche a questo oggetto",
+      "latest": "Le {count} più recenti.",
+      "state": {
+        "dismissed": "Scartata",
+        "undone": "Annullata",
+        "waiting": "Attende la tua decisione nella Posta in arrivo"
+      },
+      "undoLabel": "Annulla: {title}"
     },
     "loadingMore": "Caricamento…",
     "locate": {

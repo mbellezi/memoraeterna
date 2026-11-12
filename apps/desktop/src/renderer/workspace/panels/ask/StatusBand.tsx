@@ -6,6 +6,7 @@ import { Kbd } from "../../../components/ui/kbd";
 import { SolidTriangle } from "../../../components/ui/solid-glyphs";
 import { cn } from "../../../lib/cn";
 import type { AnswerStage } from "./answer-model";
+import { shortDate } from "../../destinations/home/home-model";
 import { MetaClauses } from "./MetaClauses";
 
 /**
@@ -49,11 +50,7 @@ const plural = (
 export function answerDate(t: Translator, iso: string | undefined): string {
   const date = iso ? new Date(iso) : null;
   if (!date || Number.isNaN(date.getTime())) return "";
-  return new Intl.DateTimeFormat(t.locale, { day: "numeric", month: "short" })
-    .formatToParts(date)
-    .filter((part) => part.type === "day" || part.type === "month")
-    .map((part) => part.value.replace(/\.$/, ""))
-    .join("\u00a0");
+  return shortDate(t.locale, date);
 }
 
 function Dots() {

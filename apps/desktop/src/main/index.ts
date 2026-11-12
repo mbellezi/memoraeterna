@@ -129,6 +129,7 @@ import { promptPinGeneration } from "./services/prompt-runtime.js";
 import { createTopicTreeServices, type TopicTreeServices } from "./services/topic-tree/index.js";
 import { ChangesService } from "./services/gardener/changes-service.js";
 import { registerChangesIpc } from "./services/gardener/changes-ipc.js";
+import { createChangesObjectService, registerChangesObjectIpc } from "./services/changes-ipc.js";
 import { InboxService } from "./services/gardener/inbox-service.js";
 import { registerInboxIpc } from "./services/gardener/inbox-ipc.js";
 import {
@@ -714,6 +715,10 @@ void app.whenReady().then(() => {
     ...changeSetEventHooks(events)
   });
   registerChangesIpc(ipcMain, changesService);
+  registerChangesObjectIpc(
+    ipcMain,
+    createChangesObjectService({ getPool: () => databaseService?.getPool() ?? null })
+  );
   registerSourceRelationExplanationIpc(
     ipcMain,
     new SourceRelationExplanationService({
