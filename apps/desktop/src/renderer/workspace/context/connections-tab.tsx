@@ -13,8 +13,10 @@ import {
   connectionCounts,
   connectionMeta,
   connectionPageSize,
+  connectionTotal,
   countText,
   groupConnections,
+  isShownSourceRelation,
   sourceConnectionRow,
   suggestionVerdict,
   type ConnectionRow
@@ -185,10 +187,7 @@ function NoteConnectionsList({
   const { groups, suggestions } = groupConnections(paged.items);
   const counts = connectionCounts(paged.items);
   // Not every row is loaded yet: the total says how many connections there are in all.
-  const connections =
-    paged.hasMore && paged.total !== null
-      ? Math.max(paged.total - counts.suggestions, counts.connections)
-      : counts.connections;
+  const connections = connectionTotal(paged.items, paged);
   const detail = [
     countText(t, "connections", connections),
     counts.suggestions > 0 ? countText(t, "suggestions", counts.suggestions) : null
@@ -203,7 +202,7 @@ function NoteConnectionsList({
           <section key={group.key} className="mb-4" aria-label={t(group.headingKey)}>
             <GroupHeading
               count={group.rows.length}
-              className={stanceTextClass[group.stance]}
+              tone={stanceTextClass[group.stance]}
               glyph={<StanceGlyph stance={group.stance} size={16} />}
             >
               {t(group.headingKey)}
@@ -400,7 +399,9 @@ function NoteConnections(props: ContextTabProps) {
   const state = listState(paged.read);
   useReportedState(state, onState);
   useReportedCount(
-    paged.read.status === "ready" ? connectionCounts(paged.read.value.items).connections : null,
+    paged.read.status === "ready"
+      ? connectionTotal(paged.read.value.items, paged.read.value)
+      : null,
     onCount
   );
   return (
@@ -442,7 +443,8 @@ function OtherConnectionsView({
   onOpen,
   onRetry,
   mapAddress,
-  state
+  state,
+  partial = false
 }: {
   t: Translator;
   kind: ContextTabProps["kind"];
@@ -457,12 +459,16 @@ function OtherConnectionsView({
   onRetry: () => void;
   mapAddress: string;
   state: PanelLoadState;
+  /** More pages follow: the rows shown are not the whole count, so no total is stated. */
+  partial?: boolean;
 }) {
   const heading = (
     <ContextHeading
       title={t(`contextPanel.headings.connections.${kind}.title`)}
       description={t(`contextPanel.headings.connections.${kind}.description`)}
-      {...(state === "success" ? { detail: `${countText(t, "connections", rows.length)}.` } : {})}
+      {...(state === "success" && !partial
+        ? { detail: `${countText(t, "connections", rows.length)}.` }
+        : {})}
     />
   );
   return (
@@ -519,8 +525,11 @@ function SourceConnections(props: ContextTabProps) {
     first: async (app, wanted) => {
       const limit = Math.min(Math.max(wanted, connectionPageSize), 100);
       const page = await app.knowledge.listSourceRelations({ sourceItemId: id, offset: 0, limit });
-      const items = page.relations.map((relation) => sourceConnectionRow(relation, id));
-      return { items, total: page.total, next: page.hasMore ? items.length : null };
+      // The offset counts what the read returned, shown or not.
+      const items = page.relations
+        .filter((relation) => isShownSourceRelation(relation, id))
+        .map((relation) => sourceConnectionRow(relation, id));
+      return { items, total: null, next: page.hasMore ? page.relations.length : null };
     },
     next: async (app, offset) => {
       const page = await app.knowledge.listSourceRelations({
@@ -528,8 +537,10 @@ function SourceConnections(props: ContextTabProps) {
         offset,
         limit: connectionPageSize
       });
-      const items = page.relations.map((relation) => sourceConnectionRow(relation, id));
-      return { items, total: page.total, next: page.hasMore ? offset + items.length : null };
+      const items = page.relations
+        .filter((relation) => isShownSourceRelation(relation, id))
+        .map((relation) => sourceConnectionRow(relation, id));
+      return { items, total: null, next: page.hasMore ? offset + page.relations.length : null };
     },
     keyOf: (row) => row.id
   });
@@ -556,12 +567,17 @@ function SourceConnections(props: ContextTabProps) {
   }));
   const state = listState(paged.read);
   useReportedState(state, onState);
-  useReportedCount(paged.read.status === "ready" ? items.length : null, onCount);
+  // The number is known only once every page is read: the removed relations are left out here.
+  useReportedCount(
+    paged.read.status === "ready" && !paged.read.value.hasMore ? items.length : null,
+    onCount
+  );
   return (
     <>
       <OtherConnectionsView
         t={t}
         kind="source"
+        partial={paged.read.status === "ready" && paged.read.value.hasMore}
         read={paged.read}
         rows={rows}
         resolved={resolved}

@@ -311,6 +311,20 @@ export function connectionCounts(relations: readonly Pick<NotePageRelation, "sta
   return { connections: relations.length - suggestions, suggestions };
 }
 
+/**
+ * How many connections a note has in all, for the heading and the strip alike: the total of the read
+ * (which counts the suggestions too) while rows are still to load, else the rows of the list.
+ */
+export function connectionTotal(
+  relations: readonly Pick<NotePageRelation, "state">[],
+  page: { hasMore: boolean; total: number | null }
+): number {
+  const counts = connectionCounts(relations);
+  return page.hasMore && page.total !== null
+    ? Math.max(page.total - counts.suggestions, counts.connections)
+    : counts.connections;
+}
+
 const confidenceKeys: Readonly<Record<RelationConfidenceWord, MessageKey>> = {
   high: "contextPanel.connections.meta.confidenceHigh",
   medium: "contextPanel.connections.meta.confidenceMedium",
@@ -364,6 +378,23 @@ export interface SourceConnectionRow {
   stance: Stance;
   state: "suggested" | "kept" | "applied";
   confidence: RelationConfidenceWord;
+}
+
+/**
+ * Whether a relation of `listSourceRelations` belongs in this source's Connections: the same
+ * relations the backlinks' `source_relation` arm counts. The list also returns the removed ones
+ * (last) and the ones whose evidence is gone, and for a container the relations of its children,
+ * whose other end is not this source's counterpart.
+ */
+export function isShownSourceRelation(
+  relation: Pick<SourceRelationView, "sourceItemId" | "targetSourceItemId" | "status" | "current">,
+  thisId: string
+): boolean {
+  return (
+    relation.status !== "rejected" &&
+    relation.current &&
+    (relation.sourceItemId === thisId || relation.targetSourceItemId === thisId)
+  );
 }
 
 export function sourceConnectionRow(

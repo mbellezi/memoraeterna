@@ -323,7 +323,9 @@ export function SourceEvidenceView({
   const items = read.status === "ready" ? read.value.items : [];
   const { passages } = groupPassages(items);
   const state: PanelLoadState = listState(
-    read.status === "ready" ? { status: "ready", value: { items: passages } } : read
+    read.status === "ready"
+      ? { status: "ready", value: { items: passages, hasMore: read.value.hasMore } }
+      : read
   );
   return (
     <EvidenceShell
@@ -387,7 +389,9 @@ function SourceEvidence(props: ContextTabProps) {
   );
   useReportedState(
     listState(
-      paged.read.status === "ready" ? { status: "ready", value: { items: passages } } : paged.read
+      paged.read.status === "ready"
+        ? { status: "ready", value: { items: passages, hasMore: paged.read.value.hasMore } }
+        : paged.read
     ),
     onState
   );

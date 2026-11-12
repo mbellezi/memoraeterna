@@ -40,11 +40,17 @@ export interface ContextTabProps {
   onTab?: (tab: "connections" | "graph") => void;
 }
 
-/** The tab's state from its read: loading, error, empty (nothing to list) or success. */
-export function listState(read: Read<{ items: readonly unknown[] }>): PanelLoadState {
+/**
+ * The tab's state from its read: loading, error, empty (nothing to list) or success. A list with
+ * nothing yet but a page still to read (a backlink read that skipped the arms before its own) is
+ * not empty: it offers the next page.
+ */
+export function listState(
+  read: Read<{ items: readonly unknown[]; hasMore?: boolean }>
+): PanelLoadState {
   if (read.status === "loading") return "loading";
   if (read.status === "error") return "error";
-  return read.value.items.length === 0 ? "empty" : "success";
+  return read.value.items.length === 0 && !read.value.hasMore ? "empty" : "success";
 }
 
 /** Tells the host what state the tab is in, whenever it changes. */
@@ -263,25 +269,24 @@ export function MetaLine({
   );
 }
 
-/** The heading of a group of rows, with its glyph in the group's colour and its count. */
+/**
+ * The heading of a group of rows, with its glyph in the group's colour and its count. `tone` is the
+ * colour class of the whole heading (a stance's); without one the heading reads in the text colour,
+ * so no two colour utilities meet on the element.
+ */
 export function GroupHeading({
   glyph,
-  className,
+  tone = "text-foreground",
   children,
   count
 }: {
   glyph?: ReactNode;
-  className?: string;
+  tone?: string;
   children: ReactNode;
   count?: number | undefined;
 }) {
   return (
-    <h3
-      className={cn(
-        "m-0 mb-1 flex min-w-0 items-start gap-2 text-sm font-semibold text-foreground",
-        className
-      )}
-    >
+    <h3 className={cn("m-0 mb-1 flex min-w-0 items-start gap-2 text-sm font-semibold", tone)}>
       {glyph ? <span className="mt-[3px] flex-none">{glyph}</span> : null}
       <span className="min-w-0 [text-wrap:pretty]">{children}</span>
       {count === undefined ? null : (

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import type { DesktopApi } from "../../../shared/ipc";
-import { readBacklinks } from "./context-reads";
+import { createResolveBook, readBacklinks, resolveBatches } from "./context-reads";
 
 const uuid = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
 const item = (via: string, n: number) => ({ from: `memora://note/${uuid(n)}`, via });
@@ -61,5 +61,40 @@ describe("reading backlinks for a tab", () => {
       limit: 50,
       cursor: "abc"
     });
+  });
+});
+
+describe("the book of addresses asked for their summaries", () => {
+  it("asks an address once when the effect runs, is cleaned up and runs again", () => {
+    // StrictMode in development: setup, cleanup, setup, with the refs kept.
+    const book = createResolveBook();
+    expect(book.take(["a", "b"], "0|true")).toEqual(["a", "b"]);
+    expect(book.take(["a", "b"], "0|true")).toEqual([]);
+  });
+
+  it("asks only the addresses a longer list adds while the first batch is in flight", () => {
+    const book = createResolveBook();
+    book.take(["a", "b"], "0|true");
+    expect(book.take(["a", "b", "c"], "0|true")).toEqual(["c"]);
+  });
+
+  it("asks everything again after a change, or for another kind of answer", () => {
+    const book = createResolveBook();
+    book.take(["a"], "0|true");
+    expect(book.take(["a"], "1|true")).toEqual(["a"]);
+    expect(book.take(["a"], "1|false")).toEqual(["a"]);
+  });
+
+  it("lets a failed batch be asked again", () => {
+    const book = createResolveBook();
+    book.take(["a", "b"], "0|true");
+    book.release(["a"]);
+    expect(book.take(["a", "b"], "0|true")).toEqual(["a"]);
+  });
+
+  it("cuts a long list into requests of at most 200", () => {
+    const addresses = Array.from({ length: 450 }, (_, n) => `a${n}`);
+    expect(resolveBatches(addresses).map((batch) => batch.length)).toEqual([200, 200, 50]);
+    expect(resolveBatches([])).toEqual([]);
   });
 });

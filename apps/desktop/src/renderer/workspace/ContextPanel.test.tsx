@@ -206,6 +206,15 @@ describe("mentions", () => {
     expect(empty).toContain('data-state="empty"');
     expect(empty).toContain("Nada cita isto fora das conexões.");
   });
+
+  it("is not empty while a page the read skipped still lies ahead", () => {
+    // The arms before the one the tab shows can fill every request the read makes.
+    const skipped = view(ready({ items: [], total: null, hasMore: true, more: "idle" as const }));
+    expect(skipped).not.toContain('data-state="empty"');
+    expect(skipped).not.toContain("Nada cita isto fora das conexões.");
+    expect(skipped).toContain('data-state="success"');
+    expect(skipped).toContain("Mostrar mais");
+  });
 });
 
 describe("evidence", () => {
@@ -286,6 +295,22 @@ describe("evidence", () => {
     expect(html).toContain("the words");
     expect(html).toContain("citado por 1 nota e 1 pergunta");
     expect(html).toContain(`data-object="memora://source/${uuid(11)}#${anchor}"`);
+  });
+
+  it("is not empty while a source's passages may still lie on a later page", () => {
+    const html = renderToString(
+      <SourceEvidenceView
+        t={pt}
+        sourceId={uuid(11)}
+        read={ready({ items: [], total: null, hasMore: true, more: "idle" as const })}
+        resolved={new Map()}
+        onOpen={noop}
+        onMore={noop}
+        onRetry={noop}
+      />
+    );
+    expect(html).toContain('data-state="success"');
+    expect(html).toContain("Mostrar mais");
   });
 
   it("lists an answer's sources by number and says when one is gone or may be out of date", () => {

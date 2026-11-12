@@ -18,6 +18,8 @@ import {
   notePassageTarget,
   objectOfAddress,
   passageAddress,
+  connectionTotal,
+  isShownSourceRelation,
   readsMoreBacklinks,
   relationRole,
   resolveTab,
@@ -357,6 +359,41 @@ describe("a source's connections", () => {
       state: "suggested",
       confidence: "unknown"
     });
+  });
+});
+
+describe("how many connections a note has", () => {
+  const rows = [{ state: "applied" }, { state: "suggested" }, { state: "kept" }] as never[];
+
+  it("counts the rows when all are loaded", () => {
+    expect(connectionTotal(rows, { hasMore: false, total: 3 })).toBe(2);
+  });
+
+  it("counts the total of the read, less the suggestions, while rows are still to load", () => {
+    // The strip says what the heading says: 57 in all, not the 20 loaded.
+    expect(connectionTotal(rows, { hasMore: true, total: 57 })).toBe(56);
+    expect(connectionTotal(rows, { hasMore: true, total: null })).toBe(2);
+  });
+});
+
+describe("which source relations a source's connections list", () => {
+  const base = {
+    sourceItemId: uuid(1),
+    targetSourceItemId: uuid(2),
+    status: "pending_review" as const,
+    current: true
+  };
+
+  it("leaves out the removed ones and the ones whose evidence is gone", () => {
+    expect(isShownSourceRelation(base, uuid(1))).toBe(true);
+    expect(isShownSourceRelation({ ...base, status: "accepted" }, uuid(2))).toBe(true);
+    expect(isShownSourceRelation({ ...base, status: "rejected" }, uuid(1))).toBe(false);
+    expect(isShownSourceRelation({ ...base, current: false }, uuid(1))).toBe(false);
+  });
+
+  it("leaves out a relation between two of a container's children", () => {
+    // The container is uuid(9): neither end is it, so no end is its counterpart.
+    expect(isShownSourceRelation(base, uuid(9))).toBe(false);
   });
 });
 

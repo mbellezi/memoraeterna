@@ -553,11 +553,11 @@ export function ContextPanel({
               aria-keyshortcuts="Meta+Shift+Backslash"
               onClick={() => onOpenChange(!open)}
               className={cn(
-                "flex h-full w-10 flex-col items-center gap-2 border-l border-border py-3 text-secondary-foreground",
+                "flex h-full w-10 flex-col items-center gap-2 border-l border-border py-3",
                 "hover:bg-surface-hover focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent",
                 open
                   ? "bg-surface-selected text-foreground [box-shadow:inset_2px_0_0_var(--accent)]"
-                  : "bg-background"
+                  : "bg-background text-secondary-foreground"
               )}
             >
               <PanelRight aria-hidden="true" className="size-4 flex-none" />

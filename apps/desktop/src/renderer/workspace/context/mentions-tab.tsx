@@ -84,7 +84,7 @@ export function MentionsView({
         <ContextLoading t={t} />
       ) : read.status === "error" ? (
         <ContextError t={t} message="contextPanel.errors.mentions" kept={kind} onRetry={onRetry} />
-      ) : items.length === 0 ? (
+      ) : state === "empty" ? (
         <ContextEmpty>{t("contextPanel.mentions.empty")}</ContextEmpty>
       ) : (
         <>

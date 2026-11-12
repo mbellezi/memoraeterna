@@ -239,10 +239,52 @@ export const backlinkKey = (item: ObjectBacklink): string =>
 // Titles and paths of the objects a list names
 
 /**
+ * What `useResolved` has asked in the current round, so an address is asked once per round. The
+ * book outlives the effect that fills it: React runs an effect, its cleanup and the effect again
+ * (StrictMode in development), and a list that changes while a batch is in flight runs the effect
+ * again too; an answer is never thrown away for either, and an address in flight is not asked
+ * twice. A round is a change of the objects or of what is asked about them: it asks everything again.
+ */
+export interface ResolveBook {
+  /** The addresses of `wanted` not asked yet in `round`, now marked as asked. */
+  take: (wanted: readonly string[], round: string) => string[];
+  /** A batch that failed: its addresses may be asked again. */
+  release: (addresses: readonly string[]) => void;
+}
+
+export function createResolveBook(): ResolveBook {
+  let current: string | null = null;
+  const asked = new Set<string>();
+  return {
+    take(wanted, round) {
+      if (round !== current) {
+        current = round;
+        asked.clear();
+      }
+      const todo = wanted.filter((address) => !asked.has(address));
+      for (const address of todo) asked.add(address);
+      return todo;
+    },
+    release(addresses) {
+      for (const address of addresses) asked.delete(address);
+    }
+  };
+}
+
+/** The addresses in requests of at most `objectResolveManyMax`. */
+export function resolveBatches(addresses: readonly string[]): string[][] {
+  const batches: string[][] = [];
+  for (let at = 0; at < addresses.length; at += objectResolveManyMax)
+    batches.push(addresses.slice(at, at + objectResolveManyMax));
+  return batches;
+}
+
+/**
  * The summaries (title, kind, status and the topics above) of the addresses a list shows, resolved
  * in batches of at most 200 per request. A failure is quiet: the row keeps its own words and the
  * list's own read decides whether anything failed. Addresses already resolved are not asked again
- * until an object changes.
+ * until one of them changes (`object.changed` names it), which asks them all again; the answers
+ * on screen stay until the new ones replace them.
  */
 export function useResolved(
   addresses: readonly string[],
@@ -251,42 +293,37 @@ export function useResolved(
   const { active, path } = options;
   const [store, setStore] = useState<ReadonlyMap<string, ObjectResolved>>(new Map());
   const [attempt, setAttempt] = useState(0);
-  const done = useRef({ attempt: 0, asked: new Set<string>() });
+  const book = useRef<ResolveBook | null>(null);
   const wanted = [...new Set(addresses)].sort();
   const key = wanted.join("\n");
 
   useEffect(() => {
-    if (!active || key === "") return undefined;
-    if (done.current.attempt !== attempt) done.current = { attempt, asked: new Set() };
-    const todo = key.split("\n").filter((address) => !done.current.asked.has(address));
-    if (todo.length === 0) return undefined;
-    let live = true;
+    if (!active || key === "") return;
+    book.current ??= createResolveBook();
+    const owner = book.current;
     const app = appOf();
-    const batches: string[][] = [];
-    for (let at = 0; at < todo.length; at += objectResolveManyMax)
-      batches.push(todo.slice(at, at + objectResolveManyMax));
-    for (const address of todo) done.current.asked.add(address);
-    for (const batch of batches) {
+    for (const batch of resolveBatches(owner.take(key.split("\n"), `${attempt}|${path}`))) {
       (app ? app.objects.resolveMany({ addresses: batch, include: { path } }) : noApp())
-        .then((result) => {
-          if (!live) return;
+        .then((result) =>
           setStore((current) => {
             const merged = new Map(current);
             for (const [address, item] of Object.entries(result.items)) merged.set(address, item);
             return merged;
-          });
-        })
+          })
+        )
         .catch(() => {
           // The rows keep their own words; asking again waits for the next change.
-          for (const address of batch) done.current.asked.delete(address);
+          owner.release(batch);
         });
     }
-    return () => {
-      live = false;
-    };
   }, [key, active, path, attempt]);
 
-  useAppEvent("object.changed", () => setAttempt((value) => value + 1), active && key !== "");
+  // Only a change of an object the list names asks again, not every change in the library.
+  useObjectChanged(
+    key === "" ? [] : wanted,
+    () => setAttempt((value) => value + 1),
+    active && key !== ""
+  );
   return store;
 }
 
