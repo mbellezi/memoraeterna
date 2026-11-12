@@ -5579,7 +5579,7 @@
     "health": {
       "attention": "needs attention",
       "good": "balanced",
-      "violation": "over the limit"
+      "violation": "structure problem"
     },
     "inspector": {
       "next": "Next step",
