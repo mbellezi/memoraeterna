@@ -1,24 +1,22 @@
 // J1 first run (F5 T154, spec 5.3, amendments A6 and A7, bar X7): an empty profile starts in the
-// first-run view; once it is set up, Home is the first-run surface; the first source is added and
-// the person lands in Explore with that Source pushed, the navigator showing the tree being born and a
-// note row with its path chip. T0 (the launch) to T1 (that note row) is recorded: F4 E6's replay bar is
-// 10 minutes for the whole first run.
+// first-run view and the person walks its three steps there: the languages, the AI setup in Hybrid
+// (the ChatGPT / Codex sign-in included) and the first source, chosen in onboarding's own import
+// step. Choosing it is A6/D9's path (`use-first-run.tsx` onFirstSource -> `App.tsx` openFirstSource
+// -> the `firstSource` case of `workspace/state.ts`): the app lands in Explore with that Source
+// pushed, the navigator showing the tree being born and then a note row with its path chip. T0 (the
+// launch) to T1 (that note row) is recorded: F4 E6's replay bar is 10 minutes for the whole first run.
 //
-// What a browser cannot be driven to do is played the way the harness's own global setup plays it
-// (`global-setup.ts`, the same calls in the same order as `S/first-run-sequence.ts`): the ChatGPT /
-// Codex sign-in is replaced by the DEV credential stub where the sign-in leaves it, and the setup of
-// step 2 (writer, the two models from the seed folder, the Hybrid preset, the class tests) is issued
-// through `window.app`. Step 1 (the languages) is walked in the first-run view itself. No model is
-// downloaded (the seed folder is checked first) and every AI call is served by the cassette
-// `firstrun-hybrid-f4`; a miss fails the journey. Because step 2 does not run in the first-run view,
-// onboarding's own import step (step 3, A6/D9's first-source path) is not reached: the first source
-// goes through the Add flow (Cmd-N), and J1 fails softly on A6 until the Codex sign-in has a DEV seam.
+// The one thing a journey cannot play is the browser sign-in: `stubCodexSignIn` swaps the connect
+// handler in main for a stand-in that runs the product's own handler with the sign-in's outside world
+// answered on this machine (the DEV Codex credential stub, the cassette's writer model), so the
+// first-run view's own button signs in and the setup saves the stub in this scratch profile. No model
+// is downloaded (the seed folder is checked first; the ranker comes from it through the DEV install
+// knob) and every AI call is served by the cassette `firstrun-hybrid-f4`; a miss fails the journey.
 // The app is made to follow the window's colour scheme before the first scan (dark is the default).
-import { randomUUID } from "node:crypto";
-import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 
+import { createTranslator, normalizeLanguageCode, type MessageKey } from "@app/i18n";
 import { expect, test, type Locator, type Page } from "@playwright/test";
 
 import {
@@ -27,8 +25,8 @@ import {
   cassetteMisses,
   defaultCassette,
   followSystemTheme,
-  firstRunModelIds,
   firstRunRankerEnv,
+  firstRunRankerState,
   goldenSource,
   invokeApp,
   launchMemora,
@@ -36,39 +34,19 @@ import {
   setContentSize,
   stepFailures,
   waitForDatabase,
+  type ListedLocalModel,
   type MemoraSession
 } from "./support/app.js";
+import { stubCodexSignIn } from "./support/codex-sign-in.js";
 import { stubOpenDialog } from "./support/dialog.js";
-import {
-  aiConfigRepositoryOn,
-  newestSourceSummary,
-  openProfileDb,
-  type ProfileDb
-} from "./support/db.js";
+import { newestSourceSummary, openProfileDb, type ProfileDb } from "./support/db.js";
 import { installGestureCounter, readGestures, resetGestures } from "./support/gestures.js";
 import { emptyProfile, journeysRun, profileDir, type JourneysRun } from "./support/profile.js";
-import { pressShortcut } from "./support/shortcuts.js";
 
 /** The first source of FR2 (as `global-setup.ts`). */
 const firstSourceKey = "plos-one-murre-dros-2015";
 const contentLanguage = "pt-BR";
-const classTests = ["embed", "write-fast", "write-quality", "answer", "judge"] as const;
-const codexCapabilities = [
-  "text-generation",
-  "structured-output",
-  "summarization",
-  "knowledge-graph-generation",
-  "atomic-note-generation",
-  "requires-network"
-];
-/** The DEV Codex credential stub (`devCodexCredential`): a fixed dummy, never a token. */
-const devCodexCredential = {
-  access: "dev-fake-codex-access-token",
-  refresh: "dev-fake-codex-refresh-token",
-  expires: 4_102_444_800_000,
-  accountId: "dev-fake-codex-account"
-};
-/** The bar of X1 for the first source: 2 gestures from the file choice (the first run is recorded at 1). */
+/** The bar of X1 for the first source: 2 gestures from the file choice (design 9.1, row 1). */
 const x1Bar = 2;
 const minutes = (count: number) => count * 60_000;
 const sleep = (ms: number) => new Promise((done) => setTimeout(done, ms));
@@ -88,6 +66,12 @@ async function until<T>(
   }
 }
 
+/** The first-run view's own copy, in the language it marks on its root (`lang`). */
+function translatorOf(lang: string | null) {
+  const translator = createTranslator(normalizeLanguageCode(lang));
+  return (key: MessageKey) => translator(key);
+}
+
 /** The writer the cassette was recorded with: a replay must use the same model. */
 async function recordedWriterModel(run: JourneysRun): Promise<string> {
   const path = join(
@@ -104,90 +88,6 @@ async function recordedWriterModel(run: JourneysRun): Promise<string> {
   if (record.writer?.kind !== "codex" || !record.writer.modelId)
     throw new Error(`${defaultCassette} was not recorded with a Codex writer`);
   return record.writer.modelId;
-}
-
-/** The writer: the stub credential where the sign-in leaves it, then the product's own save calls. */
-async function signInWriter(session: MemoraSession, db: ProfileDb, modelId: string) {
-  const encrypted = await session.electronApp.evaluate(({ safeStorage }, secret) => {
-    if (!safeStorage.isEncryptionAvailable()) return null;
-    return safeStorage.encryptString(secret).toString("base64");
-  }, JSON.stringify(devCodexCredential));
-  if (!encrypted)
-    throw new Error("safeStorage is not available: the credential stub is not stored");
-  const reference = `ai:${randomUUID()}`;
-  const file = join(session.userDataDir, "credentials", "ai-secrets.json");
-  if (existsSync(file)) throw new Error("The empty profile already holds credentials");
-  await mkdir(dirname(file), { recursive: true });
-  await writeFile(
-    file,
-    `${JSON.stringify({ version: 1, secrets: { [reference]: encrypted } }, null, 2)}\n`,
-    { mode: 0o600 }
-  );
-  const { id: providerConfigId } = await aiConfigRepositoryOn(db).upsertProvider({
-    provider: "openai-codex",
-    displayName: "ChatGPT / Codex",
-    credentialRef: reference,
-    metadata: { modelId, capabilities: codexCapabilities }
-  });
-  await invokeApp(session.page, "ai.saveProvider", {
-    id: providerConfigId,
-    provider: "openai-codex",
-    displayName: "ChatGPT / Codex",
-    modelId,
-    capabilities: codexCapabilities
-  });
-  const profile = await invokeApp<{ id: string }>(session.page, "ai.createProfile", {
-    name: "Writer",
-    isDefault: true,
-    privacyMode: "allow_remote",
-    outputLanguage: "ui"
-  });
-  await invokeApp(session.page, "ai.updateProfile", {
-    id: profile.id,
-    providerConfigId,
-    modelId,
-    runtime: "remote",
-    capabilities: codexCapabilities
-  });
-}
-
-/** Step 2 of the first run in Hybrid, after the languages. */
-async function playSetup(session: MemoraSession, db: ProfileDb, writerModel: string) {
-  const { page } = session;
-  const embedder = firstRunModelIds().embedding;
-  await invokeApp(page, "hardware.profile");
-  await invokeApp(page, "localModels.list");
-  await signInWriter(session, db, writerModel);
-  await invokeApp(page, "localModels.download", { catalogId: embedder, acceptLicense: false });
-  await until(`${embedder} ready`, minutes(20), 2_000, async () => {
-    const models = await invokeApp<
-      { catalogId: string; status: string; lastError: string | null }[]
-    >(page, "localModels.list");
-    const model = models.find((entry) => entry.catalogId === embedder);
-    if (model?.status === "failed") throw new Error(`${embedder} failed: ${model.lastError}`);
-    return model?.status === "ready" ? true : null;
-  });
-  const preset = await invokeApp<{ applied: boolean; blocked: { reason: string }[] }>(
-    page,
-    "ai.applyPreset",
-    { preset: "hybrid", test: false }
-  );
-  if (!preset.applied || preset.blocked.length > 0)
-    throw new Error(`The Hybrid preset was not applied: ${JSON.stringify(preset.blocked)}`);
-  for (const route of classTests) await invokeApp(page, "ai.testClassRoute", route);
-  // With a cassette on the app disables its own first-run ranker (`main/index.ts`: the FirstRunRanker is
-  // `enabled` only without one); the DEV install knob puts it in from the seed folder at start, and
-  // "ready" is the model validated for reranking.
-  const rankerId = firstRunModelIds().ranker;
-  const ranker = await until("the first-run ranker", minutes(30), 3_000, async () => {
-    const models = await invokeApp<
-      { catalogId: string; status: string; capabilities: string[]; lastError: string | null }[]
-    >(page, "localModels.list");
-    const model = models.find((entry) => entry.catalogId === rankerId);
-    if (model?.status === "failed") throw new Error(`${rankerId} failed: ${model.lastError}`);
-    return model?.status === "ready" && model.capabilities.includes("reranking") ? "ready" : null;
-  });
-  if (ranker !== "ready") throw new Error(`The first-run ranker ended ${ranker}, not ready`);
 }
 
 interface Ref {
@@ -254,7 +154,7 @@ async function captureAndCheck(session: MemoraSession, index: number, step: stri
   expect.soft(stepFailures(record), `${step} (X12)`).toEqual([]);
 }
 
-test("J1 first run: onboarding, Home as the first-run surface, the first source opens Explore with its Source", async () => {
+test("J1 first run: the three onboarding steps in the first-run view, the first source opens Explore with its Source", async () => {
   test.setTimeout(75 * 60_000);
   const run = journeysRun();
   // Both first-run models come from the seed folder or the journey stops before it starts anything.
@@ -303,19 +203,112 @@ test("J1 first run: onboarding, Home as the first-run surface, the first source 
       .toBe(contentLanguage);
     lap("languagesDone");
 
-    // Step 2, issued through window.app (a sign-in cannot be played); then the first-run view is done.
-    await playSetup(session, db, writerModel);
-    lap("setupDone");
-    await invokeApp(page, "onboarding.finish", { outcome: "completed" });
-    await invokeApp(page, "knowledgeControls.update", { paused: false, autonomy: "auto" });
-    await page.reload();
+    // Step 2 in the first-run view: Hybrid, the ChatGPT / Codex sign-in (the stand-in: no browser,
+    // no request leaves the machine), the writer model the cassette was recorded with, then the setup.
+    const t = translatorOf(
+      await page
+        .locator("div[lang]")
+        .filter({ has: page.locator("main") })
+        .first()
+        .getAttribute("lang")
+    );
+    // The last match: the import form's footer holds its primary button after the form's own ones.
+    const named = (key: MessageKey) =>
+      page.getByRole("button", { name: t(key), exact: true }).last();
+    await expect(page.locator('main input[name="onboarding-setup"]')).toHaveCount(3, {
+      timeout: 60_000
+    });
     await setContentSize(session, 1440, 900);
+    // The setups in `presetOrder` (local, hybrid, cloud): the second is Hybrid.
+    const hybrid = page
+      .locator("main label")
+      .filter({ has: page.locator('input[name="onboarding-setup"]') })
+      .nth(1);
+    await expect(hybrid).toContainText(t("settings.ai.classes.setup.hybrid"));
+    await hybrid.locator("input").check();
+    await page.locator('main input[name="onboarding-writer-method"]').first().check();
+    await stubCodexSignIn(session.electronApp, [writerModel]);
+    await named("onboarding.mode.writer.signIn").click();
+    await expect(page.getByText(t("onboarding.mode.writer.signedIn"), { exact: true })).toBeVisible(
+      {
+        timeout: 60_000
+      }
+    );
+    // The model list is the sign-in's answer, and the recorded writer is the one chosen.
+    await expect(page.locator("main form select")).toHaveValue(writerModel);
+    lap("signedIn");
+    await captureAndCheck(session, 1, "first-run-signed-in");
+    await page.locator("main form button[type=submit]").click();
+    // The setup runs in the view: the writer, the embedder from the seed folder, the preset, the tests.
+    const done = named("onboarding.continue");
+    const doneWithProblems = named("onboarding.setup.continueAnyway");
+    await expect(done.or(doneWithProblems)).toBeVisible({ timeout: minutes(30) });
+    lap("setupDone");
+    const setupHadProblems = await doneWithProblems.isVisible();
+    expect
+      .soft(setupHadProblems, "the first-run setup ended with a part failed or a test not passed")
+      .toBe(false);
+    // The writer the sign-in left is stored: one Codex configuration, holding a credential.
+    const [writer] = await db.query<{ count: number; held: number }>(
+      "select count(*)::int as count, count(credential_ref)::int as held from ai_provider_configs " +
+        "where provider = 'openai-codex'"
+    );
+    expect(writer, "the sign-in's writer was not saved with its credential").toEqual({
+      count: 1,
+      held: 1
+    });
+    await captureAndCheck(session, 2, "first-run-setup-done");
+    // With a cassette on the app never asks for the ranker; the DEV install knob puts it in from the
+    // seed folder at start, and the import must not begin before it is validated for reranking.
+    await until("the first-run ranker", minutes(30), 3_000, async () =>
+      firstRunRankerState(await invokeApp<ListedLocalModel[]>(page, "localModels.list"))
+    );
+    await invokeApp(page, "knowledgeControls.update", { paused: false, autonomy: "auto" });
+    await (setupHadProblems ? doneWithProblems : done).click();
 
-    // Home is the first-run surface, and the rail holds exactly five destinations (X7).
-    const home = page.locator('[data-surface="destination-home"]');
-    await expect(home).toBeVisible({ timeout: 60_000 });
-    await expect(home).not.toHaveAttribute("data-state", "loading", { timeout: 60_000 });
-    await expect(home).not.toHaveAttribute("data-state", "error");
+    // Step 3, onboarding's own import step: the file origin, the file (the stubbed picker answers
+    // it), then on to the import. Choosing it is A6/D9's first source.
+    await expect(page.locator("main button[aria-pressed]")).toHaveCount(2, { timeout: 60_000 });
+    lap("sourceStep");
+    await captureAndCheck(session, 3, "first-run-source");
+    const file = await goldenSource(run.repoRoot, firstSourceKey);
+    await stubOpenDialog(session.electronApp, [file.path]);
+    await installGestureCounter(page);
+    await page.locator("main button[aria-pressed]").nth(1).click();
+    await named("import.actions.continue").click();
+    const [failedRow] = await db.query<{ failed: number }>(
+      "select count(*)::int as failed from jobs where status::text = 'failed'"
+    );
+    const failedBefore = failedRow?.failed ?? 0;
+    await resetGestures(page);
+    lap("beforeImport");
+    // The form's own "Escolher arquivo" (the first of the two the content step shows).
+    await page
+      .getByRole("button", { name: t("import.actions.chooseFile"), exact: true })
+      .first()
+      .click();
+    // On through the form with its primary button until the import is the button left.
+    const importButton = named("import.actions.import");
+    for (let step = 0; step < 6 && !(await importButton.isVisible()); step += 1) {
+      await expect(named("import.actions.continue")).toBeEnabled({ timeout: minutes(2) });
+      await named("import.actions.continue").click();
+    }
+    await expect(importButton).toBeEnabled({ timeout: minutes(2) });
+    await importButton.click();
+
+    // A6/D9: the first-run view goes, Explore opens with the Source pushed and the navigator beside it.
+    const sourcePanel = page.locator('[data-surface="source"][data-panel-top]');
+    await expect(sourcePanel).toBeVisible({ timeout: minutes(5) });
+    lap("sourcePushed");
+    await expect(page.locator('[data-surface="shell"]')).toHaveCount(1);
+    await expect(
+      page.locator('[data-surface="rail"] [aria-keyshortcuts="Meta+2"][aria-current="page"]'),
+      "the first source did not open Explore"
+    ).toBeVisible();
+    await expect(page.locator('[data-region="navigator"]')).toBeVisible();
+    expect(await invokeApp<{ show: boolean }>(page, "onboarding.state")).toMatchObject({
+      show: false
+    });
     const destinations = await page
       .locator('[data-surface="rail"] button[aria-keyshortcuts]')
       .evaluateAll(
@@ -325,54 +318,18 @@ test("J1 first run: onboarding, Home as the first-run surface, the first source 
             .filter((keys) => /^Meta\+\d+$/u.test(keys)).length
       );
     expect(destinations, "X7: the rail's destinations").toBe(5);
-    lap("homeFirstRun");
-    await captureAndCheck(session, 1, "home-first-run");
-
-    // A6/D9's own path is NOT walked: onboarding's import step (step 3) hands its source to the shell
-    // (`use-first-run.tsx` onFirstSource -> `App.tsx` openFirstSource -> the `firstSource` case of
-    // `workspace/state.ts`). The controller reaches step 3 only after step 2 ran in its own view, and
-    // step 2 needs the ChatGPT / Codex browser sign-in (`ai.connectOpenAiCodex`, a real OAuth round
-    // trip to auth.openai.com), which a journey cannot play and must not call. Until the app has a
-    // DEV seam for that sign-in, J1 fails softly here so it can never be green without A6.
+    // X1 from the file choice: the gestures counted since it, plus the picker's Abrir the stub plays.
+    const atLanding = await readGestures(page);
+    const fromFileChoice = atLanding.total + 1;
     expect
-      .soft(
-        false,
-        "A6/D9: onboarding's import step is not walked (step 2's Codex sign-in has no DEV seam); " +
-          "the first source below goes through the ordinary Add flow"
-      )
-      .toBe(true);
-    test.info().annotations.push({
-      type: "A6 not covered",
-      description: "onboarding step 3 needs a DEV seam for the Codex sign-in of step 2"
-    });
-
-    // The first source: Cmd-N, the stubbed picker answers it, the Source opens on Explore at once.
-    const file = await goldenSource(run.repoRoot, firstSourceKey);
-    await stubOpenDialog(session.electronApp, [file.path]);
-    await installGestureCounter(page);
-    await resetGestures(page);
-    const [failedRow] = await db.query<{ failed: number }>(
-      "select count(*)::int as failed from jobs where status::text = 'failed'"
-    );
-    const failedBefore = failedRow?.failed ?? 0;
-    lap("beforeImport");
-    await pressShortcut(session, "Meta+N");
-    const sourcePanel = page.locator('[data-surface="source"][data-panel-top]');
-    await expect(sourcePanel).toBeVisible({ timeout: minutes(5) });
-    lap("sourcePushed");
-    await expect(
-      page.locator('[data-surface="rail"] [aria-keyshortcuts="Meta+2"][aria-current="page"]'),
-      "the first source did not open Explore"
-    ).toBeVisible();
-    // A7: the toast viewport renders only while a toast is up; look again a moment later for a late one.
-    await expect(page.locator("[data-toast-viewport]")).toHaveCount(0);
+      .soft(fromFileChoice, `X1 for the first source (${JSON.stringify(atLanding.log)})`)
+      .toBeLessThanOrEqual(x1Bar);
+    // A7: no toast over the content at the landing; look again a moment later for a late one.
     await page.waitForTimeout(1_500);
-    await expect(
-      page.locator("[data-toast-viewport]"),
-      "a toast arrived after the push"
-    ).toHaveCount(0);
-    expect((await readGestures(page)).total, "the first source needed more than Cmd-N").toBe(1);
-    await captureAndCheck(session, 2, "source-pushed");
+    expect
+      .soft(await page.locator("[data-toast-viewport]").count(), "A7: a toast at the landing")
+      .toBe(0);
+    await captureAndCheck(session, 4, "source-pushed");
 
     // The first note with its path: T1. The navigator shows the topic the chip names.
     const firstRow = await waitForPlacedRow(
@@ -383,7 +340,6 @@ test("J1 first run: onboarding, Home as the first-run surface, the first source 
       minutes(30)
     );
     lap("firstNoteWithPath");
-    const gestures = await readGestures(page);
     const noteAddress = await firstRow.locator("button[data-address]").getAttribute("data-address");
     const chip = (await firstRow.locator("[data-path-chip]").getAttribute("data-path")) ?? "";
     const located = await invokeApp<Located | null>(page, "objects.locate", {
@@ -400,9 +356,7 @@ test("J1 first run: onboarding, Home as the first-run surface, the first source 
       navigator.locator(`[role="treeitem"][data-nav-key="t:${topics[0]!.id}"]`),
       "the navigator does not show the new tree"
     ).toBeVisible({ timeout: 60_000 });
-    const fromFileChoice = gestures.total - 1;
-    expect(fromFileChoice, "X1 for the first source").toBeLessThanOrEqual(x1Bar);
-    await captureAndCheck(session, 3, "first-note-with-path");
+    await captureAndCheck(session, 5, "first-note-with-path");
 
     const t1 = mark.firstNoteWithPath!;
     const missesAfter = await cassetteMisses(cassetteDir);
@@ -413,7 +367,7 @@ test("J1 first run: onboarding, Home as the first-run surface, the first source 
       t0ToT1: `${Math.floor(t1 / 60_000)}:${String(Math.floor((t1 % 60_000) / 1000)).padStart(2, "0")}`,
       f4E6BarMs: 10 * 60_000,
       laps: mark,
-      x1FirstRun: { fromFileChoice, fromCmdN: gestures.total, log: gestures.log },
+      x1FirstRun: { fromFileChoice, log: atLanding.log },
       chip,
       railDestinations: destinations,
       misses: { count: missed, byTask: missesAfter.byTask }
@@ -422,7 +376,7 @@ test("J1 first run: onboarding, Home as the first-run surface, the first source 
       { type: "T0 to T1", description: String(report.t0ToT1) },
       {
         type: "X1 first run",
-        description: `${fromFileChoice} from the file choice, ${gestures.total} from Cmd-N`
+        description: `${fromFileChoice} from the file choice (the picker's Abrir included)`
       }
     );
     expect(
