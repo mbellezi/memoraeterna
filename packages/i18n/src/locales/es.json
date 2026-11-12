@@ -4326,5 +4326,342 @@
       "stays": "Todo sigue donde estaba; no se abrió nada.",
       "updated": "última actualización: {date}"
     }
+  },
+  "settingsRegistry": {
+    "activeMatchingPresetId": {
+      "help": "Equilibrado es el conjunto calibrado y es de solo lectura. Para editar valores, crea o duplica un preajuste.",
+      "label": "Preajuste de correspondencia"
+    },
+    "advancedCallLog": {
+      "help": "Cada llamada a un modelo, local o en la nube: tarea, modelo, tiempo y tokens. Solo lectura.",
+      "label": "Registro de llamadas de IA"
+    },
+    "advancedPrompts": {
+      "help": "Las instrucciones que Memora envía a los modelos, por categoría. Editar una crea una revisión nueva; la anterior se conserva.",
+      "label": "Prompts"
+    },
+    "advancedSimilarityRuns": {
+      "help": "Comparaciones registradas con los diagnósticos activados. Borrarlas no cambia ninguna conexión.",
+      "label": "Ejecuciones de depuración de similitud"
+    },
+    "advancedTaskHistory": {
+      "help": "Ejecuciones terminadas, con error o canceladas. El día a día está en Actividad.",
+      "label": "Historial de tareas"
+    },
+    "aiDecisionsOpenaiPlatform": {
+      "help": "Solo para OpenAI Decisions; la redacción usa los proveedores de arriba. Se guarda cifrada en este Mac, no se vuelve a mostrar y solo se envía a OpenAI.",
+      "label": "Clave de OpenAI Platform"
+    },
+    "aiModels": {
+      "help": "El catálogo de modelos locales: descargar, importar GGUF, probar y elegir los predeterminados.",
+      "label": "Modelos en este Mac"
+    },
+    "aiPresetV1": {
+      "help": "Se elige en la primera ejecución. Cambiarla reemplaza el modelo de cada tarea y prueba una llamada de cada una; no se descarga nada.",
+      "label": "Dónde se ejecuta la IA"
+    },
+    "aiProfiles": {
+      "help": "Modelo, temperatura, máximo de tokens y razonamiento de cada perfil. Rara vez hace falta.",
+      "label": "Perfiles y parámetros"
+    },
+    "aiProviderGoogle": {
+      "help": "Modelos de Google con tu clave de API.",
+      "label": "Google Gemini"
+    },
+    "aiProviderOpenaiCodex": {
+      "help": "Usa la cuota de tu suscripción en las tareas que escriben. La búsqueda sigue necesitando una clave de API o un modelo local.",
+      "label": "Suscripción de ChatGPT"
+    },
+    "aiProviderOpenaiCompatible": {
+      "help": "Cualquier servicio que use la API de OpenAI, con su propia dirección y clave. Para OpenAI, deja la dirección predeterminada.",
+      "label": "Compatible con OpenAI"
+    },
+    "aiRouteAnswer": {
+      "help": "Respuestas a tus preguntas, a partir de tu biblioteca.",
+      "label": "Respuestas"
+    },
+    "aiRouteDecide": {
+      "help": "Mide cuán relacionadas están las notas y los temas. Aquí solo se pueden elegir clasificadores específicos.",
+      "label": "Clasificación"
+    },
+    "aiRouteEmbed": {
+      "help": "Convierte texto en vectores para la búsqueda, la correspondencia y los temas.",
+      "label": "Búsqueda y similitud"
+    },
+    "aiRouteJudge": {
+      "help": "Un modelo de redacción que decide las relaciones entre notas cuando no hay clasificador y juzga cómo se relacionan las fuentes.",
+      "label": "Juez generativo"
+    },
+    "aiRouteWriteFast": {
+      "help": "Resúmenes, nombres de temas y explicaciones breves.",
+      "label": "Redacción rápida"
+    },
+    "aiRouteWriteQuality": {
+      "help": "Notas y entidades, escritas a partir de tus fuentes.",
+      "label": "Redacción cuidadosa"
+    },
+    "aiThisMac": {
+      "help": "El hardware detectado y la configuración recomendada para él. Solo informativo.",
+      "label": "Este Mac"
+    },
+    "atomicNoteMatchingSettingsMaxRerankOutputTokens": {
+      "help": "El máximo de tokens que la IA puede escribir al ubicar una nota. Predeterminado: 4.096.",
+      "label": "Límite de salida por nota"
+    },
+    "bookLookup": {
+      "help": "Completa título, autores y portada a partir del ISBN, el DOI o el título. Los artículos usan Crossref. Desactivado: ninguna consulta.",
+      "label": "Buscar datos de libros en internet"
+    },
+    "canonicalMatchingSettingsConfirmationBatchSize": {
+      "help": "Cuántas identidades van a la IA en una llamada de confirmación. Predeterminado: 12.",
+      "label": "Identidades por confirmación"
+    },
+    "canonicalMatchingSettingsConfirmationMaxCharacters": {
+      "help": "El tamaño de texto que puede alcanzar una llamada de confirmación. Una identidad mayor se envía sola. Predeterminado: 12.000.",
+      "label": "Tamaño de la confirmación en caracteres"
+    },
+    "canonicalMatchingSettingsEntityCandidateLimit": {
+      "help": "Cuántas entidades parecidas compara la IA con cada entidad nueva. Predeterminado: 3.",
+      "label": "Candidatos por entidad"
+    },
+    "canonicalMatchingSettingsRelationTypeCandidateLimit": {
+      "help": "Cuántos tipos de relación parecidos compara la IA con cada tipo nuevo. Predeterminado: 3.",
+      "label": "Candidatos por tipo de relación"
+    },
+    "contentLanguage": {
+      "help": "El idioma en que Memora escribe notas, resúmenes, nombres de temas y respuestas. Lo que ya existe solo cambia cuando se genera de nuevo.",
+      "label": "Idioma de las notas"
+    },
+    "debugFullCapture": {
+      "help": "Guarda en esta base de datos los prompts y las respuestas enteros mientras los diagnósticos estén activados.",
+      "label": "Prompts y respuestas completos"
+    },
+    "debugMode": {
+      "help": "Registra pasos, canonización, conexiones y similitud. Actívalo para investigar un problema.",
+      "label": "Diagnósticos de las operaciones"
+    },
+    "entityIdentitySimilarityThreshold": {
+      "help": "Cuánto deben parecerse dos entidades para que la IA compruebe si son la misma. Más alto, menos candidatos. Predeterminado: 0,92.",
+      "label": "Similitud entre entidades"
+    },
+    "graphWheelZoomSensitivity": {
+      "help": "Velocidad del zoom con la rueda del ratón o el trackpad en Mapa › Grafo.",
+      "label": "Sensibilidad del zoom en el Grafo"
+    },
+    "groups": {
+      "advanced": {
+        "connections": "Conexiones",
+        "diagnostics": "Diagnóstico",
+        "localModels": "Modelos locales",
+        "map": "Mapa",
+        "matching": "Correspondencia",
+        "obsidian": "Obsidian",
+        "processing": "Procesamiento",
+        "prompts": "Prompts"
+      },
+      "ai": {
+        "decisions": "OpenAI Decisions (opcional)",
+        "models": "Modelos y perfiles",
+        "providers": "Proveedores y credenciales",
+        "routes": "Modelo de cada tarea",
+        "setup": "Configuración",
+        "thisMac": "Este Mac"
+      },
+      "general": {
+        "appearance": "Apariencia",
+        "language": "Idioma"
+      },
+      "integrations": {
+        "books": "Datos de libros",
+        "local": "Conexión local",
+        "obsidian": "Obsidian"
+      },
+      "knowledge": {
+        "connections": "Conexiones",
+        "gardener": "Jardinero",
+        "schedule": "Cuándo trabajar",
+        "tree": "Árbol de temas"
+      },
+      "library": {
+        "backup": "Copias de seguridad",
+        "data": "Tus datos",
+        "imports": "Planes de importación",
+        "uploads": "Archivos subidos"
+      },
+      "privacy": {
+        "history": "Historial y preguntas",
+        "leaving": "Qué sale de este Mac",
+        "logs": "Registros",
+        "reset": "Restablecer"
+      }
+    },
+    "integrationsGateway": {
+      "help": "Permite que la extensión de Chrome y el plugin de Obsidian hablen con Memora en este Mac.",
+      "label": "Apps emparejadas"
+    },
+    "keepLocalEmbeddingModelsLoaded": {
+      "help": "Tras el primer uso, el modelo se queda en memoria hasta que se cierra la app, y las búsquedas siguientes son más rápidas. Desactivarlo libera la memoria al momento.",
+      "label": "Mantener cargado el modelo local de búsqueda"
+    },
+    "knowledgeControlsV1Autonomy": {
+      "help": "Cuánto hace el Jardinero sin preguntar.",
+      "label": "Autonomía"
+    },
+    "knowledgeControlsV1MonthlyCapUsd": {
+      "help": "El Jardinero se detiene en esta cantidad cada mes cuando usa un modelo de pago. Las suscripciones, como la de ChatGPT, tienen un límite diario de llamadas.",
+      "label": "Límite mensual de gasto en la nube"
+    },
+    "knowledgeControlsV1OnlyIdle": {
+      "help": "Espera a que pases unos minutos sin usar el Mac.",
+      "label": "Solo con el Mac inactivo"
+    },
+    "knowledgeControlsV1OnlyOnAc": {
+      "help": "Espera mientras el portátil funciona con batería.",
+      "label": "Solo con el cargador"
+    },
+    "knowledgeControlsV1Paused": {
+      "help": "Detiene todo el trabajo en segundo plano hasta que lo reanudes. Las importaciones y tus peticiones siguen.",
+      "label": "Pausar el Jardinero"
+    },
+    "knowledgeControlsV1TreeShape": {
+      "help": "Amplia tiene menos niveles y profunda, más. Cambiarla propone reconstruir el árbol; nada se mueve hasta que lo revises en la Bandeja de entrada.",
+      "label": "Forma del árbol de temas"
+    },
+    "language": {
+      "help": "Menús, botones y mensajes.",
+      "label": "Idioma de la app"
+    },
+    "libraryBackup": {
+      "help": "Copia la base de datos, comprueba que la copia se restaura y copia los archivos guardados en una carpeta con fecha.",
+      "label": "Copia de seguridad"
+    },
+    "libraryStorage": {
+      "help": "Dónde están, en este Mac, la base de datos y los archivos guardados de tu biblioteca.",
+      "label": "Dónde se guardan tus datos"
+    },
+    "localModelsRepositoryTokenRef": {
+      "help": "Opcional: solo para descargar modelos de repositorios privados o restringidos.",
+      "label": "Token de Hugging Face"
+    },
+    "managedRoot": {
+      "help": "La carpeta, dentro del vault, donde escribe Memora sus archivos. Predeterminado: Memora.",
+      "label": "Carpeta de Memora en el vault"
+    },
+    "metadataGoogleBooks": {
+      "help": "Opcional. Sin clave, las búsquedas usan el acceso público, con un límite menor.",
+      "label": "Clave de Google Books"
+    },
+    "obsidianLayoutAttachments": {
+      "help": "Copia al vault los archivos vinculados a las fuentes. Desactivado: el vault recibe solo el texto.",
+      "label": "Copiar los archivos originales"
+    },
+    "obsidianLayoutLanguage": {
+      "help": "Por defecto, las carpetas siguen el idioma de las notas. Elige otro solo si quieres los nombres de carpeta en otra lengua.",
+      "label": "Idioma de las carpetas del vault"
+    },
+    "obsidianSync": {
+      "help": "Activada: Memora escribe la biblioteca en tu vault y recupera lo que edites allí. En pausa: guarda todo sin sincronizar.",
+      "label": "Sincronizar con Obsidian"
+    },
+    "obsidianVaultPath": {
+      "help": "La carpeta del vault donde escribe Memora. Elígela antes de activar la sincronización.",
+      "label": "Vault"
+    },
+    "obsidianWikiIncludeDescendants": {
+      "help": "Incluye también los capítulos y las partes de cada fuente elegida.",
+      "label": "Incluir capítulos y partes"
+    },
+    "obsidianWikiScope": {
+      "help": "Hasta 100 fuentes; sus notas y temas se convierten en páginas del vault.",
+      "label": "Fuentes que se vuelven páginas"
+    },
+    "privacyCallLog": {
+      "help": "Las últimas llamadas a un modelo, local o en la nube. Solo lectura; el registro completo está en Avanzado.",
+      "label": "Llamadas de IA recientes"
+    },
+    "privacyClearQuestions": {
+      "help": "Borra las preguntas y respuestas guardadas. Las fuentes y las notas se quedan.",
+      "label": "Borrar preguntas"
+    },
+    "privacyClearViewHistory": {
+      "help": "Borra la lista de elementos abiertos hace poco en este Mac. Nunca sale de aquí.",
+      "label": "Borrar los Recientes"
+    },
+    "privacyReset": {
+      "help": "Borra la biblioteca, los índices de búsqueda, los grafos, las preguntas, los historiales, las conexiones, las preferencias y los archivos guardados. Se quedan los perfiles, los proveedores, las rutas y los modelos instalados; las copias de seguridad y tus archivos personales no se tocan.",
+      "label": "Restablecer todo"
+    },
+    "privacySummary": {
+      "help": "Qué se envía fuera de este Mac, y a quién, con tu configuración actual.",
+      "label": "Qué sale de este Mac"
+    },
+    "processingPresets": {
+      "help": "Se crean y editan al importar; aquí los renombras o los eliminas.",
+      "label": "Planes de importación guardados"
+    },
+    "relationLabels": {
+      "help": "Genera las que faltan o reescribe todas en el idioma de las notas, con el modelo de Redacción rápida.",
+      "label": "Descripciones de las conexiones"
+    },
+    "relationTypeSimilarityThreshold": {
+      "help": "Cuánto deben parecerse dos tipos de relación para que la IA compruebe si son el mismo. Más alto, menos candidatos. Predeterminado: 0,92.",
+      "label": "Similitud entre tipos de relación"
+    },
+    "relationsDeciderMode": {
+      "help": "Automático sigue tus modelos: el clasificador cuando hay uno validado y, si no, el juez, si lo hay.",
+      "label": "Quién decide las relaciones entre notas"
+    },
+    "relationsDecisions": {
+      "help": "Un decisor en la nube, de pago y más preciso que el clasificador local. Solo en las configuraciones Híbrida y Nube.",
+      "label": "Decidir las conexiones con OpenAI Decisions"
+    },
+    "sourceRelationSettingsEvidenceChunksPerSource": {
+      "help": "Cuántos fragmentos de cada fuente lee la IA al comparar un par. Predeterminado: 2.",
+      "label": "Fragmentos de evidencia por fuente"
+    },
+    "sourceRelationSettingsEvidenceMaxCharacters": {
+      "help": "El trozo más largo de un fragmento que lee la IA. Predeterminado: 800.",
+      "label": "Caracteres por fragmento"
+    },
+    "sourceRelationSettingsIncludeWeakTypes": {
+      "help": "Conserva también las conexiones vagas “menciona” y “relacionado”. Desactivado por defecto.",
+      "label": "Permitir relaciones débiles"
+    },
+    "sourceRelationSettingsMaxInputTokens": {
+      "help": "El máximo de tokens de entrada que una fuente y sus capítulos pueden usar en una ejecución. Una llamada puede pasarse; las siguientes se detienen. Predeterminado: 60.000.",
+      "label": "Presupuesto de entrada"
+    },
+    "sourceRelationSettingsMaxOutputTokens": {
+      "help": "El máximo de tokens que la IA puede escribir al comparar dos fuentes. Predeterminado: 4.096.",
+      "label": "Límite de salida por par de fuentes"
+    },
+    "sourceRelationSettingsMaxRelationsPerPair": {
+      "help": "El máximo de conexiones que se conservan entre dos fuentes. Predeterminado: 4.",
+      "label": "Relaciones por par de fuentes"
+    },
+    "sourceRelationSettingsMinConfidence": {
+      "help": "Las conexiones que la evidencia respalda por debajo de esta confianza se descartan. Predeterminado: 0,85.",
+      "label": "Confianza mínima"
+    },
+    "sourceRelationSettingsMinImportance": {
+      "help": "Las conexiones que la IA puntúa por debajo de esta importancia se descartan. Predeterminado: 0,75.",
+      "label": "Importancia mínima"
+    },
+    "sourceRelationSettingsSummaryMaxCharacters": {
+      "help": "Cuánto del resumen de cada fuente entra en una comparación. Predeterminado: 1.000.",
+      "label": "Caracteres de resumen por fuente"
+    },
+    "summaryMinimumWordCount": {
+      "help": "Evita gastar una llamada de IA en elementos demasiado pequeños. Usa 0 para desactivarlo. Predeterminado: 40.",
+      "label": "Mínimo de palabras para generar un resumen"
+    },
+    "themeMode": {
+      "help": "“Sistema” sigue a macOS a lo largo del día. También puedes cambiarlo desde ⌘K con “> tema”.",
+      "label": "Tema"
+    },
+    "uploadCopies": {
+      "help": "Una segunda copia de cada original en una carpeta tuya, fuera de la base de datos de Memora.",
+      "label": "Guardar una copia de los archivos subidos"
+    }
   }
 }
