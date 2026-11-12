@@ -241,6 +241,9 @@ export function RelationsLens({
 
   // "Só tabela" and a window that cannot draw WebGL read the same table, alone.
   const canvasShown = display === "both" && webgl && !unavailable;
+  // Without the canvas nothing is coloured: the same control groups the topics of the list.
+  const depthLabelKey = canvasShown ? "mapRelations.depth.label" : "mapRelationsTable.groupBy";
+  const depthHelpKey = canvasShown ? "mapRelations.depth.help" : "mapRelationsTable.groupByHelp";
   const aside = model ? (
     <RelationsAside
       t={t}
@@ -264,14 +267,11 @@ export function RelationsLens({
         <p className="m-0 text-sm text-secondary-foreground">{t("mapRelations.description")}</p>
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
           <div className="flex items-center gap-2">
-            <span
-              className="text-xs text-secondary-foreground"
-              title={t("mapRelations.depth.help")}
-            >
-              {t("mapRelations.depth.label")}
+            <span className="text-xs text-secondary-foreground" title={t(depthHelpKey)}>
+              {t(depthLabelKey)}
             </span>
             <ToggleGroup
-              label={t("mapRelations.depth.help")}
+              label={t(depthHelpKey)}
               value={String(depth) as "1" | "2" | "3"}
               onValueChange={(value) => {
                 setSelected(null);
@@ -283,9 +283,13 @@ export function RelationsLens({
               <ToggleGroupItem value="3">{t("mapRelations.depth.three")}</ToggleGroupItem>
             </ToggleGroup>
           </div>
-          {model && hasConnections(model) ? (
-            <DisplayToggle t={t} value={display} onChange={setDisplay} />
-          ) : null}
+          {/* In every state, so the controls keep one layout and the mode stays readable. */}
+          <DisplayToggle
+            t={t}
+            value={display}
+            onChange={setDisplay}
+            disabled={load.status === "loading"}
+          />
           <BranchPicker t={t} model={model} wanted={wanted} active={active} onPick={pick} />
         </div>
       </div>

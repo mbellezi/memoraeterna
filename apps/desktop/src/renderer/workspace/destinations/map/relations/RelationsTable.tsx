@@ -135,8 +135,9 @@ export function RelationsTable({
       <div
         ref={box}
         className={cn(
-          "overflow-auto overscroll-contain rounded-lg border border-border bg-surface",
-          alone ? "max-h-[max(20rem,70vh)]" : tableMaxHeight
+          // Below 1180 px the page scrolls on past the table (it keeps no wheel to itself, so the lists under it are reached).
+          "overflow-auto rounded-lg border border-border bg-surface min-[1180px]:overscroll-contain",
+          alone ? "max-h-[max(20rem,50vh)] min-[1180px]:max-h-[max(20rem,70vh)]" : tableMaxHeight
         )}
       >
         <table role="grid" className="w-full table-fixed border-collapse text-sm">
@@ -236,12 +237,15 @@ function TableRow({
     >
       <NoteCell title={row.first.title} onOpen={() => onOpen(row.first.id)} />
       <td className="px-3 py-2 align-top">
-        <RelationStanceLabel type={row.type} t={t} size={12} className="font-semibold" />
-        {row.suggested ? (
-          <span className="mt-0.5 block text-xs font-normal text-muted-foreground">
-            {t("mapRelationsTable.suggested")}
-          </span>
-        ) : null}
+        <span className="flex flex-wrap items-baseline gap-x-1.5">
+          <RelationStanceLabel type={row.type} t={t} size={12} className="font-semibold" />
+          {row.suggested ? (
+            <span className="text-xs font-normal text-muted-foreground">
+              <span aria-hidden="true">· </span>
+              {t("mapRelationsTable.suggested")}
+            </span>
+          ) : null}
+        </span>
       </td>
       <NoteCell title={row.second.title} onOpen={() => onOpen(row.second.id)} />
     </tr>
@@ -278,7 +282,7 @@ export function RelationsAside({
       aria-label={t("mapRelationsTable.title")}
       className={
         alone
-          ? "grid min-w-0 max-w-6xl gap-5 min-[1180px]:grid-cols-[minmax(0,1fr)_22rem] min-[1180px]:items-start"
+          ? "grid min-w-0 gap-5 min-[1180px]:grid-cols-[minmax(0,1fr)_22rem] min-[1180px]:items-start"
           : "flex min-w-0 flex-col gap-4 min-[1180px]:w-[26rem]"
       }
     >

@@ -5,6 +5,8 @@ import { fallbackGraphPalette } from "../../../../components/graph/graph-tokens"
 import { branchNotes, branchTopics, sampleBranch } from "./branch-fixtures";
 import { buildBranchModel } from "./branch-model";
 import {
+  branchBackgroundLabelOpacity,
+  branchBackgroundOpacity,
   branchEdgeDisplay,
   branchNodeDisplay,
   branchZoom,
@@ -189,5 +191,35 @@ describe("a Grafo built again for the same branch", () => {
       t: createTranslator("pt-BR")
     });
     expect(branchCarryKey(deeper)).toBe(branchCarryKey(model));
+  });
+
+  it("lets what recedes stay readable: labels at 3:1 on the canvas in both themes, lines and dots still seen", () => {
+    const luminance = (hex: string) => {
+      const channels = [16, 8, 0].map((shift) => {
+        const value = ((Number.parseInt(hex.slice(1), 16) >> shift) & 255) / 255;
+        return value <= 0.03928 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+      });
+      return 0.2126 * channels[0]! + 0.7152 * channels[1]! + 0.0722 * channels[2]!;
+    };
+    const ratio = (a: string, b: string) => {
+      const [high, low] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+      return (high! + 0.05) / (low! + 0.05);
+    };
+    const themes = [
+      { canvas: palette.canvas, text: palette.labelMuted },
+      { canvas: "#171e28", text: "#b6c3d3" }
+    ];
+    for (const { canvas, text } of themes) {
+      const over = (colour: string, opacity: number) => {
+        const from = Number.parseInt(colour.slice(1), 16);
+        const to = Number.parseInt(canvas.slice(1), 16);
+        const mixed = [16, 8, 0].map((shift) =>
+          Math.round(((from >> shift) & 255) * opacity + ((to >> shift) & 255) * (1 - opacity))
+        );
+        return `#${mixed.map((value) => value.toString(16).padStart(2, "0")).join("")}`;
+      };
+      expect(ratio(over(text, branchBackgroundLabelOpacity), canvas)).toBeGreaterThanOrEqual(3);
+    }
+    expect(branchBackgroundOpacity).toBeGreaterThanOrEqual(0.35);
   });
 });

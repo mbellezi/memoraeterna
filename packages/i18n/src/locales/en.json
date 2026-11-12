@@ -5119,6 +5119,8 @@
     "count": "{count} connections",
     "countOne": "1 connection",
     "from": "From",
+    "groupBy": "Group by",
+    "groupByHelp": "Which level of subtopics groups the topics in the list",
     "groups": {
       "all": "Show all {count}",
       "and": "and",
@@ -5129,7 +5131,7 @@
     },
     "keyMove": "choose",
     "keyOpen": "open the first note beside",
-    "keyOpenSecond": "the second",
+    "keyOpenSecond": "open the second",
     "link": "Link",
     "more": "Show {count} more",
     "notice": {

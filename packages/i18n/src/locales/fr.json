@@ -5119,6 +5119,8 @@
     "count": "{count} connexions",
     "countOne": "1 connexion",
     "from": "De",
+    "groupBy": "Grouper par",
+    "groupByHelp": "Quel niveau de sous-thèmes regroupe les thèmes de la liste",
     "groups": {
       "all": "Voir les {count}",
       "and": "et",
@@ -5129,7 +5131,7 @@
     },
     "keyMove": "choisir",
     "keyOpen": "ouvrir la première note à côté",
-    "keyOpenSecond": "la seconde",
+    "keyOpenSecond": "ouvrir la seconde",
     "link": "Connexion",
     "more": "Afficher {count} de plus",
     "notice": {

@@ -5119,6 +5119,8 @@
     "count": "{count} connessioni",
     "countOne": "1 connessione",
     "from": "Da",
+    "groupBy": "Raggruppa per",
+    "groupByHelp": "Quale livello di sottoargomenti raggruppa gli argomenti dell’elenco",
     "groups": {
       "all": "Mostra tutte e {count}",
       "and": "e",
@@ -5129,7 +5131,7 @@
     },
     "keyMove": "scegliere",
     "keyOpen": "aprire la prima nota accanto",
-    "keyOpenSecond": "la seconda",
+    "keyOpenSecond": "aprire la seconda",
     "link": "Connessione",
     "more": "Mostra altre {count}",
     "notice": {

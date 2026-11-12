@@ -5119,6 +5119,8 @@
     "count": "{count} conexiones",
     "countOne": "1 conexión",
     "from": "De",
+    "groupBy": "Agrupar por",
+    "groupByHelp": "Qué nivel de subtemas agrupa los temas de la lista",
     "groups": {
       "all": "Ver las {count}",
       "and": "y",
@@ -5129,7 +5131,7 @@
     },
     "keyMove": "elegir",
     "keyOpen": "abrir la primera nota al lado",
-    "keyOpenSecond": "la segunda",
+    "keyOpenSecond": "abrir la segunda",
     "link": "Conexión",
     "more": "Mostrar {count} más",
     "notice": {
