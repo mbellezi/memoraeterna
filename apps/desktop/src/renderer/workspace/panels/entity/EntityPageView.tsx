@@ -214,6 +214,7 @@ function LoadedPage({
                   <button
                     type="button"
                     aria-current={isCurrent ? "true" : undefined}
+                    data-quick-look={address}
                     title={mention.title}
                     onClick={open("note", mention.noteId)}
                     className={cn(rowClass, isCurrent && currentRowClass)}
@@ -328,6 +329,7 @@ function LoadedPage({
                 <button
                   type="button"
                   onClick={open("entity", other.id)}
+                  data-quick-look={addressOf("entity", other.id)}
                   title={other.canonicalName}
                   className={rowClass}
                 >
@@ -417,6 +419,7 @@ function LoadedPage({
                 <button
                   type="button"
                   title={source.title}
+                  data-quick-look={addressOf("source", source.id)}
                   onClick={open("source", source.id)}
                   className={rowClass}
                 >
@@ -510,6 +513,7 @@ function MentionGroupView({
             <button
               type="button"
               title={mention.title}
+              data-quick-look={addressOf("note", mention.noteId)}
               onClick={open("note", mention.noteId)}
               className={rowClass}
             >

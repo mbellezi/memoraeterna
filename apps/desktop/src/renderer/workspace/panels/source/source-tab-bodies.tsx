@@ -87,6 +87,7 @@ export function ConnectionsTab({
                   <p className="m-0 text-sm leading-5 font-medium text-foreground [text-wrap:pretty]">
                     <button
                       type="button"
+                      data-quick-look={`memora://note/${relation.sourceAtomicNoteId}`}
                       onClick={() => onOpen(`memora://note/${relation.sourceAtomicNoteId}`)}
                       className="rounded-sm text-left hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
                     >
@@ -97,6 +98,7 @@ export function ConnectionsTab({
                     </span>{" "}
                     <button
                       type="button"
+                      data-quick-look={`memora://note/${relation.targetAtomicNoteId}`}
                       onClick={() => onOpen(`memora://note/${relation.targetAtomicNoteId}`)}
                       className="rounded-sm text-left hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
                     >

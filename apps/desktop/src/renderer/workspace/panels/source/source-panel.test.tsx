@@ -203,6 +203,9 @@ describe("the notes", () => {
     expect(html.indexOf("Protected bike lanes")).toBeLessThan(html.indexOf("A bus-only lane"));
     expect(html).toContain("7 so far · newest first");
     expect(html).toContain(`data-address="memora://note/${noteIds[1]}"`);
+    // Space peeks: the quick-look reads `data-quick-look`, so every row carries it (and says the truth).
+    expect(html).toContain(`data-quick-look="memora://note/${noteIds[1]}"`);
+    expect(html.match(/data-quick-look=/gu)?.length).toBe(html.match(/data-address=/gu)?.length);
     expect(html).toContain("section Introduction");
     expect(html).toContain("section Bogotá");
   });
@@ -310,6 +313,7 @@ describe("the compact form (the previous panel)", () => {
   it("lists the notes with the one that is open marked", () => {
     const html = page(snapshot(), { mode: "compact", current: `memora://note/${noteIds[1]}` });
     expect(html).toContain("data-compact");
+    expect(html).toContain(`data-quick-look="memora://note/${noteIds[1]}"`);
     expect(html).toContain('aria-current="true"');
     expect(html).not.toContain("data-strip");
     expect(html.match(/aria-current="true"/gu)?.length).toBe(1);

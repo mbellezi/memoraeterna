@@ -13,7 +13,7 @@ import { sectionWords, type NoteRow } from "./source-panel-model";
  * the tree as a chip, then the section the note rests on. The newest row carries a new-dot and
  * "agora mesmo" (never a fill: a fill means selection). A note still looking for its place says so
  * with the ring. A click opens the note beside the panel, Option-click in it; Space peeks (the
- * quick-look reads `data-address`).
+ * quick-look reads `data-quick-look`; `data-address` is for the panel's own row lookup).
  */
 
 /** The path of a note as a chip: the topics from the first level down, each crumb whole. */
@@ -93,6 +93,7 @@ export function SourceNoteRows({
           <button
             type="button"
             data-address={row.address}
+            data-quick-look={row.address}
             title={t("sourcePage.notes.open", { values: { title: row.title } })}
             onClick={(event: MouseEvent) =>
               onOpen(row.address, event.altKey ? { replace: true } : undefined)

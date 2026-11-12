@@ -88,6 +88,16 @@ describe("the entity page", () => {
     expect(html).toContain("Sources of the mentions loaded so far.");
   });
 
+  it("gives every row a peek address, as the Space bar reads it", () => {
+    const html = view();
+    const rows = html.match(
+      /<button[^>]*data-quick-look="memora:\/\/(note|source|entity)\/[^"]+"/gu
+    );
+    // 8 loaded mentions, 3 co-mentioned entities and 3 sources.
+    expect(rows).toHaveLength(8 + 3 + 3);
+    expect(view({ mode: "compact" })).toMatch(/<button[^>]*data-quick-look="memora:\/\/note\//u);
+  });
+
   it("counts the sources shown over the sources there are while the mentions are partial, with a quiet button for the rest", () => {
     const strip = (html: string) => html.replace(/<!-- -->/gu, "");
     const partial = strip(view());
