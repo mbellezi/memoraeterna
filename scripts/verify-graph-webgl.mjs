@@ -96,12 +96,25 @@ export function branchFrames() {
     edgeReducer: (edge, attributes) => ({ ...attributes, ...branchEdgeDisplay(graph, edge, target, false, palette) })
   });
   const camera = renderer.getCamera();
+  // A frame is timed to the end of the GPU's work: reading one pixel back from each WebGL layer
+  // waits for its draws (the 2D label layers draw on the CPU, inside refresh()).
+  const contexts = Object.values(renderer.getCanvases()).flatMap((canvas) => {
+    const gl = canvas.getContext("webgl2") || canvas.getContext("webgl");
+    return gl ? [gl] : [];
+  });
+  if (contexts.length === 0) throw new Error("The branch scene has no WebGL layer to time");
+  const pixel = new Uint8Array(4);
+  const finish = () => {
+    for (const gl of contexts) gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel);
+  };
   const times = [];
   for (let frame = 0; frame < 120; frame += 1) {
     target = frame % 3 === 0 ? null : { type: "node", key: "note-" + ((frame * 37) % 400) };
     camera.setState({ x: 0.5 + 0.05 * Math.sin(frame / 9), y: 0.5, ratio: 0.8 + 0.3 * Math.cos(frame / 13), angle: 0 });
+    finish();
     const start = performance.now();
     renderer.refresh();
+    finish();
     times.push(performance.now() - start);
   }
   renderer.kill();
