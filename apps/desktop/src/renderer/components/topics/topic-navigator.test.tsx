@@ -98,17 +98,36 @@ const stops = (html: string) => html.match(/tabindex="0"/g)?.length ?? 0;
 describe("the navigator's states", () => {
   it("says it is loading before anything is read, with no tree", () => {
     const html = view(blank());
+    // A busy region that says "Loading" at once; its eight skeleton rows show after 150 ms.
     expect(html).toContain('role="status"');
-    expect(html).toContain("Loading topics...");
+    expect(html).toContain('aria-busy="true"');
+    expect(html).toContain("Loading");
+    expect(html).not.toContain("animate-spin");
     expect(trees(html)).toBe(0);
   });
 
   it("says the topics could not be loaded, with a way to try again", () => {
     const html = view(blank({ branches: new Map([[rootBranchKey, emptyBranch("error")]]) }));
     expect(html).toContain('role="alert"');
-    expect(html).toContain("The topics could not be loaded.");
+    expect(html).toContain("Could not load the tree.");
+    expect(html).toContain("Pinned and Recents are still here.");
     expect(html).toContain("Retry");
     expect(trees(html)).toBe(0);
+  });
+
+  it("says a failed tree once, with no second retry, when the surface beside it has one", () => {
+    const failed = blank({ branches: new Map([[rootBranchKey, emptyBranch("error")]]) });
+    const html = view(failed, { retryBeside: true });
+    expect(html).toContain("Could not load the tree.");
+    expect(html).not.toContain("Retry");
+    expect(html).not.toContain('role="alert"');
+  });
+
+  it("stacks the sentence of a failed Pinned and Recents read above its retry", () => {
+    const html = view(blank({ places: { phase: "error", pinned: [], recents: [] } }));
+    expect(html).toContain("Pinned and recent items could not be loaded.");
+    expect(html).toContain("Retry");
+    expect(html).not.toContain("flex-1 text-xs");
   });
 
   it("says the tree is being prepared when there is none yet", () => {
@@ -120,8 +139,28 @@ describe("the navigator's states", () => {
   it("says nothing is organized yet when the tree holds nothing", async () => {
     const fake = new FakeTopics({ rootId: R, topics: [{ id: R, parentId: null, title: null }] });
     const html = view(await loaded({ fake }));
-    expect(html).toContain("Nothing is organized yet.");
+    expect(html).toContain("Topics grow on their own.");
+    expect(html).toContain("You do not need to create folders.");
     expect(trees(html)).toBe(0);
+  });
+
+  it("calls a library that holds nothing and builds nothing empty, not being prepared", () => {
+    const none = {
+      phase: "active" as const,
+      counts: { items: 0, placed: 0, pending: 0, needsGate: 0 }
+    };
+    const html = view(
+      blank({ branches: new Map([[rootBranchKey, emptyBranch("ready")]]), status: none })
+    );
+    expect(html).toContain("Topics grow on their own.");
+    expect(html).not.toContain("being prepared");
+    const building = view(
+      blank({
+        branches: new Map([[rootBranchKey, emptyBranch("ready")]]),
+        status: { ...none, phase: "building" as const }
+      })
+    );
+    expect(building).toContain("Your topic tree is being prepared.");
   });
 
   it("shows the tree, with the count of everything in it, once loaded", async () => {
@@ -130,7 +169,7 @@ describe("the navigator's states", () => {
     expect(html).toContain("Memory &amp; learning");
     expect(html).toContain("Open science");
     // Memory holds two of its own and Decay models one, and the root holds two unsorted: five in all.
-    expect(html).toContain('<span>Topics</span><span class="font-normal tabular-nums">5</span>');
+    expect(html).toMatch(/>Tree<\/span><span class="[^"]*tabular-nums">5 items<\/span>/);
   });
 
   it("draws the failure of one branch inside the tree and keeps the rest", async () => {

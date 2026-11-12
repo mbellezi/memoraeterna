@@ -129,7 +129,7 @@ describe("Topic page header", () => {
     expect(text(html)).toContain("23 notes");
     expect(text(html)).toContain("4 sources");
     expect(text(html)).toContain("2 subtopics");
-    expect(html).toContain("Good health");
+    expect(html).toContain("Balanced size");
     expect(html).toContain("Also called: Ebbinghaus curve, memory decay");
   });
 

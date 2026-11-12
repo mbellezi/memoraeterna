@@ -33,9 +33,11 @@ export interface ExploreNavigatorProps {
   t: Translator;
   workspace: WorkspaceState;
   dispatch: Dispatch<WorkspaceAction>;
+  /** Whether Explore's root is on screen beside the tree; by default, when no panel is open. */
+  rootShown?: boolean | undefined;
 }
 
-export function ExploreNavigator({ t, workspace, dispatch }: ExploreNavigatorProps) {
+export function ExploreNavigator({ t, workspace, dispatch, rootShown }: ExploreNavigatorProps) {
   // At 960-1179 px a row's count shows on hover, focus and the open row (design record 5.3).
   const compact = tierFor(useViewportWidth()).name === "compact";
   const openBeside = (address: string) =>
@@ -51,6 +53,8 @@ export function ExploreNavigator({ t, workspace, dispatch }: ExploreNavigatorPro
       active
       selectedTopicId={followedTopic(workspace)}
       quietCounts={compact}
+      // With no panel open Explore's root is on screen, and it carries the retry of a failed read.
+      retryBeside={rootShown ?? workspace.stacks.explore.panels.length === 0}
       hoistId={workspace.hoist}
       onExitHoist={() => dispatch({ type: "hoist", topicId: null })}
       onOpenTopic={(id) => openBeside(formatObjectAddress({ kind: "topic", id }))}

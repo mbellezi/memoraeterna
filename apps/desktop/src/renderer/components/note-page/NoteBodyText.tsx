@@ -7,19 +7,25 @@ import { MarkdownPreview } from "../MarkdownEditor";
 /** The note's text, read-only, when it says more than the idea statement. */
 export function NoteBodyText({
   t,
-  note
+  note,
+  embedded = false
 }: {
   t: Translator;
   note: Pick<NotePageNote, "bodyMarkdown" | "ideaStatement" | "language">;
+  /** In a panel the prose follows the title directly, in the reading measure, with no heading. */
+  embedded?: boolean;
 }) {
   const headingId = useId();
   if (note.bodyMarkdown.trim() === note.ideaStatement.trim()) return null;
   return (
     <section aria-labelledby={headingId} className="flex flex-col gap-3">
-      <h2 id={headingId} className="text-lg font-semibold">
+      <h2 id={headingId} className={embedded ? "sr-only" : "text-lg font-semibold"}>
         {t("notePage.body.title")}
       </h2>
-      <div lang={note.language ?? undefined} className="font-reading text-reading">
+      <div
+        lang={note.language ?? undefined}
+        className={`font-reading text-reading ${embedded ? "max-w-(--measure)" : ""}`}
+      >
         <MarkdownPreview markdown={note.bodyMarkdown} emptyLabel="" />
       </div>
     </section>

@@ -15,6 +15,7 @@ import type { PanelProps } from "../../PanelStack";
 import type { NavigatorTree } from "../../shell-stores";
 import { useNavigatorTree } from "../../use-shell-data";
 import { useAddSource } from "../../workspace-bridge";
+import { WrappedLabel } from "./FittedLabel";
 
 /**
  * Explore's root surface (design record 7.2, 8 rule 7): what the stack shows when no panel is open.
@@ -148,14 +149,15 @@ function Areas({
                     size={16}
                     className={cn("mt-1", objectKindTextClass.topic)}
                   />
-                  <span
+                  {/* Whole words on up to three lines: a long name never ends inside a word. */}
+                  <WrappedLabel
+                    text={name}
+                    maxLines={3}
                     className={cn(
-                      "line-clamp-2 min-w-0 text-base leading-snug font-semibold text-foreground [text-wrap:balance]",
+                      "text-base font-semibold text-foreground",
                       area.title === null && "text-muted-foreground italic"
                     )}
-                  >
-                    {name}
-                  </span>
+                  />
                 </span>
                 <span className="pl-6 text-xs text-secondary-foreground tabular-nums">
                   {areaFacts(t, area).join(" · ")}
@@ -167,7 +169,12 @@ function Areas({
       </ul>
       {tree.unsorted > 0 ? (
         <p className="m-0 text-xs text-muted-foreground">
-          {t("explore.root.unsorted", { values: { count: count(t, tree.unsorted) } })}
+          {t(
+            tree.unsorted === 1
+              ? "workspace.navigator.unsortedOne"
+              : "workspace.navigator.unsortedMany",
+            { values: { count: count(t, tree.unsorted) } }
+          )}
         </p>
       ) : null}
     </section>

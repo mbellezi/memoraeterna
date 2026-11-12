@@ -4,6 +4,7 @@ import { parseObjectAddress, type ObjectSummary } from "@app/domain";
 import { TopicPage } from "../../components/topic-page/TopicPage";
 import type { OpenableNavigation } from "../../components/WhereIsThis";
 import type { PanelProps } from "../PanelStack";
+import { useWorkspaceBridge } from "../workspace-bridge";
 import { addressForNavigation, frameState } from "./object-open";
 
 /**
@@ -28,6 +29,7 @@ export function title(summary: ObjectSummary | null): string {
 
 export function Component({ t, address, mode, active, onState, onOpen, current }: PanelProps) {
   const id = parseObjectAddress(address)?.id ?? null;
+  const bridge = useWorkspaceBridge();
   const report = useCallback(
     (status: "loading" | "error" | "missing" | "ready") => onState(frameState(status)),
     [onState]
@@ -48,6 +50,7 @@ export function Component({ t, address, mode, active, onState, onOpen, current }
       embedded
       compact={mode === "compact"}
       current={current}
+      onHoist={bridge ? (topicId) => bridge.dispatch({ type: "hoist", topicId }) : undefined}
       onLoadState={report}
       onNavigate={openNavigation}
       onOpenAddress={(next) => onOpen(next)}

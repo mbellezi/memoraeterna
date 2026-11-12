@@ -4,6 +4,7 @@ import { formatObjectAddress, type TopicPage } from "@app/domain";
 import type { Translator } from "@app/i18n";
 
 import { cn } from "../../lib/cn";
+import { dispatchClosePanel } from "../../lib/close-panel";
 import { ObjectKindGlyph } from "../glyphs";
 import { Button } from "../ui/button";
 import { EmptyState } from "../ui/empty-state";
@@ -158,7 +159,16 @@ function EmbeddedStates({ t, snapshot, onRetry }: TopicPageViewProps) {
     );
   if (load.status === "missing")
     return (
-      <EmptyState className="max-w-(--measure)" headline={t("explore.topic.goneHeadline")}>
+      <EmptyState
+        className="max-w-(--measure)"
+        headline={t("explore.topic.goneHeadline")}
+        action={
+          // The one way on: the panel closes and the person is back at the one before it.
+          <Button type="button" onClick={() => void dispatchClosePanel()}>
+            {t("panelFrame.close")}
+          </Button>
+        }
+      >
         {t("explore.topic.goneBody")}
       </EmptyState>
     );
@@ -191,28 +201,32 @@ function TopicCompact(props: TopicPageViewProps & { page: TopicPage }) {
           {overview.replace(/\s*\[[\d,\s]+\]/gu, "")}
         </p>
       ) : null}
-      {page.centralNotes.length > 0 ? (
+      {page.subtopics.length > 0 || page.centralNotes.length > 0 ? (
         <ul className="m-0 grid list-none gap-0.5 p-0">
+          {/* The subtopics come first: the one that was opened is how the person got here. */}
+          {page.subtopics.map((subtopic) => {
+            const address = formatObjectAddress({ kind: "topic", id: subtopic.id });
+            return (
+              <CompactRow
+                key={subtopic.id}
+                kind="topic"
+                label={topicTitle(t, subtopic, false)}
+                count={countLabel(t, "items", subtopic.items)}
+                current={address === current}
+                onOpen={() => props.onOpenNoteAddress?.(address)}
+              />
+            );
+          })}
           {page.centralNotes.map((note) => {
             const address = formatObjectAddress({ kind: "note", id: note.id });
-            const isCurrent = address === current;
             return (
-              <li key={note.id}>
-                <button
-                  type="button"
-                  aria-current={isCurrent ? "true" : undefined}
-                  onClick={() => props.onOpenNoteAddress?.(address)}
-                  className={cn(
-                    "relative flex w-full items-start gap-2 rounded-md px-2 py-1.5 text-left text-sm text-foreground hover:bg-surface-hover",
-                    "focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-accent",
-                    isCurrent &&
-                      "bg-surface-selected before:absolute before:inset-y-1 before:left-0 before:w-0.5 before:rounded-full before:bg-accent"
-                  )}
-                >
-                  <ObjectKindGlyph kind="note" size={14} className="mt-[3px] text-object-note" />
-                  <span className="min-w-0 [text-wrap:pretty]">{note.title}</span>
-                </button>
-              </li>
+              <CompactRow
+                key={note.id}
+                kind="note"
+                label={note.title}
+                current={address === current}
+                onOpen={() => props.onOpenNoteAddress?.(address)}
+              />
             );
           })}
         </ul>
@@ -220,6 +234,49 @@ function TopicCompact(props: TopicPageViewProps & { page: TopicPage }) {
         <p className="m-0 text-sm text-muted-foreground">{t("explore.topic.noDirectNotes")}</p>
       )}
     </article>
+  );
+}
+
+/** One row of the compact list; the row that opened the panel to the right is marked. */
+function CompactRow({
+  kind,
+  label,
+  count,
+  current,
+  onOpen
+}: {
+  kind: "topic" | "note";
+  label: string;
+  count?: string;
+  current: boolean;
+  onOpen: () => void;
+}) {
+  return (
+    <li>
+      <button
+        type="button"
+        aria-current={current ? "true" : undefined}
+        onClick={onOpen}
+        className={cn(
+          "relative flex w-full items-start gap-2 rounded-md px-2 py-1.5 text-left text-sm text-foreground hover:bg-surface-hover",
+          "focus-visible:[outline-offset:-2px] focus-visible:[outline:2px_solid_var(--accent)]",
+          current &&
+            "bg-surface-selected font-semibold before:absolute before:inset-y-1 before:left-0 before:w-0.5 before:rounded-full before:bg-accent"
+        )}
+      >
+        <ObjectKindGlyph
+          kind={kind}
+          size={14}
+          className={cn("mt-[3px]", kind === "topic" ? "text-object-topic" : "text-object-note")}
+        />
+        <span className="min-w-0 flex-1 [text-wrap:pretty]">{label}</span>
+        {count ? (
+          <span className="shrink-0 pt-px text-xs font-normal text-muted-foreground tabular-nums">
+            {count}
+          </span>
+        ) : null}
+      </button>
+    </li>
   );
 }
 

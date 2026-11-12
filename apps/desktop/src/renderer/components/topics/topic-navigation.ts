@@ -368,10 +368,16 @@ export function placeRows(places: readonly PlaceEntry[], group: "pinned" | "rece
 /** What the Topics section shows, from the root branch alone. */
 export type RootState = "loading" | "error" | "preparing" | "empty" | "tree";
 
-export function rootState(root: Branch | undefined): RootState {
+/**
+ * `emptyLibrary`: the engine says the library holds nothing and is not building a tree, so a missing
+ * tree is "empty" (nothing is running), not "preparing" (something is).
+ */
+export function rootState(root: Branch | undefined, emptyLibrary = false): RootState {
   if (!root) return "loading";
   if (!root.data) {
-    return root.phase === "error" ? "error" : root.phase === "loading" ? "loading" : "preparing";
+    if (root.phase === "error") return "error";
+    if (root.phase === "loading") return "loading";
+    return emptyLibrary ? "empty" : "preparing";
   }
   return root.data.parent.items === 0 && root.data.nodes.length === 0 ? "empty" : "tree";
 }

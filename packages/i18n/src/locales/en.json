@@ -3065,7 +3065,7 @@
         "button": "Ask about this topic"
       },
       "health": {
-        "good": "Good health",
+        "good": "Balanced size",
         "attention": "Needs attention",
         "violation": "Structure problem"
       },
@@ -4251,6 +4251,8 @@
     "navigator": {
       "branch": "Branch",
       "branchLabel": "Showing only one branch of the tree",
+      "errorKept": "Pinned and Recents are still here.",
+      "pinHint": "Pin what you always open: ⌘D in the open panel.",
       "wholeTree": "Whole tree"
     },
     "note": {
@@ -4277,8 +4279,7 @@
       "keyOpen": "opens beside",
       "keyPeek": "peeks without opening",
       "keySpace": "Space",
-      "keysLabel": "Keys",
-      "unsorted": "Waiting for a place: {count}"
+      "keysLabel": "Keys"
     },
     "topic": {
       "error": "Could not open this topic.",

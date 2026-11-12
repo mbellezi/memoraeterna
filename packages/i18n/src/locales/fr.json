@@ -3065,7 +3065,7 @@
         "button": "Poser une question sur ce sujet"
       },
       "health": {
-        "good": "Bon état",
+        "good": "Taille équilibrée",
         "attention": "Demande de l’attention",
         "violation": "Problème de structure"
       },
@@ -4251,6 +4251,8 @@
     "navigator": {
       "branch": "Branche",
       "branchLabel": "Affichage d’une seule branche de l’arbre",
+      "errorKept": "Épinglés et Récents sont toujours là.",
+      "pinHint": "Épinglez ce que vous ouvrez toujours : ⌘D dans le panneau ouvert.",
       "wholeTree": "Arbre entier"
     },
     "note": {
@@ -4277,8 +4279,7 @@
       "keyOpen": "ouvre à côté",
       "keyPeek": "aperçu sans ouvrir",
       "keySpace": "Espace",
-      "keysLabel": "Touches",
-      "unsorted": "En attente d’une place : {count}"
+      "keysLabel": "Touches"
     },
     "topic": {
       "error": "Impossible d’ouvrir ce sujet.",

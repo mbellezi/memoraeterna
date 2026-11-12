@@ -32,12 +32,11 @@ function page(id: string): NotePage {
       bodyMarkdown: first
         ? [
             "When lactic acid bacteria consume the sugars of a food, the lactic acid they produce brings the pH down to about 4. ",
-            "At that acidity most of the bacteria that spoil food or cause disease cannot multiply.\n\n",
-            "That is why sauerkraut, yoghurt and pickled vegetables keep for weeks outside the fridge: the fermentation itself builds the barrier that protects the food.\n\n",
-            "The barrier is not absolute. Acid-resistant spores survive, which is why badly sealed preserves can still spoil."
+            "At that acidity most of the bacteria that spoil food cannot multiply.\n\n",
+            "That is why sauerkraut and pickled vegetables keep for weeks outside the fridge: the fermentation itself builds the barrier that protects the food."
           ].join("")
         : "A cooler ferment ends less acid and more aromatic.",
-      generationModel: "Local AI"
+      generationModel: "Qwen3 14B"
     },
     evidence: {
       total: 2,

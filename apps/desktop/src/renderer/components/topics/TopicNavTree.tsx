@@ -24,6 +24,8 @@ export interface NavTreeProps {
   selectedTopicId: string | null;
   /** Compact windows: a row's count shows on hover, focus and the open row only. */
   quietCounts?: boolean;
+  /** Place rows (Pinned, Recents) show their whole name on up to two lines (a list that is not windowed). */
+  wrapPlaces?: boolean;
   /** A row to scroll into view once it exists; the token tells repeated requests apart. */
   scrollTo?: { key: string; token: number } | null;
   /** Opening or closing a branch (the chevron and the arrow keys). */
@@ -51,6 +53,7 @@ export function TopicNavTree({
   windowed = false,
   selectedTopicId,
   quietCounts = false,
+  wrapPlaces = false,
   scrollTo = null,
   onToggle,
   onActivate,
@@ -155,7 +158,7 @@ export function TopicNavTree({
             format={format}
             tabStop={row.key === stop}
             selected={isSelected(row, selectedTopicId)}
-            wrap={wrapKeys.has(row.key)}
+            wrap={wrapKeys.has(row.key) || (wrapPlaces && row.type === "place")}
             onLines={onLines}
             quietCounts={quietCounts}
             style={

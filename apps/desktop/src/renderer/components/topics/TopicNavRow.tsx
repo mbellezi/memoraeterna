@@ -197,10 +197,15 @@ export function TopicNavRow({
       title={title?.tooltip}
       style={{ ...style, paddingLeft: baseInset + (row.level - 1) * levelIndent }}
       className={cn(
-        "group/row relative flex items-center gap-1 rounded-md pr-2 text-sm outline-none",
+        "group/row relative flex items-center gap-1 rounded-md pr-2 text-sm",
         wrap ? "min-h-7 py-1" : "h-7",
-        "focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent",
-        selected ? "bg-accent-soft font-semibold text-foreground" : "text-foreground hover:bg-soft"
+        // One declaration for the ring: two utilities for `outline-style` would be decided by the
+        // stylesheet's order, and the ring would not show.
+        "focus-visible:[outline-offset:-2px] focus-visible:[outline:2px_solid_var(--accent)]",
+        // The open row: the soft accent fill and the 2 px accent bar (design record 5.3).
+        selected
+          ? "bg-accent-soft font-semibold text-foreground before:absolute before:inset-y-1 before:left-0 before:w-0.5 before:rounded-full before:bg-accent before:content-['']"
+          : "text-foreground hover:bg-soft"
       )}
       onClick={() => onActivate(row)}
       onFocus={() => onFocusRow(row.key)}

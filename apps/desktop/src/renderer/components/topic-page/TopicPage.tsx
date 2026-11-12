@@ -29,6 +29,8 @@ export interface TopicPageProps {
   /** The previous panel's compact form, and the address opened from it. */
   compact?: boolean;
   current?: string | undefined;
+  /** "Show only this branch" of the actions menu; absent where there is no tree to hoist. */
+  onHoist?: ((topicId: string) => void) | undefined;
   /** Where the page's own load stands, for the frame's `data-state`. */
   onLoadState?: ((status: "loading" | "error" | "missing" | "ready") => void) | undefined;
 }
@@ -48,6 +50,7 @@ export function TopicPage({
   embedded = false,
   compact = false,
   current,
+  onHoist,
   onLoadState
 }: TopicPageProps) {
   const [controller] = useState(
@@ -156,7 +159,8 @@ export function TopicPage({
             top: shown.parentId === null
           }),
         onMove: () => topicOps.openDialog({ kind: "move", topic: shown }),
-        onTogglePin: () => void ops.pin(shown, shown.management !== "pinned")
+        onTogglePin: () => void ops.pin(shown, shown.management !== "pinned"),
+        onHoist: onHoist ? () => onHoist(shown.id) : undefined
       }
     : undefined;
 

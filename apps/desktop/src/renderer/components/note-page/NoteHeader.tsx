@@ -3,6 +3,7 @@ import { Check, Pencil, RefreshCw, User } from "lucide-react";
 import type { NotePage } from "@app/domain";
 import type { Translator } from "@app/i18n";
 
+import { cn } from "../../lib/cn";
 import { AiNoteBadge } from "../AiNoteBadge";
 import { Button } from "../ui/button";
 import { NoteEditForm, type EditError } from "./NoteEditForm";
@@ -47,9 +48,11 @@ export interface NoteHeaderProps {
   onOpenNote: (noteId: string) => void;
   /** "Place in topic" (T26): whether the page shows, and what to do once the note was placed. */
   place?: { active: boolean; onPlaced: () => void } | undefined;
+  /** In a panel of the workspace: the protection sentence is left out, the status row says it. */
+  embedded?: boolean | undefined;
 }
 
-/** Badge row, actions, the idea statement and where the note comes from. */
+/** The idea statement, where the note comes from, then the status row and the actions. */
 export function NoteHeader({
   t,
   page,
@@ -65,7 +68,8 @@ export function NoteHeader({
   onDiscardAndReload,
   onEscapeEdit,
   onOpenNote,
-  place
+  place,
+  embedded = false
 }: NoteHeaderProps) {
   const { note } = page;
   const state = noteHeaderState(note);
@@ -75,6 +79,71 @@ export function NoteHeader({
   const lang = note.language ?? undefined;
   return (
     <header className="flex flex-col gap-4">
+      {note.superseded ? (
+        <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+          <span>{t("notePage.superseded")}</span>
+          {page.successors.length === 1 ? (
+            <button
+              type="button"
+              className={linkClass}
+              onClick={() => onOpenNote(page.successors[0]!.id)}
+            >
+              {t("notePage.openCurrent")}
+            </button>
+          ) : (
+            page.successors.map((successor) => (
+              <button
+                key={successor.id}
+                type="button"
+                className={linkClass}
+                onClick={() => onOpenNote(successor.id)}
+              >
+                {t("notePage.openSuccessor", { values: { title: successor.title } })}
+              </button>
+            ))
+          )}
+        </p>
+      ) : null}
+      {editing ? (
+        <NoteEditForm
+          t={t}
+          draft={editing.draft}
+          language={note.language}
+          canSave={editing.canSave}
+          saving={editing.saving}
+          error={editing.error}
+          onChange={onDraftChange}
+          onSave={onSave}
+          onCancel={onCancelEdit}
+          onDiscardAndReload={onDiscardAndReload}
+          onEscape={onEscapeEdit}
+        />
+      ) : (
+        <h1
+          ref={headingRef}
+          tabIndex={-1}
+          lang={lang}
+          className={cn(
+            "m-0 font-reading font-semibold text-pretty tracking-normal text-foreground",
+            embedded ? "text-xl @min-[760px]:text-2xl" : "text-2xl"
+          )}
+        >
+          {note.ideaStatement}
+        </h1>
+      )}
+      <p className="m-0 max-w-(--measure) text-sm text-muted-foreground">
+        {interpolateNodes(t(provenance.key), {
+          ...Object.fromEntries(
+            Object.entries(provenance.values).map(([name, value]) => [name, String(value)])
+          ),
+          model: (
+            <strong className="font-semibold text-secondary-foreground">
+              {note.generationModel}
+            </strong>
+          )
+        })}
+        {showEditHint && !embedded ? ` ${t("notePage.provenance.editHint")}` : null}
+      </p>
       <div className="flex flex-wrap items-center gap-2">
         {state.kind === "ai" ? (
           <>
@@ -162,31 +231,6 @@ export function NoteHeader({
           </div>
         ) : null}
       </div>
-      {note.superseded ? (
-        <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-          <span>{t("notePage.superseded")}</span>
-          {page.successors.length === 1 ? (
-            <button
-              type="button"
-              className={linkClass}
-              onClick={() => onOpenNote(page.successors[0]!.id)}
-            >
-              {t("notePage.openCurrent")}
-            </button>
-          ) : (
-            page.successors.map((successor) => (
-              <button
-                key={successor.id}
-                type="button"
-                className={linkClass}
-                onClick={() => onOpenNote(successor.id)}
-              >
-                {t("notePage.openSuccessor", { values: { title: successor.title } })}
-              </button>
-            ))
-          )}
-        </p>
-      ) : null}
       {review.failed ? (
         <div role="alert" className="flex flex-wrap items-center gap-3">
           <p className="text-sm text-foreground">{t("notePage.review.failed")}</p>
@@ -196,43 +240,6 @@ export function NoteHeader({
           </Button>
         </div>
       ) : null}
-      {editing ? (
-        <NoteEditForm
-          t={t}
-          draft={editing.draft}
-          language={note.language}
-          canSave={editing.canSave}
-          saving={editing.saving}
-          error={editing.error}
-          onChange={onDraftChange}
-          onSave={onSave}
-          onCancel={onCancelEdit}
-          onDiscardAndReload={onDiscardAndReload}
-          onEscape={onEscapeEdit}
-        />
-      ) : (
-        <h1
-          ref={headingRef}
-          tabIndex={-1}
-          lang={lang}
-          className="font-reading text-2xl font-semibold text-pretty tracking-normal text-foreground"
-        >
-          {note.ideaStatement}
-        </h1>
-      )}
-      <p className="text-sm text-muted-foreground">
-        {interpolateNodes(t(provenance.key), {
-          ...Object.fromEntries(
-            Object.entries(provenance.values).map(([name, value]) => [name, String(value)])
-          ),
-          model: (
-            <strong className="font-semibold text-secondary-foreground">
-              {note.generationModel}
-            </strong>
-          )
-        })}
-        {showEditHint ? ` ${t("notePage.provenance.editHint")}` : null}
-      </p>
     </header>
   );
 }

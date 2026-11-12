@@ -14,10 +14,16 @@ const tagClass = "rounded-full bg-soft px-2 text-xs text-muted-foreground";
 function EvidenceFigure({
   t,
   item,
+  number,
+  quiet,
   onOpenPassage
 }: {
   t: Translator;
   item: NotePageEvidence;
+  /** Its place in the list, for the quiet form's numeral. */
+  number: number;
+  /** The panel's form (design record 6.3): a numbered italic quote and its source, no box. */
+  quiet: boolean;
   onOpenPassage: (sourceItemId: string, passage: PassageAnchor) => void;
 }) {
   const quote = useRef<HTMLDivElement>(null);
@@ -26,6 +32,64 @@ function EvidenceFigure({
   const quoteId = useId();
   const state = evidenceLinkState(item);
   const locator = evidenceLocator(item, t);
+  const open = () => {
+    const target = citationTarget({
+      sourceItemId: item.sourceItemId,
+      chunkId: item.chunkId,
+      sourceSpanId: item.sourceSpanId,
+      documentId: item.documentId
+    });
+    onOpenPassage(target.sourceItemId, target.passage);
+  };
+  if (quiet)
+    return (
+      <figure className="m-0 grid grid-cols-[1rem_minmax(0,1fr)] gap-x-2 gap-y-1">
+        <span aria-hidden="true" className="pt-0.5 text-xs text-muted-foreground tabular-nums">
+          {number}
+        </span>
+        <blockquote
+          id={quoteId}
+          lang={item.language ?? undefined}
+          className="m-0 font-reading text-sm leading-6 text-foreground italic"
+        >
+          <div ref={quote} className={`whitespace-pre-line ${expanded ? "" : "line-clamp-6"}`}>
+            {item.excerpt}
+          </div>
+        </blockquote>
+        <figcaption className="col-start-2 flex min-w-0 flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
+          <ObjectKindGlyph kind="source" size={12} className="text-object-source" />
+          <span className="min-w-0 [overflow-wrap:anywhere]">
+            {item.workTitle ?? item.sourceTitle}
+            {locator ? ` · ${locator}` : ""}
+          </span>
+          {state === "open" ? (
+            <button type="button" className={linkClass} onClick={open}>
+              <ExternalLink className="size-3" aria-hidden="true" />
+              {t("notePage.evidence.open")}
+            </button>
+          ) : (
+            <span className={tagClass}>
+              {t(
+                state === "earlierVersion"
+                  ? "notePage.evidence.earlierVersion"
+                  : "notePage.evidence.preserved"
+              )}
+            </span>
+          )}
+          {overflows || expanded ? (
+            <button
+              type="button"
+              className={linkClass}
+              aria-expanded={expanded}
+              aria-controls={quoteId}
+              onClick={() => setExpanded((current) => !current)}
+            >
+              {t(expanded ? "notePage.evidence.showLess" : "notePage.evidence.showMore")}
+            </button>
+          ) : null}
+        </figcaption>
+      </figure>
+    );
   return (
     <figure className="flex flex-col gap-2 rounded-lg border border-border px-4 py-3">
       <figcaption className="flex flex-wrap items-center gap-x-2 gap-y-1">
@@ -89,26 +153,39 @@ function EvidenceFigure({
 export function NoteEvidence({
   t,
   evidence,
+  quiet = false,
   onOpenPassage
 }: {
   t: Translator;
   evidence: NotePage["evidence"];
+  /** The panel's form: numbered quotes in a margin or under the prose, no boxes. */
+  quiet?: boolean;
   onOpenPassage: (sourceItemId: string, passage: PassageAnchor) => void;
 }) {
   const headingId = useId();
   if (evidence.total === 0) return null;
   const hidden = evidence.total - evidence.items.length;
   return (
-    <section aria-labelledby={headingId} className="flex flex-col gap-3">
+    <section
+      aria-labelledby={headingId}
+      className={quiet ? "flex flex-col gap-4" : "flex flex-col gap-3"}
+    >
       <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-        <h2 id={headingId} className="text-lg font-semibold">
+        <h2 id={headingId} className={quiet ? "text-sm font-semibold" : "text-lg font-semibold"}>
           {t("notePage.evidence.title")}
         </h2>
         <span className="text-sm text-muted-foreground tabular-nums">{evidence.total}</span>
         <span className="text-xs text-muted-foreground">{t("notePage.evidence.hint")}</span>
       </div>
-      {evidence.items.map((item) => (
-        <EvidenceFigure key={item.chunkId} t={t} item={item} onOpenPassage={onOpenPassage} />
+      {evidence.items.map((item, index) => (
+        <EvidenceFigure
+          key={item.chunkId}
+          t={t}
+          item={item}
+          number={index + 1}
+          quiet={quiet}
+          onOpenPassage={onOpenPassage}
+        />
       ))}
       {hidden > 0 ? (
         <p className="text-xs text-muted-foreground">

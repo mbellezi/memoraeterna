@@ -3065,7 +3065,7 @@
         "button": "Chiedi su questo argomento"
       },
       "health": {
-        "good": "Stato buono",
+        "good": "Dimensione equilibrata",
         "attention": "Richiede attenzione",
         "violation": "Problema di struttura"
       },
@@ -4251,6 +4251,8 @@
     "navigator": {
       "branch": "Ramo",
       "branchLabel": "Mostrando solo un ramo dell’albero",
+      "errorKept": "Fissati e Recenti sono ancora qui.",
+      "pinHint": "Fissa ciò che apri sempre: ⌘D nel pannello aperto.",
       "wholeTree": "Albero intero"
     },
     "note": {
@@ -4277,8 +4279,7 @@
       "keyOpen": "apre accanto",
       "keyPeek": "dà un’occhiata senza aprire",
       "keySpace": "Spazio",
-      "keysLabel": "Tasti",
-      "unsorted": "In attesa di un posto: {count}"
+      "keysLabel": "Tasti"
     },
     "topic": {
       "error": "Impossibile aprire questo argomento.",
