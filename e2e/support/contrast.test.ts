@@ -5,8 +5,10 @@ import {
   composite,
   effectiveColours,
   evaluateSamples,
+  isClippedAway,
   parseCssColor,
   requiredRatio,
+  type ClipBox,
   type ContrastSample,
   type ShapePaint
 } from "./contrast.js";
@@ -132,6 +134,45 @@ describe("effectiveColours and evaluateSamples", () => {
     expect(result.failures.map((failure) => failure.text)).toEqual(["small grey", "icon"]);
     expect(result.failures[0]).toMatchObject({ required: 4.5, ratio: 3.84 });
     expect(result.unverifiable.map((entry) => entry.text)).toEqual(["over an image", "odd colour"]);
+  });
+});
+
+describe("isClippedAway", () => {
+  const box = (overrides: Partial<ClipBox>): ClipBox => ({
+    width: 120,
+    height: 20,
+    overflow: "visible",
+    clip: "auto",
+    clipPath: "none",
+    ...overrides
+  });
+
+  it.each([
+    // Tailwind's sr-only, and the older clip rule.
+    ["a collapsed box that cuts its overflow", { width: 1, height: 1, overflow: "hidden" }],
+    ["clip: rect(0 0 0 0)", { clip: "rect(0px, 0px, 0px, 0px)" }],
+    ["clip-path: inset(50%)", { clipPath: "inset(50%)" }],
+    ["clip-path: inset(100%)", { clipPath: "inset(100%)" }]
+  ])("is true for %s", (_name, overrides) => {
+    expect(isClippedAway(box(overrides))).toBe(true);
+  });
+
+  it.each([
+    ["an ordinary box", {}],
+    ["a one-pixel separator that clips nothing", { width: 1, height: 1, overflow: "visible" }],
+    ["a thin bar", { width: 1, height: 16, overflow: "hidden" }],
+    ["a partial clip-path", { clipPath: "inset(10%)" }]
+  ])("is false for %s", (_name, overrides) => {
+    expect(isClippedAway(box(overrides))).toBe(false);
+  });
+
+  it("leaves a clipped sample out of the verdict and counts it", () => {
+    const hidden = sample({
+      text: "Atividade: live region",
+      boxes: [{ width: 1, height: 1, overflow: "hidden", clip: "auto", clipPath: "inset(50%)" }]
+    });
+    const result = evaluateSamples([sample({ text: "ok" }), hidden]);
+    expect(result).toMatchObject({ checked: 1, hidden: 1, failures: [] });
   });
 });
 

@@ -149,6 +149,28 @@ export interface ShapePaint {
   area: number;
 }
 
+/** The box facts of one element that could hide what it holds (see `isClippedAway`). */
+export interface ClipBox {
+  width: number;
+  height: number;
+  overflow: string;
+  clip: string;
+  clipPath: string;
+}
+
+/**
+ * Whether the element clips everything it holds away: a box of one pixel or less that cuts its
+ * overflow, `clip: rect(0, 0, 0, 0)`, or `clip-path: inset(50%)` or more. This is the screen-reader-
+ * only pattern (`sr-only`): the text exists for assistive technology and is not seen, so it has
+ * no contrast to judge.
+ */
+export function isClippedAway(box: ClipBox): boolean {
+  const collapsed = box.width <= 1 && box.height <= 1 && box.overflow !== "visible";
+  const clippedRect = /^rect\(\s*0(px)?[\s,]+0(px)?[\s,]+0(px)?[\s,]+0(px)?\s*\)$/u.test(box.clip);
+  const clippedPath = /^inset\(\s*(50|100)%\s*\)$/u.test(box.clipPath);
+  return collapsed || clippedRect || clippedPath;
+}
+
 /** What the page reports for one text, input or icon (see `collectInPage`). */
 export interface ContrastSample {
   kind: "text" | "glyph";
@@ -165,6 +187,11 @@ export interface ContrastSample {
   opacities: number[];
   fontSizePx: number;
   fontWeight: number;
+  /**
+   * The elements from the sample's up to the root that could clip it away: a collapsed box, a
+   * `clip` or a `clip-path`. Judged by `isClippedAway`.
+   */
+  boxes?: ClipBox[];
   /**
    * An icon: the paint of each shape drawn inside it. The icons of `solid-glyphs.tsx` and the line
    * samples put the paint on their children (`fill="currentColor"`), so the root's own `fill` is the
@@ -186,6 +213,8 @@ export interface ContrastFinding {
 
 export interface ContrastResult {
   checked: number;
+  /** Samples a person cannot see (clipped away, as a screen-reader-only text is): not judged. */
+  hidden: number;
   failures: ContrastFinding[];
   unverifiable: { text: string; path: string; reason: string }[];
 }
@@ -268,8 +297,12 @@ export function effectiveColours(
 }
 
 export function evaluateSamples(samples: readonly ContrastSample[]): ContrastResult {
-  const result: ContrastResult = { checked: 0, failures: [], unverifiable: [] };
+  const result: ContrastResult = { checked: 0, hidden: 0, failures: [], unverifiable: [] };
   for (const sample of samples) {
+    if (sample.boxes?.some(isClippedAway)) {
+      result.hidden += 1;
+      continue;
+    }
     const colours = effectiveColours(sample);
     if ("reason" in colours) {
       result.unverifiable.push({ text: sample.text, path: sample.path, reason: colours.reason });
@@ -314,8 +347,15 @@ export function collectInPage(limit: number): ContrastSample[] {
       return false;
     return inView(element.getBoundingClientRect());
   };
-  const exempt = (element: Element) =>
-    element.closest(':disabled, [aria-disabled="true"], [inert]') !== null;
+  // Inactive controls are exempt (WCAG 1.4.3 and 1.4.11): a disabled control or fieldset, anything
+  // inside an element marked inactive (`aria-disabled`, Radix's `data-disabled`) or inert, and the
+  // label of a disabled control.
+  const exempt = (element: Element) => {
+    if (element.closest(':disabled, [aria-disabled="true"], [data-disabled], [inert]') !== null)
+      return true;
+    const control = (element.closest("label") as HTMLLabelElement | null)?.control;
+    return control instanceof HTMLElement && control.matches(":disabled");
+  };
   const pathOf = (element: Element) => {
     const parts: string[] = [];
     for (let node: Element | null = element; node && parts.length < 4; node = node.parentElement) {
@@ -331,11 +371,25 @@ export function collectInPage(limit: number): ContrastSample[] {
     const backgrounds: string[] = [];
     const images: boolean[] = [];
     const opacities: number[] = [];
+    const boxes: ClipBox[] = [];
     for (let node: Element | null = element; node; node = node.parentElement) {
       const style = getComputedStyle(node);
       backgrounds.push(style.backgroundColor);
       images.push(style.backgroundImage !== "none" && style.backgroundImage !== "");
       opacities.push(Number(style.opacity));
+      const rect = node.getBoundingClientRect();
+      if (
+        (rect.width <= 1 && rect.height <= 1) ||
+        (style.clip !== "auto" && style.clip !== "") ||
+        style.clipPath !== "none"
+      )
+        boxes.push({
+          width: rect.width,
+          height: rect.height,
+          overflow: style.overflow,
+          clip: style.clip,
+          clipPath: style.clipPath
+        });
     }
     const style = getComputedStyle(element);
     samples.push({
@@ -347,7 +401,8 @@ export function collectInPage(limit: number): ContrastSample[] {
       images,
       opacities,
       fontSizePx: Number.parseFloat(style.fontSize),
-      fontWeight: Number(style.fontWeight) || 400
+      fontWeight: Number(style.fontWeight) || 400,
+      boxes
     });
   };
   const seen = new Set<Element>();
