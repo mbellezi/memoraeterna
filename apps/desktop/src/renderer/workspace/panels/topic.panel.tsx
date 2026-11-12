@@ -27,7 +27,16 @@ export function title(summary: ObjectSummary | null): string {
   return summary?.title ?? "";
 }
 
-export function Component({ t, address, mode, active, onState, onOpen, current }: PanelProps) {
+export function Component({
+  t,
+  address,
+  mode,
+  active,
+  onState,
+  onOpen,
+  onRedirect,
+  current
+}: PanelProps) {
   const id = parseObjectAddress(address)?.id ?? null;
   const bridge = useWorkspaceBridge();
   const report = useCallback(
@@ -41,11 +50,15 @@ export function Component({ t, address, mode, active, onState, onOpen, current }
     },
     [onOpen]
   );
-  // A merged topic's page found its successor: the stack holds the current id, not the retired one.
+  // A merged topic's page found its successor: the stack holds the current id, not the retired one,
+  // and the history entry is swapped, so Back does not return to the retired id.
   const redirect = useCallback(
-    (topicId: string) =>
-      onOpen(formatObjectAddress({ kind: "topic", id: topicId }), { replace: true }),
-    [onOpen]
+    (topicId: string) => {
+      const to = formatObjectAddress({ kind: "topic", id: topicId });
+      if (onRedirect) onRedirect(to);
+      else onOpen(to, { replace: true });
+    },
+    [onOpen, onRedirect]
   );
   if (id === null) return null;
   return (
