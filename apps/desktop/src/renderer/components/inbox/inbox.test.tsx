@@ -440,6 +440,19 @@ describe("the Inbox destination's key bar, risk groups and verdicts (T142 UX rou
     expect(plain).toContain("Keyboard shortcuts");
   });
 
+  it("offers no keyboard help when nothing waits or the read failed: there is no key to press", () => {
+    const empty = view(stateOf([]));
+    expect(empty).toContain("Nothing needs you");
+    expect(empty).not.toContain("Keyboard shortcuts");
+    const failed = view(reduceInbox(initialInboxState(), { type: "loadFailed" }));
+    expect(failed).not.toContain("Keyboard shortcuts");
+    // A filter that finds nothing keeps the help, with the filters beside it.
+    const filtered = view(
+      stateOf([], { type: "filter", filter: { kind: "review" } } as InboxEvent)
+    );
+    expect(filtered).toContain("Keyboard shortcuts");
+  });
+
   it("opens the sheet above the bar, built from the same keys", () => {
     const html = view(stateOf(mixed, { type: "help", open: true } as InboxEvent), { keyBar: true });
     expect(html).toContain('aria-expanded="true"');

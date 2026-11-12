@@ -146,8 +146,9 @@ export function InboxView({ rootRef, ...props }: InboxViewProps) {
                 })
             : t("inbox.description")}
         </p>
-        {/* The help floats over the screen, so opening it never pushes the list out of view. */}
-        {props.keyBar ? null : (
+        {/* The help floats over the screen, so opening it never pushes the list out of view. With
+            nothing waiting, or nothing read, there is no key to press, so the help is not offered. */}
+        {props.keyBar || idle ? null : (
           <div className="relative">
             <Button
               type="button"
