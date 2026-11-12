@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
+import { useEffect, useMemo, useSyncExternalStore, type ReactNode } from "react";
 import { CircleDollarSign } from "lucide-react";
 import type { Translator } from "@app/i18n";
 
@@ -10,7 +10,8 @@ import { cn } from "../../../lib/cn";
 import { ReadOnlyValue, RegistryRow, SettingRow } from "../../SettingRow";
 import type { SettingsSectionModule } from "../../sections-registry";
 import { useSettings } from "../../settings-context";
-import { groupLabelOf, groupsOf } from "../../settings-model";
+import { groupLabelOf, groupsOf, helpOf, labelOf } from "../../settings-model";
+import { PageRow } from "../../PageRow";
 import { settingsStoreOf } from "../../settings-store";
 import { requestSettingsTarget } from "../../settings-target";
 import { AiSettingsController, type AiSnapshot } from "./ai-controller";
@@ -24,7 +25,7 @@ import {
   setupCards,
   setupNameKeys
 } from "./ai-model";
-import { AreaNotice, ExpandButton, GroupHeading, GroupIntro } from "./ai-parts";
+import { AreaNotice, GroupHeading, GroupIntro } from "./ai-parts";
 import { useRowProps } from "./ai-rows";
 import { CredentialRow } from "./CredentialRow";
 import { DecisionsRow } from "./DecisionsRow";
@@ -127,42 +128,42 @@ export function AiSection() {
     if (entry.id === "ai.models")
       return (
         <PageRow
-          entry={entry}
-          summary={
-            snap.models.status === "ready" ? modelsSummary(t, snap.models.value.models) : "…"
-          }
-          page={(id) => (
-            <LocalModelsPage
-              t={t}
-              id={id}
-              load={snap.models}
-              controller={controller}
-              notice={notice("models")}
-              onRetry={() => void controller.loadModels()}
-            />
-          )}
-        />
+          id={entry.id}
+          label={labelOf(t, entry)}
+          help={helpOf(t, entry)}
+          meta={snap.models.status === "ready" ? modelsSummary(t, snap.models.value.models) : "…"}
+          bodyClassName="pb-4"
+        >
+          <LocalModelsPage
+            t={t}
+            load={snap.models}
+            controller={controller}
+            notice={notice("models")}
+            onRetry={() => void controller.loadModels()}
+          />
+        </PageRow>
       );
     if (entry.id === "ai.profiles")
       return (
         <PageRow
-          entry={entry}
-          summary={core ? profilesSummary(t, core.profiles.length) : "…"}
-          page={(id) =>
-            core ? (
-              <ProfilesPage
-                t={t}
-                id={id}
-                profiles={core.profiles}
-                profileTasks={core.profileTasks}
-                providers={core.providers}
-                localModels={snap.models.status === "ready" ? snap.models.value.models : []}
-                controller={controller}
-                notice={notice("profiles")}
-              />
-            ) : null
-          }
-        />
+          id={entry.id}
+          label={labelOf(t, entry)}
+          help={helpOf(t, entry)}
+          meta={core ? profilesSummary(t, core.profiles.length) : "…"}
+          bodyClassName="pb-4"
+        >
+          {core ? (
+            <ProfilesPage
+              t={t}
+              profiles={core.profiles}
+              profileTasks={core.profileTasks}
+              providers={core.providers}
+              localModels={snap.models.status === "ready" ? snap.models.value.models : []}
+              controller={controller}
+              notice={notice("profiles")}
+            />
+          ) : null}
+        </PageRow>
       );
     if (entry.id === "local-models.repository-token-ref")
       return (
@@ -408,45 +409,6 @@ function CapLink({ t, snap }: { t: Translator; snap: AiSnapshot }) {
         {t("settingsAi.cap.change")}
       </Button>
     </div>
-  );
-}
-
-/** A row whose page opens in place under it: "2 installed · 1.7 GB" and a chevron. */
-function PageRow({
-  entry,
-  summary,
-  page
-}: {
-  entry: SettingEntryV2;
-  summary: string;
-  page: (id: string) => ReactNode;
-}) {
-  const row = useRowProps(entry, { withReset: false });
-  const [open, setOpen] = useState(false);
-  const pageId = useId();
-  // A link or a search result that takes the person to this row opens its page.
-  const taken = row.highlighted === true;
-  const [seen, setSeen] = useState(false);
-  if (taken && !seen) {
-    setSeen(true);
-    setOpen(true);
-  } else if (!taken && seen) setSeen(false);
-  return (
-    <>
-      <SettingRow
-        {...row}
-        control={
-          <ExpandButton
-            summary={summary}
-            label={row.label}
-            expanded={open}
-            controls={pageId}
-            onToggle={() => setOpen((value) => !value)}
-          />
-        }
-      />
-      {open ? page(pageId) : null}
-    </>
   );
 }
 

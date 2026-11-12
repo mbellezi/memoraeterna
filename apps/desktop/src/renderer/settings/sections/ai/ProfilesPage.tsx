@@ -91,7 +91,6 @@ export function modelOptionsOf(
  */
 export function ProfilesPage({
   t,
-  id,
   profiles,
   profileTasks,
   providers,
@@ -100,7 +99,6 @@ export function ProfilesPage({
   notice
 }: {
   t: Translator;
-  id: string;
   profiles: readonly AiProfile[];
   profileTasks: readonly AiProfileTask[];
   providers: readonly AiProviderConfig[];
@@ -114,7 +112,7 @@ export function ProfilesPage({
   const run = (action: () => Promise<unknown>) => controller.mutate("profiles", action);
 
   return (
-    <div id={id} className="grid gap-3 border-b border-border pb-4 pt-1">
+    <div className="grid gap-3 pt-1">
       <AreaNotice message={notice} />
       {profiles.length === 0 ? (
         <p className="m-0 text-sm text-secondary-foreground">{t("settingsAi.profiles.empty")}</p>

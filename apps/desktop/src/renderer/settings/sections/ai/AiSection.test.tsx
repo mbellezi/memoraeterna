@@ -623,7 +623,7 @@ describe("local models and profiles", () => {
     await mount(ai({ "localModels.download": {} }));
     const models = row("ai.models")!;
     expect(models.textContent).toContain("2 installed · 1.7 GB");
-    await click(byLabel("Models on this Mac", models)!);
+    await click(models.querySelector("button")!);
     const page = dom.document.getElementById(
       models.querySelector("button")!.getAttribute("aria-controls")!
     );
@@ -656,7 +656,7 @@ describe("local models and profiles", () => {
 
   it("cannot remove a model a profile uses, and asks before it removes another", async () => {
     await mount(ai({ "localModels.remove": {} }));
-    await click(byLabel("Models on this Mac", row("ai.models")!)!);
+    await click(row("ai.models")!.querySelector("button")!);
     const used = byLabel("Remove: Qwen3-Embedding-0.6B")!;
     expect(used.hasAttribute("disabled")).toBe(true);
     expect(dom.document.body.textContent).toContain("In use by Qwen3-Embedding-0.6B");
@@ -672,8 +672,8 @@ describe("local models and profiles", () => {
 
   it("lists the profiles with their models and edits one in place", async () => {
     await mount();
-    await click(byLabel("Profiles and parameters", row("ai.profiles")!)!);
-    expect(row("ai.profiles")?.nextElementSibling?.textContent).toContain("gpt-6-luna");
+    await click(row("ai.profiles")!.querySelector("button")!);
+    expect(row("ai.profiles")?.textContent).toContain("gpt-6-luna");
     await click(byLabel("Edit: gpt-6-luna")!);
     expect(dom.document.body.textContent).toContain("Save profile");
   });

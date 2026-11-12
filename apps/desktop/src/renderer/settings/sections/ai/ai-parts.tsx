@@ -1,4 +1,4 @@
-import { useId, type ComponentPropsWithRef, type ReactNode } from "react";
+import { type ComponentPropsWithRef, type ReactNode } from "react";
 import { ChevronDown } from "lucide-react";
 
 import { RunningRing, SolidCheck, SolidTriangle } from "../../../components/ui/solid-glyphs";
@@ -184,49 +184,6 @@ export function SwitchControl({
   );
 }
 
-/**
- * The button of a row whose page opens under it: the summary at the left ("2 installed · 1.7 GB")
- * and a chevron that turns. The page is the caller's, rendered when `expanded`.
- */
-export function ExpandButton({
-  summary,
-  label,
-  expanded,
-  controls,
-  onToggle,
-  className
-}: {
-  summary: string;
-  /** The row's name, for the accessible name ("Models on this Mac: 2 installed"). */
-  label: string;
-  expanded: boolean;
-  controls: string;
-  onToggle: () => void;
-  className?: string;
-}) {
-  return (
-    <button
-      type="button"
-      aria-expanded={expanded}
-      aria-controls={controls}
-      aria-label={`${label}: ${summary}`}
-      onClick={onToggle}
-      className={cn(
-        "inline-flex min-h-8 items-center gap-1.5 rounded-md border-0 bg-transparent px-2 text-sm text-secondary-foreground",
-        "hover:bg-soft hover:text-foreground",
-        "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent",
-        className
-      )}
-    >
-      <span className="tabular-nums">{summary}</span>
-      <ChevronDown
-        aria-hidden="true"
-        className={cn("size-4 shrink-0 transition-transform", expanded && "rotate-180")}
-      />
-    </button>
-  );
-}
-
 /** A group's heading, as the generic section draws it, so every section's groups look alike. */
 export function GroupHeading({
   id,
@@ -251,9 +208,4 @@ export function GroupIntro({ children }: { children: ReactNode }) {
       {children}
     </p>
   );
-}
-
-/** A stable id for a page that opens in place. */
-export function usePageId(prefix: string): string {
-  return `${prefix}-${useId()}`;
 }

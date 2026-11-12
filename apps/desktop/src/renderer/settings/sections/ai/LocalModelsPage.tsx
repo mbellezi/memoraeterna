@@ -39,14 +39,12 @@ const filters: ReadonlyArray<{ id: ModelFilter; label: MessageKey }> = [
  */
 export function LocalModelsPage({
   t,
-  id,
   load,
   controller,
   notice,
   onRetry
 }: {
   t: Translator;
-  id: string;
   load: Load<ModelsData>;
   controller: AiSettingsController;
   notice: string | undefined;
@@ -57,7 +55,7 @@ export function LocalModelsPage({
 
   if (load.status === "loading")
     return (
-      <div id={id} className="py-3">
+      <div className="py-3">
         <LoadingState t={t}>
           <SkeletonRows rows={4} />
         </LoadingState>
@@ -65,7 +63,7 @@ export function LocalModelsPage({
     );
   if (load.status === "error")
     return (
-      <div id={id} className="py-3">
+      <div className="py-3">
         <ErrorState
           t={t}
           message={t("settingsAi.models.errorTitle")}
@@ -80,7 +78,7 @@ export function LocalModelsPage({
   const run = (action: () => Promise<unknown>) =>
     controller.mutate("models", action, { models: true });
   return (
-    <div id={id} className="grid gap-3 border-b border-border pb-4 pt-1">
+    <div className="grid gap-3 pt-1">
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
         <div
           role="group"
