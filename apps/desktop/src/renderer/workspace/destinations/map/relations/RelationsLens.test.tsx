@@ -1,8 +1,12 @@
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createTranslator } from "@app/i18n";
 
 import { RelationsLens } from "./RelationsLens";
+
+// The header is read as a window that draws the canvas has it ("Colour by subtopic at"); without
+// WebGL the same control says "Group by" (the table's tests hold that wording).
+vi.mock("../../../../components/graph/webgl", () => ({ isWebGLAvailable: () => true }));
 
 const t = createTranslator("en");
 const noop = () => undefined;
