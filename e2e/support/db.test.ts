@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { waitForSettled, type ProfileDb, type UnfinishedJob } from "./db.js";
+import { newestSourceSummary, waitForSettled, type ProfileDb, type UnfinishedJob } from "./db.js";
 
 const job = (type: string, extra: Partial<UnfinishedJob> = {}): UnfinishedJob => ({
   type,
@@ -70,5 +70,23 @@ describe("waitForSettled", () => {
     await expect(waitForSettled(db, { ...instant, timeoutMs: 50 })).rejects.toThrow(
       /relation-explain-backfill 1/u
     );
+  });
+});
+
+describe("newestSourceSummary", () => {
+  const dbWith = (rows: Record<string, unknown>[]): ProfileDb => ({
+    query: async <Row extends Record<string, unknown>>() => rows as Row[],
+    close: async () => undefined
+  });
+
+  it("names the newest source's type, language and title", async () => {
+    const summary = await newestSourceSummary(
+      dbWith([{ type: "GenericDocument", language: "und", title: "memory-and-language" }])
+    );
+    expect(summary).toBe('GenericDocument / und / "memory-and-language"');
+  });
+
+  it("says so when the library holds no source", async () => {
+    expect(await newestSourceSummary(dbWith([]))).toBe("no source");
   });
 });

@@ -35,7 +35,12 @@ import {
   type MemoraSession
 } from "./support/app.js";
 import { stubOpenDialog } from "./support/dialog.js";
-import { aiConfigRepositoryOn, openProfileDb, type ProfileDb } from "./support/db.js";
+import {
+  aiConfigRepositoryOn,
+  newestSourceSummary,
+  openProfileDb,
+  type ProfileDb
+} from "./support/db.js";
 import { installGestureCounter, readGestures, resetGestures } from "./support/gestures.js";
 import { emptyProfile, journeysRun, profileDir, type JourneysRun } from "./support/profile.js";
 import { pressShortcut } from "./support/shortcuts.js";
@@ -230,7 +235,8 @@ async function waitForPlacedRow(
       throw new Error(
         `the work behind the import failed (${(row?.failed ?? 0) - before.failed} jobs); ` +
           `${defaultCassette} missed ${misses.total - before.misses} calls ` +
-          `${JSON.stringify(misses.byTask)}: if they are misses, record journeys-f5 (R4)`
+          `${JSON.stringify(misses.byTask)} (the newest source as the app stored it: ` +
+          `${await newestSourceSummary(db)}): if they are misses, record journeys-f5 (R4)`
       );
     }
     if (Date.now() >= deadline) throw new Error("no note row with a path chip appeared in time");
@@ -397,7 +403,7 @@ test("J1 first run: onboarding, Home as the first-run surface, the first source 
     );
     expect(
       missed,
-      `${defaultCassette} missed ${missed} calls (${JSON.stringify(missesAfter.byTask)}): record journeys-f5 (R4)`
+      `${defaultCassette} missed ${missed} calls (${JSON.stringify(missesAfter.byTask)}; the first source as the app stored it: ${await newestSourceSummary(db)}): record journeys-f5 (R4)`
     ).toBe(0);
   } finally {
     const evidence = join(run.evidenceDir, "j1");
