@@ -9,7 +9,7 @@ export const surface = "destination-inbox";
 const t = screenTranslator();
 const noop = () => undefined;
 
-/** The same items as the Inbox screen's capture: suggestions first, then one of every other kind. */
+/** The same items as the Inbox screen's capture: the suggestions at their medium risk, then one of every other kind. */
 export const fixtures: ScreenModule["fixtures"] = inboxFixtures;
 
 export function render() {

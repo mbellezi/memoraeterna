@@ -503,7 +503,7 @@
     "keys": {
       "barNote": "Les raccourcis à une touche ne fonctionnent pas dans les champs de texte.",
       "short": {
-        "apply": "accepter",
+        "apply": "appliquer",
         "dismiss": "écarter",
         "edit": "modifier",
         "help": "raccourcis",
@@ -4176,34 +4176,37 @@
       "earlierHint": "Relations avec une note qu’une version plus récente a remplacée, ou dont la source n’existe plus. Elles restent hors du graphe et des totaux."
     },
     "graph": {
-      "tabs": "Affichage des relations",
+      "tabs": "Affichage des connexions",
       "list": "Liste",
       "graph": "Graphe",
-      "unavailable": "Le graphe ne peut pas être dessiné sur cet ordinateur ; les relations sont donc affichées en liste.",
-      "loading": "Chargement du graphe des relations…",
-      "error": "Le graphe des relations n’a pas pu être chargé.",
-      "rereadError": "Le graphe n’a pas pu être mis à jour ; il montre toujours les dernières relations lues.",
+      "unavailable": "Le graphe ne peut pas être dessiné sur cet ordinateur ; les connexions sont donc affichées en liste.",
+      "loading": "Chargement du graphe des connexions…",
+      "error": "Le graphe des connexions n’a pas pu être chargé.",
+      "rereadError": "Le graphe n’a pas pu être mis à jour ; il montre toujours les dernières connexions lues.",
       "contextLost": "Le graphe a cessé de s’afficher.",
-      "empty": "Cette note n’a pas encore de relation à dessiner. Elles apparaissent ici quand d’autres notes lui sont liées.",
-      "depthTwo": "Inclure les relations des notes liées",
-      "counts": "{notes} notes · {relations} relations",
-      "showList": "Afficher en liste",
-      "label": "Graphe des relations : {notes} notes et {relations} relations. Faites glisser l’arrière-plan pour vous déplacer ; la liste montre en texte les relations de cette note.",
-      "keyboardHint": "Clavier : Tab jusqu’au graphe ; les flèches passent d’une note ou d’une relation à l’autre, Entrée ouvre une note et Échap ferme la fiche.",
+      "empty": "Cette note n’a pas encore de connexion à dessiner. Elles apparaissent ici quand d’autres notes lui sont liées.",
+      "depthTwo": "Inclure les connexions des notes liées",
+      "showList": "Voir sous forme de liste",
+      "label": "Graphe des connexions : {notes} notes et {relations} connexions. Faites glisser l’arrière-plan pour vous déplacer ; la liste montre en texte les connexions de cette note.",
+      "keyboardHint": "Clavier : Tab jusqu’au graphe ; les flèches passent d’une note ou d’une connexion à l’autre, Entrée ouvre une note et Échap ferme la fiche.",
       "legend": "Légende",
-      "legendKept": "Trait plein : une relation que vous avez conservée ou qui a été appliquée",
+      "legendKept": "Trait plein : une connexion que vous avez conservée ou qui a été appliquée",
       "legendSuggested": "Trait en pointillés : une suggestion que personne n’a encore conservée",
-      "legendArrow": "Flèche : la relation va d’une note à l’autre",
+      "legendArrow": "Flèche : la connexion va d’une note à l’autre",
       "legendFocus": "Nœud plus grand : cette note",
       "truncated": "{shown} notes liées affichées sur {total}. La liste les contient toutes.",
-      "omitted": "Relations entre ces notes qui ne sont pas dessinées : {count}.",
+      "omitted": "Connexions entre ces notes qui ne sont pas dessinées : {count}.",
       "thisNote": "Cette note : {title}",
       "noteCard": "Note : {title}",
       "thisNoteHint": "Vous êtes sur cette note.",
       "openHint": "Cliquez, ou appuyez sur Entrée, pour ouvrir cette note.",
-      "stateSuggested": "Suggestion : personne n’a encore conservé cette relation.",
-      "stateKept": "Vous avez conservé cette relation.",
-      "stateApplied": "Cette relation est appliquée."
+      "stateSuggested": "Suggestion : personne n’a encore conservé cette connexion.",
+      "stateKept": "Vous avez conservé cette connexion.",
+      "stateApplied": "Cette connexion est appliquée.",
+      "notesOne": "{count} note",
+      "notesMany": "{count} notes",
+      "connectionsOne": "{count} connexion",
+      "connectionsMany": "{count} connexions"
     },
     "linkedStance": "liées : {type}",
     "stance": {
@@ -4469,7 +4472,11 @@
         "heading": "Questions précédentes",
         "label": "Ouvrir une question précédente"
       },
-      "empty": "Rien n’a encore été demandé à ce sujet. Chaque question reste dans Bibliothèque › Questions, avec sa réponse.",
+      "empty": {
+        "library": "Aucune question sur la bibliothèque pour l’instant. Écrivez-en une ci-dessus ; chaque question reste dans Bibliothèque › Questions, avec sa réponse.",
+        "source": "Aucune question sur cette source pour l’instant. Écrivez-en une ci-dessus ; chaque question reste dans Bibliothèque › Questions, avec sa réponse.",
+        "topic": "Aucune question sur ce sujet pour l’instant. Écrivez-en une ci-dessus ; chaque question reste dans Bibliothèque › Questions, avec sa réponse."
+      },
       "errors": {
         "earlier": "Impossible de charger les questions précédentes.",
         "earlierKept": "Vous pouvez toujours poser une question.",
@@ -4752,7 +4759,6 @@
       "error": "Impossible d’ouvrir cette note.",
       "errorKept": "Le reste d’Explorer reste ouvert et vos notes n’ont pas changé.",
       "explainedLocally": "explication écrite par l’IA locale",
-      "gardenerConfidence": "Jardinier · confiance {word}",
       "gardenerSuggestion": "suggestion du Jardinier · décidez quand vous voulez",
       "goneBody": "Elle a peut-être été fusionnée avec une autre note ou supprimée. Rien d’autre n’a changé.",
       "goneHeadline": "Cette note n’est plus dans votre bibliothèque.",
@@ -4882,7 +4888,6 @@
       "headline": "Pas encore de mentions directes."
     },
     "error": {
-      "compact": "Impossible d’ouvrir.",
       "kept": "Vos notes et vos sources sont restées telles quelles.",
       "message": "Impossible d’ouvrir cette entité."
     },
@@ -4909,8 +4914,12 @@
       "headline": "Cette entité n’est plus dans la bibliothèque."
     },
     "sources": {
+      "countPartial": "{shown} sur {total}",
       "heading": "Sources",
-      "partial": "Sources des mentions chargées jusqu’ici. Affichez plus de mentions pour voir le reste."
+      "moreLoading": "Chargement d’autres sources",
+      "moreMany": "Afficher les sources de {count} notes de plus",
+      "moreOne": "Afficher les sources de {count} note de plus",
+      "partial": "Voici les sources des notes affichées jusqu’ici."
     },
     "topics": {
       "heading": "Sujets",
@@ -4931,6 +4940,7 @@
     },
     "foot": {
       "all": "tous les résultats",
+      "ask": "demander",
       "beside": "ouvrir à côté",
       "choose": "choisir",
       "here": "ouvrir dans ce panneau",
@@ -4977,6 +4987,10 @@
       "none": "sans préfixe : tout",
       "topics": "sujets",
       "topicsLabel": "Sujets seulement"
+    },
+    "preview": {
+      "ask": "Une question ouvre un panneau qui répond avec vos sources.",
+      "none": "Choisissez un résultat pour le voir ici."
     },
     "results": {
       "compactLabel": "Résultats pour “{query}”",
@@ -5036,9 +5050,6 @@
     },
     "chip": {
       "labelPlain": "Citation {number}"
-    },
-    "compact": {
-      "error": "Impossible d’ouvrir."
     },
     "empty": {
       "add": "Ajouter une source",
@@ -5123,7 +5134,7 @@
       "readFromOne": "dans {count} source",
       "readNotCited": "Lus, non cités",
       "readNotCitedReason": "non utilisé dans la réponse",
-      "readNotCitedSibling": "Autre passage de la source {number}",
+      "readNotCitedSibling": "Autre passage de la même source que la citation {number}",
       "readPassagesMany": "{count} passages lus",
       "readPassagesOne": "{count} passage lu",
       "reading": "lecture…",
@@ -5144,7 +5155,7 @@
   },
   "preview": {
     "card": {
-      "empty": "Pas encore de résumé. Ouvrez-le pour tout lire.",
+      "empty": "Pas encore de résumé. Ouvrez-le à côté pour tout lire.",
       "error": "Impossible de lire l’aperçu.",
       "errorKept": "Le lien fonctionne toujours ; rien n’a été modifié.",
       "goTo": "Aller à",
@@ -5723,7 +5734,7 @@
     "health": {
       "attention": "demande de l’attention",
       "good": "équilibré",
-      "violation": "hors limite"
+      "violation": "problème de structure"
     },
     "inspector": {
       "next": "Prochaine étape",
@@ -5782,8 +5793,8 @@
       "zoomOut": "Dézoomer"
     },
     "depth": {
-      "help": "Quel niveau de sous-thèmes donne leur couleur aux points",
-      "label": "Couleur par sous-thème de",
+      "help": "Quel niveau de sous-thèmes regroupe les points et colore chaque groupe",
+      "label": "Grouper par",
       "one": "1er niveau",
       "three": "3e niveau",
       "two": "2e niveau"
@@ -5844,6 +5855,7 @@
     "caption": "Les mêmes connexions que le graphe, une ligne par connexion",
     "count": "{count} connexions",
     "countOne": "1 connexion",
+    "errorMessage": "Les connexions de cette branche n’ont pas pu être chargées.",
     "from": "De",
     "groupBy": "Grouper par",
     "groupByHelp": "Quel niveau de sous-thèmes regroupe les thèmes de la liste",
@@ -6045,6 +6057,175 @@
       "summaryMinimumWordCount": "minimum mots résumé éléments courts ignorer résumés comptage seuil petites sources économiser appels zéro désactiver texte le plus court",
       "themeMode": "thème sombre clair nuit mode apparence couleurs schéma système visuel",
       "uploadCopies": "copies importés conserver originaux fichiers copie dossier imports seconde sauvegarde des envois enregistrer"
+    }
+  },
+  "settingsIntegrations": {
+    "books": {
+      "auto": "Automatique : Open Library, puis Google Books",
+      "googleBooks": "Google Books seulement",
+      "keyConfirm": "Enregistrer",
+      "keyFailed": "Impossible de garder la clé en sécurité. Réessayez.",
+      "keyNone": "Aucune clé",
+      "keyReplace": "Changer la clé…",
+      "keySave": "Enregistrer la clé…",
+      "keySaved": "Clé enregistrée, chiffrée sur ce Mac",
+      "off": "Désactivé",
+      "openLibrary": "Open Library seulement",
+      "saveFailed": "Impossible de changer. Le choix précédent reste."
+    },
+    "gateway": {
+      "address": "Adresse",
+      "clientType": "Type d’app",
+      "clients": "Qui est associé",
+      "copied": "Copié.",
+      "copy": "Copier",
+      "copyFailed": "Impossible de copier. Sélectionnez le texte et copiez-le à la main.",
+      "createPairing": "Créer l’association",
+      "displayName": "Nom de l’app (facultatif)",
+      "kinds": {
+        "chromeExtension": "Extension Chrome",
+        "obsidianPlugin": "Plugin Obsidian"
+      },
+      "localOnly": "Elle ne répond qu’aux apps associées, et seulement sur ce Mac.",
+      "metaMany": "{count} apps · connexion {state}",
+      "metaNone": "Aucune app · connexion {state}",
+      "metaOne": "{count} app · connexion {state}",
+      "noClients": "Aucune app n’est associée pour l’instant. Associez l’extension Chrome ou le plugin Obsidian.",
+      "pair": "Associer une app…",
+      "pairFailed": "Impossible de créer l’association. Rien n’a été conservé.",
+      "pairNeedsReady": "Pour associer, la connexion locale doit être prête.",
+      "pairRestart": "Pour associer, la connexion locale doit être prête. Elle démarre à l’ouverture de Memora ; si elle reste arrêtée, fermez Memora et rouvrez-le.",
+      "pairedSince": "Associée {since}",
+      "readFailed": "Impossible de lire la connexion locale.",
+      "revoke": "Révoquer",
+      "revokeAsk": "Révoquer l’accès de {name} ? Elle devra être associée de nouveau.",
+      "revokeFailed": "Impossible de révoquer. L’accès reste comme avant.",
+      "states": {
+        "failed": "en échec",
+        "ready": "prête",
+        "starting": "en démarrage",
+        "stopped": "arrêtée"
+      },
+      "statusLine": "Connexion locale {state}.",
+      "today": "aujourd’hui",
+      "tokenDone": "Je l’ai copié",
+      "tokenTitle": "Code d’association",
+      "tokenWarning": "Copiez-le maintenant : il ne s’affiche qu’une fois et n’est pas conservé ici."
+    },
+    "layout": {
+      "needsSync": "Pour l’appliquer, la synchronisation avec Obsidian doit être activée.",
+      "readFailed": "Impossible de lire l’état du coffre.",
+      "review": "Le changement est préparé. Vérifiez les fichiers, fermez les éditeurs et appliquez."
+    },
+    "moreInAdvanced": "Le dossier de Memora dans le coffre et la langue des dossiers se trouvent dans",
+    "openAdvanced": "Avancé › Obsidian",
+    "review": {
+      "bothSides": "Pages modifiées des deux côtés",
+      "hint": "Ce qui vous attend après que Memora a écrit dans le coffre : des pages modifiées des deux côtés, des fichiers qui n’ont pas pu être écrits et des modifications du plugin.",
+      "none": "rien en attente",
+      "plugin": "Modifications du plugin",
+      "pluginReadFailed": "Impossible de lire les modifications du plugin.",
+      "title": "Relectures du coffre",
+      "waitingMany": "{count} en attente",
+      "waitingOne": "{count} en attente",
+      "working": "Mise à jour des pages du coffre…"
+    },
+    "scope": {
+      "all": "Toutes les sources",
+      "choose": "Choisir des sources…",
+      "countMany": "{count} sources choisies",
+      "countOne": "{count} source choisie",
+      "readFailed": "Impossible de lire les sources du coffre.",
+      "save": "Enregistrer les sources",
+      "saveFailed": "Impossible d’enregistrer. Le choix précédent reste."
+    },
+    "sync": {
+      "failed": "La dernière synchronisation s’est arrêtée. Rien n’a été perdu ; réessayez.",
+      "last": "Synchronisé {when}",
+      "needsVault": "Choisissez le dossier du coffre ci-dessus pour utiliser la synchronisation et les réglages ci-dessous.",
+      "never": "Pas encore synchronisé.",
+      "now": "Synchroniser maintenant",
+      "off": "Désactivée",
+      "on": "Activée",
+      "paused": "En pause",
+      "pausedNote": "En pause : Memora garde tout et ne synchronise pas tant que vous ne la réactivez pas.",
+      "readFailed": "Impossible de lire l’état de la synchronisation.",
+      "reviewMany": "{count} en attente de relecture",
+      "reviewOne": "{count} en attente de relecture",
+      "runFailed": "La synchronisation n'a pas pu démarrer.",
+      "saveFailed": "Impossible de changer la synchronisation. Le choix précédent reste.",
+      "statusFailed": "Impossible de voir la dernière synchronisation."
+    },
+    "vault": {
+      "change": "Changer de dossier…",
+      "choose": "Choisir un dossier…",
+      "none": "Aucun coffre choisi",
+      "pickFailed": "Impossible d’ouvrir le sélecteur de dossier.",
+      "readFailed": "Impossible de lire le dossier du coffre."
+    },
+    "when": {
+      "other": "{date}, {time}",
+      "today": "aujourd’hui, {time}",
+      "yesterday": "hier, {time}"
+    }
+  },
+  "settingsKnowledge": {
+    "autonomy": {
+      "auto": {
+        "description": "Applique et garde Annuler. Ce qui touche à vos modifications ou ce que vous avez épinglé vous attend toujours.",
+        "label": "Automatique"
+      },
+      "off": {
+        "description": "L’IA n’écrit rien en arrière-plan. Les notes trouvent quand même leur place dans l’arbre.",
+        "label": "Désactivée"
+      },
+      "suggest": {
+        "description": "Propose chaque changement et attend votre décision dans la Boîte de réception.",
+        "label": "Suggérer"
+      }
+    },
+    "cap": {
+      "invalid": "Saisissez un montant de 0 à {max}.",
+      "meter": "Dépenses du mois par rapport au plafond",
+      "spent": "{spent} sur {cap} dépensés ce mois-ci",
+      "stateExhausted": "Le plafond est atteint. Le travail dans le cloud attend le mois prochain ou un plafond plus haut.",
+      "statePaused": "Le travail dans le cloud est en pause près du plafond. Reprenez-le depuis Activité ou relevez le plafond."
+    },
+    "groups": {
+      "scheduleIntro": "Vaut pour tout le travail en arrière-plan. Les imports et vos demandes n’attendent jamais."
+    },
+    "intro": "Le Jardinier est le travail en arrière-plan de Memora : il place les notes dans l’arbre, trouve des liens et garde les vues d’ensemble à jour, toujours avec Annuler. Ici, vous décidez jusqu’où il va seul.",
+    "labels": {
+      "doneMany": "{count} descriptions mises à jour",
+      "doneOne": "{count} description mise à jour",
+      "failed": "Les descriptions n’ont pas pu être écrites. Celles déjà prêtes ont été conservées.",
+      "generateMissing": "Générer celles qui manquent",
+      "queued": "En file d’attente pour écrire les descriptions.",
+      "readFailed": "Impossible de voir où en est ce travail.",
+      "rewriteAll": "Tout réécrire…",
+      "rewriteAsk": "Réécrire les descriptions de toutes les connexions en {language} ? Les actuelles seront remplacées.",
+      "rewriteConfirm": "Réécrire",
+      "running": "Écriture des descriptions…",
+      "startFailed": "Impossible de démarrer. Rien n’a été modifié."
+    },
+    "pause": {
+      "action": "Mettre en pause",
+      "default": "En cours",
+      "resume": "Reprendre"
+    },
+    "saving": {
+      "failed": "Enregistrement impossible. La valeur précédente est revenue.",
+      "saved": "Enregistré.",
+      "saving": "Enregistrement…"
+    },
+    "states": {
+      "controlsError": "Impossible de lire les réglages du Jardinier.",
+      "controlsKept": "Rien n’a été modifié : il garde les valeurs qui s’appliquaient déjà."
+    },
+    "treeShape": {
+      "balanced": "Équilibrée",
+      "broad": "Large",
+      "deep": "Profonde"
     }
   },
   "settingsAi": {

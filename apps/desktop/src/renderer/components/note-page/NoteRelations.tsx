@@ -9,6 +9,7 @@ import {
 } from "react";
 import { Check, ChevronDown, ChevronRight, RefreshCw, Sparkles } from "lucide-react";
 import {
+  confidenceBand,
   routesToInbox,
   type NotePageEvidence,
   type NotePageRelation,
@@ -17,6 +18,7 @@ import {
 import type { MessageKey, Translator } from "@app/i18n";
 
 import { cn } from "../../lib/cn";
+import { confidenceKey } from "../../workspace/context-model";
 import { relationTypeView } from "../../lib/relation-stance";
 import { EgoGraph } from "../graph/EgoGraph";
 import { ObjectKindGlyph } from "../glyphs";
@@ -215,6 +217,15 @@ function RelationRow({
   // A suggested relation says so; its confidence is in the card. A row with no state chip (an
   // applied one) says its band, so the list always tells how sure the matcher was (D42).
   const bandKey = stateKey ? null : bandWordKey(relation);
+  // In a panel the row says what the context panel's Connections list says, in the same words: the
+  // Gardener and a confidence word. A suggestion always has a word ("unknown" with no probability);
+  // an applied relation has one only when a decider calibrated a probability.
+  const panelConfidence =
+    embedded &&
+    (relation.state === "suggested" ||
+      (relation.state === "applied" && relation.probability !== null))
+      ? confidenceKey(confidenceBand(relation.probability))
+      : null;
   // In a panel a suggestion is drawn as one: a dashed outline, and its two answers on the row.
   const suggestion = embedded && relation.state === "suggested";
   const reviewing = review?.status === "pending";
@@ -289,18 +300,23 @@ function RelationRow({
                 )}
               </span>
             ) : null}
-            {bandKey ? (
+            {panelConfidence ? (
               <span>
-                {interpolateNodes(
-                  t(embedded ? "explore.note.gardenerConfidence" : "notePage.card.confidence"),
-                  {
-                    word: (
-                      <strong className="font-semibold text-secondary-foreground">
-                        {embedded ? t(bandKey).toLocaleLowerCase(t.locale) : t(bandKey)}
-                      </strong>
-                    )
-                  }
-                )}
+                {t("contextPanel.connections.meta.gardener")} ·{" "}
+                <strong className="font-semibold text-secondary-foreground">
+                  {t(panelConfidence)}
+                </strong>
+              </span>
+            ) : null}
+            {!embedded && bandKey ? (
+              <span>
+                {interpolateNodes(t("notePage.card.confidence"), {
+                  word: (
+                    <strong className="font-semibold text-secondary-foreground">
+                      {t(bandKey)}
+                    </strong>
+                  )
+                })}
               </span>
             ) : null}
             {relation.decidedBy && !embedded ? (

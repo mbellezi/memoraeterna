@@ -5,7 +5,7 @@
 // is a data attribute or a role the surface emits, never its copy.
 import { expect, type ElectronApplication, type Locator, type Page } from "@playwright/test";
 
-import { captureStep, type MemoraSession } from "./app.js";
+import { captureStep, stepFailures, type MemoraSession } from "./app.js";
 import { readGestures } from "./gestures.js";
 import { pressShortcut } from "./shortcuts.js";
 
@@ -144,11 +144,9 @@ export class StepLog {
       .catch(() => undefined);
     await this.session.page.bringToFront().catch(() => undefined);
     const record = await captureStep(this.session, this.spec, this.index, name);
-    for (const theme of ["light", "dark"] as const)
-      for (const failure of record.contrast[theme].failures)
-        this.failures.push(
-          `${name} ${theme}: "${failure.text}" ${failure.ratio}:1 < ${failure.required}:1`
-        );
+    // Each failure of the step: a scan drawn in the other theme (a "light" scan of a page that stayed
+    // dark proves nothing about light) and every contrast finding, per theme.
+    this.failures.push(...stepFailures(record));
   }
 
   note(text: string): void {

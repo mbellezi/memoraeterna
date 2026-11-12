@@ -103,4 +103,28 @@ describe("the Note page in a panel (design record 6.3)", () => {
     // The graph belongs to the context panel: no List and Graph tabs here.
     expect(html).not.toContain('role="tablist"');
   });
+
+  it("says a connection's confidence in the context panel's words (one vocabulary)", () => {
+    const other = notePage().relations.items[0]!.other;
+    const row = (n: number, overrides: Parameters<typeof relationItem>[0]) =>
+      relationItem({ id: fixtureId(n), other: { ...other, id: fixtureId(n + 100) }, ...overrides });
+    const meta = (html: string) => html.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ");
+    const render1 = (item: ReturnType<typeof relationItem>) =>
+      meta(render({ status: "ready", page: notePage({ relations: { total: 1, items: [item] } }) }));
+    // An applied relation with a calibrated probability: "Gardener · high confidence".
+    const high = render1(row(70, { band: "apply", calibration: "frozen", probability: 0.9 }));
+    expect(high).toContain("Gardener · high confidence");
+    expect(high).not.toContain("strong");
+    // An applied relation nobody calibrated says no word at all.
+    expect(
+      render1(row(71, { band: "apply", calibration: "uncalibrated", probability: null }))
+    ).not.toMatch(/confidence/);
+    // A suggestion always has a word: "unknown" with no probability.
+    expect(render1(row(72, { state: "suggested", band: "suggest", probability: null }))).toContain(
+      "Gardener · unknown confidence"
+    );
+    expect(render1(row(73, { state: "suggested", band: "suggest", probability: 0.7 }))).toContain(
+      "Gardener · medium confidence"
+    );
+  });
 });

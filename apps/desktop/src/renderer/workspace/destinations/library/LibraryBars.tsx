@@ -181,6 +181,9 @@ export function FilterField({
 }) {
   return (
     <div
+      // The whole field is the inactive control: its dimmed search glyph and "/" hint are parts of it,
+      // exempt from the contrast bars like the input (WCAG 1.4.3 and 1.4.11), and the mark says so.
+      {...(disabled ? { "data-disabled": "" } : {})}
       className={cn(
         "flex h-8 w-72 max-w-full items-center gap-2 rounded-lg border border-border-strong bg-surface px-2.5",
         "focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-accent",

@@ -21,9 +21,10 @@ import {
   journeyEnvironment,
   journeysWriterConfigId,
   secondSourceKey,
-  settleTransitions,
-  setTheme
+  setTheme,
+  stepFailures
 } from "./app.js";
+import { settleInPage } from "./contrast.js";
 import { repositoryRoot } from "./profile.js";
 
 describe("journeyEnvironment", () => {
@@ -159,8 +160,7 @@ describe("setTheme", () => {
         emulateMedia: async (options: { colorScheme: string }) =>
           calls.push(`emulate ${options.colorScheme}`),
         waitForFunction: async (_check: unknown, dark: boolean) => calls.push(`wait dark=${dark}`),
-        evaluate: async (run: unknown) =>
-          calls.push(run === settleTransitions ? "settle" : "frames")
+        evaluate: async (run: unknown) => calls.push(run === settleInPage ? "settle" : "other")
       }
     };
     return { calls, session };
@@ -169,48 +169,45 @@ describe("setTheme", () => {
   it("emulates the colour scheme on the page, because the native theme alone does not reach a window shown inactive", async () => {
     const { calls, session } = fakeSession();
     await setTheme(session as never, "dark");
-    expect(calls).toEqual([
-      "native dark",
-      "emulate dark",
-      "wait dark=true",
-      "frames",
-      "settle",
-      "frames"
-    ]);
+    expect(calls).toEqual(["native dark", "emulate dark", "wait dark=true", "settle"]);
     calls.length = 0;
     await setTheme(session as never, "light");
     expect(calls.slice(0, 3)).toEqual(["native light", "emulate light", "wait dark=false"]);
   });
 });
 
-describe("settleTransitions", () => {
-  class FakeTransition {
-    constructor(readonly finished: Promise<unknown>) {}
-  }
-  const withDocument = async (animations: unknown[], check: () => Promise<void>) => {
-    const globals = globalThis as Record<string, unknown>;
-    const before = { document: globals.document, CSSTransition: globals.CSSTransition };
-    globals.document = { getAnimations: () => animations };
-    globals.CSSTransition = FakeTransition;
-    try {
-      await check();
-    } finally {
-      globals.document = before.document;
-      globals.CSSTransition = before.CSSTransition;
-    }
-  };
+describe("stepFailures", () => {
+  const scan = (drawnTheme: "light" | "dark" | undefined, failures: unknown[] = []) => ({
+    checked: 3,
+    failures,
+    unverifiable: [],
+    drawnTheme
+  });
 
-  it("waits for the transitions, survives a cancelled one, and never waits for an infinite animation", async () => {
-    let ended = 0;
-    const slow = new FakeTransition(
-      new Promise((done) => setTimeout(() => done((ended += 1)), 20))
-    );
-    const cancelled = new FakeTransition(Promise.reject(new Error("AbortError")));
-    const infinite = { finished: new Promise(() => undefined) };
-    await withDocument([slow, cancelled, infinite], async () => {
-      await settleTransitions();
-      expect(ended).toBe(1);
-    });
+  it("fails a scan labelled light that was drawn dark, and passes scans drawn as asked", () => {
+    expect(
+      stepFailures({
+        step: "home",
+        contrast: { light: scan("light"), dark: scan("dark") }
+      } as never)
+    ).toEqual([]);
+    const failures = stepFailures({
+      step: "home",
+      contrast: { light: scan("dark"), dark: scan("dark") }
+    } as never);
+    expect(failures).toHaveLength(1);
+    expect(failures[0]).toMatch(/^home light: the page was drawn in dark, not light/u);
+  });
+
+  it("names every contrast finding with its step, theme and ratio", () => {
+    const failures = stepFailures({
+      step: "explore",
+      contrast: {
+        light: scan("light"),
+        dark: scan("dark", [{ text: "Fontes", ratio: 1.2, required: 3 }])
+      }
+    } as never);
+    expect(failures).toEqual(['explore dark: "Fontes" 1.2:1 < 3:1']);
   });
 });
 

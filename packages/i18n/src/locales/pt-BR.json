@@ -190,7 +190,7 @@
         "only_ac_on_battery": "O trabalho em segundo plano espera o computador ser ligado na tomada."
       },
       "no_model": {
-        "no_route": "Nenhum modelo de {routeClass} está configurado. Escolha um em Configurações para continuar.",
+        "no_route": "Nenhum modelo de {routeClass} está configurado. Escolha um em Ajustes para continuar.",
         "model_missing": "Um modelo necessário não está instalado. Instale-o em Modelos locais para continuar.",
         "no_decider": "Nenhum modelo de ranqueamento está pronto ainda. As notas difíceis de colocar esperam por um.",
         "signin_required": "Seu provedor de IA precisa que você entre novamente. Faça login para continuar.",
@@ -237,8 +237,8 @@
       },
       "actions": {
         "resume": "Retomar",
-        "open_controls": "Alterar configurações",
-        "open_ai_settings": "Abrir configurações de IA",
+        "open_controls": "Alterar ajustes",
+        "open_ai_settings": "Abrir Ajustes › IA",
         "open_local_models": "Abrir modelos locais",
         "sign_in": "Entrar",
         "continue_budget": "Continuar",
@@ -454,7 +454,7 @@
           "deleted": "“{path}” foi excluído no Obsidian, mas alterado no app.",
           "projection": "“{path}” foi gerado pelo app e editado no cofre."
         },
-        "where": "Resolva em Configurações, em Conexões."
+        "where": "Resolva em Ajustes › Conexões."
       },
       "budget": {
         "title": {
@@ -463,8 +463,8 @@
         },
         "body": "{spent} de {cap} usados neste mês.",
         "hint": {
-          "money80": "Continue para deixar o trabalho em segundo plano rodar até o limite ou aumente o limite em Configurações.",
-          "money100": "O trabalho em segundo plano volta no próximo mês ou quando você aumentar o limite em Configurações."
+          "money80": "Continue para deixar o trabalho em segundo plano rodar até o limite ou aumente o limite em Ajustes.",
+          "money100": "O trabalho em segundo plano volta no próximo mês ou quando você aumentar o limite em Ajustes."
         }
       },
       "backlog": {
@@ -479,7 +479,7 @@
       "empty": "Selecione um item para ver do que se trata.",
       "involves": "Envolve",
       "open": "Abrir “{name}”",
-      "openSettings": "Abrir Conexões nas Configurações",
+      "openSettings": "Abrir Conexões em Ajustes",
       "unnamed": "Sem título",
       "working": "Trabalhando...",
       "connection": "Conexão: {type}",
@@ -503,7 +503,7 @@
     "keys": {
       "barNote": "Atalhos de uma tecla não funcionam dentro de campos de texto.",
       "short": {
-        "apply": "aceitar",
+        "apply": "aplicar",
         "dismiss": "dispensar",
         "edit": "editar",
         "help": "atalhos",
@@ -683,14 +683,14 @@
   },
   "app": {
     "title": "Memora Eterna",
-    "tagline": "Memoria local-first para fontes, notas e evidencias.",
+    "tagline": "Memória local-first para fontes, notas e evidências.",
     "tray": {
       "open": "Abrir Memora Eterna",
       "quit": "Fechar Memora Eterna"
     },
     "menu": {
       "about": "Sobre o {app}",
-      "settings": "Configurações…",
+      "settings": "Ajustes…",
       "services": "Serviços",
       "hide": "Ocultar o {app}",
       "hideOthers": "Ocultar Outros",
@@ -752,7 +752,7 @@
       "review": "Revisar notas",
       "jobs": "Tarefas",
       "knowledgeGraph": "Grafo do Conhecimento",
-      "settings": "Configuracoes"
+      "settings": "Ajustes"
     },
     "actions": {
       "expandNavigation": "Expandir menu principal",
@@ -772,9 +772,9 @@
       "saved": "Salvo."
     },
     "toasts": {
-      "settingsSaved": "Configuracoes salvas.",
-      "settingsError": "Nao foi possivel salvar as configuracoes.",
-      "dismiss": "Dispensar notificacao"
+      "settingsSaved": "Ajustes salvos.",
+      "settingsError": "Não foi possível salvar os ajustes.",
+      "dismiss": "Dispensar notificação"
     }
   },
   "libraryTable": {
@@ -1020,13 +1020,13 @@
     },
     "startup": {
       "title": "Iniciando o Memora Eterna",
-      "failedTitle": "O banco local nao iniciou"
+      "failedTitle": "O banco local não iniciou"
     },
     "status": {
       "starting": "Iniciando o banco local...",
       "migrating": "Preparando o banco local...",
       "ready": "Banco local pronto.",
-      "failed": "Nao foi possivel iniciar o banco local.",
+      "failed": "Não foi possível iniciar o banco local.",
       "stopping": "Parando o banco local...",
       "stopped": "Banco local parado."
     }
@@ -1108,16 +1108,16 @@
       "urlFetchFailed": "Não foi possível carregar a página. Confira o endereço ou cole o conteúdo manualmente."
     },
     "ai": {
-      "noCompatibleModel": "Nenhum modelo compativel esta configurado.",
+      "noCompatibleModel": "Nenhum modelo compatível está configurado.",
       "unsupportedTask": "O modelo selecionado não executa esta tarefa.",
       "providerUnavailable": "O provedor de IA não está respondendo. A tarefa será tentada de novo em breve.",
       "secureStorageUnavailable": "O armazenamento seguro de credenciais não está disponível.",
-      "missingCredential": "A credencial do provedor esta ausente.",
+      "missingCredential": "A credencial do provedor está ausente.",
       "connectionFailed": "O teste de conexão com o modelo falhou.",
-      "oauthLoginFailed": "A autenticacao com o ChatGPT falhou.",
+      "oauthLoginFailed": "A autenticação com o ChatGPT falhou.",
       "oauthStateMismatch": "Não foi possível verificar o retorno do OAuth.",
       "oauthCallbackUnavailable": "Não foi possível iniciar o retorno OAuth local.",
-      "oauthTimedOut": "A autenticacao com o ChatGPT expirou.",
+      "oauthTimedOut": "A autenticação com o ChatGPT expirou.",
       "oauthNotConnected": "Entre com o ChatGPT antes de salvar este modelo.",
       "contextWindowLimit": "O contexto configurado excede o limite descoberto do modelo.",
       "oauthRefreshFailed": "A sessão do ChatGPT expirou. Entre novamente.",
@@ -1134,15 +1134,15 @@
       "insufficientDisk": "Não há espaço livre suficiente para o modelo.",
       "downloadHttp": "O download do modelo falhou.",
       "sizeMismatch": "Um arquivo do modelo baixado tem tamanho incorreto.",
-      "checksumMismatch": "Um arquivo do modelo falhou na verificacao de checksum.",
-      "unsafePath": "O modelo contem um caminho de arquivo inseguro.",
+      "checksumMismatch": "Um arquivo do modelo falhou na verificação de checksum.",
+      "unsafePath": "O modelo contém um caminho de arquivo inseguro.",
       "invalidRuntimeResponse": "O runtime local retornou uma resposta inválida.",
       "runtimeFailed": "O runtime do modelo local falhou.",
       "runtimeUnavailable": "O runtime do modelo local não está instalado.",
-      "modelBusy": "O modelo esta em uso.",
-      "profileInUse": "Substitua este modelo nos perfis afetados antes de remove-lo.",
+      "modelBusy": "O modelo está em uso.",
+      "profileInUse": "Substitua este modelo nos perfis afetados antes de removê-lo.",
       "canceled": "O download do modelo foi cancelado.",
-      "invalidGguf": "Escolha um arquivo de modelo GGUF valido.",
+      "invalidGguf": "Escolha um arquivo de modelo GGUF válido.",
       "rankerInvalid": "Este modelo não é um reranker compatível.",
       "rankerSmokeFailed": "O reranker falhou no teste de validação.",
       "rankerNotValidated": "Execute o teste de validação deste reranker antes de usá-lo.",
@@ -1381,7 +1381,7 @@
     "continue": "Continuar",
     "languages": {
       "title": "Quais idiomas você usa?",
-      "description": "Escolha o idioma da interface e o idioma em que seus tópicos e notas são escritos. Você pode mudar os dois depois, em Configurações.",
+      "description": "Escolha o idioma da interface e o idioma em que seus tópicos e notas são escritos. Você pode mudar os dois depois, em Ajustes.",
       "interface": "Idioma da interface",
       "content": "Idioma do conteúdo",
       "contentHint": "Os nomes e as visões gerais dos tópicos são escritos neste idioma, qualquer que seja o idioma da fonte.",
@@ -1390,7 +1390,7 @@
     },
     "mode": {
       "title": "Como a IA deve trabalhar?",
-      "description": "Escolha onde o trabalho acontece. Você pode mudar isso depois, em Configurações.",
+      "description": "Escolha onde o trabalho acontece. Você pode mudar isso depois, em Ajustes.",
       "card": {
         "title": "Este computador",
         "loading": "Lendo este computador…",
@@ -1459,7 +1459,7 @@
         "eta": "faltam {minutes} min"
       },
       "rankerWaiting": "As relações esperam o ranqueador. A busca e a leitura já funcionam.",
-      "rankerFailed": "Não foi possível instalar o ranqueador, então as relações esperam por ele. Você pode tentar de novo em Modelos, nas Configurações.",
+      "rankerFailed": "Não foi possível instalar o ranqueador, então as relações esperam por ele. Você pode tentar de novo em Ajustes › Modelos.",
       "tests": {
         "title": "Verificações",
         "waiting": "Aguardando",
@@ -1482,8 +1482,8 @@
         "localUnavailable": "O modo Local exige um Mac com Apple silicon."
       },
       "summaryOk": "Tudo funciona.",
-      "summaryProblems": "{count} verificações precisam de atenção. Você pode corrigi-las depois, em Configurações.",
-      "summaryProblemsOne": "1 verificação precisa de atenção. Você pode corrigi-la depois, em Configurações.",
+      "summaryProblems": "{count} verificações precisam de atenção. Você pode corrigi-las depois, em Ajustes.",
+      "summaryProblemsOne": "1 verificação precisa de atenção. Você pode corrigi-la depois, em Ajustes.",
       "retry": "Tentar de novo",
       "continueAnyway": "Continuar sem isso"
     },
@@ -1726,15 +1726,15 @@
   },
   "processing": {
     "invalidPlan": "Confira as opções de processamento antes de continuar.",
-    "title": "Escolha ate onde processar",
-    "aiOptional": "IA e opcional",
-    "description": "Importe primeiro e gere apenas os artefatos de que precisa. As dependencias sao incluidas automaticamente.",
+    "title": "Escolha até onde processar",
+    "aiOptional": "IA é opcional",
+    "description": "Importe primeiro e gere apenas os artefatos de que precisa. As dependências são incluídas automaticamente.",
     "customize": "Personalizar etapas",
-    "includedDependency": "Incluida porque outra etapa precisa dela",
+    "includedDependency": "Incluída porque outra etapa precisa dela",
     "stageCount": "{count} etapas neste plano",
     "profileNotice": "Usa seu perfil de IA configurado",
-    "noAiNotice": "Nenhuma chamada de IA e necessaria",
-    "writerRouteMissing": "Nenhum modelo de IA está pronto para escrever, então o processamento padrão torna as fontes pesquisáveis. Configure um modelo em Configurações para construir seu segundo cérebro.",
+    "noAiNotice": "Nenhuma chamada de IA é necessária",
+    "writerRouteMissing": "Nenhum modelo de IA está pronto para escrever, então o processamento padrão torna as fontes pesquisáveis. Configure um modelo em Ajustes para construir seu segundo cérebro.",
     "presets": {
       "import_only": {
         "title": "Só guardar",
@@ -1742,11 +1742,11 @@
       },
       "search_ready": {
         "title": "Pesquisável + organizado",
-        "description": "Cria segmentos e embeddings para recuperacao."
+        "description": "Cria segmentos e embeddings para recuperação."
       },
       "summary": {
         "title": "Resumo",
-        "description": "Gera um resumo conciso com evidencias."
+        "description": "Gera um resumo conciso com evidências."
       },
       "full_knowledge": {
         "title": "Segundo cérebro",
@@ -1819,19 +1819,19 @@
     }
   },
   "search": {
-    "placeholder": "Buscar fontes e evidencias",
+    "placeholder": "Buscar fontes e evidências",
     "action": "Buscar",
-    "empty": "Nenhuma evidencia correspondente.",
+    "empty": "Nenhuma evidência correspondente.",
     "scope": "Buscar dentro de",
     "scopeAll": "Biblioteca inteira",
-    "page": "Pagina",
-    "markdownEvidence": "Evidencia no Markdown",
+    "page": "Página",
+    "markdownEvidence": "Evidência no Markdown",
     "kinds": {
       "source": "Fonte",
-      "subitem": "Secao",
-      "atomicNote": "Nota atomica",
+      "subitem": "Seção",
+      "atomicNote": "Nota atômica",
       "entity": "Entidade do grafo",
-      "relation": "Relacao do grafo"
+      "relation": "Relação do grafo"
     },
     "resultsCount": "{count} resultados",
     "graphResults": "Grafo de conhecimento",
@@ -1844,7 +1844,7 @@
     "error": "Nao foi possivel carregar a biblioteca.",
     "empty": "Ainda nao ha fontes na biblioteca.",
     "container": "Container",
-    "containerHint": "Este container somente com metadados esta pronto para receber fontes-filhas.",
+    "containerHint": "Esta coleção somente com metadados está pronta para receber fontes-filhas.",
     "selectionCount": "{count} fontes selecionadas",
     "childCount": "{count} itens diretos",
     "parentSource": "Pertence a {title}",
@@ -2614,9 +2614,9 @@
     "title": "Backup",
     "description": "Crie um dump do PostgreSQL, comprove que ele pode ser restaurado com uma restauração de teste e copie os arquivos gerenciados configurados para uma pasta datada.",
     "action": "Criar backup",
-    "completed": "Backup concluido:",
+    "completed": "Backup concluído:",
     "verified": "Verificado por uma restauração de teste",
-    "failed": "Nao foi possivel criar o backup."
+    "failed": "Não foi possível criar o backup."
   },
   "obsidianSync": {
     "title": "Sincronizacao com Obsidian",
@@ -3186,7 +3186,7 @@
       "building": "Organizando sua biblioteca em tópicos ({placed} de {items} colocados).",
       "buildingStart": "Organizando sua biblioteca em tópicos...",
       "blocked": {
-        "no_embedding_route": "Os tópicos esperam um modelo de embeddings. Escolha um em Configurações.",
+        "no_embedding_route": "Os tópicos esperam um modelo de embeddings. Escolha um em Ajustes.",
         "space_changed": "O modelo de embeddings mudou. Os tópicos continuam quando os embeddings das suas notas forem refeitos.",
         "waiting_for_embeddings": "As notas ainda estão sendo preparadas. Os tópicos acompanham conforme elas terminam.",
         "no_decider": "Ainda não há um modelo de reranking pronto: as notas difíceis de colocar iniciam novos tópicos e são colocadas de novo quando houver um."
@@ -4144,7 +4144,7 @@
       "citedIn": "Citada em"
     },
     "evidence": {
-      "title": "Evidências",
+      "title": "Evidência",
       "hint": "o trecho e o intervalo exatos que sustentam a nota",
       "passage": "trecho {number}",
       "page": "p. {page}",
@@ -4176,34 +4176,37 @@
       "earlierHint": "Relações com uma nota que uma versão mais nova substituiu, ou cuja fonte não existe mais. Ficam fora do grafo e das contagens."
     },
     "graph": {
-      "tabs": "Visualização das relações",
+      "tabs": "Visualização das conexões",
       "list": "Lista",
       "graph": "Grafo",
-      "unavailable": "O grafo não pode ser desenhado neste computador; as relações aparecem em lista.",
-      "loading": "Carregando o grafo de relações…",
-      "error": "Não foi possível carregar o grafo de relações.",
-      "rereadError": "Não foi possível atualizar o grafo; ele ainda mostra as últimas relações lidas.",
+      "unavailable": "O grafo não pode ser desenhado neste computador; as conexões aparecem em lista.",
+      "loading": "Carregando o grafo de conexões…",
+      "error": "Não foi possível carregar o grafo de conexões.",
+      "rereadError": "Não foi possível atualizar o grafo; ele ainda mostra as últimas conexões lidas.",
       "contextLost": "O grafo parou de ser desenhado.",
-      "empty": "Esta nota ainda não tem relações para desenhar. Elas aparecem aqui quando outras notas forem ligadas a ela.",
-      "depthTwo": "Incluir as relações das notas relacionadas",
-      "counts": "{notes} notas · {relations} relações",
-      "showList": "Mostrar como lista",
-      "label": "Grafo de relações: {notes} notas e {relations} relações. Arraste o fundo para mover; a Lista mostra em texto as relações desta nota.",
-      "keyboardHint": "Teclado: use Tab até o grafo; as setas passam entre notas e relações, Enter abre uma nota e Esc fecha o cartão.",
+      "empty": "Esta nota ainda não tem conexões para desenhar. Elas aparecem aqui quando outras notas forem ligadas a ela.",
+      "depthTwo": "Incluir as conexões das notas ligadas",
+      "showList": "Ver como lista",
+      "label": "Grafo de conexões: {notes} notas e {relations} conexões. Arraste o fundo para mover; a Lista mostra em texto as conexões desta nota.",
+      "keyboardHint": "Teclado: use Tab até o grafo; as setas passam entre notas e conexões, Enter abre uma nota e Esc fecha o cartão.",
       "legend": "Legenda",
-      "legendKept": "Linha contínua: uma relação que você manteve ou que foi aplicada",
+      "legendKept": "Linha contínua: uma conexão que você manteve ou que foi aplicada",
       "legendSuggested": "Linha tracejada: uma sugestão que ninguém manteve ainda",
-      "legendArrow": "Seta: a relação vai de uma nota para a outra",
+      "legendArrow": "Seta: a conexão vai de uma nota para a outra",
       "legendFocus": "Nó maior: esta nota",
-      "truncated": "Mostrando {shown} de {total} notas relacionadas. A Lista tem todas.",
-      "omitted": "Relações entre estas notas que não foram desenhadas: {count}.",
+      "truncated": "Mostrando {shown} de {total} notas ligadas. A Lista tem todas.",
+      "omitted": "Conexões entre estas notas que não foram desenhadas: {count}.",
       "thisNote": "Esta nota: {title}",
       "noteCard": "Nota: {title}",
       "thisNoteHint": "Você está nesta nota.",
       "openHint": "Clique, ou pressione Enter, para abrir esta nota.",
-      "stateSuggested": "Sugestão: ninguém manteve esta relação ainda.",
-      "stateKept": "Você manteve esta relação.",
-      "stateApplied": "Esta relação foi aplicada."
+      "stateSuggested": "Sugestão: ninguém manteve esta conexão ainda.",
+      "stateKept": "Você manteve esta conexão.",
+      "stateApplied": "Esta conexão foi aplicada.",
+      "notesOne": "{count} nota",
+      "notesMany": "{count} notas",
+      "connectionsOne": "{count} conexão",
+      "connectionsMany": "{count} conexões"
     },
     "linkedStance": "ligadas: {type}",
     "stance": {
@@ -4297,10 +4300,10 @@
       "relationMatched": "Conexões verificadas para “{note}”",
       "relationSuggested": "{n} conexões sugeridas para “{source}”",
       "overview": {
-        "write": "Visão geral do tema reescrita",
-        "patch": "Visão geral do tema ampliada",
-        "rewrite": "Reescrita da visão geral do tema",
-        "undo": "Visão geral do tema restaurada"
+        "write": "Visão geral do tópico reescrita",
+        "patch": "Visão geral do tópico ampliada",
+        "rewrite": "Reescrita da visão geral do tópico",
+        "undo": "Visão geral do tópico restaurada"
       }
     },
     "blockers": {
@@ -4469,7 +4472,11 @@
         "heading": "Perguntas anteriores",
         "label": "Abrir uma pergunta anterior"
       },
-      "empty": "Nada perguntado sobre isto ainda. Cada pergunta fica em Biblioteca › Perguntas, com a resposta.",
+      "empty": {
+        "library": "Nenhuma pergunta sobre a biblioteca ainda. Escreva acima; cada pergunta fica em Biblioteca › Perguntas, com a resposta.",
+        "source": "Nenhuma pergunta sobre esta fonte ainda. Escreva acima; cada pergunta fica em Biblioteca › Perguntas, com a resposta.",
+        "topic": "Nenhuma pergunta sobre este tópico ainda. Escreva acima; cada pergunta fica em Biblioteca › Perguntas, com a resposta."
+      },
       "errors": {
         "earlier": "Não foi possível carregar as perguntas anteriores.",
         "earlierKept": "Você ainda pode perguntar.",
@@ -4752,7 +4759,6 @@
       "error": "Não foi possível abrir esta nota.",
       "errorKept": "O resto do Explorar continua aberto e suas notas não foram alteradas.",
       "explainedLocally": "explicação escrita pela IA local",
-      "gardenerConfidence": "Jardineiro · confiança {word}",
       "gardenerSuggestion": "sugestão do Jardineiro · decida quando quiser",
       "goneBody": "Ela pode ter sido juntada a outra nota ou removida. Mais nada mudou.",
       "goneHeadline": "Esta nota não está mais na sua biblioteca.",
@@ -4882,7 +4888,6 @@
       "headline": "Ainda sem menções diretas."
     },
     "error": {
-      "compact": "Não foi possível abrir.",
       "kept": "Suas notas e fontes continuam como estavam.",
       "message": "Não foi possível abrir esta entidade."
     },
@@ -4909,8 +4914,12 @@
       "headline": "Esta entidade não está mais na biblioteca."
     },
     "sources": {
+      "countPartial": "{shown} de {total}",
       "heading": "Fontes",
-      "partial": "Fontes das menções já carregadas. Mostre mais menções para ver as demais."
+      "moreLoading": "Carregando mais fontes",
+      "moreMany": "Mostrar as fontes de mais {count} notas",
+      "moreOne": "Mostrar as fontes de mais {count} nota",
+      "partial": "Estas são as fontes das notas já mostradas."
     },
     "topics": {
       "heading": "Tópicos",
@@ -4931,6 +4940,7 @@
     },
     "foot": {
       "all": "todos os resultados",
+      "ask": "perguntar",
       "beside": "abrir ao lado",
       "choose": "escolher",
       "here": "abrir neste painel",
@@ -4977,6 +4987,10 @@
       "none": "sem prefixo: tudo",
       "topics": "tópicos",
       "topicsLabel": "Só tópicos"
+    },
+    "preview": {
+      "ask": "Uma pergunta abre um painel que responde com as suas fontes.",
+      "none": "Escolha um resultado para vê-lo aqui."
     },
     "results": {
       "compactLabel": "Resultados para “{query}”",
@@ -5036,9 +5050,6 @@
     },
     "chip": {
       "labelPlain": "Citação {number}"
-    },
-    "compact": {
-      "error": "Não foi possível abrir."
     },
     "empty": {
       "add": "Adicionar uma fonte",
@@ -5123,7 +5134,7 @@
       "readFromOne": "de {count} fonte",
       "readNotCited": "Lidas, não citadas",
       "readNotCitedReason": "não usado na resposta",
-      "readNotCitedSibling": "Outro trecho da fonte {number}",
+      "readNotCitedSibling": "Outro trecho da mesma fonte da citação {number}",
       "readPassagesMany": "{count} trechos lidos",
       "readPassagesOne": "{count} trecho lido",
       "reading": "lendo…",
@@ -5144,7 +5155,7 @@
   },
   "preview": {
     "card": {
-      "empty": "Ainda sem resumo. Abra para ler tudo.",
+      "empty": "Ainda sem resumo. Abra ao lado para ler tudo.",
       "error": "Não foi possível ler a prévia.",
       "errorKept": "O link continua funcionando; nada foi alterado.",
       "goTo": "Vai para",
@@ -5723,7 +5734,7 @@
     "health": {
       "attention": "precisa de atenção",
       "good": "equilibrado",
-      "violation": "acima do limite"
+      "violation": "problema na estrutura"
     },
     "inspector": {
       "next": "Próximo passo",
@@ -5782,8 +5793,8 @@
       "zoomOut": "Afastar"
     },
     "depth": {
-      "help": "Qual nível de subtópicos dá a cor aos pontos",
-      "label": "Cor por subtópico de",
+      "help": "Qual nível de subtópicos agrupa os pontos e dá a cor a cada grupo",
+      "label": "Agrupar por",
       "one": "1º nível",
       "three": "3º nível",
       "two": "2º nível"
@@ -5844,6 +5855,7 @@
     "caption": "As mesmas conexões do grafo, uma linha por conexão",
     "count": "{count} conexões",
     "countOne": "1 conexão",
+    "errorMessage": "Não foi possível carregar as conexões deste ramo.",
     "from": "De",
     "groupBy": "Agrupar por",
     "groupByHelp": "Qual nível de subtópicos agrupa os tópicos da lista",
@@ -6045,6 +6057,175 @@
       "summaryMinimumWordCount": "mínimo palavras resumo itens curtos pular resumos contagem limiar fontes pequenas economizar chamadas zero desligar menor texto",
       "themeMode": "tema escuro claro noite modo aparência cores esquema sistema visual",
       "uploadCopies": "cópias enviados guardar originais arquivos cópia pasta importações segundo backup dos envios salvar"
+    }
+  },
+  "settingsIntegrations": {
+    "books": {
+      "auto": "Automático: Open Library, depois Google Books",
+      "googleBooks": "Só Google Books",
+      "keyConfirm": "Salvar",
+      "keyFailed": "Não foi possível guardar a chave com segurança. Tente de novo.",
+      "keyNone": "Nenhuma chave",
+      "keyReplace": "Trocar chave…",
+      "keySave": "Salvar chave…",
+      "keySaved": "Chave guardada, criptografada neste Mac",
+      "off": "Desligado",
+      "openLibrary": "Só Open Library",
+      "saveFailed": "Não foi possível mudar. A escolha anterior continua."
+    },
+    "gateway": {
+      "address": "Endereço",
+      "clientType": "Tipo de app",
+      "clients": "Quem está pareado",
+      "copied": "Copiado.",
+      "copy": "Copiar",
+      "copyFailed": "Não foi possível copiar. Selecione o texto e copie à mão.",
+      "createPairing": "Criar pareamento",
+      "displayName": "Nome do app (opcional)",
+      "kinds": {
+        "chromeExtension": "Extensão do Chrome",
+        "obsidianPlugin": "Plugin do Obsidian"
+      },
+      "localOnly": "Só responde a apps pareados, e só neste Mac.",
+      "metaMany": "{count} apps · conexão {state}",
+      "metaNone": "Nenhum app · conexão {state}",
+      "metaOne": "{count} app · conexão {state}",
+      "noClients": "Nenhum app pareado ainda. Pareie a extensão do Chrome ou o plugin do Obsidian.",
+      "pair": "Parear um app…",
+      "pairFailed": "Não foi possível criar o pareamento. Nada foi guardado.",
+      "pairNeedsReady": "Para parear, a conexão local precisa estar pronta.",
+      "pairRestart": "Para parear, a conexão local precisa estar pronta. Ela liga quando o Memora abre; se continuar parada, feche o Memora e abra de novo.",
+      "pairedSince": "Pareado {since}",
+      "readFailed": "Não foi possível ler a conexão local.",
+      "revoke": "Revogar",
+      "revokeAsk": "Revogar o acesso de {name}? Ele precisará ser pareado de novo.",
+      "revokeFailed": "Não foi possível revogar. O acesso continua como estava.",
+      "states": {
+        "failed": "com falha",
+        "ready": "pronta",
+        "starting": "iniciando",
+        "stopped": "parada"
+      },
+      "statusLine": "Conexão local {state}.",
+      "today": "hoje",
+      "tokenDone": "Já copiei",
+      "tokenTitle": "Código de pareamento",
+      "tokenWarning": "Copie agora: ele aparece só desta vez e não fica guardado aqui."
+    },
+    "layout": {
+      "needsSync": "Para aplicar, a sincronização com o Obsidian precisa estar ligada.",
+      "readFailed": "Não foi possível ler o estado do cofre.",
+      "review": "A mudança está preparada. Confira os arquivos, feche os editores e aplique."
+    },
+    "moreInAdvanced": "A pasta do Memora no cofre e o idioma das pastas ficam em",
+    "openAdvanced": "Avançado › Obsidian",
+    "review": {
+      "bothSides": "Páginas editadas dos dois lados",
+      "hint": "O que espera por você depois que o Memora escreve no cofre: páginas editadas dos dois lados, arquivos que não puderam ser gravados e edições do plugin.",
+      "none": "nada esperando",
+      "plugin": "Edições do plugin",
+      "pluginReadFailed": "Não foi possível ler as edições do plugin.",
+      "title": "Revisões no cofre",
+      "waitingMany": "{count} esperando",
+      "waitingOne": "{count} esperando",
+      "working": "Atualizando as páginas do cofre…"
+    },
+    "scope": {
+      "all": "Todas as fontes",
+      "choose": "Escolher fontes…",
+      "countMany": "{count} fontes escolhidas",
+      "countOne": "{count} fonte escolhida",
+      "readFailed": "Não foi possível ler as fontes do cofre.",
+      "save": "Salvar fontes",
+      "saveFailed": "Não foi possível salvar. A escolha anterior continua."
+    },
+    "sync": {
+      "failed": "A última sincronização parou. Nada foi perdido; tente de novo.",
+      "last": "Sincronizado {when}",
+      "needsVault": "Escolha a pasta do cofre acima para usar a sincronização e os ajustes abaixo.",
+      "never": "Ainda não sincronizou.",
+      "now": "Sincronizar agora",
+      "off": "Desligada",
+      "on": "Ligada",
+      "paused": "Pausada",
+      "pausedNote": "Pausada: o Memora guarda tudo e não sincroniza até você ligar de novo.",
+      "readFailed": "Não foi possível ler o estado da sincronização.",
+      "reviewMany": "{count} esperando revisão",
+      "reviewOne": "{count} esperando revisão",
+      "runFailed": "Não foi possível iniciar a sincronização.",
+      "saveFailed": "Não foi possível mudar a sincronização. A escolha anterior continua.",
+      "statusFailed": "Não foi possível ver a última sincronização."
+    },
+    "vault": {
+      "change": "Trocar pasta…",
+      "choose": "Escolher pasta…",
+      "none": "Nenhum cofre escolhido",
+      "pickFailed": "Não foi possível abrir o seletor de pastas.",
+      "readFailed": "Não foi possível ler a pasta do cofre."
+    },
+    "when": {
+      "other": "{date}, {time}",
+      "today": "hoje, {time}",
+      "yesterday": "ontem, {time}"
+    }
+  },
+  "settingsKnowledge": {
+    "autonomy": {
+      "auto": {
+        "description": "Aplica e guarda Desfazer. O que toca suas edições ou o que você fixou sempre espera você.",
+        "label": "Automática"
+      },
+      "off": {
+        "description": "Nada é escrito por IA em segundo plano. As notas ainda ganham lugar na árvore.",
+        "label": "Desligada"
+      },
+      "suggest": {
+        "description": "Propõe cada mudança e espera você decidir na Caixa de entrada.",
+        "label": "Sugerir"
+      }
+    },
+    "cap": {
+      "invalid": "Digite um valor de 0 a {max}.",
+      "meter": "Gasto do mês em relação ao limite",
+      "spent": "{spent} de {cap} gastos neste mês",
+      "stateExhausted": "O limite foi atingido. O trabalho na nuvem espera o próximo mês ou um limite maior.",
+      "statePaused": "O trabalho na nuvem está pausado perto do limite. Continue pela Atividade ou aumente o limite."
+    },
+    "groups": {
+      "scheduleIntro": "Vale para todo o trabalho em segundo plano. Importações e seus pedidos nunca esperam."
+    },
+    "intro": "O Jardineiro é o trabalho em segundo plano do Memora: dá lugar às notas na árvore, encontra conexões e mantém as visões gerais em dia, sempre com Desfazer. Aqui você decide até onde ele vai sozinho.",
+    "labels": {
+      "doneMany": "{count} descrições atualizadas",
+      "doneOne": "{count} descrição atualizada",
+      "failed": "Não foi possível escrever as descrições. As que já estavam prontas foram mantidas.",
+      "generateMissing": "Gerar as que faltam",
+      "queued": "Na fila para escrever as descrições.",
+      "readFailed": "Não foi possível ver como está esse trabalho.",
+      "rewriteAll": "Reescrever todas…",
+      "rewriteAsk": "Reescrever as descrições de todas as conexões em {language}? As atuais serão substituídas.",
+      "rewriteConfirm": "Reescrever",
+      "running": "Escrevendo as descrições…",
+      "startFailed": "Não foi possível começar. Nada foi alterado."
+    },
+    "pause": {
+      "action": "Pausar agora",
+      "default": "Trabalhando",
+      "resume": "Retomar"
+    },
+    "saving": {
+      "failed": "Não foi possível salvar. O valor anterior voltou.",
+      "saved": "Salvo.",
+      "saving": "Salvando…"
+    },
+    "states": {
+      "controlsError": "Não foi possível ler os controles do Jardineiro.",
+      "controlsKept": "Nada foi alterado: ele segue com o que já valia."
+    },
+    "treeShape": {
+      "balanced": "Equilibrada",
+      "broad": "Ampla",
+      "deep": "Profunda"
     }
   },
   "settingsAi": {

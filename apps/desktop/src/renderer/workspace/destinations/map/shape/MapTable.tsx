@@ -20,6 +20,22 @@ export interface MapTableProps {
   onSelect: (key: string) => void;
 }
 
+/**
+ * A row of the previous panel's table that holds no topic (the Unsorted row) opens nothing: it is
+ * text, never a button, and stays out of the arrow keys' list.
+ */
+const isInert = (row: TableRow, compact: boolean): boolean => compact && row.kind === "unsorted";
+
+/**
+ * The focus ring is the whole row's: the row button draws none, and the row that holds the focus
+ * draws it inset (two box-shadow utilities on one element are decided by the stylesheet, so the
+ * selected row's bar is repeated inside the focused variant).
+ */
+const focusRing = "has-[:focus-visible]:[box-shadow:inset_0_0_0_2px_var(--accent)]";
+const selectedBar = "bg-surface-selected [box-shadow:inset_2px_0_0_0_var(--accent)]";
+const selectedFocusRing =
+  "has-[:focus-visible]:[box-shadow:inset_2px_0_0_0_var(--accent),inset_0_0_0_2px_var(--accent)]";
+
 /** The indent of a row by level: 20, 28, 36, 44 px, and 44 below (design record §7.5). */
 export const rowIndent = (level: number): number => 20 + 8 * Math.min(Math.max(level - 1, 0), 3);
 
@@ -48,8 +64,11 @@ export function MapTable({
   // One tab stop for the whole list: the row the person is on, else the selected, else the open one.
   const [focusKey, setFocusKey] = useState<string | null>(null);
   const has = (key: string | null): key is string =>
-    key !== null && shown.some((row) => row.key === key);
-  const tabKey = [focusKey, selectedKey, currentKey].find(has) ?? shown[0]?.key ?? null;
+    key !== null && shown.some((row) => row.key === key && !isInert(row, compact));
+  const tabKey =
+    [focusKey, selectedKey, currentKey].find(has) ??
+    shown.find((row) => !isInert(row, compact))?.key ??
+    null;
   const onArrows = (event: KeyboardEvent<HTMLTableSectionElement>) => {
     if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
     const keys = ["ArrowDown", "ArrowUp", "Home", "End"];
@@ -111,14 +130,16 @@ export function MapTable({
             {shown.map((row) => {
               const selected = row.key === selectedKey;
               const here = hereKeys.has(row.key);
+              const inert = isInert(row, compact);
+              const marked = selected || row.key === currentKey;
               return (
                 <tr
                   key={row.key}
                   aria-current={row.key === currentKey ? "true" : undefined}
                   className={cn(
                     "border-t border-border",
-                    (selected || row.key === currentKey) &&
-                      "bg-surface-selected [box-shadow:inset_2px_0_0_0_var(--accent)]"
+                    marked && selectedBar,
+                    !inert && (marked ? selectedFocusRing : focusRing)
                   )}
                 >
                   <th
@@ -126,23 +147,31 @@ export function MapTable({
                     className="px-2 py-1 text-left font-normal"
                     style={{ paddingInlineStart: rowIndent(row.level) }}
                   >
-                    <button
-                      type="button"
-                      data-row=""
-                      tabIndex={row.key === tabKey ? 0 : -1}
-                      aria-pressed={selected}
-                      title={row.name}
-                      onFocus={() => setFocusKey(row.key)}
-                      onBlur={() => setFocusKey(null)}
-                      onClick={() => onSelect(row.key)}
-                      className="flex w-full min-w-0 rounded-sm text-left font-medium text-foreground hover:underline"
-                    >
-                      {/* Only the title takes the tail ellipsis; the app's own marker is never cut. */}
-                      <span className="min-w-0 truncate">{row.name}</span>
-                      {here ? (
-                        <span className="shrink-0 whitespace-pre font-semibold text-accent">{` · ${t("map.chart.here")} ↳`}</span>
-                      ) : null}
-                    </button>
+                    {inert ? (
+                      <span className="flex w-full min-w-0 font-medium text-secondary-foreground">
+                        <span className="min-w-0 truncate" title={row.name}>
+                          {row.name}
+                        </span>
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        data-row=""
+                        tabIndex={row.key === tabKey ? 0 : -1}
+                        aria-pressed={selected}
+                        title={row.name}
+                        onFocus={() => setFocusKey(row.key)}
+                        onBlur={() => setFocusKey(null)}
+                        onClick={() => onSelect(row.key)}
+                        className="flex w-full min-w-0 rounded-sm text-left font-medium text-foreground hover:underline focus-visible:outline-none"
+                      >
+                        {/* Only the title takes the tail ellipsis; the app's own marker is never cut. */}
+                        <span className="min-w-0 truncate">{row.name}</span>
+                        {here ? (
+                          <span className="shrink-0 whitespace-pre font-semibold text-accent">{` · ${t("map.chart.here")} ↳`}</span>
+                        ) : null}
+                      </button>
+                    )}
                   </th>
                   {compact ? null : (
                     <td className="py-1 text-center whitespace-nowrap">

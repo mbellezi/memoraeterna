@@ -20,6 +20,24 @@ export const rendererRoot = join(repositoryRoot, "apps/desktop/src/renderer");
 
 const entryId = "\0screens-entry";
 
+/** The renderer's force-layout module: the one place that starts a Worker from a module URL. */
+const layoutModuleSuffix = "apps/desktop/src/renderer/components/graph/layout.ts";
+const workerStart =
+  /new Worker\(\s*new URL\(\s*"\.\/layout-worker\.ts",\s*import\.meta\.url\s*\),\s*\{\s*type:\s*"module"\s*\}\s*\)/u;
+
+/**
+ * A page loaded over `file://` cannot start a Worker from a module file next to it, so the layout
+ * worker is bundled inline (a Blob worker) for the screens: the ego graph then draws, as in the app.
+ * Returns the source unchanged when it does not start the worker the known way.
+ */
+export function inlineLayoutWorker(code: string): string {
+  if (!workerStart.test(code)) return code;
+  return (
+    `import InlineLayoutWorker from "./layout-worker.ts?worker&inline";\n` +
+    code.replace(workerStart, "new InlineLayoutWorker()")
+  );
+}
+
 /** The generated entry: the harness, the styles and every screen module, registered by surface id. */
 export function entrySource(surfaces: readonly SurfaceEntry[], root = rendererRoot): string {
   const lines = [
@@ -100,6 +118,14 @@ export async function buildBundle(
     },
     plugins: [
       tailwindcss(),
+      {
+        name: "screens-inline-layout-worker",
+        enforce: "pre",
+        transform(code, id) {
+          const path = id.split("?")[0]!.replaceAll("\\", "/");
+          return path.endsWith(layoutModuleSuffix) ? inlineLayoutWorker(code) : undefined;
+        }
+      },
       {
         name: "screens-entry",
         resolveId(id) {

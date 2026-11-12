@@ -22,6 +22,22 @@ export const egoGraphLimits = {
   labelCharacters: 28
 } as const;
 
+/**
+ * "2 notes · 1 relation": two counted parts, each in its own singular or plural (never "1 connections"),
+ * joined by a middle dot.
+ */
+export function countsText(t: Translator, notes: number, relations: number): string {
+  const one = notes === 1;
+  const noteWords = t(one ? "notePage.graph.notesOne" : "notePage.graph.notesMany", {
+    values: { count: notes }
+  });
+  const relationWords = t(
+    relations === 1 ? "notePage.graph.connectionsOne" : "notePage.graph.connectionsMany",
+    { values: { count: relations } }
+  );
+  return `${noteWords} · ${relationWords}`;
+}
+
 /** How Sigma draws one edge: the program that cuts it into dashes and the one that adds an arrow. */
 export type EgoEdgeProgram = "line" | "arrow" | "dashed" | "dashed-arrow";
 

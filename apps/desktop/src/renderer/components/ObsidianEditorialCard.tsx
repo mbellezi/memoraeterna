@@ -1,63 +1,110 @@
 import { useEffect, useRef, useState } from "react";
 import { FileWarning, X } from "lucide-react";
 import type { MessageKey, Translator } from "@app/i18n";
+import { ReadProblem } from "../settings/SettingControls";
 import { Button } from "./ui/button";
 import { MarkdownEditor } from "./MarkdownEditor";
 import { followEditorialConflicts } from "./obsidian-followers";
 type Conflict = Awaited<ReturnType<typeof window.app.obsidian.editorialConflicts>>[number];
-export function ObsidianEditorialCard({ t }: { t: (key: MessageKey) => string }) {
-  const [rows, setRows] = useState<Conflict[] | null>(null),
+/** Rows a parent already follows (Settings › Integrations counts them while the card is closed). */
+export interface EditorialFeed {
+  rows: Conflict[] | null;
+  failed: boolean;
+  refresh: () => void;
+}
+
+/**
+ * `heading` is the embedded use (Settings › Integrations): the card sits under a title of its own,
+ * takes the quiet heading, has no icon or divider, and draws nothing while no edit waits.
+ */
+export function ObsidianEditorialCard({
+  t,
+  feed,
+  heading
+}: {
+  t: (key: MessageKey) => string;
+  feed?: EditorialFeed;
+  heading?: string;
+}) {
+  const [ownRows, setOwnRows] = useState<Conflict[] | null>(null),
     [selected, setSelected] = useState<Conflict | null>(null),
-    [error, setError] = useState(false);
+    [ownReadFailed, setOwnReadFailed] = useState(false),
+    [sendFailed, setSendFailed] = useState(false);
+  const rows = feed ? feed.rows : ownRows;
+  // A failed read and a failed comparison are two different things, each said in its own words.
+  const readFailed = feed ? feed.failed : ownReadFailed;
   const refresh = () =>
-    window.app.obsidian
-      .editorialConflicts()
-      .then(setRows)
-      .catch(() => setError(true));
+    feed
+      ? feed.refresh()
+      : window.app.obsidian
+          .editorialConflicts()
+          .then((value) => {
+            setOwnRows(value);
+            setOwnReadFailed(false);
+          })
+          .catch(() => setOwnReadFailed(true));
   // One read now, and one after each editorial projection or end of a sync (D16); no timer.
+  const followed = feed === undefined;
   useEffect(
     () =>
-      followEditorialConflicts(
-        () => window.app,
-        setRows,
-        () => setError(true)
-      ),
-    []
+      followed
+        ? followEditorialConflicts(
+            () => window.app,
+            (value) => {
+              setOwnRows(value);
+              setOwnReadFailed(false);
+            },
+            () => setOwnReadFailed(true)
+          )
+        : undefined,
+    [followed]
   );
+  if (heading !== undefined && !readFailed && !sendFailed && !rows?.length && !selected)
+    return null;
   return (
-    <section className="grid gap-3 border-t border-slate-200 pt-4 dark:border-slate-800">
-      <h4 className="flex items-center gap-2 font-medium">
-        <FileWarning size={16} />
-        {t("obsidianEditing.review")}
-      </h4>
-      {error && (
-        <p role="alert" className="text-sm text-red-600">
+    <section
+      className={heading === undefined ? "grid gap-3 border-t border-border pt-4" : "grid gap-2"}
+    >
+      {heading === undefined ? (
+        <h4 className="flex items-center gap-2 font-medium">
+          <FileWarning size={16} />
+          {t("obsidianEditing.review")}
+        </h4>
+      ) : (
+        <h4 className="m-0 text-sm font-medium text-foreground">{heading}</h4>
+      )}
+      {readFailed && (
+        <ReadProblem
+          t={t}
+          message={t("settingsIntegrations.review.pluginReadFailed")}
+          onRetry={refresh}
+        />
+      )}
+      {sendFailed && (
+        <p role="status" className="text-sm text-muted-foreground">
           {t("obsidianEditing.deliveryError")}
         </p>
       )}
       {rows === null ? (
-        <p>{t("obsidianWiki.loading")}</p>
+        readFailed ? null : (
+          <p>{t("obsidianWiki.loading")}</p>
+        )
       ) : rows.length ? (
         rows.map((row) => (
-          <div
-            key={row.id}
-            className="flex items-center gap-3 rounded-xl bg-slate-50 p-3 dark:bg-slate-950"
-          >
+          <div key={row.id} className="flex items-center gap-3 rounded-xl bg-soft p-3">
             <span className="min-w-0 flex-1 break-words text-sm">
               {row.path}
               {row.receipt.status === "deleted" && (
-                <span className="ml-2 text-amber-700 dark:text-amber-300">
-                  {t("obsidianEditing.deleted")}
-                </span>
+                <span className="ml-2 text-warning">{t("obsidianEditing.deleted")}</span>
               )}
             </span>
             <Button
               onClick={() => {
-                setError(false);
+                setSendFailed(false);
                 void window.app.obsidian
                   .editorialComparison(row.id)
                   .then((receipt) => setSelected({ ...row, receipt }))
-                  .catch(() => setError(true));
+                  .catch(() => setSendFailed(true));
               }}
             >
               {t("obsidianWiki.review")}
@@ -65,7 +112,7 @@ export function ObsidianEditorialCard({ t }: { t: (key: MessageKey) => string })
           </div>
         ))
       ) : (
-        <p className="text-sm text-slate-500">{t("obsidianEditing.empty")}</p>
+        <p className="text-sm text-muted-foreground">{t("obsidianEditing.empty")}</p>
       )}
       {selected && (
         <EditorialComparison
@@ -134,7 +181,7 @@ function EditorialComparison({
       onKeyDown={(e) => {
         if (e.key === "Escape") e.stopPropagation();
       }}
-      className="fixed inset-0 m-auto max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-6xl overflow-auto rounded-2xl bg-slate-50 p-5 text-slate-950 backdrop:bg-slate-950/60 dark:bg-slate-950 dark:text-slate-50"
+      className="fixed inset-0 m-auto max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-6xl overflow-auto rounded-2xl bg-surface p-5 text-foreground backdrop:bg-black/60"
     >
       <header className="mb-4 flex gap-3">
         <h2 id="editorial-comparison-title" className="min-w-0 flex-1 break-words font-semibold">
@@ -145,7 +192,7 @@ function EditorialComparison({
         </Button>
       </header>
       {error && (
-        <p role="alert" className="mb-3 text-sm text-red-600">
+        <p role="status" className="mb-3 text-sm text-muted-foreground">
           {t("obsidianEditing.stale")}
         </p>
       )}
@@ -153,7 +200,7 @@ function EditorialComparison({
         {(["base", "local", "app"] as const).map((kind) => (
           <section key={kind}>
             <h3 className="mb-2 text-sm font-semibold">{t(`obsidianEditing.${kind}`)}</h3>
-            <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-xl border border-slate-200 bg-white p-3 text-xs dark:border-slate-800 dark:bg-slate-900">
+            <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-xl border border-border bg-soft p-3 text-xs">
               {row.receipt.comparison?.[kind]}
             </pre>
           </section>

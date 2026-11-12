@@ -143,6 +143,11 @@ export function MapRoot({ t, address, mode, active, onState, onOpen, current }: 
             scope={branchScope(scope)}
             onOpenNote={(noteId) => onOpen(formatObjectAddress({ kind: "note", id: noteId }))}
             onShowTree={() => openLens("shape")}
+            onScopeChange={(next) =>
+              onOpen(formatView({ view: "map", lens: "relations", scope: next }), {
+                replace: true
+              })
+            }
             onState={setRelationsState}
           />
         )}

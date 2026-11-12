@@ -2,8 +2,13 @@ import { renderToString } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { createTranslator } from "@app/i18n";
 
-import { entityEmptyPage, entityFirstPage, entityFixture } from "./entity-fixtures";
-import type { EntityLoad } from "./entity-model";
+import {
+  entityEmptyPage,
+  entityFirstPage,
+  entityFixture,
+  entitySecondPage
+} from "./entity-fixtures";
+import { appendMentions, type EntityLoad } from "./entity-model";
 import { EntityPageView, type EntityPageViewProps } from "./EntityPageView";
 
 const en = createTranslator("en");
@@ -80,7 +85,38 @@ describe("the entity page", () => {
     expect(html).toContain("Topics");
     expect(html).toContain("most cited");
     expect(html).toContain("Sources");
-    expect(html).toContain("Sources of the mentions loaded so far.");
+    expect(html).toContain("These are the sources of the notes shown so far.");
+  });
+
+  it("gives every row a peek address, as the Space bar reads it", () => {
+    const html = view();
+    const rows = html.match(
+      /<button[^>]*data-quick-look="memora:\/\/(note|source|entity)\/[^"]+"/gu
+    );
+    // 8 loaded mentions, 3 co-mentioned entities and 3 sources.
+    expect(rows).toHaveLength(8 + 3 + 3);
+    expect(view({ mode: "compact" })).toMatch(/<button[^>]*data-quick-look="memora:\/\/note\//u);
+  });
+
+  it("counts the sources shown over the sources there are while the mentions are partial, with a quiet button for the rest", () => {
+    const strip = (html: string) => html.replace(/<!-- -->/gu, "");
+    const partial = strip(view());
+    expect(partial).toContain("3 of 4");
+    expect(partial).not.toMatch(/Sources<span[^>]*>4</);
+    expect(partial).toContain("These are the sources of the notes shown so far.");
+    // The note is a sentence; the quiet button after it says what it brings: more sources.
+    expect(partial).toMatch(/shown so far\.<\/p><button[^>]*>Show the sources of 3 more notes/);
+    expect(strip(view({ t: pt }))).toContain("3 de 4");
+    expect(strip(view({ t: pt }))).toContain("Mostrar as fontes de mais 3 notas");
+    // Loading disables the button and says so, in terms of sources: the mentions' own button
+    // above says "mentions".
+    expect(strip(view({ load: ready(entityFirstPage, "loading") }))).toMatch(
+      /<button[^>]*disabled=""[^>]*>Loading more sources/
+    );
+    // Every mention loaded: the heading counts the sources, and there is no button for them.
+    const all = strip(view({ load: ready(appendMentions(entityFirstPage, entitySecondPage)) }));
+    expect(all).toMatch(/Sources<span[^>]*>4</);
+    expect(all).not.toContain("These are the sources of the notes shown so far.");
   });
 
   it("reads in the person's language, with no English left", () => {
@@ -135,11 +171,19 @@ describe("the four states", () => {
     expect(html.match(/Tentar de novo/g)).toHaveLength(1);
   });
 
-  it("the previous panel says the failure quietly, so one cause shows one retry", () => {
+  it("the previous panel says a failure in one neutral word, so one cause shows one retry", () => {
     const html = view({ load: { status: "error" }, mode: "compact", t: pt });
-    expect(html).toContain("Não foi possível abrir.");
+    expect(html).toContain(">Indisponível<");
     expect(html).not.toContain("Tentar de novo");
     expect(html).not.toContain("<button");
+    expect(html).not.toContain("Não foi possível");
+  });
+
+  it("the previous panel says a gone entity in one neutral word, with no box", () => {
+    const html = view({ load: { status: "missing" }, mode: "compact", t: pt });
+    expect(html).toContain(">Já não está aqui<");
+    expect(html).not.toContain("<button");
+    expect(html).not.toContain("border-dashed");
   });
 
   it("empty offers to ask the library about the name, and the page with mentions does not", () => {

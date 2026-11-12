@@ -185,6 +185,7 @@ export function SourcePanelView({
               <button
                 type="button"
                 data-address={row.address}
+                data-quick-look={row.address}
                 aria-current={row.address === current ? "true" : undefined}
                 onClick={() => handlers.onOpen(row.address)}
                 className={cn(

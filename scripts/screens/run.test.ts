@@ -1,11 +1,11 @@
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { SurfaceEntry } from "../../apps/desktop/src/renderer/workspace/surfaces";
-import { entrySource, pageHtml } from "./build-bundle";
+import { entrySource, inlineLayoutWorker, pageHtml, rendererRoot } from "./build-bundle";
 import { standStyle } from "./frame";
 import { evidenceReasons, type Evidence } from "./evidence";
 import {
@@ -297,6 +297,16 @@ describe("the fixture bundle's entry", () => {
     expect(source).toContain(
       'registerScreens({ "inbox": screen0, "note": screen1 }, ["note"], {"inbox":"hosted","note":"panel"});'
     );
+  });
+
+  it("bundles the force-layout worker inline, so the ego graph draws on a file:// page", () => {
+    const layout = readFileSync(join(rendererRoot, "components/graph/layout.ts"), "utf8");
+    const inlined = inlineLayoutWorker(layout);
+    expect(inlined).toContain('import InlineLayoutWorker from "./layout-worker.ts?worker&inline";');
+    expect(inlined).toContain("new InlineLayoutWorker()");
+    expect(inlined).not.toContain("new Worker(");
+    // Any other module is left alone.
+    expect(inlineLayoutWorker("const a = 1;")).toBe("const a = 1;");
   });
 
   it("never lets a closing tag end the page's script or style early", () => {

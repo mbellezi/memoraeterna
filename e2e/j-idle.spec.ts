@@ -28,6 +28,7 @@ import {
   openClone,
   setContentSize,
   setTheme,
+  stepFailures,
   waitForDatabase
 } from "./support/app.js";
 import { installGestureCounter, readGestures } from "./support/gestures.js";
@@ -127,7 +128,13 @@ interface WindowReport {
   uncaused: { channel: string; atMs: number }[];
   /** Ring entries lost (a window of 60 s never fills 10,000). */
   dropped: number;
-  contrast: { light: number; dark: number; unverifiable: number };
+  contrast: {
+    light: number;
+    dark: number;
+    unverifiable: number;
+    /** The theme each scan was drawn in (the guard fails a "light" scan drawn dark). */
+    drawn: { light: string | undefined; dark: string | undefined };
+  };
 }
 
 test("J-idle: 60 s idle in each destination and Settings, no invocation without a cause", async () => {
@@ -166,17 +173,17 @@ test("J-idle: 60 s idle in each destination and Settings, no invocation without 
       if (place.id === "settings") await expect(page.locator(settingsCurrent)).toBeVisible();
 
       const step = await captureStep(session, "j-idle", index, place.id);
-      // Settings is J7's (T174): its contrast is recorded here, never asserted.
-      if (place.id !== "settings")
-        for (const theme of ["light", "dark"] as const)
-          expect
-            .soft(
-              step.contrast[theme].failures.map(
-                (f) => `"${f.text}" ${f.ratio}:1 < ${f.required}:1`
-              ),
-              `${place.id} ${theme} contrast (X12)`
-            )
-            .toEqual([]);
+      // X12: each scan drawn in the theme it was asked for, and no contrast failure. Settings' contrast
+      // is J7's (T174): recorded here, never asserted; its scans must still be drawn as asked.
+      const failures = stepFailures(step);
+      expect
+        .soft(
+          place.id === "settings"
+            ? failures.filter((failure) => failure.includes(": the page was drawn in "))
+            : failures,
+          `${place.id} (X12)`
+        )
+        .toEqual([]);
       // Back to the system's own theme before the window: the capture left the app in dark.
       await setTheme(session, "light");
       await page.waitForTimeout(settleMs);
@@ -215,7 +222,9 @@ test("J-idle: 60 s idle in each destination and Settings, no invocation without 
         contrast: {
           light: step.contrast.light.failures.length,
           dark: step.contrast.dark.failures.length,
-          unverifiable: step.contrast.light.unverifiable.length
+          unverifiable:
+            step.contrast.light.unverifiable.length + step.contrast.dark.unverifiable.length,
+          drawn: { light: step.contrast.light.drawnTheme, dark: step.contrast.dark.drawnTheme }
         }
       });
       // No input in the window: the person did nothing, so no gesture can explain an invocation.

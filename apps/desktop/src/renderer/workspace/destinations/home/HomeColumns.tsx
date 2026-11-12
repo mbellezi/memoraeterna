@@ -7,7 +7,6 @@ import { changeSetTitle } from "../../../components/activity/change-title";
 import { ObjectKindGlyph, objectKindTextClass } from "../../../components/glyphs";
 import { itemTitle, kindLabels, objectName } from "../../../components/inbox/inbox-model";
 import { riskIcon, riskTone } from "../../../components/inbox/inbox-marks";
-import { Tooltip } from "../../../components/ui/tooltip";
 import { cn } from "../../../lib/cn";
 import type { HomeInboxRow, HomeQuestion } from "../../../../shared/ipc-home";
 import { foldCrumbs, questionScope, type ArrivalRow, type HomeArea } from "./home-model";
@@ -138,8 +137,8 @@ function impactText(t: Translator, item: InboxItem): string | null {
 
 /**
  * The line under a row's title: the kind of decision and what it touches ("Estrutura · 85 notas
- * com caminho novo", "Contradição · 2 notas"). The titles of the objects it is about are the row's
- * tooltip, not part of the line.
+ * com caminho novo", "Contradição · 2 notas"). The titles of the objects it is about (`names`) are
+ * their own line above it, since a title alone ("Manter esta conexão?") does not say what about.
  */
 export function needMeta(t: Translator, row: HomeInboxRow): { line: string; names: string | null } {
   const item = row.item;
@@ -208,18 +207,22 @@ export function NeedColumn({
               <span className="text-sm font-medium text-foreground [text-wrap:pretty]">
                 {title}
               </span>
+              {meta.names ? (
+                // The person's own words, as the Inbox list shows them: two lines, whole on hover.
+                <span
+                  data-need-names=""
+                  title={meta.names}
+                  className="line-clamp-2 text-xs text-secondary-foreground [overflow-wrap:anywhere]"
+                >
+                  {meta.names}
+                </span>
+              ) : null}
               <span className="text-xs text-muted-foreground [text-wrap:pretty]">{meta.line}</span>
             </button>
           );
           return (
             <li key={`${row.kind}:${row.id}`} className="border-t border-border first:border-t-0">
-              {meta.names ? (
-                <Tooltip label={meta.names} side="top">
-                  {button}
-                </Tooltip>
-              ) : (
-                button
-              )}
+              {button}
             </li>
           );
         })}

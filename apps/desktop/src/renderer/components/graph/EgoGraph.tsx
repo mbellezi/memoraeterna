@@ -30,6 +30,7 @@ import {
 import {
   egoCursorItems,
   buildEgoGraphModel,
+  countsText,
   egoEdgeDescription,
   egoNodeDescription,
   moveEgoCursor,
@@ -226,9 +227,7 @@ export function EgoGraphView({
           {t("notePage.graph.depthTwo")}
         </Button>
         <span className="text-xs text-muted-foreground tabular-nums">
-          {t("notePage.graph.counts", {
-            values: { notes: model.nodes.length, relations: model.edges.length }
-          })}
+          {countsText(t, model.nodes.length, model.edges.length)}
         </span>
         <Button type="button" variant="link" className="ml-auto" onClick={onShowList}>
           {t("notePage.graph.showList")}

@@ -31,6 +31,12 @@ export interface AskComposerProps {
   /** Show the Enter and Shift-Enter hints under the field. */
   hints?: boolean;
   inputRef?: Ref<HTMLTextAreaElement> | undefined;
+  /**
+   * How loud the send button is: primary by default. After a failed send the panel's one "Tentar de
+   * novo" is the only labelled action, so the send button steps down to secondary and loses its
+   * label (an icon with its name on hover and for a screen reader); Enter still sends.
+   */
+  submitVariant?: "primary" | "secondary";
   className?: string;
 }
 
@@ -55,6 +61,7 @@ export function AskComposer({
   roomy = false,
   hints = false,
   inputRef,
+  submitVariant = "primary",
   className
 }: AskComposerProps) {
   const noteId = useId();
@@ -79,7 +86,7 @@ export function AskComposer({
   const sendButton = (
     <Button
       type="button"
-      variant="primary"
+      variant={submitVariant}
       aria-label={sendLabel}
       disabled={!canSend}
       aria-busy={busy}
@@ -87,9 +94,11 @@ export function AskComposer({
       className="h-8 shrink-0 px-2.5"
     >
       <ArrowUp aria-hidden="true" />
-      {roomy ? sendLabel : null}
+      {roomy && submitVariant === "primary" ? sendLabel : null}
     </Button>
   );
+  // A button without a visible label keeps its name reachable on hover and focus.
+  const iconOnly = !roomy || submitVariant !== "primary";
 
   return (
     <div className={cn("grid min-w-0 max-w-(--measure) gap-1.5", className)}>
@@ -119,13 +128,17 @@ export function AskComposer({
             roomy ? "max-h-48 min-h-14" : "max-h-32 min-h-8 text-base"
           )}
         />
-        {roomy ? (
-          <div className="flex justify-end">{sendButton}</div>
-        ) : (
+        {iconOnly ? (
           // The span keeps the tooltip reachable while the button is disabled (an empty field).
           <Tooltip label={sendLabel} shortcut="↵">
-            <span className="inline-flex shrink-0">{sendButton}</span>
+            <span
+              className={roomy ? "inline-flex shrink-0 justify-self-end" : "inline-flex shrink-0"}
+            >
+              {sendButton}
+            </span>
           </Tooltip>
+        ) : (
+          <div className="flex justify-end">{sendButton}</div>
         )}
       </div>
       {note ? (

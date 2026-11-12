@@ -221,7 +221,7 @@ describe("the card", () => {
     expect(gone).toContain("Isto não está mais na biblioteca.");
     const bare = card({ status: "ready", item: resolved({ preview: "" }) });
     expect(bare).toContain('data-state="empty"');
-    expect(bare).toContain("Ainda sem resumo. Abra para ler tudo.");
+    expect(bare).toContain("Ainda sem resumo. Abra ao lado para ler tudo.");
     expect(bare).toContain("Lactic acid lowers the pH");
   });
 

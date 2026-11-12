@@ -220,6 +220,22 @@ export function topicPageLoadDecision(input: {
   return input.showing ? "silent" : "load";
 }
 
+/**
+ * The topic id a page that was asked for under a retired id should be opened at, so the stack, the
+ * pin and Back hold the topic's current id (the page's banner already tells the person). It is the
+ * successor's id, once per requested id: `done` is the id already redirected, and a page that was
+ * not redirected, or that already shows the id asked for, has no target.
+ */
+export function redirectTarget(input: {
+  page: Pick<TopicPage, "topic" | "redirectedFrom">;
+  requestedId: string;
+  done: string | null;
+}): string | null {
+  const { page, requestedId, done } = input;
+  if (page.redirectedFrom === null || page.topic.id === requestedId) return null;
+  return done === requestedId ? null : page.topic.id;
+}
+
 /** A refresh that found the same page changes nothing; the tree generation alone is not content. */
 export function samePageContent(a: TopicPage, b: TopicPage): boolean {
   return JSON.stringify({ ...a, generation: 0 }) === JSON.stringify({ ...b, generation: 0 });

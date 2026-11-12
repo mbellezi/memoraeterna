@@ -15,7 +15,13 @@ import { assertLocalModelSeeded, findLocalModelCatalogEntry, LocalModelSeedError
 import { machineRunsMlx, presetCatalogIds } from "@app/domain";
 import { _electron, type ElectronApplication, type Page } from "@playwright/test";
 
-import { scanContrast, type ContrastResult } from "./contrast.js";
+import {
+  readDrawnTheme,
+  scanContrast,
+  settleAnimations,
+  themeMismatch,
+  type ContrastResult
+} from "./contrast.js";
 import { stubOpenDialog } from "./dialog.js";
 import {
   assertJourneysScratchPath,
@@ -300,29 +306,36 @@ export async function setTheme(session: Pick<MemoraSession, "electronApp" | "pag
     theme === "dark",
     { polling: 100 }
   );
-  // Two frames: the styles that follow the media query are applied and painted.
-  await session.page.evaluate(
-    () => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)))
-  );
-  // The colour transitions that switch started end, or a scan reads a colour half way between themes.
-  await session.page.evaluate(settleTransitions);
-  await session.page.evaluate(
-    () => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)))
-  );
+  // The colour transitions that switch started end (an endless spinner or pulse is not waited for),
+  // then two frames paint the last colours: a scan never reads a colour half way between themes.
+  await settleAnimations(session.page);
 }
 
 /**
- * Resolves when every CSS transition of the page has ended or been cancelled. Only transitions: an
- * infinite animation (a spinner, a skeleton's pulse) never finishes and must not be waited for. It runs
- * in the page, so it names nothing outside itself.
+ * Makes the app's own theme follow the window's colour scheme ("system"), so that `setTheme` decides
+ * the theme each scan is drawn in. The app's default is dark (Q39), whose root class no colour-scheme
+ * switch moves: a journey that scans both themes calls this once, explicitly, before its first step,
+ * and so never depends on the default or on what the profile stored. Then it proves both switches
+ * reach the page.
  */
-export function settleTransitions(): Promise<unknown> {
-  const transitions = document
-    .getAnimations()
-    .filter(
-      (animation) => typeof CSSTransition !== "undefined" && animation instanceof CSSTransition
-    );
-  return Promise.all(transitions.map((animation) => animation.finished.catch(() => null)));
+export async function followSystemTheme(session: Pick<MemoraSession, "electronApp" | "page">) {
+  await invokeApp(session.page, "settings.updateApp", { themeMode: "system" });
+  for (const theme of ["light", "dark"] as const) {
+    await setTheme(session, theme);
+    const drawn = await waitForDrawnTheme(session.page, theme);
+    if (drawn !== theme)
+      throw new Error(`The app did not follow the colour scheme to ${theme}: it is drawn ${drawn}`);
+  }
+}
+
+/** Polls the theme the page is drawn in until it is `wanted` or the time is up; returns the last. */
+async function waitForDrawnTheme(page: Page, wanted: Theme, timeoutMs = 15_000): Promise<Theme> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const drawn = await page.evaluate(readDrawnTheme);
+    if (drawn === wanted || Date.now() >= deadline) return drawn;
+    await new Promise((done) => setTimeout(done, 100));
+  }
 }
 
 /** Sets the window's content size (the minimum width is 960 px). */
@@ -339,13 +352,16 @@ export async function setContentSize(session: MemoraSession, width: number, heig
 export interface StepRecord {
   step: string;
   screenshots: string[];
-  contrast: Record<Theme, Pick<ContrastResult, "checked" | "failures" | "unverifiable">>;
+  contrast: Record<
+    Theme,
+    Pick<ContrastResult, "checked" | "failures" | "unverifiable" | "drawnTheme">
+  >;
 }
 
 /**
  * One journey step's evidence: a screenshot in light and in dark
  * (`.cache/f5/journeys/<run>/<spec>/<nn>-<step>-<theme>.png`) and the contrast scan of each, written
- * next to them as JSON. Returns the record; the caller asserts on `contrast.*.failures`.
+ * next to them as JSON. Returns the record; the caller asserts on `stepFailures(record)`.
  */
 export async function captureStep(
   session: MemoraSession,
@@ -363,6 +379,7 @@ export async function captureStep(
     contrast: {} as StepRecord["contrast"]
   };
   for (const theme of themes) {
+    // setTheme waits for the switch's colour transitions before the screenshot and the scan.
     await setTheme(session, theme);
     const path = join(folder, `${base}-${theme}.png`);
     await session.page.screenshot({ path });
@@ -371,6 +388,26 @@ export async function captureStep(
   }
   await writeFile(join(folder, `${base}.json`), `${JSON.stringify(record, null, 2)}\n`);
   return record;
+}
+
+/**
+ * The X12 failures of one captured step, each named `<step> <theme>: ...`: a scan drawn in another
+ * theme than it was asked for (a "light" scan of a page that stayed dark proves nothing about light),
+ * then every contrast finding of that theme. Every consumer of `captureStep` asserts on this list.
+ */
+export function stepFailures(record: Pick<StepRecord, "step" | "contrast">): string[] {
+  const failures: string[] = [];
+  for (const theme of ["light", "dark"] as const) {
+    const scan = record.contrast[theme];
+    if (!scan) continue;
+    const mismatch = themeMismatch(theme, scan.drawnTheme);
+    if (mismatch) failures.push(`${record.step} ${theme}: ${mismatch}`);
+    for (const failure of scan.failures)
+      failures.push(
+        `${record.step} ${theme}: "${failure.text}" ${failure.ratio}:1 < ${failure.required}:1`
+      );
+  }
+  return failures;
 }
 
 /**

@@ -30,6 +30,7 @@ import {
   secondSourceKey,
   setContentSize,
   setTheme,
+  stepFailures,
   waitForDatabase,
   type MemoraSession
 } from "./support/app.js";
@@ -109,13 +110,8 @@ async function pillGlyph(page: Page): Promise<string | null> {
 /** One step in both themes, contrast scanned (X12, soft: every step is walked); leaves the light theme. */
 async function captureAndCheck(session: MemoraSession, index: number, step: string) {
   const record = await captureStep(session, "j2", index, step);
-  for (const theme of ["light", "dark"] as const)
-    expect
-      .soft(
-        record.contrast[theme].failures.map((f) => `"${f.text}" ${f.ratio}:1 < ${f.required}:1`),
-        `${step} ${theme} contrast (X12)`
-      )
-      .toEqual([]);
+  // X12: each scan drawn in the theme it was asked for, and no contrast failure in either.
+  expect.soft(stepFailures(record), `${step} (X12)`).toEqual([]);
   await setTheme(session, "light");
 }
 
