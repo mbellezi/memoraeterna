@@ -4752,7 +4752,6 @@
       "error": "Impossible d’ouvrir cette note.",
       "errorKept": "Le reste d’Explorer reste ouvert et vos notes n’ont pas changé.",
       "explainedLocally": "explication écrite par l’IA locale",
-      "gardenerConfidence": "Jardinier · confiance {word}",
       "gardenerSuggestion": "suggestion du Jardinier · décidez quand vous voulez",
       "goneBody": "Elle a peut-être été fusionnée avec une autre note ou supprimée. Rien d’autre n’a changé.",
       "goneHeadline": "Cette note n’est plus dans votre bibliothèque.",
