@@ -5609,8 +5609,7 @@
       "context": "El grafo dejó de dibujarse.",
       "layout": "No se pudo organizar el grafo.",
       "unavailable": "Esta ventana no puede dibujar el grafo.",
-      "unavailableBody": "La tabla muestra las mismas conexiones.",
-      "unavailableTree": "El Árbol muestra los temas y las notas de esta rama; cada nota lista sus conexiones."
+      "unavailableBody": "La tabla muestra las mismas conexiones."
     },
     "group": {
       "description": "{topic}. Notas en el grafo: {notes}. Conexiones con otros temas: {count}."
@@ -5639,5 +5638,39 @@
       "sourceUnnamed": "esta fuente"
     },
     "untitledTopic": "Tema sin nombre"
+  },
+  "mapRelationsTable": {
+    "caption": "Las mismas conexiones del grafo, una fila por conexión",
+    "count": "{count} conexiones",
+    "countOne": "1 conexión",
+    "from": "De",
+    "groupBy": "Agrupar por",
+    "groupByHelp": "Qué nivel de subtemas agrupa los temas de la lista",
+    "groups": {
+      "all": "Ver las {count}",
+      "and": "y",
+      "body": "Las líneas que el grafo dibuja de lejos, una por cada par de temas.",
+      "capped": "Solo están listados los enlaces más fuertes.",
+      "fewer": "Ver menos",
+      "title": "Entre temas"
+    },
+    "keyMove": "elegir",
+    "keyOpen": "abrir la primera nota al lado",
+    "keyOpenSecond": "abrir la segunda",
+    "link": "Conexión",
+    "more": "Mostrar {count} más",
+    "notice": {
+      "groupLines": "De lejos, solo se dibujan los enlaces más fuertes entre temas.",
+      "truncated": "Esta rama es más grande de lo que cabe en el grafo, que muestra las notas y conexiones más enlazadas. Elige una rama menor para verlo todo."
+    },
+    "outside": {
+      "action": "Ver la rama {title}",
+      "body": "Temas de fuera que se enlazan con notas de esta rama. Haz clic para ver su rama.",
+      "capped": "Los {count} temas más conectados.",
+      "title": "Fuera de la rama"
+    },
+    "suggested": "sugerida",
+    "title": "Mismas conexiones en tabla",
+    "to": "A"
   }
 }

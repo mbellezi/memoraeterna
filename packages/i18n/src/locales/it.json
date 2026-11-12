@@ -5609,8 +5609,7 @@
       "context": "Il grafo non viene più disegnato.",
       "layout": "Impossibile disporre il grafo.",
       "unavailable": "Questa finestra non può disegnare il grafo.",
-      "unavailableBody": "La tabella riporta le stesse connessioni.",
-      "unavailableTree": "L’Albero mostra gli argomenti e le note di questo ramo; ogni nota elenca le sue connessioni."
+      "unavailableBody": "La tabella riporta le stesse connessioni."
     },
     "group": {
       "description": "{topic}. Note nel grafo: {notes}. Connessioni con altri argomenti: {count}."
@@ -5639,5 +5638,39 @@
       "sourceUnnamed": "questa fonte"
     },
     "untitledTopic": "Argomento senza nome"
+  },
+  "mapRelationsTable": {
+    "caption": "Le stesse connessioni del grafo, una riga per connessione",
+    "count": "{count} connessioni",
+    "countOne": "1 connessione",
+    "from": "Da",
+    "groupBy": "Raggruppa per",
+    "groupByHelp": "Quale livello di sottoargomenti raggruppa gli argomenti dell’elenco",
+    "groups": {
+      "all": "Mostra tutte e {count}",
+      "and": "e",
+      "body": "Le linee che il grafo disegna da lontano, una per coppia di argomenti.",
+      "capped": "Sono elencati solo i collegamenti più forti.",
+      "fewer": "Mostra meno",
+      "title": "Tra gli argomenti"
+    },
+    "keyMove": "scegliere",
+    "keyOpen": "aprire la prima nota accanto",
+    "keyOpenSecond": "aprire la seconda",
+    "link": "Connessione",
+    "more": "Mostra altre {count}",
+    "notice": {
+      "groupLines": "Da lontano si disegnano solo i collegamenti più forti tra argomenti.",
+      "truncated": "Questo ramo è più grande di quanto il grafo possa contenere: mostra le note e le connessioni più collegate. Scegli un ramo più piccolo per vedere tutto."
+    },
+    "outside": {
+      "action": "Vedi il ramo {title}",
+      "body": "Argomenti esterni collegati a note di questo ramo. Clicca per vedere il loro ramo.",
+      "capped": "I {count} argomenti più collegati.",
+      "title": "Fuori dal ramo"
+    },
+    "suggested": "suggerita",
+    "title": "Stesse connessioni in tabella",
+    "to": "A"
   }
 }

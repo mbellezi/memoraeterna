@@ -5609,8 +5609,7 @@
       "context": "O grafo parou de ser desenhado.",
       "layout": "Não foi possível organizar o grafo.",
       "unavailable": "Esta janela não consegue desenhar o grafo.",
-      "unavailableBody": "A tabela traz as mesmas conexões.",
-      "unavailableTree": "A Árvore mostra os tópicos e as notas deste ramo; cada nota lista suas conexões."
+      "unavailableBody": "A tabela traz as mesmas conexões."
     },
     "group": {
       "description": "{topic}. Notas no grafo: {notes}. Conexões com outros tópicos: {count}."
@@ -5639,5 +5638,39 @@
       "sourceUnnamed": "esta fonte"
     },
     "untitledTopic": "Tópico sem nome"
+  },
+  "mapRelationsTable": {
+    "caption": "As mesmas conexões do grafo, uma linha por conexão",
+    "count": "{count} conexões",
+    "countOne": "1 conexão",
+    "from": "De",
+    "groupBy": "Agrupar por",
+    "groupByHelp": "Qual nível de subtópicos agrupa os tópicos da lista",
+    "groups": {
+      "all": "Ver as {count}",
+      "and": "e",
+      "body": "As linhas que o grafo mostra de longe, uma por par de tópicos.",
+      "capped": "Só as ligações mais fortes estão na lista.",
+      "fewer": "Ver menos",
+      "title": "Entre os tópicos"
+    },
+    "keyMove": "escolher",
+    "keyOpen": "abrir a primeira nota ao lado",
+    "keyOpenSecond": "abrir a segunda",
+    "link": "Conexão",
+    "more": "Mostrar mais {count}",
+    "notice": {
+      "groupLines": "De longe, só aparecem as ligações mais fortes entre tópicos.",
+      "truncated": "Este ramo é maior do que cabe no grafo, que mostra as notas e as conexões mais ligadas. Escolha um ramo menor para ver tudo."
+    },
+    "outside": {
+      "action": "Ver o ramo {title}",
+      "body": "Tópicos de fora que se ligam a notas deste ramo. Clique para ver o ramo deles.",
+      "capped": "Os {count} tópicos mais conectados.",
+      "title": "Fora do ramo"
+    },
+    "suggested": "sugerida",
+    "title": "Mesmas conexões em tabela",
+    "to": "Para"
   }
 }

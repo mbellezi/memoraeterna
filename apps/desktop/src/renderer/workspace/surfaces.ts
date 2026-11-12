@@ -150,6 +150,13 @@ export const surfaces: readonly SurfaceEntry[] = [
     "workspace/destinations/map/relations/RelationsLens.tsx",
     "workspace/destinations/map/relations/relations.screen.tsx"
   ),
+  // The Grafo's table alone ("Só tabela"): a large branch with the notice and the lists around it.
+  entry(
+    "map-relations-table",
+    "destination",
+    "workspace/destinations/map/relations/RelationsTable.tsx",
+    "workspace/destinations/map/relations/relations-table.screen.tsx"
+  ),
 
   // Panels, one file per kind (the object kinds show the path ribbon).
   panel("source", true),

@@ -27,15 +27,23 @@ export const branchEdgeThickness = 2;
 export const branchSuggestionThickness = 1.6;
 /** A suggestion keeps its stance colour at this opacity (3:1 on the canvas: contrast/tokens.test.ts). */
 export const branchSuggestionOpacity = 0.78;
-/** What the rest of the graph fades to while one note, relation or group is emphasised. */
-export const branchBackgroundOpacity = 0.16;
+/** What the rest of the graph fades to while one note, relation or group is emphasised: it recedes, still readable. */
+export const branchBackgroundOpacity = 0.4;
+/** The labels of what recedes keep about 3:1 against the canvas in both themes. */
+export const branchBackgroundLabelOpacity = 0.7;
 
 export const branchZoom = {
   /**
    * The camera ratio past which the canvas shows topic groups instead of notes (Sigma's ratio grows
-   * as the camera zooms out). T152 may tune it with the table beside the canvas.
+   * as the camera zooms out): a branch of up to `crowded` notes, where the labels still fit.
    */
   superNodes: 2.2,
+  /** A branch of more than `crowded` notes crowds sooner, so its groups take over sooner *(cal.)*. */
+  superNodesCrowded: 1.6,
+  /** Notes from which a branch is crowded *(cal.)*. */
+  crowded: 150,
+  /** A branch of fewer notes is always read as notes: a few pills would hide what fits on screen *(cal.)*. */
+  small: 12,
   /** Super-edge thickness: the lightest and the heaviest line between two groups. */
   superEdgeMin: 1.5,
   superEdgeMax: 9
@@ -244,9 +252,25 @@ export function placeGroupNodes(graph: BranchGraph): void {
   }
 }
 
+/**
+ * The camera ratio past which topic groups replace the notes, or null when the branch has no such
+ * view: it has one topic group only, or too few notes for groups to say more than the notes do
+ * (the table beside the canvas lists the connections either way).
+ */
+export function superNodeRatio(model: Pick<BranchModel, "groups" | "nodes">): number | null {
+  if (model.groups.length < 2 || model.nodes.length < branchZoom.small) return null;
+  return model.nodes.length > branchZoom.crowded
+    ? branchZoom.superNodesCrowded
+    : branchZoom.superNodes;
+}
+
 /** Whether the camera is far enough out to show topic groups instead of notes. */
-export function showsGroups(model: Pick<BranchModel, "groups">, cameraRatio: number): boolean {
-  return model.groups.length >= 2 && cameraRatio >= branchZoom.superNodes;
+export function showsGroups(
+  model: Pick<BranchModel, "groups" | "nodes">,
+  cameraRatio: number
+): boolean {
+  const threshold = superNodeRatio(model);
+  return threshold !== null && cameraRatio >= threshold;
 }
 
 /** What is emphasised: a note, a relation or a group, by its key in the graph (never a hit area's). */
@@ -293,10 +317,10 @@ export function branchNodeDisplay(
   const chosen = target?.type === "node" && target.key === key;
   return {
     hidden: false,
-    color: emphasised ? base : blendGraphColor(base, palette.canvas, 0.7, branchBackgroundOpacity),
+    color: emphasised ? base : blendGraphColor(base, palette.canvas, 0, branchBackgroundOpacity),
     labelColor: emphasised
       ? palette.label
-      : blendGraphColor(palette.labelMuted, palette.canvas, 0.7, 0.5),
+      : blendGraphColor(palette.labelMuted, palette.canvas, 0, branchBackgroundLabelOpacity),
     emphasised: chosen,
     zIndex: chosen ? 3 : emphasised ? 2 : 0,
     ...(chosen ? { forceLabel: true } : {})
@@ -322,7 +346,7 @@ export function branchEdgeDisplay(
   const resting = attributes.suggested ? branchSuggestionThickness : branchEdgeThickness;
   const colour = emphasised
     ? relationColour(stance, attributes.suggested, palette)
-    : blendGraphColor(palette.stance[stance], palette.canvas, 0.7, branchBackgroundOpacity);
+    : blendGraphColor(palette.stance[stance], palette.canvas, 0, branchBackgroundOpacity);
   return {
     hidden: false,
     color: colour,
