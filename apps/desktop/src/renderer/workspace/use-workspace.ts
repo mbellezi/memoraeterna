@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useReducer, useRef, useState, type Dispatch } from "react";
 
+import { announceSettingsAddress } from "../settings/settings-target";
 import { closePanelPriority, subscribeClosePanel } from "../lib/close-panel";
 import { subscribeWindowNavigation } from "../lib/window-navigation";
 import { createWorkspaceSaver, loadWorkspace } from "./persist";
@@ -31,11 +32,17 @@ export function focusedPanel(state: WorkspaceState): number | null {
 
 export function useWorkspace(options: { commands?: boolean } = {}): Workspace {
   const commands = options.commands ?? true;
-  const [workspace, dispatch] = useReducer(
+  const [workspace, dispatchToState] = useReducer(
     (state: WorkspaceState, action: WorkspaceAction) => reduce(state, action),
     undefined,
     () => loadWorkspace()
   );
+  // An address that names a Settings section or setting also tells Settings, which reads its own
+  // section (the state keeps only that the place is Settings).
+  const dispatch = useCallback<Dispatch<WorkspaceAction>>((action) => {
+    announceSettingsAddress(action);
+    dispatchToState(action);
+  }, []);
   const [saver] = useState(() => createWorkspaceSaver());
   useEffect(() => {
     saver.save(workspace);
@@ -80,7 +87,7 @@ export function useWorkspace(options: { commands?: boolean } = {}): Workspace {
       offClose();
       offNavigation();
     };
-  }, [commands]);
+  }, [commands, dispatch]);
 
   return { workspace, dispatch, focusMode, toggleFocusMode };
 }
