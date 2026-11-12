@@ -2633,15 +2633,207 @@
     "removePreset": "Remover este preset?"
   },
   "sourcePage": {
+    "actions": {
+      "generateNotes": "Gerar notas",
+      "openInMap": "Abrir no Mapa"
+    },
+    "connections": {
+      "notes": "Conexões entre as notas desta fonte",
+      "notesEmpty": "Ainda sem conexões. Elas aparecem aqui quando as notas são ligadas.",
+      "sources": "Fontes relacionadas"
+    },
     "content": "Conteúdo",
     "current": "Atual",
+    "details": {
+      "earlier": "Versões anteriores"
+    },
     "edit": "Editar fonte",
     "editContent": "Editar conteúdo",
+    "errors": {
+      "earlier": "Não foi possível abrir essa versão.",
+      "kept": "Os outros painéis continuam abertos e nada foi alterado.",
+      "open": "Não foi possível abrir esta fonte.",
+      "progress": "Não foi possível ler o andamento agora."
+    },
+    "fields": {
+      "abstract": "Resumo do autor",
+      "channel": "Canal",
+      "chapterNumber": "Número do capítulo",
+      "creators": "Autoria",
+      "description": "Descrição",
+      "doi": "DOI",
+      "durationSeconds": "Duração (segundos)",
+      "edition": "Edição",
+      "isbn10": "ISBN-10",
+      "isbn13": "ISBN-13",
+      "issn": "ISSN",
+      "issue": "Número da edição",
+      "keywords": "Palavras-chave",
+      "language": "Idioma",
+      "pageCount": "Número de páginas",
+      "platform": "Plataforma",
+      "publicationDate": "Data de publicação",
+      "publisher": "Editora",
+      "sectionNumber": "Número da seção",
+      "series": "Série",
+      "siteName": "Nome do site",
+      "subjects": "Assuntos",
+      "subtitle": "Subtítulo",
+      "tags": "Etiquetas",
+      "title": "Título",
+      "url": "Endereço original",
+      "venue": "Veículo",
+      "volume": "Volume",
+      "year": "Ano"
+    },
+    "gone": {
+      "action": "Abrir a Biblioteca",
+      "body": "Ela pode ter sido removida. Abra a Biblioteca para ver o que há nela.",
+      "title": "Esta fonte não está mais na biblioteca."
+    },
+    "hint": {
+      "firstSource": "Cada nota aparece aqui com o caminho na árvore, e a árvore nasce à esquerda. Depois, o Jardineiro arruma a árvore e as conexões em segundo plano, sempre com Desfazer.",
+      "key": "Espaço",
+      "notes": "As notas aparecem aqui assim que ficam prontas, já com o caminho na árvore. Clique numa para abri-la ao lado; {key} espia sem abrir."
+    },
     "history": "Histórico",
     "historyHint": "O conteúdo anterior é somente leitura. São listados até 100 documentos recentes; as evidências originais são preservadas.",
+    "meta": {
+      "addedOn": "adicionada em {date}",
+      "addedToday": "adicionada hoje, {time}",
+      "addedYesterday": "adicionada ontem, {time}",
+      "etAl": "{name} et al.",
+      "pages": "{count} páginas",
+      "pagesOne": "1 página",
+      "volume": "{venue}, v. {volume}"
+    },
     "noChildren": "Ainda não há subitens. Adicione o primeiro para começar a compor esta fonte.",
+    "notes": {
+      "countLive": "{count} até agora · as mais novas no alto",
+      "countLiveOne": "1 até agora · as mais novas no alto",
+      "emptyBody": "Quando as notas forem geradas, elas aparecem aqui, cada uma com o caminho na árvore.",
+      "emptyHeadline": "Ainda sem notas desta fonte",
+      "fresh": "agora mesmo",
+      "newestFirst": "as mais novas no alto",
+      "open": "Abrir a nota “{title}” ao lado",
+      "page": "p. {page}",
+      "passage": "trecho {index}",
+      "placing": "Procurando lugar na árvore…",
+      "seeAll": "Ver as {count} notas",
+      "showMore": "Mostrar mais {count}",
+      "unplaced": "Sem lugar"
+    },
     "overview": "Visão geral",
-    "stale": "O conteúdo mudou. Processe esta fonte para atualizar o resumo."
+    "reader": {
+      "empty": "Esta fonte ainda não tem texto.",
+      "passages": "Trechos ({count})"
+    },
+    "stale": "O conteúdo mudou. Processe esta fonte para atualizar o resumo.",
+    "strip": {
+      "actionFailed": "Não foi possível começar agora. Nada foi alterado.",
+      "cost": {
+        "local": "modelo local, sem custo",
+        "perToken": "cerca de {amount}",
+        "perTokenEstimated": "cerca de {amount}, preço estimado",
+        "subscription": "assinatura, sem cobrança por uso"
+      },
+      "doneIn": "Pronta em {count} min",
+      "doneUnderMinute": "Pronta em menos de 1 minuto",
+      "failedAt": "Não deu para terminar {stage}.",
+      "failedKept": "O que já ficou pronto continua guardado.",
+      "group": "Geração ao vivo",
+      "milestone": "Já dá para {link}: os trechos estão indexados.",
+      "milestoneLink": "perguntar a esta fonte",
+      "needsYou": {
+        "choose": "Escolher o modelo",
+        "kept": "Os trechos já estão buscáveis.",
+        "noRoute": "Falta um modelo para escrever as notas.",
+        "other": "Esta fonte espera por você para continuar."
+      },
+      "paused": "Pausada por você.",
+      "pausedKept": "O que já ficou pronto continua guardado. Retome pela Atividade, no alto da janela.",
+      "remainingHours": "faltam cerca de {count} h",
+      "remainingMinutes": "faltam cerca de {count} min",
+      "ruler": {
+        "caption": "Notas por seção do texto",
+        "done": "pronta",
+        "label": "Notas por seção",
+        "pending": "em espera",
+        "reading": "lendo"
+      },
+      "searchable": "Guardada e pesquisável, sem notas.",
+      "searchableKept": "Dá para perguntar a esta fonte. Gere as notas quando quiser.",
+      "since": "desde {time}",
+      "stages": {
+        "atomicNoteMatching": "as conexões entre notas",
+        "atomicNotes": "as notas",
+        "chunking": "a divisão em trechos",
+        "conversion": "a leitura do arquivo",
+        "embedding": "a indexação dos trechos",
+        "knowledgeGraph": "o grafo de entidades",
+        "sourceMatching": "as conexões entre fontes",
+        "structure": "a leitura da estrutura",
+        "summarization": "o resumo"
+      },
+      "steps": {
+        "chunks": "Trechos",
+        "notes": "Notas",
+        "placed": "Na árvore",
+        "read": "Lida",
+        "relations": "Conexões",
+        "summary": "Resumo"
+      },
+      "stopped": "A geração foi interrompida.",
+      "title": "Gerando conhecimento desta fonte",
+      "values": {
+        "afterNotes": "depois das notas",
+        "notApplicable": "não se aplica neste modo",
+        "notesDone": "{count} notas",
+        "notesDoneOne": "1 nota",
+        "notesOfEstimate": "{count} de ~{estimate}",
+        "notesSoFar": "{count} até agora",
+        "notesSoFarOne": "1 até agora",
+        "pages": "{count} páginas",
+        "pagesOne": "1 página",
+        "placed": "{count} colocadas",
+        "placedOne": "1 colocada",
+        "readDone": "lida",
+        "reading": "lendo",
+        "relationsDone": "{count} conexões",
+        "relationsDoneOne": "1 conexão",
+        "searchable": "{count} buscáveis",
+        "searchableOne": "1 buscável",
+        "searching": "buscando",
+        "summaryDone": "pronto",
+        "waiting": "em espera",
+        "writing": "escrevendo"
+      }
+    },
+    "summary": {
+      "later": "O resumo vem depois das notas.",
+      "none": "Ainda sem resumo.",
+      "title": "Resumo",
+      "writing": "O resumo está sendo escrito."
+    },
+    "tabs": {
+      "connections": "Conexões",
+      "details": "Detalhes",
+      "label": "Seções da fonte",
+      "notes": "Notas"
+    },
+    "types": {
+      "AcademicPaper": "Artigo acadêmico",
+      "Book": "Livro",
+      "BookChapter": "Capítulo de livro",
+      "DailyNote": "Nota diária",
+      "DocumentSection": "Seção de documento",
+      "GenericDocument": "Documento genérico",
+      "PeriodicalIssue": "Edição de periódico",
+      "PersonalNote": "Nota pessoal",
+      "StandaloneArticle": "Artigo avulso",
+      "Video": "Vídeo",
+      "WebArticle": "Artigo da web"
+    }
   },
   "sourceRelations": {
     "openNote": "Ver nota",
