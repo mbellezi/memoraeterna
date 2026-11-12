@@ -304,7 +304,10 @@ describe("the Activity drawer", () => {
     );
     // One plain sentence and one retry for the whole drawer: the sections below do not repeat it.
     expect(html.match(/role="alert"/gu)).toHaveLength(1);
-    expect(html.match(/>Retry</gu)).toHaveLength(1);
+    // The same grammar as every other failed view: a solid triangle and the shared retry word.
+    expect(html.match(/>Try again</gu)).toHaveLength(1);
+    expect(html).not.toContain(">Retry<");
+    expect(html.match(/M10\.3 3\.7/gu)).toHaveLength(1);
     expect(html).toContain("Activity could not be loaded.");
     expect(html).not.toContain("Recent changes could not be loaded.");
     // The failure says in one muted line what is kept, once.
@@ -312,7 +315,8 @@ describe("the Activity drawer", () => {
     expect(html.match(/text-muted-foreground">Nothing was changed/gu)).toHaveLength(1);
     // A read that fails by itself while the status answered keeps its own line and retry.
     const alone = drawer(answered({ budget: { status: "error" }, done: { status: "error" } }));
-    expect(alone.match(/>Retry</gu)).toHaveLength(2);
+    expect(alone.match(/>Try again</gu)).toHaveLength(2);
+    expect(alone.match(/M10\.3 3\.7/gu)).toHaveLength(2);
     expect(alone).toContain("Recent changes could not be loaded.");
     expect(alone).toContain("The spending meters could not be loaded.");
     expect(alone).toContain("The changes are stored and can still be undone once they load.");

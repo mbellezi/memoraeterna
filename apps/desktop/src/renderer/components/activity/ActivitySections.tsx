@@ -12,6 +12,7 @@ import type { Translator } from "@app/i18n";
 
 import { cn } from "../../lib/cn";
 import { Button } from "../ui/button";
+import { SolidTriangle } from "../ui/solid-glyphs";
 import { LoadingState, SkeletonLines } from "../ui/skeleton";
 import {
   budgetView,
@@ -34,8 +35,10 @@ export function LoadingLine({ t, lines = 2 }: { t: Translator; lines?: number })
 }
 
 /**
- * A read that failed stays visible and retryable: one plain sentence saying what failed, one muted
- * line saying what is kept (design record 5.12), and one "Tentar de novo".
+ * A read that failed stays visible and retryable, in the grammar of every failed view
+ * (`ErrorState`): a solid triangle, one plain sentence saying what failed, one muted line saying
+ * what is kept (design record 5.12), and one "Tentar de novo" under the text. The retry stays a
+ * link, which suits the drawer's density.
  */
 export function FailedLine({
   t,
@@ -49,14 +52,19 @@ export function FailedLine({
   onRetry: () => void;
 }) {
   return (
-    <div className="grid justify-items-start gap-1">
-      <div role="alert" className="grid gap-0.5">
+    <div role="alert" className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-2 gap-y-1">
+      <SolidTriangle className="mt-0.5 text-danger" />
+      <div className="grid min-w-0 gap-0.5">
         <p className="text-sm text-foreground">{message}</p>
         <p className="text-xs text-muted-foreground">{kept}</p>
       </div>
       {/* The link's own padding is pulled back, so its words start where the sentence does. */}
-      <Button variant="link" className="-ml-[13px]" onClick={onRetry}>
-        {t("shell.actions.retry")}
+      <Button
+        variant="link"
+        className="col-start-2 -ml-[13px] justify-self-start"
+        onClick={onRetry}
+      >
+        {t("ui.retry")}
       </Button>
     </div>
   );
