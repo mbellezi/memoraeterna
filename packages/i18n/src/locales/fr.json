@@ -4674,8 +4674,8 @@
     "navLabel": "Sections des réglages",
     "row": {
       "changed": "Modifié",
-      "default": "Par défaut :",
-      "defaultVaries": "Par défaut : dépend de ce Mac et des autres options",
+      "default": "Par défaut :",
+      "defaultVaries": "Par défaut : dépend de ce Mac et des autres options",
       "reset": "Rétablir la valeur par défaut",
       "resetFailed": "Impossible de rétablir. Rien n’a changé.",
       "resetPending": "Il reste une étape à confirmer dans l’option elle-même.",
@@ -4688,22 +4688,22 @@
     "search": {
       "clear": "Effacer la recherche",
       "emptyBack": "et revenir à {section}.",
-      "emptyBody": "Essayez un autre mot, un synonyme ou le nom en anglais. Par exemple :",
+      "emptyBody": "Essayez un autre mot, un synonyme ou le nom en anglais. Par exemple :",
       "emptyClear": "Effacer la recherche",
-      "emptyTitle": "Rien pour « {query} » dans les réglages.",
+      "emptyTitle": "Rien pour « {query} » dans les réglages.",
       "exampleBudget": "dépenses",
       "exampleDark": "sombre",
       "exampleObsidian": "Obsidian",
       "examplePrivacy": "confidentialité",
-      "help": "Trouve aussi par synonyme : « sombre » mène à Thème.",
+      "help": "Trouve aussi par synonyme : « sombre » mène à Thème.",
       "keysClear": "efface la recherche",
       "keysMove": "parcourent",
       "keysOpen": "ouvre le meilleur",
       "label": "Rechercher dans les réglages",
-      "placeholder": "Rechercher : thème, dépenses…",
+      "placeholder": "Rechercher : thème, dépenses…",
       "placeholderShort": "Rechercher…",
-      "resultsMany": "{count} résultats pour « {query} »",
-      "resultsOne": "1 résultat pour « {query} »"
+      "resultsMany": "{count} résultats pour « {query} »",
+      "resultsOne": "1 résultat pour « {query} »"
     },
     "section": {
       "allDefault": "Tout est à sa valeur par défaut dans cette section.",
@@ -4712,8 +4712,8 @@
       "inSection": "dans cette section",
       "listLabel": "Quels réglages ont changé",
       "restoreAll": "Tout rétablir",
-      "restoreAskMany": "Rétablir {count} réglages à leur valeur par défaut ?",
-      "restoreAskOne": "Rétablir {count} réglage à sa valeur par défaut ?",
+      "restoreAskMany": "Rétablir {count} réglages à leur valeur par défaut ?",
+      "restoreAskOne": "Rétablir {count} réglage à sa valeur par défaut ?",
       "restoreConfirm": "Rétablir",
       "restoreSkippedMany": "{count} demandent une étape de votre part et sont restés comme avant.",
       "restoreSkippedOne": "{count} demande une étape de votre part et est resté comme avant."
@@ -4749,7 +4749,7 @@
       }
     },
     "states": {
-      "errorKept": "Rien n’a changé : Memora continue d’utiliser les valeurs qui s’appliquaient déjà.",
+      "errorKept": "Rien n’a changé : Memora continue d’utiliser les valeurs qui s’appliquaient déjà.",
       "errorTitle": "Impossible de lire vos réglages enregistrés."
     },
     "title": "Réglages",

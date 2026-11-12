@@ -174,4 +174,24 @@ describe("the copy of every entry", () => {
     }
     expect(Object.keys(messages)).toHaveLength(5);
   });
+
+  it("has search words in every locale for every entry, and each example of the empty state finds something", () => {
+    for (const locale of supportedLanguageCodes) {
+      const t = createTranslator(locale);
+      for (const candidate of settingsRegistryV2)
+        expect(
+          t(`settingsShell.words.${settingSlug(candidate.id)}` as MessageKey, {
+            missingKeyBehavior: "throw"
+          }).trim(),
+          `${locale} ${candidate.id}`
+        ).not.toBe("");
+      for (const key of [
+        "settingsShell.search.exampleBudget",
+        "settingsShell.search.exampleDark",
+        "settingsShell.search.exampleObsidian",
+        "settingsShell.search.examplePrivacy"
+      ] as const)
+        expect(searchSettings(t(key), locale).length, `${locale} ${key}`).toBeGreaterThan(0);
+    }
+  });
 });
