@@ -4916,6 +4916,9 @@
     "sources": {
       "countPartial": "{shown} sur {total}",
       "heading": "Sources",
+      "moreLoading": "Chargement d’autres sources",
+      "moreMany": "Afficher les sources de {count} notes de plus",
+      "moreOne": "Afficher les sources de {count} note de plus",
       "partial": "Voici les sources des notes affichées jusqu’ici."
     },
     "topics": {

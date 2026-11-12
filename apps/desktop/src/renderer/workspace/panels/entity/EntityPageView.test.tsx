@@ -104,12 +104,14 @@ describe("the entity page", () => {
     expect(partial).toContain("3 of 4");
     expect(partial).not.toMatch(/Sources<span[^>]*>4</);
     expect(partial).toContain("These are the sources of the notes shown so far.");
-    // The note is a sentence; the quiet button after it carries the mentions' own label.
-    expect(partial).toMatch(/shown so far\.<\/p><button[^>]*>Show \d+ more notes?/);
+    // The note is a sentence; the quiet button after it says what it brings: more sources.
+    expect(partial).toMatch(/shown so far\.<\/p><button[^>]*>Show the sources of 3 more notes/);
     expect(strip(view({ t: pt }))).toContain("3 de 4");
-    // Loading disables the button and says so.
+    expect(strip(view({ t: pt }))).toContain("Mostrar as fontes de mais 3 notas");
+    // Loading disables the button and says so, in terms of sources: the mentions' own button
+    // above says "mentions".
     expect(strip(view({ load: ready(entityFirstPage, "loading") }))).toMatch(
-      /<button[^>]*disabled=""[^>]*>Loading more mentions/
+      /<button[^>]*disabled=""[^>]*>Loading more sources/
     );
     // Every mention loaded: the heading counts the sources, and there is no button for them.
     const all = strip(view({ load: ready(appendMentions(entityFirstPage, entitySecondPage)) }));

@@ -437,7 +437,7 @@ function LoadedPage({
           </ul>
           {sourcesPartial ? (
             // The list is built from the notes shown so far: a sentence says so, and a quiet button
-            // with the mentions' own label loads more of them.
+            // says what it brings, the sources of more notes (it loads the same notes as the mentions').
             <div className="mt-1 grid min-w-0 gap-0.5">
               <p className="m-0 text-xs leading-5 text-muted-foreground [text-wrap:pretty]">
                 {t("entityPage.sources.partial")}
@@ -452,12 +452,12 @@ function LoadedPage({
                   onClick={onLoadMore}
                 >
                   {more === "loading"
-                    ? t("entityPage.mentions.moreLoading")
+                    ? t("entityPage.sources.moreLoading")
                     : plural(
                         t,
                         remaining,
-                        "entityPage.mentions.moreOne",
-                        "entityPage.mentions.moreMany"
+                        "entityPage.sources.moreOne",
+                        "entityPage.sources.moreMany"
                       )}
                 </Button>
               ) : null}
