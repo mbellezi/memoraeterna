@@ -6,14 +6,12 @@ import type { SettingEntryV2 } from "../../../../shared/settings-registry";
 import { ErrorState } from "../../../components/ui/error-state";
 import { LoadingState, Skeleton } from "../../../components/ui/skeleton";
 import { SolidCheck } from "../../../components/ui/solid-glyphs";
-import { settingsRegistryV2 } from "../../../../shared/settings-registry";
 import { settingsTouch } from "../../../lib/status-followers";
 import { InlineAction } from "../../InlineAction";
 import { RegistryRow } from "../../SettingRow";
 import { useSettings } from "../../settings-context";
 import { requestSettingsTarget } from "../../settings-target";
-import { labelOf } from "../../settings-model";
-import { providerEntryId, providerKinds } from "../ai/ai-model";
+import { providerNamesOf } from "../ai/provider-names";
 import { useSectionRead } from "../general/use-section-read";
 import { credentialNames, leaveRows, type LeaveJob, type Where } from "./privacy-model";
 
@@ -93,22 +91,6 @@ function whereCell(t: Translator, where: Where): ReactNode {
     case "noModel":
       return word(<CircleDashed aria-hidden="true" />, t("settingsPrivacy.leaves.noModel"));
   }
-}
-
-/** The stored display name of each provider to the name its kind has in the AI section. */
-function providerNamesOf(
-  t: Translator,
-  providers: readonly { provider: string; displayName: string }[]
-): Map<string, string> {
-  const names = new Map<string, string>();
-  for (const provider of providers) {
-    const kind = providerKinds.find((candidate) => candidate === provider.provider);
-    const entry = kind
-      ? settingsRegistryV2.find((candidate) => candidate.id === providerEntryId(kind))
-      : undefined;
-    if (entry) names.set(provider.displayName, labelOf(t, entry));
-  }
-  return names;
 }
 
 interface LeavesRead {

@@ -117,6 +117,7 @@ export function AiSection() {
           entry={entry}
           routes={core?.routes ?? null}
           profiles={core?.profiles ?? []}
+          providers={core?.providers ?? []}
           waiting={waiting}
           snapshot={snap}
           onChoose={(profileId) => controller.chooseProfile(routeOfEntryId(entry.id)!, profileId)}

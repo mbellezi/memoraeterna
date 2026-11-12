@@ -219,6 +219,26 @@ describe("Privacy, drawn from the registry", () => {
     expect(summary).not.toContain("OpenAI-compatible");
   });
 
+  it("keeps a provider's own name: a model id or a name the person typed, once when two repeat", async () => {
+    h = await mountSection({
+      section: "privacy",
+      locale: "pt-BR",
+      answers: base({
+        "ai.listProviders": [
+          { provider: "openai-codex", displayName: "gpt-5.6-luna", secretConfigured: true },
+          { provider: "openai-codex", displayName: "gpt-6-luna", secretConfigured: true },
+          { provider: "openai-compatible", displayName: "Work key", secretConfigured: true },
+          { provider: "openai-codex", displayName: "ChatGPT subscription", secretConfigured: true },
+          { provider: "openai-codex", displayName: "ChatGPT subscription", secretConfigured: true }
+        ]
+      })
+    });
+    const summary = h.row("privacy.summary")!.textContent!;
+    expect(summary).toContain("gpt-5.6-luna, gpt-6-luna, Work key, Assinatura ChatGPT");
+    expect(summary).toContain("Work key, Assinatura ChatGPT.");
+    expect(summary).not.toContain("Compatível com OpenAI");
+  });
+
   it("says Crossref receives article lookups whichever book service is chosen", async () => {
     h = await mountSection({
       section: "privacy",

@@ -53,7 +53,7 @@ export interface LeavesInput {
   /**
    * A provider's stored display name to the name the AI section calls its kind in this language: a
    * route that names a provider by its stored name is shown by that name (one name for a provider
-   * everywhere). A name not in the map (a profile's own name) is shown as it is.
+   * everywhere). A name not in the map (one the person typed, or a model id) is shown as it is.
    */
   providerNames?: ReadonlyMap<string, string>;
 }
@@ -124,7 +124,7 @@ export function leaveRows(input: LeavesInput): LeaveRow[] {
 
 /**
  * The names of the credentials kept on this Mac, in a stable order, never a value: each provider
- * with a stored secret by its display name, then the OpenAI Decisions key, the Google Books key and the
+ * with a stored secret by its display name (once when several share one), then the OpenAI Decisions key, the Google Books key and the
  * model repository token by the names the caller gives them.
  */
 export function credentialNames(input: {
@@ -136,8 +136,12 @@ export function credentialNames(input: {
   repositoryTokenStored: boolean;
   repositoryTokenName: string;
 }): string[] {
+  const providerNames = input.providers
+    .filter((provider) => provider.secretConfigured)
+    .map((provider) => provider.displayName);
   return [
-    ...input.providers.filter((provider) => provider.secretConfigured).map((p) => p.displayName),
+    // Two providers can carry the same name (two ChatGPT models): the line names it once.
+    ...new Set(providerNames),
     ...(input.decisionsKeyStored ? [input.decisionsName] : []),
     ...(input.googleBooksKeyStored ? [input.googleBooksName] : []),
     ...(input.repositoryTokenStored ? [input.repositoryTokenName] : [])

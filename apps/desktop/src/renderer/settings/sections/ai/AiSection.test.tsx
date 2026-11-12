@@ -336,6 +336,36 @@ describe("the model of each job", () => {
     });
   });
 
+  it("names the judge's provider as Privacy does: a default name in the language of the app, a name the person gave as it is", async () => {
+    const judgeOf = (providerName: string) => ({
+      ...routesFixture,
+      judge: { ...routesFixture.judge, providerName }
+    });
+    const providers = (displayName: string) =>
+      providersFixture.map((config) =>
+        config.provider === "openai-codex" ? { ...config, displayName } : config
+      );
+    await mount(
+      ai({
+        "ai.classRoutes": judgeOf("ChatGPT subscription"),
+        "ai.listProviders": providers("ChatGPT subscription")
+      }),
+      ptBR
+    );
+    expect(row("ai.route.judge")?.textContent).toContain("Assinatura ChatGPT");
+    expect(row("ai.route.judge")?.textContent).not.toContain("ChatGPT subscription");
+    await dom.dispose();
+    dom = createTestDom();
+    await mount(
+      ai({
+        "ai.classRoutes": judgeOf("Work key"),
+        "ai.listProviders": providers("Work key")
+      }),
+      ptBR
+    );
+    expect(row("ai.route.judge")?.textContent).toContain("Work key");
+  });
+
   it("says a failure in the route's own place and keeps the choice shown", async () => {
     await mount(
       ai({

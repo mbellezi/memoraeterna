@@ -12,6 +12,7 @@ import type { AiSnapshot } from "./ai-controller";
 import { routeOfEntryId, routeView, testLine, type RouteView } from "./ai-model";
 import { NativeSelect, StatusLine } from "./ai-parts";
 import { useRowProps } from "./ai-rows";
+import { providerNamesOf } from "./provider-names";
 
 /**
  * One job's model (a class route or the generative judge): a select of the profiles that can serve
@@ -23,6 +24,7 @@ export function RouteRow({
   entry,
   routes,
   profiles,
+  providers,
   waiting,
   snapshot,
   onChoose,
@@ -34,6 +36,8 @@ export function RouteRow({
   /** Null until the routes are read: the row shows a bar where its select will be. */
   routes: AiClassRoutes | null;
   profiles: readonly AiProfile[];
+  /** The stored providers: the judge's provider is named as the Privacy table names it. */
+  providers: readonly { provider: string; displayName: string }[];
   waiting: boolean;
   snapshot: Pick<AiSnapshot, "pendingJudge" | "testing" | "writing">;
   onChoose: (profileId: string) => void;
@@ -60,6 +64,9 @@ export function RouteRow({
   const busy = snapshot.writing || snapshot.testing.length > 0;
   const pending =
     route === "judge" ? profiles.find((p) => p.id === snapshot.pendingJudge) : undefined;
+  const storedName = routes.judge.providerName ?? routes.judge.profileName ?? "";
+  const providerLabel =
+    pending?.name ?? providerNamesOf(t, providers).get(storedName) ?? storedName;
   const defaultId = typeof row.description?.default === "string" ? row.description.default : null;
   const defaultName = defaultId ? profiles.find((p) => p.id === defaultId)?.name : undefined;
 
@@ -118,9 +125,7 @@ export function RouteRow({
           {route === "judge" ? (
             <Disclosure
               t={t}
-              provider={
-                pending?.name ?? routes.judge.providerName ?? routes.judge.profileName ?? ""
-              }
+              provider={providerLabel}
               show={pending !== undefined || routes.judge.remote}
               asking={pending !== undefined}
               onConfirm={onConfirmJudge}
