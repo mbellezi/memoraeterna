@@ -405,8 +405,10 @@ test("J3 path with 0 clicks (X2): each of the five kinds shows the path of objec
       if (!located) throw new Error(`objects.locate found nothing for ${want}`);
       const expected = expectedSegments(located);
       if (target.kind === "question")
-        expect(expected.length, "the Question's path is empty: its answer cites no placed note")
-          .toBeGreaterThan(0);
+        expect(
+          expected.length,
+          "the Question's path is empty: its answer cites no placed note"
+        ).toBeGreaterThan(0);
       if (target.kind === "note")
         expect
           .soft(below.belowLevelOne, "BASE-J's tree has no note below level 1 (X2's [I])")

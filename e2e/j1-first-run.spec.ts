@@ -344,10 +344,12 @@ test("J1 first run: onboarding, Home as the first-run surface, the first source 
       page.locator('[data-surface="rail"] [aria-keyshortcuts="Meta+2"][aria-current="page"]'),
       "the first source did not open Explore"
     ).toBeVisible();
+    // A7: the toast viewport renders only while a toast is up; look again a moment later for a late one.
+    await expect(page.locator("[data-toast-viewport]")).toHaveCount(0);
+    await page.waitForTimeout(1_500);
     await expect(
-      page.locator(
-        ".fixed.bottom-4.right-4 [role='status'], .fixed.bottom-4.right-4 [role='alert']"
-      )
+      page.locator("[data-toast-viewport]"),
+      "a toast arrived after the push"
     ).toHaveCount(0);
     expect((await readGestures(page)).total, "the first source needed more than Cmd-N").toBe(1);
     await captureAndCheck(session, 2, "source-pushed");

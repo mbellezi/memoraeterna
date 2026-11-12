@@ -184,9 +184,10 @@ test("J-idle: 60 s idle in each destination and Settings, no invocation without 
       // Positive control: the place's own load went through the trace, so a silent window is a real 0.
       const loadInvocations = ((await readIpcTrace(electronApp))?.entries ?? []).length;
       if (index === 1)
-        expect(loadInvocations, "the trace saw nothing of the first place's own load").toBeGreaterThan(
-          0
-        );
+        expect(
+          loadInvocations,
+          "the trace saw nothing of the first place's own load"
+        ).toBeGreaterThan(0);
       const cleared = await clearIpcTrace(electronApp);
       expect(cleared, "the IPC trace cannot be cleared").toBe(true);
       const startedAt = Date.now();

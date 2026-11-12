@@ -205,11 +205,12 @@ test("J2 import to tree: Add through Cmd-N pushes the Source at once and its not
     ).toBeVisible();
     const gesturesAtPush = (await readGestures(page)).total;
     expect(gesturesAtPush, "the Source needed more than Cmd-N").toBe(1);
-    // A7: no toast over the content. The toast viewport is a fixed box at the bottom right.
+    // A7: the toast viewport renders only while a toast is up; look again a moment later for a late one.
+    await expect(page.locator("[data-toast-viewport]")).toHaveCount(0);
+    await page.waitForTimeout(1_500);
     await expect(
-      page.locator(
-        ".fixed.bottom-4.right-4 [role='status'], .fixed.bottom-4.right-4 [role='alert']"
-      )
+      page.locator("[data-toast-viewport]"),
+      "a toast arrived after the push"
     ).toHaveCount(0);
     const afterImport = await db.query<{ id: string }>("select id::text as id from source_items");
     const known = new Set(sourcesBefore.map((row) => row.id));
