@@ -950,7 +950,11 @@
     "nodeCount": "{count} nodos",
     "edgeCount": "{count} relaciones",
     "truncated": "Mostrando el subconjunto más relevante",
-    "lod": { "overview": "Comunidades", "hubs": "Hubs principales", "detail": "Detalle completo" },
+    "lod": {
+      "overview": "Comunidades",
+      "hubs": "Hubs principales",
+      "detail": "Detalle completo"
+    },
     "community": "Comunidad",
     "source": "Fuente",
     "atomicNote": "Nota atómica",
@@ -1026,7 +1030,9 @@
       "invalidOutput": "La IA devolvió una decisión de identidad de entidad no válida.",
       "catalogChanged": "El catálogo de entidades cambió repetidamente. Vuelve a intentarlo."
     },
-    "relationLabels": { "invalidOutput": "La IA devolvió descripciones de relaciones no válidas." },
+    "relationLabels": {
+      "invalidOutput": "La IA devolvió descripciones de relaciones no válidas."
+    },
     "common": {
       "unknown": "Algo salio mal.",
       "network": "La solicitud de red fallo.",
@@ -1475,7 +1481,10 @@
   },
   "import": {
     "unspecifiedLanguage": "No especificado",
-    "modes": { "manual": "Contenido manual", "file": "Archivo local" },
+    "modes": {
+      "manual": "Contenido manual",
+      "file": "Archivo local"
+    },
     "steps": {
       "type": "Tipo",
       "origin": "Origen",
@@ -1490,7 +1499,10 @@
       "publications": "Publicaciones",
       "media": "Web, video y archivos"
     },
-    "badges": { "container": "Contenedor", "child": "Requiere fuente madre" },
+    "badges": {
+      "container": "Contenedor",
+      "child": "Requiere fuente madre"
+    },
     "hierarchyHint": "Este tipo puede detectar capitulos, articulos y secciones antes del procesamiento.",
     "fields": {
       "sourceType": "Tipo de fuente",
@@ -1589,12 +1601,19 @@
       "containerHint": "Compón los subelementos aquí o cambia a un documento único. Revisarás la estructura detectada antes de guardarla.",
       "editingHierarchyHint": "Esto edita el documento de la fuente actual. Los subelementos existentes conservan su contenido y se editan individualmente desde la biblioteca.",
       "modeLabel": "Organización del contenido",
-      "modes": { "subitems": "Componer subelementos", "document": "Documento único" },
+      "modes": {
+        "subitems": "Componer subelementos",
+        "document": "Documento único"
+      },
       "modeDescriptions": {
         "subitems": "Escribe capítulos, artículos o secciones por separado y ordena su posición.",
         "document": "Escribe o pega un documento Markdown y detecta sus encabezados automáticamente."
       },
-      "labels": { "chapters": "Capítulos", "articles": "Artículos", "sections": "Secciones" },
+      "labels": {
+        "chapters": "Capítulos",
+        "articles": "Artículos",
+        "sections": "Secciones"
+      },
       "placeholders": {
         "chapter": "Título del capítulo",
         "article": "Título del artículo",
@@ -1690,7 +1709,10 @@
         "title": "Buscable + organizado",
         "description": "Crea segmentos y embeddings para recuperacion."
       },
-      "summary": { "title": "Resumen", "description": "Genera un resumen conciso con evidencias." },
+      "summary": {
+        "title": "Resumen",
+        "description": "Genera un resumen conciso con evidencias."
+      },
       "full_knowledge": {
         "title": "Segundo cerebro",
         "description": "Genera resúmenes, notas, grafo y conexiones."
@@ -1732,7 +1754,11 @@
     "blockingIssues": "Resuelve {count} problemas antes de continuar.",
     "selectAtLeastOne": "Selecciona al menos un elemento para crearlo como fuente independiente.",
     "ready": "La estructura es valida y esta lista para confirmar.",
-    "confidence": { "high": "Alta", "medium": "Revisar", "low": "Baja" },
+    "confidence": {
+      "high": "Alta",
+      "medium": "Revisar",
+      "low": "Baja"
+    },
     "kinds": {
       "part": "Parte",
       "chapter": "Capitulo",
@@ -1870,7 +1896,11 @@
       "empty": "Ninguna nota generada por IA espera una revision opcional.",
       "optional": "Estas notas ya estan en uso. Revisarlas es opcional.",
       "unknownSource": "Fuente desconocida",
-      "fields": { "title": "Titulo", "idea": "Idea principal", "body": "Cuerpo de la nota" },
+      "fields": {
+        "title": "Titulo",
+        "idea": "Idea principal",
+        "body": "Cuerpo de la nota"
+      },
       "actions": {
         "approve": "Aprobar",
         "edit": "Editar",
@@ -2367,7 +2397,9 @@
         "allowRemote": "Permitir modelos remotos",
         "offlineOnly": "Solo modelos locales"
       },
-      "languages": { "interface": "Mismo idioma que la interfaz" },
+      "languages": {
+        "interface": "Mismo idioma que la interfaz"
+      },
       "oauth": {
         "authentication": "Autenticacion de ChatGPT",
         "connect": "Iniciar sesion con ChatGPT",
@@ -2745,7 +2777,11 @@
   },
   "markdown": {
     "modeLabel": "Vista del editor",
-    "modes": { "write": "Escribir", "preview": "Vista previa", "split": "Dividido" },
+    "modes": {
+      "write": "Escribir",
+      "preview": "Vista previa",
+      "split": "Dividido"
+    },
     "previewLabel": "Vista previa de Markdown",
     "emptyPreview": "Empieza a escribir para ver la vista previa.",
     "placeholder": "Escribe en Markdown…",
@@ -4374,6 +4410,7 @@
       "retry": "Intentar de nuevo",
       "tentative": "Lugar probable:",
       "tentativeQuestion": "por las citas, cuando termine la respuesta",
+      "tentativeQuestionNone": "Lugar: sale de las citas cuando la respuesta termine",
       "tentativeSource": "definido cuando terminen las notas",
       "topLevel": "En el primer nivel del árbol",
       "unsorted": "Sin lugar",
@@ -5147,6 +5184,130 @@
     "uploadCopies": {
       "help": "Una segunda copia de cada original en una carpeta tuya, fuera de la base de datos de Memora.",
       "label": "Guardar una copia de los archivos subidos"
+    }
+  },
+  "askPanel": {
+    "answer": {
+      "label": "Respuesta",
+      "saved": "Guardada en Preguntas. Cada cita lleva al fragmento exacto.",
+      "savedPlace": "Guardada en Preguntas. Su lugar en el árbol sale de las citas cuando la respuesta termine. Cada cita lleva al fragmento exacto."
+    },
+    "band": {
+      "again": "Repetir",
+      "answering": "Escribiendo la respuesta",
+      "answeringSourcesMany": "{count} fuentes citadas hasta ahora",
+      "answeringSourcesOne": "{count} fuente citada hasta ahora",
+      "canceled": "Detenida por ti",
+      "continue": "Continuar",
+      "doneOn": "Respondida el {date}",
+      "retrieving": "Leyendo la biblioteca",
+      "retrievingHint": "buscando los fragmentos que responden",
+      "sourcesMany": "{count} fuentes",
+      "sourcesOne": "{count} fuente",
+      "stale": "Puede estar desactualizada: una fuente citada cambió después de la respuesta.",
+      "stop": "Detener",
+      "waiting": "Esperando la respuesta de la IA en la nube",
+      "waitingHint": "la respuesta continúa desde aquí"
+    },
+    "chip": {
+      "labelPlain": "Cita {number}"
+    },
+    "compact": {
+      "error": "No se pudo abrir."
+    },
+    "empty": {
+      "add": "Añadir una fuente",
+      "body": "Reformula la pregunta o añade una fuente que trate el tema.",
+      "headline": "No encontré nada en tu biblioteca sobre esto.",
+      "rephrase": "Reformular"
+    },
+    "error": {
+      "kept": "Tu biblioteca sigue como estaba.",
+      "message": "No se pudo abrir esta pregunta."
+    },
+    "failed": {
+      "again": "No se pudo repetir la pregunta.",
+      "kept": "Lo escrito antes de detenerse se guarda abajo.",
+      "keptNothing": "Tu pregunta está guardada; puedes repetirla.",
+      "message": "La ruta de IA no respondió.",
+      "stop": "No se pudo detener la respuesta."
+    },
+    "followUp": {
+      "label": "Pregunta de seguimiento",
+      "placeholder": "Seguir preguntando, en el mismo ámbito…",
+      "send": "Preguntar"
+    },
+    "kind": "Preguntar",
+    "launcher": {
+      "draftLabel": "Tu pregunta",
+      "empty": {
+        "body": "Pregunta sobre lo que guardaste. Cada pregunta queda en Biblioteca › Preguntas, con su respuesta.",
+        "headline": "Aún no has preguntado nada."
+      },
+      "error": {
+        "kept": "Tus palabras siguen en el campo.",
+        "message": "No se pudo enviar la pregunta."
+      },
+      "heading": "Pregunta a tu biblioteca",
+      "hintAsk": "preguntar",
+      "hintNewline": "nueva línea",
+      "lead": "La respuesta cita los fragmentos exactos en los que se apoya. Se guarda en Preguntas y nunca cambia tus notas.",
+      "long": "Usa 1.000 caracteres como máximo.",
+      "placeholder": "¿Qué quieres saber?",
+      "recent": {
+        "heading": "Preguntas recientes",
+        "label": "Abrir una pregunta reciente"
+      },
+      "scope": {
+        "label": "Ámbito",
+        "library": "toda la biblioteca",
+        "source": "fuente: {title}",
+        "topic": "tema: {title}",
+        "unsupported": "Solo se puede preguntar sobre toda la biblioteca, un tema o una fuente.",
+        "unsupportedKept": "No se preguntó nada."
+      },
+      "short": "Escribe al menos 3 caracteres.",
+      "starting": "Enviando la pregunta…",
+      "submit": "Preguntar"
+    },
+    "meta": {
+      "asked": "Preguntada el {date}",
+      "cloud": "IA en la nube",
+      "local": "IA local",
+      "scopeLibrary": "ámbito: toda la biblioteca",
+      "scopeSource": "ámbito: fuente {title}",
+      "scopeSources": "ámbito: {count} fuentes",
+      "scopeTopic": "ámbito: tema {title}"
+    },
+    "missing": {
+      "action": "Ver Preguntas",
+      "body": "Puede que se haya borrado. Tus notas y fuentes siguen como estaban.",
+      "headline": "Esta pregunta ya no está en la biblioteca."
+    },
+    "sources": {
+      "changed": "cambió después de la respuesta",
+      "heading": "Evidencia de esta respuesta",
+      "hint": "Los números son los de las citas.",
+      "label": "Fragmentos citados por esta respuesta",
+      "open": "Abrir el fragmento al lado",
+      "passagesMany": "{count} pasajes citados",
+      "passagesOne": "{count} pasaje citado",
+      "readFailed": "No se pudo leer el fragmento.",
+      "reading": "leyendo…",
+      "removed": "fragmento eliminado",
+      "seeSource": "ver la fuente"
+    },
+    "tray": {
+      "empty": "Pasa el ratón o el foco por una cita para leer aquí su fragmento.",
+      "heading": "Cita {number}",
+      "label": "Fragmento de la cita",
+      "open": "abrir el fragmento al lado"
+    },
+    "versions": {
+      "label": "Versiones de la respuesta",
+      "next": "Versión siguiente",
+      "of": "Versión {version} de {total}",
+      "previous": "Versión anterior"
     }
   }
 }

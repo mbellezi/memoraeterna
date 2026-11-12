@@ -152,6 +152,7 @@
   --shadow-pop: 0 0 0 1px rgba(38, 49, 64, 0.08), 0 16px 40px -8px rgba(38, 49, 64, 0.24);
   /* The lifted sheet (the quick-look): as the pop in light; in dark a lit edge and a faint lighter plate (the inset fill). */
   --shadow-lift: 0 0 0 1px rgba(38, 49, 64, 0.08), 0 16px 40px -8px rgba(38, 49, 64, 0.24);
+  --shadow-edge-up: 0 -6px 14px -10px rgba(38, 49, 64, 0.25);
 
   /* The thread line is decorative; the meaning is carried by node shape and text. */
   --thread: #cfd7e1;
@@ -212,6 +213,7 @@
   --shadow-lift:
     0 0 0 1px #4a5c7a, inset 0 0 0 100vmax rgba(255, 255, 255, 0.035),
     inset 0 1px 0 rgba(255, 255, 255, 0.07), 0 18px 48px -8px rgba(0, 0, 0, 0.85);
+  --shadow-edge-up: 0 -6px 14px -10px rgba(0, 0, 0, 0.6);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -262,6 +264,7 @@
     --shadow-lift:
       0 0 0 1px #4a5c7a, inset 0 0 0 100vmax rgba(255, 255, 255, 0.035),
       inset 0 1px 0 rgba(255, 255, 255, 0.07), 0 18px 48px -8px rgba(0, 0, 0, 0.85);
+    --shadow-edge-up: 0 -6px 14px -10px rgba(0, 0, 0, 0.6);
   }
 }
 
