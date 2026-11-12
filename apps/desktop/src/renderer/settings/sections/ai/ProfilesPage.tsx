@@ -13,6 +13,7 @@ import type {
 } from "../../../../shared/ipc";
 import { AiParameterFields } from "../../../components/AiParameterFields";
 import { Button } from "../../../components/ui/button";
+import { cn } from "../../../lib/cn";
 import { InlineAction } from "../../InlineAction";
 import type { AiSettingsController } from "./ai-controller";
 import { AreaNotice, Field, NativeSelect, TextField } from "./ai-parts";
@@ -455,7 +456,10 @@ function TaskEditor({
         type="button"
         aria-expanded={open}
         onClick={() => setOpen((value) => !value)}
-        className="flex w-full flex-wrap items-center justify-between gap-2 rounded-sm border-0 bg-transparent p-0 text-left text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+        className={cn(
+          "flex w-full flex-wrap items-center justify-between gap-2 rounded-sm border-0 bg-transparent p-0 text-left text-sm",
+          "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+        )}
       >
         <span className="font-medium text-foreground">{label}</span>
         <span className="text-xs text-muted-foreground">
