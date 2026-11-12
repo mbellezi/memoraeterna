@@ -3862,6 +3862,7 @@
         "topics": "Topics"
       },
       "deeper": "{count} topics sit deeper: the table lists them all, and Enter zooms into a branch.",
+      "deeperOne": "1 topic sits deeper: the table lists it, and Enter zooms into a branch.",
       "here": "here",
       "label": "Topic tree. Each block is a button that selects a topic: arrows move, Enter zooms in.",
       "legend": {
@@ -3901,6 +3902,7 @@
     },
     "selected": {
       "growth": "{growth} notes in {days} days",
+      "growthOne": "{growth} note in {days} days",
       "subtopics": "{count} direct subtopics",
       "subtopicsOne": "1 direct subtopic"
     },

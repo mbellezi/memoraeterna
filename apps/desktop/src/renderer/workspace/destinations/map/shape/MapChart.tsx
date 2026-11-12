@@ -234,7 +234,7 @@ export function MapChart({
       ) : null}
       {deeper > 0 ? (
         <p className="m-0 text-xs text-muted-foreground">
-          {t("map.chart.deeper", {
+          {t(deeper === 1 ? "map.chart.deeperOne" : "map.chart.deeper", {
             values: { count: new Intl.NumberFormat(t.locale).format(deeper) }
           })}
         </p>

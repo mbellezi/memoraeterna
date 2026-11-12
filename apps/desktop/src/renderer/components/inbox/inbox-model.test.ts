@@ -13,6 +13,7 @@ import {
   itemTitle,
   kindLabels,
   objectName,
+  previousPanelTarget,
   quarantineReason,
   reviewVariantLabel,
   riskLabels,
@@ -257,5 +258,21 @@ describe("verbs and time", () => {
     // A time ahead of now, or unreadable, is never a negative age.
     expect(ageText(en, new Date(now + 60_000).toISOString(), now)).toBe("just now");
     expect(ageText(en, "not a date", now)).toBe("just now");
+  });
+
+  it("opens, from the previous panel's item list, the first object an item names", () => {
+    const review = item("review");
+    expect(previousPanelTarget(review)).toEqual({ type: "object", object: review.objects[0] });
+    const contradiction = item("contradiction");
+    expect(previousPanelTarget(contradiction)).toEqual({
+      type: "object",
+      object: contradiction.objects[0]
+    });
+    // An Obsidian conflict is solved in Settings; an item that names nothing opens nothing.
+    expect(previousPanelTarget(item("obsidian_conflict", { objects: [] }))).toEqual({
+      type: "settings"
+    });
+    expect(previousPanelTarget(item("budget", { objects: [] }))).toBeNull();
+    expect(previousPanelTarget(undefined)).toBeNull();
   });
 });

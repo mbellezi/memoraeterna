@@ -19,6 +19,8 @@ import { panelDomId, tabDomId, ViewSwitch } from "./shape/ViewSwitch";
  */
 
 export const surfaceId = "destination-map";
+/** The root as the previous panel of a stack: its table alone, reported as a surface of its own. */
+export const compactSurfaceId = "destination-map-compact";
 
 /** The lens and the topic the person came from (the "aqui" marker), read from the root's address. */
 export function readMapAddress(address: string): { lens: MapLens; scope: string | null } {
@@ -81,7 +83,7 @@ export function MapRoot({ t, address, mode, active, onState, onOpen, current }: 
 
   return (
     <section
-      data-surface={surfaceId}
+      data-surface={compact ? compactSurfaceId : surfaceId}
       data-state={state}
       aria-label={t("map.title")}
       className="flex h-full min-h-0 min-w-0 flex-col gap-4 overflow-y-auto overscroll-contain px-6 py-5 max-[1179px]:px-4"
@@ -103,10 +105,15 @@ export function MapRoot({ t, address, mode, active, onState, onOpen, current }: 
           />
         )}
       </header>
+      {/* The previous panel has no tabs to answer to: a tab panel there would point at nothing. */}
       <div
-        role="tabpanel"
-        id={panelDomId(prefix, lens)}
-        aria-labelledby={tabDomId(prefix, lens)}
+        {...(compact
+          ? {}
+          : {
+              role: "tabpanel",
+              id: panelDomId(prefix, lens),
+              "aria-labelledby": tabDomId(prefix, lens)
+            })}
         className="min-h-0 min-w-0"
       >
         {lens === "shape" ? (

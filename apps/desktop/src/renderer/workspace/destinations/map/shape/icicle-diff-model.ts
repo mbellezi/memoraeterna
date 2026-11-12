@@ -90,6 +90,16 @@ export function movedMark(cell: DiffCell): string | null {
   return `${cell.side === "before" ? "−" : "+"}${moved}`;
 }
 
+/**
+ * One line of the key under the lanes: "Forgetting · 0 items (Renamed)". Always the name and a count
+ * (design record §7.4), the count being the items the change moved on that side, zero included.
+ */
+export function legendLine(t: Translator, cell: DiffCell): string {
+  const moved = cell.side === "before" ? cell.node.itemsOut : cell.node.itemsIn;
+  const name = topicNameOn(t, cell.node, cell.side);
+  return `${name} · ${countLabel(t, "items", moved)} (${t(diffChanges[cell.node.change].key)})`;
+}
+
 // ---------------------------------------------------------------------------
 // Rows: the table alternative and the selected-topic panel
 

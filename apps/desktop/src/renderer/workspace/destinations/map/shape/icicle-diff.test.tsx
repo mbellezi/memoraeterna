@@ -199,7 +199,7 @@ describe("the icicles of a change", () => {
     expect(legend.length).toBeGreaterThan(0);
     expect(new Set(legend).size).toBe(legend.length);
     expect(html).toContain('aria-label="Small blocks, by letter"');
-    expect(text(html)).toContain("Forgetting · Renamed");
+    expect(text(html)).toContain("Forgetting · 0 items (Renamed)");
     // A letter on a block is a letter of the legend, on either side of the diff.
     const letters = new Set(
       blocks(html)

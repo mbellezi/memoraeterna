@@ -30,7 +30,7 @@ export function selectedLine(t: Translator, model: PanelModel): string {
     );
   if (model.growth !== null)
     parts.push(
-      t("map.selected.growth", {
+      t(model.growth === 1 ? "map.selected.growthOne" : "map.selected.growth", {
         values: { growth: model.growthText, days: number.format(growthDays) }
       })
     );

@@ -16,6 +16,8 @@ import { columnWidth } from "../columns";
  */
 
 export const surfaceId = "destination-inbox";
+/** The root as the previous panel of a stack: its item list alone, reported as a surface of its own. */
+export const compactSurfaceId = "destination-inbox-compact";
 
 export function InboxRoot({ t, mode, active, onState, onOpen }: PanelProps) {
   const [state, setState] = useState<PanelLoadState>("loading");
@@ -28,7 +30,7 @@ export function InboxRoot({ t, mode, active, onState, onOpen }: PanelProps) {
 
   return (
     <section
-      data-surface={surfaceId}
+      data-surface={compact ? compactSurfaceId : surfaceId}
       data-state={state}
       aria-label={t("inbox.title")}
       className="flex h-full min-h-0 min-w-0 flex-col gap-3 px-6 py-5 max-[1179px]:px-4"

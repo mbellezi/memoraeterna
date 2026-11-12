@@ -16,6 +16,7 @@ import {
   diffSideKeys,
   hiddenText,
   isTopicDiff,
+  legendLine,
   legendText,
   movedMark,
   resolveDiffSelection,
@@ -158,6 +159,18 @@ describe("the words of a block", () => {
     // Out of a topic is counted before, into it after: Language lost 3 and gained none.
     expect(movedMark(cell("after", diffTopics.language))).toBeNull();
     expect(movedMark(cell("before", diffTopics.language))).toBe("−3");
+  });
+
+  it("gives every key line of the legend the name and a count, zero included", () => {
+    expect(legendLine(en, cell("before", diffTopics.misc))).toBe("Misc · 6 items (Removed)");
+    expect(legendLine(en, cell("after", diffTopics.retrieval))).toBe(
+      "Retrieval practice · 4 items (Added)"
+    );
+    // A renamed topic that moved nothing still says so, instead of leaving its size out.
+    expect(legendLine(en, cell("before", diffTopics.forgetting))).toBe(
+      "Forgetting · 0 items (Renamed)"
+    );
+    expect(legendLine(en, cell("after", diffTopics.memory))).toBe("Memory · 5 items (Items moved)");
   });
 
   it("speaks in the interface language", () => {

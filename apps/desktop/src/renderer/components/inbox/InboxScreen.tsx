@@ -6,7 +6,7 @@ import {
   useSyncExternalStore,
   type KeyboardEvent
 } from "react";
-import { formatObjectAddress, type InboxObject } from "@app/domain";
+import { formatObjectAddress, inboxItemKey, type InboxObject } from "@app/domain";
 import type { Translator } from "@app/i18n";
 
 import { closePanelPriority, subscribeClosePanel } from "../../lib/close-panel";
@@ -15,6 +15,7 @@ import type { PanelLoadState } from "../../workspace/PanelFrame";
 import { useObjectOpener, type OpenableNavigation } from "../WhereIsThis";
 import { InboxController } from "./inbox-controller";
 import { inboxCommand, reclaimsFocus } from "./inbox-keys";
+import { previousPanelTarget } from "./inbox-model";
 import { InboxView } from "./InboxView";
 
 export interface InboxScreenProps {
@@ -192,7 +193,14 @@ export function InboxScreen({
       onKey={onKey}
       onRetry={() => controller.retry()}
       onFilter={(filter) => controller.setFilter(filter)}
-      onSelect={(key) => controller.select(key)}
+      onSelect={(key) => {
+        controller.select(key);
+        // The previous panel shows no detail: choosing a row opens what it names beside it.
+        if (!compact) return;
+        const target = previousPanelTarget(state.items.find((item) => inboxItemKey(item) === key));
+        if (target?.type === "object") openObject(target.object);
+        else if (target?.type === "settings") onOpenConnections();
+      }}
       onLoadMore={() => void controller.loadMore()}
       onVerb={(verb) => void controller.act(verb)}
       onUndo={() => void controller.undo()}

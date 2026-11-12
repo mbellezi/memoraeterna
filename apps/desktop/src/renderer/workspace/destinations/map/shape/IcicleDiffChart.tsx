@@ -24,6 +24,7 @@ import {
   diffLegend,
   diffSideKeys,
   hiddenText,
+  legendLine,
   legendText,
   movedMark,
   topicNameOn
@@ -239,7 +240,7 @@ function fitBlocks(
       forms.set(cell.key, form === "key" && letter === null ? "none" : form);
       if (letter !== null && !letters.has(cell.topicId)) {
         letters.set(cell.topicId, letter);
-        legend.push({ letter, text: `${name} · ${changeLine(t, cell)}`, change: cell.node.change });
+        legend.push({ letter, text: legendLine(t, cell), change: cell.node.change });
       }
     }
   });

@@ -102,11 +102,12 @@ export function MapTable({
                       aria-pressed={selected}
                       title={row.name}
                       onClick={() => onSelect(row.key)}
-                      className="block w-full min-w-0 truncate rounded-sm text-left font-medium text-foreground hover:underline"
+                      className="flex w-full min-w-0 rounded-sm text-left font-medium text-foreground hover:underline"
                     >
-                      {row.name}
+                      {/* Only the title takes the tail ellipsis; the app's own marker is never cut. */}
+                      <span className="min-w-0 truncate">{row.name}</span>
                       {here ? (
-                        <span className="font-semibold text-accent">{` · ${t("map.chart.here")} ↳`}</span>
+                        <span className="shrink-0 whitespace-pre font-semibold text-accent">{` · ${t("map.chart.here")} ↳`}</span>
                       ) : null}
                     </button>
                   </th>

@@ -268,6 +268,20 @@ describe("the Inbox screen", () => {
     expect(view(stateOf([]), { compact: true })).toContain("Nothing needs you");
   });
 
+  it("shows the previous panel's error and empty states on the shared words, as the full form does", () => {
+    const failed = view(reduceInbox(initialInboxState(), { type: "loadFailed" }), {
+      compact: true
+    });
+    expect(failed).toContain('role="alert"');
+    expect(failed).toContain("Your Inbox could not be loaded.");
+    expect(failed).toContain("Nothing was decided or changed.");
+    expect(failed.match(/Retry/gu)).toHaveLength(1);
+    expect(view(initialInboxState(), { compact: true })).toContain('aria-busy="true"');
+    const empty = view(stateOf([]), { compact: true });
+    expect(empty).toContain("Nothing needs you");
+    expect(empty).toContain("text-muted-foreground");
+  });
+
   it("gives the item list the width of its tier", () => {
     expect(view(stateOf(everyKind), { listWidth: 300 })).toContain("--inbox-list-w:300px");
     expect(view(stateOf(everyKind), { listWidth: 360 })).toContain("--inbox-list-w:360px");

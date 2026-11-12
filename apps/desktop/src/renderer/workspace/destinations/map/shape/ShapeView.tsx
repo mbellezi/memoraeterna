@@ -24,6 +24,7 @@ import {
   panelModel,
   resolveSelection,
   tableRows,
+  topicOfRow,
   warningViews
 } from "./shape-model";
 import { ShapeSelected } from "./ShapeSelected";
@@ -170,7 +171,10 @@ function CompactShape(props: ShapeViewProps & { shape: TopicShape | null }) {
       selectedKey={null}
       currentKey={props.currentTopicId ? topicCellKey(props.currentTopicId) : null}
       hereKeys={new Set()}
-      onSelect={props.onSelect}
+      onSelect={(key) => {
+        const topicId = topicOfRow(rows, key);
+        if (topicId !== null) props.onOpenTopic(topicId);
+      }}
     />
   );
 }

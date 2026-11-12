@@ -3860,6 +3860,7 @@
         "topics": "Argomenti"
       },
       "deeper": "{count} argomenti sono più in profondità: la tabella li elenca tutti e Invio ingrandisce un ramo.",
+      "deeperOne": "1 argomento è più in profondità: la tabella lo elenca e Invio ingrandisce un ramo.",
       "here": "qui",
       "label": "Albero degli argomenti. Ogni blocco è un pulsante che seleziona un argomento: le frecce si spostano e Invio ingrandisce.",
       "legend": {
@@ -3899,6 +3900,7 @@
     },
     "selected": {
       "growth": "{growth} note in {days} giorni",
+      "growthOne": "{growth} nota in {days} giorni",
       "subtopics": "{count} sottoargomenti diretti",
       "subtopicsOne": "1 sottoargomento diretto"
     },

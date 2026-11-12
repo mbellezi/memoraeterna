@@ -3865,6 +3865,7 @@
         "topics": "Tópicos"
       },
       "deeper": "{count} tópicos estão mais fundo: a tabela lista todos, e Enter amplia um ramo.",
+      "deeperOne": "1 tópico está mais fundo: a tabela o lista, e Enter amplia um ramo.",
       "here": "aqui",
       "label": "Árvore de tópicos. Cada bloco é um botão que seleciona um tópico: as setas movem e Enter amplia.",
       "legend": {
@@ -3904,6 +3905,7 @@
     },
     "selected": {
       "growth": "{growth} notas em {days} dias",
+      "growthOne": "{growth} nota em {days} dias",
       "subtopics": "{count} subtópicos diretos",
       "subtopicsOne": "1 subtópico direto"
     },

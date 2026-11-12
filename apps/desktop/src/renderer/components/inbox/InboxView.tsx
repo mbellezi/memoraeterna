@@ -1,5 +1,5 @@
 import { useId, type CSSProperties, type KeyboardEvent, type ReactNode, type Ref } from "react";
-import { CircleCheck, Keyboard, RefreshCw } from "lucide-react";
+import { CircleCheck, Keyboard } from "lucide-react";
 import type { ChangeSetRisk, InboxKind, InboxObject, InboxVerb } from "@app/domain";
 import type { Translator } from "@app/i18n";
 
@@ -70,21 +70,25 @@ export function InboxView({ rootRef, ...props }: InboxViewProps) {
         onKeyDown={props.onKey}
       >
         {state.load.status === "loading" ? (
-          <p role="status" className="m-0 text-sm text-muted-foreground">
-            {t("inbox.states.loading")}
-          </p>
-        ) : state.load.status === "error" ? (
-          <div role="alert" className="flex flex-col items-start gap-2 text-sm text-foreground">
-            <p className="m-0">{t("inbox.states.error")}</p>
-            <Button type="button" onClick={props.onRetry}>
-              <RefreshCw aria-hidden="true" />
-              {t("shell.actions.retry")}
-            </Button>
+          <div role="status" aria-busy="true" className="flex flex-col gap-3">
+            <p className="m-0 text-sm text-muted-foreground">{t("inbox.states.loading")}</p>
+            <SkeletonRows rows={6} />
           </div>
+        ) : state.load.status === "error" ? (
+          <ErrorState
+            t={t}
+            message={t("inbox.states.error")}
+            kept={t("inbox.states.errorKept")}
+            retryLabel={t("shell.actions.retry")}
+            onRetry={props.onRetry}
+          />
         ) : empty ? (
-          <p role="status" className="m-0 text-sm text-muted-foreground">
-            {t("inbox.states.empty.title")}
-          </p>
+          <div role="status" className="flex flex-col gap-1">
+            <p className="m-0 text-sm font-medium text-foreground">
+              {t("inbox.states.empty.title")}
+            </p>
+            <p className="m-0 text-xs text-muted-foreground">{t("inbox.states.empty.body")}</p>
+          </div>
         ) : (
           <InboxList
             t={t}

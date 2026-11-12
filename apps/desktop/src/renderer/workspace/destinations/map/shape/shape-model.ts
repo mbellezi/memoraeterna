@@ -285,6 +285,15 @@ export function tableRows(
 /** Rows shown at first and added by "Show more topics". */
 export const tablePageSize = 200;
 
+/**
+ * The topic a row of the previous-panel table opens beside it (design record §8, rule 1). The
+ * "Unsorted" row holds no topic of its own (its inspector offers no "Open"), so it opens nothing.
+ */
+export function topicOfRow(rows: readonly TableRow[], key: string): string | null {
+  const row = rows.find((candidate) => candidate.key === key);
+  return row?.kind === "topic" ? row.topicId : null;
+}
+
 // ---------------------------------------------------------------------------
 // Warnings and proposals
 

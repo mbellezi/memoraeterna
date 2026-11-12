@@ -90,6 +90,26 @@ describe("a root reports its own surface and state", () => {
       <MapRoot {...props} mode="compact" address={formatView({ view: "map", lens: "shape" })} />
     );
     expect(html).not.toContain('role="tablist"');
+    // No tab panel either: it would be labelled by a tab that is not there.
+    expect(html).not.toContain('role="tabpanel"');
+    expect(html).not.toContain("aria-labelledby");
+    expect(renderToString(<MapRoot {...props} address={destinationRoots.map} />)).toContain(
+      'role="tabpanel"'
+    );
+  });
+
+  it("reports the previous-panel forms as surfaces of their own, so the screens tool captures them", () => {
+    const map = renderToString(
+      <MapRoot {...props} mode="compact" address={formatView({ view: "map", lens: "shape" })} />
+    );
+    const inbox = renderToString(
+      <InboxRoot {...props} mode="compact" address={destinationRoots.inbox} />
+    );
+    expect(map).toContain('data-surface="destination-map-compact"');
+    expect(inbox).toContain('data-surface="destination-inbox-compact"');
+    expect(renderToString(<InboxRoot {...props} address={destinationRoots.inbox} />)).toContain(
+      'data-surface="destination-inbox"'
+    );
   });
 
   it("reads the lens and the topic the person came from out of the root's address", () => {

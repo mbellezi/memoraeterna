@@ -3867,6 +3867,7 @@
         "topics": "Sujets"
       },
       "deeper": "{count} sujets sont plus profonds : le tableau les liste tous et Entrée agrandit une branche.",
+      "deeperOne": "1 sujet est plus profond : le tableau le liste et Entrée agrandit une branche.",
       "here": "ici",
       "label": "Arbre des sujets. Chaque bloc est un bouton qui sélectionne un sujet : les flèches déplacent et Entrée agrandit.",
       "legend": {
@@ -3906,6 +3907,7 @@
     },
     "selected": {
       "growth": "{growth} notes en {days} jours",
+      "growthOne": "{growth} note en {days} jours",
       "subtopics": "{count} sous-sujets directs",
       "subtopicsOne": "1 sous-sujet direct"
     },

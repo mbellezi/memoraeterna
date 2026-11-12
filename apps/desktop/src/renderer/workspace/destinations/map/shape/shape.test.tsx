@@ -466,6 +466,30 @@ describe("loading, empty and error states", () => {
     expect(html.match(/aria-current="true"/g)).toHaveLength(1);
   });
 
+  it("marks the row of the topic the person came from without ever cutting the marker", () => {
+    const html = view(snapshot(), {
+      origin: { topicId: shapeId(sample.forgetting), title: "Forgetting curve" }
+    });
+    const table = html.slice(html.indexOf("<table"));
+    const rows = [
+      ...table.matchAll(/<button type="button" aria-pressed[^>]*>(.*?)<\/button>/gs)
+    ].map((match) => match[1]!);
+    const marked = rows.filter((inner) => inner.includes("here ↳"));
+    expect(marked.length).toBeGreaterThan(0);
+    for (const inner of marked) {
+      const [name, marker] = [...inner.matchAll(/<span class="([^"]*)">([^<]*)<\/span>/g)].map(
+        (match) => ({ classes: match[1]!, text: match[2]! })
+      );
+      // Only the title takes the tail ellipsis; "here" and its arrow keep their room.
+      expect(name!.classes).toContain("truncate");
+      expect(marker!.text).toBe(" · here ↳");
+      expect(marker!.classes).toContain("shrink-0");
+      expect(marker!.classes).not.toContain("truncate");
+    }
+    for (const match of table.matchAll(/<button type="button" aria-pressed[^>]*class="([^"]*)"/g))
+      expect(match[1]).not.toMatch(/\btruncate\b/);
+  });
+
   it("announces results in a polite live region", () => {
     const html = view(snapshot({ announcement: "Change undone." }));
     expect(html).toMatch(

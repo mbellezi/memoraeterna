@@ -332,3 +332,20 @@ export function ageText(t: Translator, at: string, now: number): string {
     unit
   );
 }
+
+/**
+ * What choosing a row of the item list opens beside the Inbox when it is the previous panel
+ * (design record §8, rule 1): the first object the item names, or Settings for an Obsidian
+ * conflict, which is solved there. An item that names no object has nothing to open.
+ */
+export type PreviousPanelTarget =
+  { type: "object"; object: InboxObject } | { type: "settings" } | null;
+
+export function previousPanelTarget(
+  item: Pick<InboxItem, "kind" | "objects"> | undefined
+): PreviousPanelTarget {
+  if (!item) return null;
+  const [first] = item.objects;
+  if (first) return { type: "object", object: first };
+  return item.kind === "obsidian_conflict" ? { type: "settings" } : null;
+}

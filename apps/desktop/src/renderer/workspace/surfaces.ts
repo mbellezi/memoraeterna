@@ -126,6 +126,19 @@ export const surfaces: readonly SurfaceEntry[] = [
   destination("library", "Library"),
   destination("inbox", "Inbox"),
   destination("map", "Map"),
+  // The Inbox and the Map as the previous panel of a stack: their list and table in the 240 px column.
+  entry(
+    "destination-inbox-compact",
+    "destination",
+    "components/inbox/InboxView.tsx",
+    "workspace/destinations/inbox/inbox-compact.screen.tsx"
+  ),
+  entry(
+    "destination-map-compact",
+    "destination",
+    "workspace/destinations/map/shape/MapTable.tsx",
+    "workspace/destinations/map/map-compact.screen.tsx"
+  ),
   entry(
     "map-relations",
     "destination",

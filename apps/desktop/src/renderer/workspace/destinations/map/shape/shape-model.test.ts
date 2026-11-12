@@ -3,6 +3,7 @@ import { topicChangeSetOrigins, topicReadLimits } from "@app/domain";
 import { createTranslator, supportedLanguageCodes, type LanguageCode } from "@app/i18n";
 
 import { buildIcicle, topicCellKey, unsortedCellKey } from "./icicle-layout";
+import { selectedLine } from "./ShapeSelected";
 import {
   cellLabel,
   changeText,
@@ -16,6 +17,7 @@ import {
   shareText,
   tableRows,
   timeText,
+  topicOfRow,
   warningViews,
   warningsValue,
   weekText
@@ -141,6 +143,51 @@ describe("the table alternative", () => {
       expect(row.items, row.key).toBe(layout.byKey.get(row.key)!.value);
       expect(row.level, row.key).toBe(layout.byKey.get(row.key)!.row);
     }
+  });
+
+  it("says one arrival in the singular, in every language", () => {
+    for (const language of supportedLanguageCodes) {
+      const t = createTranslator(language);
+      const line = (arrivals: number) =>
+        selectedLine(
+          t,
+          panelModel(
+            t,
+            layout,
+            key(sample.forgetting),
+            true,
+            0,
+            new Map([[shapeId(sample.forgetting), arrivals]])
+          )!
+        );
+      expect(line(1), language).toContain(
+        t("map.selected.growthOne", { values: { growth: "+1", days: "7" } })
+      );
+      expect(line(1), language).not.toBe(line(2));
+      expect(line(2), language).toContain(
+        t("map.selected.growth", { values: { growth: "+2", days: "7" } })
+      );
+    }
+    expect(
+      selectedLine(
+        en,
+        panelModel(
+          en,
+          layout,
+          key(sample.forgetting),
+          true,
+          0,
+          new Map([[shapeId(sample.forgetting), 1]])
+        )!
+      )
+    ).toContain("+1 note in 7 days");
+  });
+
+  it("opens the topic of a row beside the previous-panel table, and nothing for the unsorted row", () => {
+    const rows = tableRows(en, layout, true, 0);
+    expect(topicOfRow(rows, key(sample.forgetting))).toBe(shapeId(sample.forgetting));
+    expect(topicOfRow(rows, unsortedCellKey)).toBeNull();
+    expect(topicOfRow(rows, "topic:missing")).toBeNull();
   });
 
   it("carries the numbers a person reads off the chart", () => {

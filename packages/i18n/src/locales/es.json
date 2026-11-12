@@ -3869,6 +3869,7 @@
         "topics": "Temas"
       },
       "deeper": "{count} temas están más abajo: la tabla los lista todos e Intro amplía una rama.",
+      "deeperOne": "1 tema está más abajo: la tabla lo lista e Intro amplía una rama.",
       "here": "aquí",
       "label": "Árbol de temas. Cada bloque es un botón que selecciona un tema: las flechas se mueven e Intro amplía.",
       "legend": {
@@ -3908,6 +3909,7 @@
     },
     "selected": {
       "growth": "{growth} notas en {days} días",
+      "growthOne": "{growth} nota en {days} días",
       "subtopics": "{count} subtemas directos",
       "subtopicsOne": "1 subtema directo"
     },
