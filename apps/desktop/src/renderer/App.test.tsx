@@ -144,12 +144,18 @@ describe("startup theme", () => {
     expect(bootScreen(startup("light", true))).not.toContain("dark");
   });
 
-  it("starts from the System default where nothing usable is remembered or storage fails", () => {
-    // A server render has no live OS scheme, so System draws light; what matters is that none of
-    // these cases invents Dark.
-    for (const stored of [null, "system", "sepia"])
-      expect(bootScreen(startup(stored, true)), String(stored)).not.toContain("dark");
-    expect(bootScreen(startup("dark", true, "blocked"))).not.toContain("dark");
+  it("starts from the Dark default where nothing usable is remembered or storage fails", () => {
+    // The default is dark whatever the OS is, so a first launch on a light macOS is dark at once.
+    for (const osDark of [false, true]) {
+      for (const stored of [null, "sepia"])
+        expect(bootScreen(startup(stored, osDark)), `${stored} ${osDark}`).toContain("dark");
+      expect(bootScreen(startup("dark", osDark, "blocked")), `blocked ${osDark}`).toContain("dark");
+    }
+  });
+
+  it("keeps a remembered System choice following the OS", () => {
+    // A server render has no live OS scheme, so System draws light.
+    expect(bootScreen(startup("system", true))).not.toContain("dark");
   });
 });
 

@@ -985,11 +985,11 @@ const wikiProjection = `${base}/obsidian-wiki-projection.ts`;
 export const settingsRegistryV2: readonly SettingEntryV2[] = [
   // --- General: what people change most ------------------------------------------------------
   preference(
-    "themeMode",
+    "language",
     "general",
-    "appearance",
-    "segmented",
-    { value: "system" },
+    "language",
+    "select",
+    { osLocale: true },
     read(rendererApp, "App"),
     {
       scope: "personalization"
@@ -1007,11 +1007,11 @@ export const settingsRegistryV2: readonly SettingEntryV2[] = [
     }
   ),
   preference(
-    "language",
+    "themeMode",
     "general",
-    "language",
-    "select",
-    { osLocale: true },
+    "appearance",
+    "segmented",
+    { value: "dark" },
     read(rendererApp, "App"),
     {
       scope: "personalization"
@@ -1170,7 +1170,9 @@ export const settingsRegistryV2: readonly SettingEntryV2[] = [
     control: "page",
     store: at("app.preferences", "processingPresets"),
     default: { unset: true },
-    reset: "app-preference",
+    // Saved import plans are the person's own work, not a preference that drifted: no "changed"
+    // marker, no default and no restore (nor in "Restore all"); a plan is deleted one at a time, with its ask.
+    reset: "none",
     reader: read(
       "apps/desktop/src/renderer/components/ProcessingPlanPicker.tsx",
       "ProcessingPlanPicker"

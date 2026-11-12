@@ -109,8 +109,8 @@ describe("desktop IPC contracts", () => {
       })
     ).toMatchObject({
       language: "pt-BR",
-      // A new install follows the OS appearance until the owner picks a theme.
-      themeMode: "system",
+      // A new install opens in the dark theme (owner, 2026-11-12) until the person picks another.
+      themeMode: "dark",
       graphWheelZoomSensitivity: 1,
       keepLocalEmbeddingModelsLoaded: true,
       summaryMinimumWordCount: 40

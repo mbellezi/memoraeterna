@@ -30,6 +30,7 @@ import {
   openAiCompatibleProvider
 } from "./fake-remote-provider.js";
 import { FaultSchedule, withFaults } from "./fault-decorator.js";
+import { appIsPackaged, journeysAdmittedConfigIds } from "./fake-remote-journeys.js";
 import { findRealRemoteReach, realRemoteProblem } from "./soak-routes.js";
 import {
   SoakKnobRefusal,
@@ -66,6 +67,10 @@ export interface FakeRemoteDeps {
   workspaceRoot: string;
   /** The Codex configuration of the real writer, which the reach check lets through (T89). */
   realWriterConfigId?: string | undefined;
+  /** The environment the journeys mode reads (`fake-remote-journeys.ts`); the process's by default. */
+  env?: Readonly<Record<string, string | undefined>>;
+  /** Whether the app is packaged (tests); read from Electron by default, where unknown counts as packaged. */
+  isPackaged?: boolean;
   logger?: Pick<Console, "info">;
 }
 
@@ -256,12 +261,17 @@ export async function startFakeRemote(
     )
       throw new Error("The fake remote routes do not lead to the fake providers.");
     // The soak must reach no real provider: a profile cloned from the owner's may still point at one.
-    // The one real configuration a soak admits is the Codex writer the real-writer knob names (T89).
+    // The one real configuration a soak admits is the Codex writer the real-writer knob names (T89);
+    // a journeys run admits the one its harness names (`fake-remote-journeys.ts`).
+    const journeysWriters = await journeysAdmittedConfigIds(deps.pool, deps.env ?? process.env, {
+      isPackaged: deps.isPackaged ?? appIsPackaged()
+    });
     const problem = realRemoteProblem(
       await findRealRemoteReach(deps.pool, [
         answer.config.id,
         explain.config.id,
-        ...(deps.realWriterConfigId ? [deps.realWriterConfigId] : [])
+        ...(deps.realWriterConfigId ? [deps.realWriterConfigId] : []),
+        ...journeysWriters
       ])
     );
     if (problem) throw new Error(problem);

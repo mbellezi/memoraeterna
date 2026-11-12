@@ -1,0 +1,798 @@
+{
+  "knowledge.controls.v1.autonomy": {
+    "en": ["let the app work on its own", "how much the app does by iteslf"],
+    "pt-BR": ["deixar o app trabalhar sozinho", "nivel de autonomia automa"],
+    "es": ["que la app trabaje sola", "cuanta auotnomia tiene"],
+    "fr": ["laisser l'appli travailler seule", "nive d'automatisme"],
+    "it": ["lasciare lavorare l'app da sola", "livello di auotnomia"]
+  },
+  "knowledge.controls.v1.monthlyCapUsd": {
+    "en": ["monthly spending limit for online AI", "month budget in dollars"],
+    "pt-BR": ["limite de gasto mensal com IA online", "oracmento mensal em dolares"],
+    "es": ["limite de gasto mensual con IA en linea", "presupu mensual maximo"],
+    "fr": ["plafond de depense mensuel pour l'IA en ligne", "budget mesnuel maximum"],
+    "it": ["tetto di spesa mensile per l'IA online", "budget mensi massimo"]
+  },
+  "knowledge.controls.v1.paused": {
+    "en": ["stop background processing for now", "pause all auotmatic work"],
+    "pt-BR": ["parar o processamento em segundo plano", "pausar o trabalho automa"],
+    "es": ["detener el procesamiento en segundo plano", "pausar todo el trabajo auotmatico"],
+    "fr": ["arreter le traitement en arriere-plan", "mettre en pause le travail automat"],
+    "it": ["fermare l'elaborazione in background", "mettere in pausa il lavoro auotmatico"]
+  },
+  "knowledge.controls.v1.treeShape": {
+    "en": ["how broad or deep the topic tree is", "topic tree layo style"],
+    "pt-BR": ["quao ampla ou profunda e a arvore de temas", "formato da arvore de asusntos"],
+    "es": ["que tan ancho o profundo es el arbol de temas", "fomra del arbol de temas"],
+    "fr": ["arbre de themes large ou profond", "forme de l'arborescence des thmees"],
+    "it": ["quanto e larga o profonda l'albero degli argomenti", "forma dell'albero degli argome"]
+  },
+  "knowledge.controls.v1.onlyIdle": {
+    "en": ["only work when I am not using the computer", "run wehn idle"],
+    "pt-BR": ["so trabalhar quando eu nao estiver usando o computador", "execu quando ocioso"],
+    "es": ["trabajar solo cuando no uso el ordenador", "ejceutar en reposo"],
+    "fr": ["travailler seulement quand je n'utilise pas l'ordinateur", "execu au repos"],
+    "it": ["lavorare solo quando non uso il computer", "esegui quando intativo"]
+  },
+  "knowledge.controls.v1.onlyOnAc": {
+    "en": ["only process while plugged in", "run on poewr only"],
+    "pt-BR": ["so processar quando conectado na tomada", "apenas com carregado"],
+    "es": ["procesar solo cuando esta enchufado", "solo con carga"],
+    "fr": ["traiter seulement sur secteur", "unqiuement branche"],
+    "it": ["elaborare solo quando e collegato alla corrente", "solo con alimenta"]
+  },
+  "relationTypeSimilarityThreshold": {
+    "en": ["how similar relation names must be to merge", "relation type match stirctness"],
+    "pt-BR": [
+      "quao parecidos os nomes de relacao precisam ser para unir",
+      "rigor da compar de tipos de relacao"
+    ],
+    "es": [
+      "que tan parecidos deben ser los nombres de relacion para fusionar",
+      "rigor al copmarar tipos de relacion"
+    ],
+    "fr": [
+      "a quel point les noms de relation doivent se ressembler pour fusionner",
+      "seuil de simila des types de relation"
+    ],
+    "it": [
+      "quanto devono somigliare i nomi di relazione per unirli",
+      "soglia di soimglianza dei tipi di relazione"
+    ]
+  },
+  "entityIdentitySimilarityThreshold": {
+    "en": ["how similar two names must be to be the same thing", "same entity matching strict"],
+    "pt-BR": [
+      "quao parecidos dois nomes precisam ser para serem a mesma coisa",
+      "rigor para cosniderar a mesma entidade"
+    ],
+    "es": [
+      "que tan parecidos deben ser dos nombres para ser lo mismo",
+      "rigor para la misma entid"
+    ],
+    "fr": [
+      "a quel point deux noms doivent se ressembler pour etre la meme chose",
+      "seuil d'identite des enittes"
+    ],
+    "it": [
+      "quanto devono somigliare due nomi per essere la stessa cosa",
+      "soglia di ident delle entita"
+    ]
+  },
+  "atomicNoteMatchingSettings.maxRerankOutputTokens": {
+    "en": ["length limit of the answer when judging note links", "note judge ouptut size"],
+    "pt-BR": [
+      "limite de tamanho da resposta ao julgar ligacoes entre notas",
+      "taman da saida do juiz de notas"
+    ],
+    "es": [
+      "limite de longitud de la respuesta al juzgar enlaces entre notas",
+      "taamno de salida del juez de notas"
+    ],
+    "fr": [
+      "limite de longueur de la reponse pour juger les liens entre notes",
+      "tail de sortie du juge de notes"
+    ],
+    "it": [
+      "limite di lunghezza della risposta nel giudicare i collegamenti tra note",
+      "diemnsione dell'output del giudice delle note"
+    ]
+  },
+  "canonicalMatchingSettings.relationTypeCandidateLimit": {
+    "en": ["how many relation names to compare against", "relation candid count"],
+    "pt-BR": ["quantos nomes de relacao comparar", "numero de cadnidatos de relacao"],
+    "es": ["con cuantos nombres de relacion comparar", "numero de candid de relacion"],
+    "fr": ["combien de noms de relation comparer", "nombre de cadnidats de relation"],
+    "it": ["con quanti nomi di relazione confrontare", "numero di candid di relazione"]
+  },
+  "canonicalMatchingSettings.entityCandidateLimit": {
+    "en": ["how many similar names to check for the same entity", "entity cadnidates count"],
+    "pt-BR": [
+      "quantos nomes parecidos verificar para a mesma entidade",
+      "numero de candid de entidade"
+    ],
+    "es": [
+      "cuantos nombres parecidos revisar para la misma entidad",
+      "numero de cadnidatos de entidad"
+    ],
+    "fr": ["combien de noms proches verifier pour la meme entite", "nombre de candid d'entite"],
+    "it": ["quanti nomi simili controllare per la stessa entita", "numero di cadnidati di entita"]
+  },
+  "canonicalMatchingSettings.confirmationBatchSize": {
+    "en": ["how many items are confirmed per request", "confirma batch size"],
+    "pt-BR": ["quantos itens sao confirmados por pedido", "tamanho do lote de cofnirmacao"],
+    "es": ["cuantos elementos se confirman por solicitud", "tamano del lote de confirma"],
+    "fr": ["combien d'elements sont confirmes par requete", "taille du lot de cofnirmation"],
+    "it": ["quanti elementi vengono confermati per richiesta", "dimens del lotto di conferma"]
+  },
+  "canonicalMatchingSettings.confirmationMaxCharacters": {
+    "en": ["maximum text sent for a confirmation", "cofnirmation character limit"],
+    "pt-BR": ["texto maximo enviado para confirmar", "limite de caracteres da confirm"],
+    "es": ["texto maximo enviado para confirmar", "limite de caracteres de cofnirmacion"],
+    "fr": ["texte maximum envoye pour confirmation", "limite de caracteres de confirma"],
+    "it": ["testo massimo inviato per la conferma", "limite di caartteri della conferma"]
+  },
+  "sourceRelationSettings.evidenceChunksPerSource": {
+    "en": ["how many passages to quote per book when comparing books", "evide passages per source"],
+    "pt-BR": [
+      "quantos trechos citar por livro ao comparar livros",
+      "trechos de evdiencia por fonte"
+    ],
+    "es": ["cuantos pasajes citar por libro al comparar libros", "pasajes de eviden por fuente"],
+    "fr": [
+      "combien de passages citer par livre en comparant les livres",
+      "passage de preuve par source"
+    ],
+    "it": ["quanti passaggi citare per libro nel confrontare i libri", "passa di prova per fonte"]
+  },
+  "sourceRelationSettings.evidenceMaxCharacters": {
+    "en": ["maximum length of each quoted passage", "evdience length limit"],
+    "pt-BR": ["tamanho maximo de cada trecho citado", "limite de caract da evidencia"],
+    "es": ["longitud maxima de cada pasaje citado", "limite de longitud de la evdiencia"],
+    "fr": ["longueur maximale de chaque passage cite", "limite de longu des preuves"],
+    "it": ["lunghezza massima di ogni passaggio citato", "limite di lugnhezza delle prove"]
+  },
+  "sourceRelationSettings.summaryMaxCharacters": {
+    "en": ["maximum length of the source summary used for comparing", "source summa size limit"],
+    "pt-BR": ["tamanho maximo do resumo da fonte usado na comparacao", "liimte do resumo da fonte"],
+    "es": [
+      "longitud maxima del resumen de la fuente usado al comparar",
+      "limite del resum de fuente"
+    ],
+    "fr": [
+      "longueur maximale du resume de source utilise pour comparer",
+      "liimte du resume de source"
+    ],
+    "it": [
+      "lunghezza massima del riassunto della fonte usato per il confronto",
+      "limite del riassu della fonte"
+    ]
+  },
+  "sourceRelationSettings.maxOutputTokens": {
+    "en": ["length limit of the answer when comparing two books", "soruce judge output size"],
+    "pt-BR": [
+      "limite de tamanho da resposta ao comparar dois livros",
+      "taman da saida do juiz de fontes"
+    ],
+    "es": [
+      "limite de longitud de la respuesta al comparar dos libros",
+      "tamano de salida del juez de funetes"
+    ],
+    "fr": [
+      "limite de longueur de la reponse en comparant deux livres",
+      "taille de sortie du juge de sourc"
+    ],
+    "it": [
+      "limite di lunghezza della risposta nel confrontare due libri",
+      "diemnsione dell'output del giudice di fonti"
+    ]
+  },
+  "sourceRelationSettings.maxRelationsPerPair": {
+    "en": ["how many links to keep between two books", "relati per pair maximum"],
+    "pt-BR": ["quantas ligacoes manter entre dois livros", "maximo de realcoes por par"],
+    "es": ["cuantos enlaces conservar entre dos libros", "maximo de relaci por par"],
+    "fr": ["combien de liens garder entre deux livres", "maximum de realtions par paire"],
+    "it": ["quanti collegamenti tenere tra due libri", "massimo di relazi per coppia"]
+  },
+  "sourceRelationSettings.maxInputTokens": {
+    "en": ["how much text may be spent on comparing a pair of books", "input bugdet per pair"],
+    "pt-BR": [
+      "quanto texto pode ser gasto ao comparar um par de livros",
+      "orcame de entrada por par"
+    ],
+    "es": [
+      "cuanto texto se puede gastar al comparar un par de libros",
+      "prseupuesto de entrada por par"
+    ],
+    "fr": [
+      "combien de texte peut etre utilise pour comparer une paire de livres",
+      "budg d'entree par paire"
+    ],
+    "it": [
+      "quanto testo si puo spendere per confrontare una coppia di libri",
+      "bugdet di input per coppia"
+    ]
+  },
+  "sourceRelationSettings.minImportance": {
+    "en": ["ignore links that are not important enough", "minimum import"],
+    "pt-BR": ["ignorar ligacoes pouco importantes", "imoprtancia minima"],
+    "es": ["ignorar enlaces poco importantes", "importa minima"],
+    "fr": ["ignorer les liens peu importants", "imoprtance minimale"],
+    "it": ["ignorare i collegamenti poco importanti", "import minima"]
+  },
+  "sourceRelationSettings.minConfidence": {
+    "en": ["ignore links the AI is unsure about", "minimum cofnidence"],
+    "pt-BR": ["ignorar ligacoes de que a IA nao tem certeza", "confia minima"],
+    "es": ["ignorar enlaces de los que la IA no esta segura", "cofnianza minima"],
+    "fr": ["ignorer les liens dont l'IA n'est pas sure", "confia minimale"],
+    "it": ["ignorare i collegamenti di cui l'IA non e sicura", "afifdabilita minima"]
+  },
+  "sourceRelationSettings.includeWeakTypes": {
+    "en": ["also show faint or loose connections", "include weak relat types"],
+    "pt-BR": ["mostrar tambem conexoes fracas ou vagas", "inlcuir tipos de relacao fracos"],
+    "es": ["mostrar tambien conexiones debiles o vagas", "incluir tipos de relac debiles"],
+    "fr": ["afficher aussi les liens faibles ou vagues", "inclure les types de realtion faibles"],
+    "it": ["mostrare anche i collegamenti deboli o vaghi", "includi tipi di relazi deboli"]
+  },
+  "activeMatchingPresetId": {
+    "en": ["choose the recommended matching setup", "active macthing preset"],
+    "pt-BR": ["escolher a configuracao de comparacao recomendada", "predefin de comparacao ativa"],
+    "es": ["elegir la configuracion de comparacion recomendada", "preajuste de copmaracion activo"],
+    "fr": ["choisir la configuration de comparaison recommandee", "préréglage de compara actif"],
+    "it": ["scegliere la configurazione di confronto consigliata", "preset di cofnronto attivo"]
+  },
+  "matchingPresets": {
+    "en": ["save my own matching setups", "saved match presets"],
+    "pt-BR": [
+      "salvar minhas proprias configuracoes de comparacao",
+      "prdeefinicoes de comparacao salvas"
+    ],
+    "es": ["guardar mis propias configuraciones de comparacion", "preajustes de compara guardados"],
+    "fr": [
+      "enregistrer mes propres configurations de comparaison",
+      "prrééglages de comparaison enregistres"
+    ],
+    "it": ["salvare le mie configurazioni di confronto", "preset di confro salvati"]
+  },
+  "summaryMinimumWordCount": {
+    "en": ["shortest text that still gets a summary", "miinmum words for summary"],
+    "pt-BR": ["menor texto que ainda recebe resumo", "minimo de palav para resumir"],
+    "es": ["texto mas corto que aun recibe resumen", "minimo de paalbras para resumir"],
+    "fr": ["texte le plus court qui recoit encore un resume", "minim de mots pour resumer"],
+    "it": ["testo piu corto che riceve ancora un riassunto", "minimo di parole per il risasunto"]
+  },
+  "keepLocalEmbeddingModelsLoaded": {
+    "en": ["keep the on-device search model in memory", "keep embedd models loaded"],
+    "pt-BR": [
+      "manter o modelo de busca do aparelho na memoria",
+      "manter modelos de embedding carregado"
+    ],
+    "es": [
+      "mantener en memoria el modelo de busqueda del equipo",
+      "mantener modelos de embedd cargados"
+    ],
+    "fr": [
+      "garder en memoire le modele de recherche local",
+      "garder les moedles d'embedding charges"
+    ],
+    "it": [
+      "tenere in memoria il modello di ricerca locale",
+      "mantieni caricati i modelli di embedd"
+    ]
+  },
+  "relations.deciderMode": {
+    "en": ["how links between notes are decided", "note link deicder mode"],
+    "pt-BR": ["como as ligacoes entre notas sao decididas", "modo do decisor de relac"],
+    "es": ["como se deciden los enlaces entre notas", "modo del decisor de realciones"],
+    "fr": ["comment les liens entre notes sont decides", "mode du decideur de relati"],
+    "it": ["come vengono decisi i collegamenti tra note", "modalita del decisore di realzioni"]
+  },
+  "graphWheelZoomSensitivity": {
+    "en": ["mouse wheel zoom speed on the map", "graph zoom sensiti"],
+    "pt-BR": ["velocidade do zoom da roda do mouse no mapa", "sesnibilidade do zoom do grafo"],
+    "es": ["velocidad del zoom con la rueda del raton en el mapa", "sensibil del zoom del grafo"],
+    "fr": ["vitesse du zoom a la molette sur la carte", "sesnibilite du zoom du graphe"],
+    "it": ["velocita dello zoom con la rotella sulla mappa", "sensibi dello zoom del grafo"]
+  },
+  "debugMode": {
+    "en": ["turn on troubleshooting mode", "deubg mode"],
+    "pt-BR": ["ativar o modo de solucao de problemas", "modo de depura"],
+    "es": ["activar el modo de solucion de problemas", "modo de deupracion"],
+    "fr": ["activer le mode de depannage", "mode debog"],
+    "it": ["attivare la modalita di risoluzione dei problemi", "moadlita debug"]
+  },
+  "debugFullCapture": {
+    "en": ["record everything for support", "debug full captu"],
+    "pt-BR": ["gravar tudo para o suporte", "captura completa de deupracao"],
+    "es": ["grabar todo para soporte", "captura completa de depura"],
+    "fr": ["tout enregistrer pour l'assistance", "capture copmlete du debogage"],
+    "it": ["registrare tutto per l'assistenza", "acquisiz completa del debug"]
+  },
+  "managedRoot": {
+    "en": ["name of the folder the app manages inside my vault", "maanged folder"],
+    "pt-BR": ["nome da pasta que o app gerencia no meu cofre", "pasta gerenc"],
+    "es": ["nombre de la carpeta que la app gestiona en mi boveda", "carpeta adimnistrada"],
+    "fr": ["nom du dossier gere par l'appli dans mon coffre", "dossi gere"],
+    "it": ["nome della cartella gestita dall'app nel mio vault", "catrella gestita"]
+  },
+  "local-models.repository-token-ref": {
+    "en": ["access token for downloading models", "model reposi token"],
+    "pt-BR": ["token de acesso para baixar modelos", "token do reopsitorio de modelos"],
+    "es": ["token de acceso para descargar modelos", "token del reposit de modelos"],
+    "fr": ["jeton d'acces pour telecharger des modeles", "jeton du depot de moedles"],
+    "it": ["token di accesso per scaricare i modelli", "token del reposi dei modelli"]
+  },
+  "language": {
+    "en": ["change the app language", "inetrface language"],
+    "pt-BR": ["mudar o idioma do aplicativo", "idioma da interf"],
+    "es": ["cambiar el idioma de la aplicacion", "idioma de la inetrfaz"],
+    "fr": ["changer la langue de l'application", "lang de l'interface"],
+    "it": ["cambiare la lingua dell'app", "lignua dell'interfaccia"]
+  },
+  "contentLanguage": {
+    "en": ["language my notes and summaries are written in", "content langu"],
+    "pt-BR": ["idioma em que minhas notas e resumos sao escritos", "idioma do cotneudo"],
+    "es": ["idioma en que se escriben mis notas y resumenes", "idioma del conten"],
+    "fr": ["langue dans laquelle sont ecrits mes notes et resumes", "langue du cotnenu"],
+    "it": ["lingua in cui sono scritti le mie note e i riassunti", "lingua dei conten"]
+  },
+  "themeMode": {
+    "en": ["dark or light appearance", "thmee"],
+    "pt-BR": ["aparencia escura ou clara", "tmea"],
+    "es": ["apariencia oscura o clara", "tmea"],
+    "fr": ["apparence sombre ou claire", "thmee"],
+    "it": ["aspetto scuro o chiaro", "tmea"]
+  },
+  "ai.preset.v1": {
+    "en": ["choose how AI runs: on this Mac or online", "AI seutp mode"],
+    "pt-BR": ["escolher como a IA roda: neste Mac ou online", "modo de cofniguracao da IA"],
+    "es": ["elegir como funciona la IA: en este Mac o en linea", "modo de configur de la IA"],
+    "fr": [
+      "choisir comment l'IA fonctionne : sur ce Mac ou en ligne",
+      "mode de cofniguration de l'IA"
+    ],
+    "it": ["scegliere come funziona l'IA: su questo Mac o online", "modalita di configura dell'IA"]
+  },
+  "relations.decisions": {
+    "en": ["let an online service help decide hard links", "deicsions assistant opt in"],
+    "pt-BR": [
+      "deixar um servico online ajudar a decidir ligacoes dificeis",
+      "ativar o assist de decisoes"
+    ],
+    "es": [
+      "dejar que un servicio en linea ayude a decidir enlaces dificiles",
+      "activar el asistente de deicsiones"
+    ],
+    "fr": [
+      "laisser un service en ligne aider a decider les liens difficiles",
+      "activer l'assistant de decisi"
+    ],
+    "it": [
+      "lasciare che un servizio online aiuti a decidere i collegamenti difficili",
+      "attivare l'assistente per le deicsioni"
+    ]
+  },
+  "ai:decisions-openai-platform": {
+    "en": ["API key for the decisions assistant", "decisi OpenAI key"],
+    "pt-BR": ["chave de API do assistente de decisoes", "chave OpenAI das deicsoes"],
+    "es": ["clave de API del asistente de decisiones", "clave OpenAI de las decisi"],
+    "fr": ["cle API de l'assistant de decisions", "cle OpenAI des deicsions"],
+    "it": ["chiave API dell'assistente per le decisioni", "chiave OpenAI delle decisi"]
+  },
+  "metadataEnrichmentEnabled": {
+    "en": ["look up book details online", "onilne book lookup"],
+    "pt-BR": ["buscar detalhes dos livros online", "consu online de livros"],
+    "es": ["buscar datos de los libros en linea", "buqsueda en linea de libros"],
+    "fr": ["rechercher les details des livres en ligne", "recher en ligne de livres"],
+    "it": ["cercare i dettagli dei libri online", "riecrca online dei libri"]
+  },
+  "bookMetadataProvider": {
+    "en": ["which service to use for book details", "book data provi"],
+    "pt-BR": ["qual servico usar para detalhes dos livros", "fonte dos dados de lirvos"],
+    "es": ["que servicio usar para los datos de libros", "provee de datos de libros"],
+    "fr": ["quel service utiliser pour les details des livres", "forunisseur de donnees de livres"],
+    "it": ["quale servizio usare per i dettagli dei libri", "fornit dei dati dei libri"]
+  },
+  "metadata:google-books": {
+    "en": ["Google Books key", "key for book lokoups"],
+    "pt-BR": ["chave do Google Livros", "chave para consu de livros"],
+    "es": ["clave de Google Libros", "clave para buqsuedas de libros"],
+    "fr": ["cle Google Livres", "cle pour la recher de livres"],
+    "it": ["chiave di Google Libri", "chiave per la riecrca dei libri"]
+  },
+  "obsidianVaultPath": {
+    "en": ["pick my Obsidian vault folder", "Obsid vault location"],
+    "pt-BR": ["escolher a pasta do meu cofre do Obsidian", "local do cofre do Obisdian"],
+    "es": ["elegir la carpeta de mi boveda de Obsidian", "ubicac de la boveda de Obsidian"],
+    "fr": ["choisir le dossier de mon coffre Obsidian", "emlpacement du coffre Obsidian"],
+    "it": ["scegliere la cartella del mio vault Obsidian", "posizi del vault Obsidian"]
+  },
+  "obsidianSyncEnabled": {
+    "en": ["sync my notes with Obsidian", "Obisdian sync on or off"],
+    "pt-BR": [
+      "sincronizar minhas notas com o Obsidian",
+      "ligar ou desligar a sincroni do Obsidian"
+    ],
+    "es": [
+      "sincronizar mis notas con Obsidian",
+      "activar o desactivar la sicnronizacion de Obsidian"
+    ],
+    "fr": ["synchroniser mes notes avec Obsidian", "activer ou desactiver la synchroni Obsidian"],
+    "it": [
+      "sincronizzare le mie note con Obsidian",
+      "attiva o disattiva la sicnronizzazione Obsidian"
+    ]
+  },
+  "obsidianSyncPaused": {
+    "en": ["temporarily stop syncing to Obsidian", "pause Obsid sync"],
+    "pt-BR": [
+      "parar temporariamente a sincronizacao com o Obsidian",
+      "pausar sicnronizacao do Obsidian"
+    ],
+    "es": ["detener temporalmente la sincronizacion con Obsidian", "pausar sincroniz de Obsidian"],
+    "fr": ["arreter temporairement la synchronisation avec Obsidian", "mettre Obisdian en pause"],
+    "it": [
+      "fermare temporaneamente la sincronizzazione con Obsidian",
+      "sospendi la sincronizz Obsidian"
+    ]
+  },
+  "obsidian.layout": {
+    "en": ["how files are arranged and named in Obsidian", "Obisdian layout"],
+    "pt-BR": ["como os arquivos sao organizados e nomeados no Obsidian", "organiz no Obsidian"],
+    "es": ["como se organizan y nombran los archivos en Obsidian", "dipsosicion en Obsidian"],
+    "fr": ["comment les fichiers sont ranges et nommes dans Obsidian", "organisa dans Obsidian"],
+    "it": ["come i file sono organizzati e nominati in Obsidian", "sturttura in Obsidian"]
+  },
+  "obsidian.wiki.scope": {
+    "en": ["which books go into the Obsidian wiki", "wiki scpoe"],
+    "pt-BR": ["quais livros vao para a wiki do Obsidian", "esocpo da wiki"],
+    "es": ["que libros van a la wiki de Obsidian", "alcan de la wiki"],
+    "fr": ["quels livres vont dans le wiki Obsidian", "potree du wiki"],
+    "it": ["quali libri vanno nel wiki di Obsidian", "ambi del wiki"]
+  },
+  "uploadCopiesEnabled": {
+    "en": ["keep a copy of every file I import", "save copies of upolads"],
+    "pt-BR": ["guardar uma copia de cada arquivo que importo", "salv copias dos envios"],
+    "es": ["guardar una copia de cada archivo que importo", "guradar copias de las subidas"],
+    "fr": ["garder une copie de chaque fichier importe", "enregis des copies des imports"],
+    "it": ["conservare una copia di ogni file che importo", "salva copie dei caircamenti"]
+  },
+  "uploadCopiesFolderPath": {
+    "en": ["where copies of imported files are kept", "uplo copies folder"],
+    "pt-BR": ["onde ficam as copias dos arquivos importados", "pasta das coipas de envio"],
+    "es": ["donde se guardan las copias de los archivos importados", "carpe de copias de subida"],
+    "fr": ["ou sont gardees les copies des fichiers importes", "dossie des copies d'import"],
+    "it": ["dove vengono conservate le copie dei file importati", "cartella delle copie di caricam"]
+  },
+  "processingPresets": {
+    "en": ["saved import plans", "import prseets"],
+    "pt-BR": ["planos de importacao salvos", "predefin de importacao"],
+    "es": ["planes de importacion guardados", "preajustes de imoprtacion"],
+    "fr": ["plans d'import enregistres", "prérégl d'import"],
+    "it": ["piani di importazione salvati", "preset di imoprtazione"]
+  },
+  "navigationCollapsed": {
+    "en": ["keep the side menu narrow", "colla sidebar"],
+    "pt-BR": ["manter o menu lateral estreito", "reoclher a barra lateral"],
+    "es": ["mantener estrecho el menu lateral", "contr la barra lateral"],
+    "fr": ["garder le menu lateral reduit", "reduire la barre laetrale"],
+    "it": ["tenere stretto il menu laterale", "compr la barra laterale"]
+  },
+  "updatedAt": {
+    "en": ["when settings were last changed", "setting last modified"],
+    "pt-BR": [
+      "quando as configuracoes foram alteradas pela ultima vez",
+      "ultima modificacao das configur"
+    ],
+    "es": ["cuando se cambiaron los ajustes por ultima vez", "ultima moidficacion de los ajustes"],
+    "fr": [
+      "quand les reglages ont ete modifies pour la derniere fois",
+      "derniere modifica des reglages"
+    ],
+    "it": [
+      "quando le impostazioni sono state modificate l'ultima volta",
+      "ultima modifica delle imopstazioni"
+    ]
+  },
+  "import.lastDirectory": {
+    "en": ["folder the import dialog opens in", "last impo folder"],
+    "pt-BR": ["pasta em que a janela de importar abre", "ultima pasta de imoprtacao"],
+    "es": ["carpeta en la que se abre el dialogo de importar", "ultima carpeta de importa"],
+    "fr": ["dossier dans lequel s'ouvre la fenetre d'import", "denrier dossier d'import"],
+    "it": ["cartella in cui si apre la finestra di importazione", "ultima cartella di importaz"]
+  },
+  "ai.classTests.v1": {
+    "en": ["results of testing my AI models", "AI model test reuslts"],
+    "pt-BR": ["resultados dos testes dos meus modelos de IA", "result dos testes de modelo"],
+    "es": ["resultados de las pruebas de mis modelos de IA", "reusltado de las pruebas de modelo"],
+    "fr": ["resultats des tests de mes modeles d'IA", "resul des tests de modele"],
+    "it": ["risultati dei test dei miei modelli di IA", "riusltato dei test dei modelli"]
+  },
+  "ai.routes.classMap.v1": {
+    "en": ["which model handles which kind of work", "AI route mappi"],
+    "pt-BR": ["qual modelo cuida de cada tipo de trabalho", "mapa de roats de IA"],
+    "es": ["que modelo se encarga de cada tipo de trabajo", "mapa de ruats de IA"],
+    "fr": ["quel modele s'occupe de quel type de travail", "carte des rotues IA"],
+    "it": ["quale modello gestisce quale tipo di lavoro", "mapp delle rotte IA"]
+  },
+  "relations.decisions.dailySpend": {
+    "en": ["how much the decisions assistant spent today", "deicsions daily spend"],
+    "pt-BR": ["quanto o assistente de decisoes gastou hoje", "gasto diario das decis"],
+    "es": ["cuanto gasto hoy el asistente de decisiones", "gasto diario de las deicsiones"],
+    "fr": [
+      "combien l'assistant de decisions a depense aujourd'hui",
+      "depense quotidi des decisions"
+    ],
+    "it": [
+      "quanto ha speso oggi l'assistente per le decisioni",
+      "spesa gironaliera delle decisioni"
+    ]
+  },
+  "relations.decisions.state": {
+    "en": ["is the decisions assistant working", "decisi assistant status"],
+    "pt-BR": ["o assistente de decisoes esta funcionando", "estado do asisstente de decisoes"],
+    "es": ["el asistente de decisiones esta funcionando", "estado del asistente de decisi"],
+    "fr": ["l'assistant de decisions fonctionne-t-il", "etat de l'assistant de deicsions"],
+    "it": ["l'assistente per le decisioni funziona", "stato dell'assistente per le decisi"]
+  },
+  "relations.ai.dailyCalls": {
+    "en": ["daily limit of AI calls for links", "realtion AI daily calls"],
+    "pt-BR": ["limite diario de chamadas de IA para ligacoes", "chama diarias de IA em relacoes"],
+    "es": ["limite diario de llamadas de IA para enlaces", "llamadas diarias de IA en realciones"],
+    "fr": ["limite quotidien d'appels IA pour les liens", "appels IA quotid des relations"],
+    "it": [
+      "limite giornaliero di chiamate IA per i collegamenti",
+      "chiamate IA gironaliere delle relazioni"
+    ]
+  },
+  "catalogHeader.dailyRoots": {
+    "en": ["daily limit for cataloguing new books", "catal header daily roots"],
+    "pt-BR": [
+      "limite diario para catalogar livros novos",
+      "raizes diarias do caebcalho do catalogo"
+    ],
+    "es": ["limite diario para catalogar libros nuevos", "raices diarias del encabe del catalogo"],
+    "fr": [
+      "limite quotidien pour cataloguer de nouveaux livres",
+      "racines qutoidiennes de l'en-tete du catalogue"
+    ],
+    "it": [
+      "limite giornaliero per catalogare nuovi libri",
+      "radici giornal dell'intestazione del catalogo"
+    ]
+  },
+  "gardener.budget.subscriptionCalls.v1": {
+    "en": [
+      "daily allowance of background calls on my ChatGPT plan",
+      "susbcription background calls"
+    ],
+    "pt-BR": [
+      "cota diaria de chamadas em segundo plano no meu plano ChatGPT",
+      "chamadas da assina em segundo plano"
+    ],
+    "es": [
+      "cupo diario de llamadas en segundo plano de mi plan de ChatGPT",
+      "llamadas de sucsripcion en segundo plano"
+    ],
+    "fr": [
+      "quota quotidien d'appels en arriere-plan de mon forfait ChatGPT",
+      "appe d'abonnement en arriere-plan"
+    ],
+    "it": [
+      "quota giornaliera di chiamate in background del mio piano ChatGPT",
+      "chiamate dell'abbonamento in bakcground"
+    ]
+  },
+  "gardener.budget.continue.v1": {
+    "en": ["keep going after the daily limit is reached", "conti past budget"],
+    "pt-BR": ["continuar depois de atingir o limite diario", "cotninuar alem do orcamento"],
+    "es": ["seguir despues de alcanzar el limite diario", "continuar tras el presupu"],
+    "fr": ["continuer apres avoir atteint la limite quotidienne", "cotninuer au-dela du budget"],
+    "it": ["continuare dopo aver raggiunto il limite giornaliero", "conti oltre il budget"]
+  },
+  "gardener.audit.cursors.v1": {
+    "en": ["where the background quality check stopped", "audit prgoress"],
+    "pt-BR": ["onde a verificacao de qualidade em segundo plano parou", "progre da auditoria"],
+    "es": ["donde se detuvo la revision de calidad en segundo plano", "progreso de la auidtoria"],
+    "fr": ["ou le controle qualite en arriere-plan s'est arrete", "progres de l'audit"],
+    "it": ["dove si e fermato il controllo di qualita in background", "avnazamento dell'audit"]
+  },
+  "topics.ai.daily.v1": {
+    "en": ["daily limit of AI calls for naming topics", "topi AI daily cap"],
+    "pt-BR": ["limite diario de chamadas de IA para nomear temas", "liimte diario de IA em temas"],
+    "es": ["limite diario de llamadas de IA para nombrar temas", "tope diar de IA en temas"],
+    "fr": [
+      "limite quotidien d'appels IA pour nommer les themes",
+      "plafond qutoidien d'IA pour les themes"
+    ],
+    "it": [
+      "limite giornaliero di chiamate IA per nominare gli argomenti",
+      "tetto giornal di IA per gli argomenti"
+    ]
+  },
+  "topics.corpus.v1": {
+    "en": ["topic tree built from my whole library", "toipcs corpus state"],
+    "pt-BR": ["arvore de temas feita com toda a minha biblioteca", "esta do corpus de temas"],
+    "es": ["arbol de temas hecho con toda mi biblioteca", "esatdo del corpus de temas"],
+    "fr": ["arbre de themes construit a partir de toute ma bibliotheque", "etat du corp de themes"],
+    "it": [
+      "albero degli argomenti costruito su tutta la mia biblioteca",
+      "stato del corpus degli arogmenti"
+    ]
+  },
+  "local-models.first-run-ranker": {
+    "en": ["which small model was picked first on this Mac", "first run rank"],
+    "pt-BR": [
+      "qual modelo pequeno foi escolhido primeiro neste Mac",
+      "clsasificador da primeira execucao"
+    ],
+    "es": ["que modelo pequeno se eligio primero en este Mac", "clasific de la primera ejecucion"],
+    "fr": ["quel petit modele a ete choisi en premier sur ce Mac", "classeur de premier lacnement"],
+    "it": [
+      "quale piccolo modello e stato scelto per primo su questo Mac",
+      "classific del primo avvio"
+    ]
+  },
+  "prompts.active": {
+    "en": ["which prompt versions are in use", "active prmopts"],
+    "pt-BR": ["quais versoes de prompts estao em uso", "promp ativos"],
+    "es": ["que versiones de prompts estan en uso", "prmopts activos"],
+    "fr": ["quelles versions de prompts sont utilisees", "promp actifs"],
+    "it": ["quali versioni dei prompt sono in uso", "prmopt attivi"]
+  },
+  "jobs.history.dismissed-through.v1": {
+    "en": ["clear the finished tasks list", "task histo cleared"],
+    "pt-BR": ["limpar a lista de tarefas concluidas", "hitsorico de tarefas apagado"],
+    "es": ["borrar la lista de tareas terminadas", "histor de tareas borrado"],
+    "fr": ["vider la liste des taches terminees", "hitsorique des taches efface"],
+    "it": ["svuotare l'elenco delle attivita completate", "cronol attivita cancellata"]
+  },
+  "obsidian.layout.presence": {
+    "en": ["which Obsidian plugin is connected", "Obisdian layout presence"],
+    "pt-BR": ["qual plugin do Obsidian esta conectado", "prese do layout do Obsidian"],
+    "es": ["que plugin de Obsidian esta conectado", "prseencia del diseno de Obsidian"],
+    "fr": ["quel plugin Obsidian est connecte", "prese de la mise en page Obsidian"],
+    "it": ["quale plugin di Obsidian e collegato", "prseenza del layout di Obsidian"]
+  },
+  "obsidian.editorial.client": {
+    "en": ["which device edits notes in Obsidian", "Obsidian editor client"],
+    "pt-BR": ["qual dispositivo edita notas no Obsidian", "cliente edtiorial do Obsidian"],
+    "es": ["que dispositivo edita notas en Obsidian", "cliente editor de Obsidian"],
+    "fr": ["quel appareil modifie les notes dans Obsidian", "client edtiorial Obsidian"],
+    "it": ["quale dispositivo modifica le note in Obsidian", "client editor di Obsidian"]
+  },
+  "relations.match.valuesHistory.v1": {
+    "en": ["re-check links after I change matching values", "macthing values history"],
+    "pt-BR": [
+      "reverificar ligacoes depois de mudar os valores de comparacao",
+      "historico dos valores de compar"
+    ],
+    "es": [
+      "volver a revisar enlaces tras cambiar los valores de comparacion",
+      "historial de valores de copmaracion"
+    ],
+    "fr": [
+      "reverifier les liens apres avoir change les valeurs de comparaison",
+      "historique des valeurs de compara"
+    ],
+    "it": [
+      "ricontrollare i collegamenti dopo aver cambiato i valori di confronto",
+      "crnoologia dei valori di confronto"
+    ]
+  },
+  "onboarding.v1": {
+    "en": ["run the welcome tour again", "onboar progress"],
+    "pt-BR": ["rever o tour de boas-vindas", "progresso da inrtoducao"],
+    "es": ["volver a ver el recorrido de bienvenida", "progreso de la bienve"],
+    "fr": ["revoir la visite de bienvenue", "prgoression de l'accueil"],
+    "it": ["rivedere il tour di benvenuto", "avanzamento della presenta"]
+  },
+  "ai.route.embed": {
+    "en": ["which model makes search and similarity", "emebdding model route"],
+    "pt-BR": ["qual modelo faz a busca e a similaridade", "rota do modelo de embedd"],
+    "es": ["que modelo hace la busqueda y la similitud", "ruta del modelo de emebddings"],
+    "fr": ["quel modele gere la recherche et la similarite", "route du mode d'embedding"],
+    "it": ["quale modello gestisce ricerca e somiglianza", "rotta del modello di emebdding"]
+  },
+  "ai.route.decide": {
+    "en": ["which model decides if two things are related", "deci model route"],
+    "pt-BR": ["qual modelo decide se duas coisas se relacionam", "rota do modelo de deicsao"],
+    "es": ["que modelo decide si dos cosas estan relacionadas", "ruta del modelo de decis"],
+    "fr": ["quel modele decide si deux choses sont liees", "route du modele de deicsion"],
+    "it": ["quale modello decide se due cose sono collegate", "rotta del modello di decisi"]
+  },
+  "ai.route.write-fast": {
+    "en": ["model for quick short writing tasks", "fast wrtier model"],
+    "pt-BR": ["modelo para tarefas rapidas de escrita curta", "modelo de escri rapida"],
+    "es": ["modelo para tareas rapidas de escritura corta", "modelo de esrcitura rapida"],
+    "fr": ["modele pour les taches d'ecriture courtes et rapides", "mode d'ecriture rapide"],
+    "it": ["modello per attivita di scrittura brevi e veloci", "modello di scirttura veloce"]
+  },
+  "ai.route.write-quality": {
+    "en": ["model for careful high quality writing", "quali writer model"],
+    "pt-BR": [
+      "modelo para escrita cuidadosa e de alta qualidade",
+      "modelo de escrita de qulaidade"
+    ],
+    "es": ["modelo para escritura cuidadosa y de alta calidad", "modelo de escrit de calidad"],
+    "fr": ["modele pour une ecriture soignee de haute qualite", "modele d'ecriture de qulaite"],
+    "it": ["modello per scrittura accurata di alta qualita", "modello di scritt di qualita"]
+  },
+  "ai.route.answer": {
+    "en": ["which model answers my questions", "anwser model route"],
+    "pt-BR": ["qual modelo responde as minhas perguntas", "rota do modelo de respo"],
+    "es": ["que modelo responde a mis preguntas", "ruta del modelo de repsuesta"],
+    "fr": ["quel modele repond a mes questions", "route du modele de repon"],
+    "it": ["quale modello risponde alle mie domande", "rotta del modello di ripsosta"]
+  },
+  "ai.provider.google": {
+    "en": ["add my Gemini key", "Goog AI key"],
+    "pt-BR": ["adicionar minha chave do Gemini", "chave do Gogole AI"],
+    "es": ["anadir mi clave de Gemini", "clave de Goog AI"],
+    "fr": ["ajouter ma cle Gemini", "cle Gogole AI"],
+    "it": ["aggiungere la mia chiave Gemini", "chia Google AI"]
+  },
+  "ai.provider.openai-compatible": {
+    "en": ["connect ChatGPT, OpenRouter or another API key", "OpenAI copmatible key"],
+    "pt-BR": ["conectar ChatGPT, OpenRouter ou outra chave de API", "chave compat com OpenAI"],
+    "es": ["conectar ChatGPT, OpenRouter u otra clave de API", "clave copmatible con OpenAI"],
+    "fr": ["connecter ChatGPT, OpenRouter ou une autre cle API", "cle compat OpenAI"],
+    "it": ["collegare ChatGPT, OpenRouter o un'altra chiave API", "chiave copmatibile OpenAI"]
+  },
+  "ai.provider.openai-codex": {
+    "en": ["sign in with my ChatGPT subscription", "Coedx sign in"],
+    "pt-BR": ["entrar com minha assinatura do ChatGPT", "loign do Codex"],
+    "es": ["iniciar sesion con mi suscripcion de ChatGPT", "inic de sesion de Codex"],
+    "fr": ["se connecter avec mon abonnement ChatGPT", "connexio Codex"],
+    "it": ["accedere con il mio abbonamento ChatGPT", "acces a Codex"]
+  },
+  "page.models": {
+    "en": ["download and manage models on this Mac", "local moedls page"],
+    "pt-BR": ["baixar e gerenciar modelos neste Mac", "pagina de model locais"],
+    "es": ["descargar y administrar modelos en este Mac", "pagina de moedlos locales"],
+    "fr": ["telecharger et gerer les modeles sur ce Mac", "page des model locaux"],
+    "it": ["scaricare e gestire i modelli su questo Mac", "pagina dei moedlli locali"]
+  },
+  "page.this-mac": {
+    "en": ["what my computer can run", "hardware and recomme setup"],
+    "pt-BR": ["o que meu computador consegue rodar", "hardware e cofniguracao recomendada"],
+    "es": ["que puede ejecutar mi ordenador", "hardware y configur recomendada"],
+    "fr": ["ce que mon ordinateur peut faire tourner", "materiel et cofniguration recommandee"],
+    "it": ["cosa riesce a eseguire il mio computer", "hardware e configura consigliata"]
+  },
+  "page.prompts": {
+    "en": ["edit the instructions the AI follows", "prmopt editor"],
+    "pt-BR": ["editar as instrucoes que a IA segue", "editor de promp"],
+    "es": ["editar las instrucciones que sigue la IA", "editor de prmopts"],
+    "fr": ["modifier les instructions que suit l'IA", "edite de prompts"],
+    "it": ["modificare le istruzioni che l'IA segue", "edtior dei prompt"]
+  },
+  "page.gateway": {
+    "en": ["connect another app to my library", "gatew pairing"],
+    "pt-BR": ["conectar outro aplicativo a minha biblioteca", "paeramento do gateway"],
+    "es": ["conectar otra aplicacion a mi biblioteca", "emparejam del gateway"],
+    "fr": ["connecter une autre appli a ma bibliotheque", "appairage de la passerell"],
+    "it": ["collegare un'altra app alla mia biblioteca", "associaz del gateway"]
+  },
+  "page.backup": {
+    "en": ["make a backup of my library", "backup and retsore"],
+    "pt-BR": ["fazer uma copia de seguranca da minha biblioteca", "backup e restaur"],
+    "es": ["hacer una copia de seguridad de mi biblioteca", "copia de seguridad y retsauracion"],
+    "fr": ["sauvegarder ma bibliotheque", "sauvegarde et restaura"],
+    "it": ["fare un backup della mia biblioteca", "backup e rirpistino"]
+  },
+  "page.reset": {
+    "en": ["erase everything and start over", "reset libra"],
+    "pt-BR": ["apagar tudo e comecar de novo", "redefinir a bilbioteca"],
+    "es": ["borrar todo y empezar de nuevo", "restabl la biblioteca"],
+    "fr": ["tout effacer et recommencer", "reniitialiser la bibliotheque"],
+    "it": ["cancellare tutto e ricominciare", "reimposta la biblio"]
+  },
+  "page.diagnostics-log": {
+    "en": ["see every AI request the app made", "AI clal log"],
+    "pt-BR": ["ver todas as requisicoes de IA que o app fez", "regis de chamadas de IA"],
+    "es": ["ver todas las solicitudes de IA que hizo la app", "reigstro de llamadas de IA"],
+    "fr": ["voir toutes les requetes IA faites par l'appli", "journ des appels IA"],
+    "it": ["vedere tutte le richieste IA fatte dall'app", "reigstro delle chiamate IA"]
+  }
+}

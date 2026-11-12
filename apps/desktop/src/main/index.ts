@@ -196,6 +196,9 @@ function createMainWindow(): BrowserWindow {
     minWidth: 960,
     minHeight: 640,
     show: false,
+    // The dark theme's canvas (--surface-canvas): dark is the default theme, so a profile with no
+    // stored choice never sees a white frame before the renderer paints.
+    backgroundColor: "#10151d",
     title: createTranslator(app.getLocale())("app.title"),
     webPreferences: {
       preload: join(__dirname, "../preload/index.cjs"),

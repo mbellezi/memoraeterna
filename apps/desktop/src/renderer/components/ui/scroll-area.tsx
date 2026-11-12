@@ -29,7 +29,7 @@ export function ScrollArea({
       <ScrollAreaPrimitive.Viewport
         ref={viewportRef}
         className={cn(
-          "size-full rounded-[inherit] outline-none focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent",
+          "size-full rounded-[inherit] outline-none focus-visible:outline-2 focus-visible:outline-solid focus-visible:-outline-offset-2 focus-visible:outline-accent",
           viewportClassName
         )}
       >
