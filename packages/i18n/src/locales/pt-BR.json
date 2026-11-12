@@ -1139,7 +1139,7 @@
       "invalidRuntimeResponse": "O runtime local retornou uma resposta inválida.",
       "runtimeFailed": "O runtime do modelo local falhou.",
       "runtimeUnavailable": "O runtime do modelo local não está instalado.",
-      "modelBusy": "O modelo esta em uso.",
+      "modelBusy": "O modelo está em uso.",
       "profileInUse": "Substitua este modelo nos perfis afetados antes de removê-lo.",
       "canceled": "O download do modelo foi cancelado.",
       "invalidGguf": "Escolha um arquivo de modelo GGUF válido.",
@@ -1819,19 +1819,19 @@
     }
   },
   "search": {
-    "placeholder": "Buscar fontes e evidencias",
+    "placeholder": "Buscar fontes e evidências",
     "action": "Buscar",
-    "empty": "Nenhuma evidencia correspondente.",
+    "empty": "Nenhuma evidência correspondente.",
     "scope": "Buscar dentro de",
     "scopeAll": "Biblioteca inteira",
     "page": "Página",
-    "markdownEvidence": "Evidencia no Markdown",
+    "markdownEvidence": "Evidência no Markdown",
     "kinds": {
       "source": "Fonte",
-      "subitem": "Secao",
-      "atomicNote": "Nota atomica",
+      "subitem": "Seção",
+      "atomicNote": "Nota atômica",
       "entity": "Entidade do grafo",
-      "relation": "Relacao do grafo"
+      "relation": "Relação do grafo"
     },
     "resultsCount": "{count} resultados",
     "graphResults": "Grafo de conhecimento",
