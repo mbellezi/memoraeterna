@@ -221,8 +221,9 @@ export function SyncRow({
                 )}
                 {line.canRun ? (
                   <>
-                    {/* No dot between: it would start the next line when the action wraps. */}
-                    <span className="ml-2 inline-block whitespace-nowrap">
+                    {/* No dot between, and a space instead of a margin: a margin would indent the
+                        action when it wraps to the next line, a space collapses there. */}{" "}
+                    <span className="inline-block whitespace-nowrap">
                       <InlineAction size="xs" disabled={starting} onClick={() => void runNow()}>
                         {t("settingsIntegrations.sync.now")}
                       </InlineAction>
