@@ -147,19 +147,30 @@ describe("colour tokens", () => {
   it("leave a suggested relation, drawn softer and dashed, 3:1 against the graph canvas", () => {
     // A suggestion keeps its stance colour at a lower opacity (F3 decision 29); softer is never
     // below the 3:1 a graph line needs, on the canvas it is drawn on, in either theme.
-    const source = read(`${renderer}/components/graph/ego-graph-sigma.ts`);
-    const opacity = Number(/egoSuggestionOpacity = ([0-9.]+)/u.exec(source)?.[1]);
-    expect(opacity).toBeGreaterThan(0.5);
-    expect(opacity).toBeLessThan(1);
-    for (const theme of ["light", "dark"] as const) {
-      const tokens = new Map([...sets.light, ...(theme === "dark" ? sets.dark : [])]);
-      const canvas = parseHexColour(tokens.get("--surface-raised")!)!;
-      for (const name of stances) {
-        const base = parseHexColour(tokens.get(`--stance-${name}`)!)!;
-        const blend = (channel: "r" | "g" | "b") =>
-          Math.round(base[channel] * opacity + canvas[channel] * (1 - opacity));
-        const softened = { r: blend("r"), g: blend("g"), b: blend("b") };
-        expect(contrastRatio(softened, canvas), `${theme} ${name}`).toBeGreaterThanOrEqual(3);
+    // Both graphs: the note's ego graph and the Map's Grafo, each with its own opacity, on the
+    // raised surface (`bg-surface`) both canvases are drawn on.
+    const graphs = [
+      ["components/graph/ego-graph-sigma.ts", "egoSuggestionOpacity"],
+      ["workspace/destinations/map/relations/branch-sigma.ts", "branchSuggestionOpacity"]
+    ] as const;
+    for (const [file, constant] of graphs) {
+      const source = read(`${renderer}/${file}`);
+      const opacity = Number(new RegExp(`${constant} = ([0-9.]+)`, "u").exec(source)?.[1]);
+      expect(opacity, constant).toBeGreaterThan(0.5);
+      expect(opacity, constant).toBeLessThan(1);
+      for (const theme of ["light", "dark"] as const) {
+        const tokens = new Map([...sets.light, ...(theme === "dark" ? sets.dark : [])]);
+        const canvas = parseHexColour(tokens.get("--surface-raised")!)!;
+        for (const name of stances) {
+          const base = parseHexColour(tokens.get(`--stance-${name}`)!)!;
+          const blend = (channel: "r" | "g" | "b") =>
+            Math.round(base[channel] * opacity + canvas[channel] * (1 - opacity));
+          const softened = { r: blend("r"), g: blend("g"), b: blend("b") };
+          expect(
+            contrastRatio(softened, canvas),
+            `${constant} ${theme} ${name}`
+          ).toBeGreaterThanOrEqual(3);
+        }
       }
     }
   });

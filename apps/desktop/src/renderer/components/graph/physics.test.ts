@@ -229,15 +229,16 @@ describe("topic groups in the layout (Map › Grafo, D19)", () => {
     expect(physics.positions().every(Number.isFinite)).toBe(true);
   });
 
-  it("accepts a group in the worker's init command", () => {
-    expect(
-      graphLayoutCommandSchema.safeParse({
-        type: "init",
-        nodes: [{ id: "a", x: 0, y: 0, group: "topic" }],
-        edges: [],
-        settings: defaultGraphForceSettings,
-        restored: false
-      }).success
-    ).toBe(true);
+  it("carries a node's group through the worker's init command", () => {
+    // The layout parses each command before posting it: a group the schema stripped would never
+    // reach the worker, and the notes would no longer gather by topic.
+    const command = graphLayoutCommandSchema.parse({
+      type: "init",
+      nodes: [{ id: "a", x: 0, y: 0, group: "topic" }],
+      edges: [],
+      settings: defaultGraphForceSettings,
+      restored: false
+    });
+    expect(command.type === "init" ? command.nodes[0]?.group : undefined).toBe("topic");
   });
 });
