@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
 import {
   checkTokens,
   contrastRatio,
+  deltaE2000,
+  deltaE2000Lab,
   formatReport,
   parseCssBlocks,
   parseHexColour,
@@ -233,29 +235,64 @@ describe("checkTokens", () => {
     expect(result.problems).toContain('rule "renamed" matched no token pair (renamed tokens?)');
   });
 
-  it("keeps graph tokens theme-invariant and mirroring the dark theme", () => {
-    const graph = (value: string) => `--graph-object-source: ${value};`;
-    const graphRules: readonly ContrastRule[] = [
+  it("asks neighbouring topic colours to differ by CIEDE2000 20, the last against the first", () => {
+    const topics = (values: string[]) =>
+      values.map((value, index) => `--graph-topic-${index + 1}: ${value};`).join("\n");
+    const topicRules: readonly ContrastRule[] = [
       ...rules,
       {
-        id: "graph",
-        description: "graph glyphs",
-        foreground: /^--graph-object-[a-z]+$/u,
+        id: "topic",
+        description: "topic dots",
+        foreground: /^--graph-topic-\d+$/u,
         background: /^--surface-[a-z]+$/u,
-        minimum: 3
+        minimum: 1
       }
     ];
-    expect(checkTokens(stylesheet({ light: graph("#999999") }), graphRules).problems).toEqual([]);
-    expect(checkTokens(stylesheet({ light: graph("#aaaaaa") }), graphRules).problems).toContain(
-      "--graph-object-source: must mirror the dark theme's --object-source"
+    const apart = topics(["#3d6f9e", "#a0522d", "#3f7f4f"]);
+    const sheet = (light: string, dark = apart) => stylesheet({ light, dark, system: dark });
+    expect(checkTokens(sheet(apart), topicRules).problems).toEqual([]);
+    // Two blues side by side read as one topic.
+    expect(
+      checkTokens(sheet(topics(["#3d6f9e", "#3f6ea0", "#3f7f4f"])), topicRules).problems
+    ).toEqual([
+      expect.stringMatching(
+        /^light --graph-topic-1 and --graph-topic-2: CIEDE2000 [0-9.]+ is below 20$/u
+      )
+    ]);
+    // The last index sits next to the first when the indices wrap.
+    expect(
+      checkTokens(sheet(topics(["#3d6f9e", "#a0522d", "#3e6f9f"])), topicRules).problems.join("\n")
+    ).toContain("light --graph-topic-3 and --graph-topic-1");
+    // A gap in the numbering is named, in the theme where it is.
+    const gap = "--graph-topic-1: #3d6f9e;\n--graph-topic-3: #3f7f4f;";
+    expect(checkTokens(sheet(gap, gap), topicRules).problems).toContain(
+      "--graph-topic-2: missing in light (topic colours count from 1)"
     );
-    const inDark = checkTokens(
-      stylesheet({ light: graph("#999999"), dark: graph("#999999"), system: graph("#999999") }),
-      graphRules
-    );
-    expect(inDark.problems).toContain(
-      "--graph-object-source: graph tokens are theme-invariant and belong under :root only"
-    );
+  });
+});
+
+describe("deltaE2000", () => {
+  it("matches Sharma, Wu and Dalal's reference pairs", () => {
+    // Pairs 1, 7, 16 and 25 of the published CIEDE2000 test data.
+    expect(
+      deltaE2000Lab({ l: 50, a: 2.6772, b: -79.7751 }, { l: 50, a: 0, b: -82.7485 })
+    ).toBeCloseTo(2.0425, 4);
+    expect(deltaE2000Lab({ l: 50, a: 0, b: 0 }, { l: 50, a: -1, b: 2 })).toBeCloseTo(2.3669, 4);
+    expect(deltaE2000Lab({ l: 50, a: 2.5, b: 0 }, { l: 56, a: -27, b: -3 })).toBeCloseTo(31.903, 3);
+    expect(
+      deltaE2000Lab(
+        { l: 60.2574, a: -34.0099, b: 36.2677 },
+        { l: 60.4626, a: -34.1751, b: 39.4387 }
+      )
+    ).toBeCloseTo(1.2644, 4);
+  });
+
+  it("measures sRGB colours through CIE Lab and is symmetric", () => {
+    const blue = parseHexColour("#3d6f9e")!;
+    const sienna = parseHexColour("#a0522d")!;
+    expect(deltaE2000(blue, blue)).toBe(0);
+    expect(deltaE2000(blue, sienna)).toBeCloseTo(deltaE2000(sienna, blue), 10);
+    expect(deltaE2000(blue, sienna)).toBeGreaterThan(30);
   });
 });
 

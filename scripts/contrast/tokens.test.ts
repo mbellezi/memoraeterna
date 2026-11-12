@@ -83,24 +83,47 @@ describe("colour tokens", () => {
     expect(tokensCss).toContain("color-scheme: light dark");
   });
 
-  it("expose the graph palette as theme-invariant variables on a dark canvas", () => {
-    for (const name of objectTypes)
-      expect(sets.light.get(`--graph-object-${name}`)).toBe(sets.dark.get(`--object-${name}`));
-    for (const name of stances)
-      expect(sets.light.get(`--graph-stance-${name}`)).toBe(sets.dark.get(`--stance-${name}`));
-    expect(sets.dark.has("--graph-canvas-center")).toBe(false);
+  it("give the Map › Grafo twelve topic colours per theme, the design's 1-5 first (D19, S12)", () => {
+    const design = {
+      light: ["#3d6f9e", "#a0522d", "#3f7f4f", "#7d5aa6", "#7f7020"],
+      dark: ["#8db7e0", "#e39b74", "#86c79a", "#c3a5e6", "#d6c27a"]
+    };
+    for (const theme of ["light", "dark"] as const) {
+      const tokens = new Map([...sets.light, ...(theme === "dark" ? sets.dark : [])]);
+      const values = Array.from({ length: 12 }, (_, index) =>
+        tokens.get(`--graph-topic-${index + 1}`)
+      );
+      expect(
+        values.every((value) => /^#[0-9a-f]{6}$/u.test(value ?? "")),
+        theme
+      ).toBe(true);
+      expect(values.slice(0, 5)).toEqual(design[theme]);
+      expect(new Set(values).size).toBe(12);
+    }
+    expect(sets.light.has("--graph-topic-13")).toBe(false);
   });
 
-  it("keep the graph token reader's fallback palette equal to the graph tokens (F3 T60g)", () => {
+  it("retire the dark-canvas graph tokens: the graph reads the theme (design record 4.1)", () => {
+    const retired = /--graph-(canvas|label|object|stance)/u;
+    expect(tokensCss).not.toMatch(retired);
+    expect(stylesCss).not.toMatch(retired);
+    for (const file of [
+      "components/graph/graph-tokens.ts",
+      "components/graph/EgoGraph.tsx",
+      "components/graph/ego-graph-sigma.ts"
+    ])
+      expect(read(`${renderer}/${file}`), file).not.toMatch(retired);
+  });
+
+  it("keep the graph token reader's fallback palette equal to the light tokens it reads", () => {
     const reader = read(`${renderer}/components/graph/graph-tokens.ts`);
     const block = /fallbackGraphPalette: GraphPalette = \{([\s\S]*?)\n\};/u.exec(reader)?.[1] ?? "";
     const fallback = (field: string) =>
       new RegExp(`\\b${field}: "(#[0-9a-f]{6})"`, "u").exec(block)?.[1];
-    expect(fallback("canvasCenter")).toBe(sets.light.get("--graph-canvas-center"));
-    expect(fallback("canvasEdge")).toBe(sets.light.get("--graph-canvas-edge"));
-    expect(fallback("label")).toBe(sets.light.get("--graph-label"));
-    expect(fallback("labelMuted")).toBe(sets.light.get("--graph-label-muted"));
-    expect(fallback("note")).toBe(sets.light.get("--graph-object-note"));
+    const tokenOf = (field: string) =>
+      new RegExp(`\\b${field}: "(--[a-z-]+)"`, "u").exec(reader)?.[1] ?? "";
+    for (const field of ["canvas", "label", "labelMuted", "note"])
+      expect(fallback(field), field).toBe(sets.light.get(tokenOf(field)));
     const stanceBlock = /stance: \{([\s\S]*?)\}/u.exec(block)?.[1] ?? "";
     for (const name of [
       "supports",
@@ -111,27 +134,30 @@ describe("colour tokens", () => {
       "related"
     ])
       expect(new RegExp(`\\b${name}: "(#[0-9a-f]{6})"`, "u").exec(stanceBlock)?.[1], name).toBe(
-        sets.light.get(`--graph-stance-${name.replace("_", "-")}`)
+        sets.light.get(`--stance-${name.replace("_", "-")}`)
       );
+    const topicBlock = /topic: \[([\s\S]*?)\]/u.exec(block)?.[1] ?? "";
+    expect([...topicBlock.matchAll(/"(#[0-9a-f]{6})"/gu)].map((match) => match[1])).toEqual(
+      Array.from({ length: 12 }, (_, index) => sets.light.get(`--graph-topic-${index + 1}`))
+    );
   });
 
   it("leave a suggested relation, drawn softer and dashed, 3:1 against the graph canvas", () => {
     // A suggestion keeps its stance colour at a lower opacity (F3 decision 29); softer is never
-    // below the 3:1 a graph line needs, on the canvas edge it is blended with.
+    // below the 3:1 a graph line needs, on the canvas it is drawn on, in either theme.
     const source = read(`${renderer}/components/graph/ego-graph-sigma.ts`);
     const opacity = Number(/egoSuggestionOpacity = ([0-9.]+)/u.exec(source)?.[1]);
     expect(opacity).toBeGreaterThan(0.5);
     expect(opacity).toBeLessThan(1);
-    for (const background of ["--graph-canvas-center", "--graph-canvas-edge"]) {
-      const canvas = parseHexColour(sets.light.get(background)!)!;
+    for (const theme of ["light", "dark"] as const) {
+      const tokens = new Map([...sets.light, ...(theme === "dark" ? sets.dark : [])]);
+      const canvas = parseHexColour(tokens.get("--surface-raised")!)!;
       for (const name of stances) {
-        const base = parseHexColour(sets.light.get(`--graph-stance-${name}`)!)!;
+        const base = parseHexColour(tokens.get(`--stance-${name}`)!)!;
         const blend = (channel: "r" | "g" | "b") =>
           Math.round(base[channel] * opacity + canvas[channel] * (1 - opacity));
         const softened = { r: blend("r"), g: blend("g"), b: blend("b") };
-        expect(contrastRatio(softened, canvas), `${name} on ${background}`).toBeGreaterThanOrEqual(
-          3
-        );
+        expect(contrastRatio(softened, canvas), `${theme} ${name}`).toBeGreaterThanOrEqual(3);
       }
     }
   });
@@ -369,9 +395,8 @@ describe("Tailwind bridge", () => {
     expect(withoutRamp).not.toMatch(/\b(?:rgba?|hsla?|oklch)\(/u);
   });
 
-  it("draws the graph canvas from the graph tokens", () => {
-    expect(stylesCss).toContain("var(--graph-canvas-center)");
-    expect(stylesCss).toContain("var(--graph-canvas-edge)");
+  it("draws the old graph's dark island from the theme's surfaces", () => {
+    expect(stylesCss).toMatch(/var\(--surface-soft\) 0%,\s+var\(--surface-canvas\) 62%/u);
   });
 });
 
