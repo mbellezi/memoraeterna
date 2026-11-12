@@ -4907,6 +4907,7 @@
       "headline": "Cette entité n’est plus dans la bibliothèque."
     },
     "sources": {
+      "countPartial": "{shown} sur {total}",
       "heading": "Sources",
       "partial": "Sources des mentions chargées jusqu’ici. Affichez plus de mentions pour voir le reste."
     },

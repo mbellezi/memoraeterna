@@ -241,6 +241,7 @@ function LoadedPage({
   const together = page.coMentioned ?? [];
   const sources = sourcesOf(page.mentions.items);
   const remaining = remainingMentions(page);
+  const sourcesPartial = sourcesArePartial(page);
 
   return (
     <article
@@ -402,7 +403,13 @@ function LoadedPage({
         <section aria-labelledby={sourcesId} className="grid min-w-0 gap-1">
           <h2 id={sourcesId} className={sectionHeading}>
             {t("entityPage.sources.heading")}
-            <span className={sectionNote}>{page.counts.sources}</span>
+            <span className={sectionNote}>
+              {sourcesPartial
+                ? t("entityPage.sources.countPartial", {
+                    values: { shown: sources.length, total: page.counts.sources }
+                  })
+                : page.counts.sources}
+            </span>
           </h2>
           <ul className="m-0 -mx-2 grid list-none p-0">
             {sources.map((source) => (
@@ -425,10 +432,20 @@ function LoadedPage({
               </li>
             ))}
           </ul>
-          {sourcesArePartial(page) ? (
-            <p className="m-0 text-xs text-muted-foreground [text-wrap:pretty]">
-              {t("entityPage.sources.partial")}
-            </p>
+          {sourcesPartial ? (
+            // The list is built from the mentions loaded so far: a quiet button loads more of them.
+            <Button
+              variant="ghost"
+              size="sm"
+              className="-ml-2.5 self-start text-left"
+              disabled={more === "loading"}
+              aria-busy={more === "loading"}
+              onClick={onLoadMore}
+            >
+              {more === "loading"
+                ? t("entityPage.mentions.moreLoading")
+                : t("entityPage.sources.partial")}
+            </Button>
           ) : null}
         </section>
       ) : null}

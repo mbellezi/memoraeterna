@@ -4907,6 +4907,7 @@
       "headline": "Questa entità non è più nella libreria."
     },
     "sources": {
+      "countPartial": "{shown} di {total}",
       "heading": "Fonti",
       "partial": "Fonti delle menzioni caricate finora. Mostra altre menzioni per vedere il resto."
     },

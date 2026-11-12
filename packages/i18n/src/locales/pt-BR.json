@@ -4907,6 +4907,7 @@
       "headline": "Esta entidade não está mais na biblioteca."
     },
     "sources": {
+      "countPartial": "{shown} de {total}",
       "heading": "Fontes",
       "partial": "Fontes das menções já carregadas. Mostre mais menções para ver as demais."
     },

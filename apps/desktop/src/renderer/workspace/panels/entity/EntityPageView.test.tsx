@@ -2,8 +2,13 @@ import { renderToString } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { createTranslator } from "@app/i18n";
 
-import { entityEmptyPage, entityFirstPage, entityFixture } from "./entity-fixtures";
-import type { EntityLoad } from "./entity-model";
+import {
+  entityEmptyPage,
+  entityFirstPage,
+  entityFixture,
+  entitySecondPage
+} from "./entity-fixtures";
+import { appendMentions, type EntityLoad } from "./entity-model";
 import { EntityPageView, type EntityPageViewProps } from "./EntityPageView";
 
 const en = createTranslator("en");
@@ -81,6 +86,23 @@ describe("the entity page", () => {
     expect(html).toContain("most cited");
     expect(html).toContain("Sources");
     expect(html).toContain("Sources of the mentions loaded so far.");
+  });
+
+  it("counts the sources shown over the sources there are while the mentions are partial, with a quiet button for the rest", () => {
+    const strip = (html: string) => html.replace(/<!-- -->/gu, "");
+    const partial = strip(view());
+    expect(partial).toContain("3 of 4");
+    expect(partial).not.toMatch(/Sources<span[^>]*>4</);
+    expect(partial).toMatch(/<button[^>]*>Sources of the mentions loaded so far\./);
+    expect(strip(view({ t: pt }))).toContain("3 de 4");
+    // Loading disables the button and says so.
+    expect(strip(view({ load: ready(entityFirstPage, "loading") }))).toMatch(
+      /<button[^>]*disabled=""[^>]*>Loading more mentions/
+    );
+    // Every mention loaded: the heading counts the sources, and there is no button for them.
+    const all = strip(view({ load: ready(appendMentions(entityFirstPage, entitySecondPage)) }));
+    expect(all).toMatch(/Sources<span[^>]*>4</);
+    expect(all).not.toContain("Sources of the mentions loaded so far.");
   });
 
   it("reads in the person's language, with no English left", () => {

@@ -4907,6 +4907,7 @@
       "headline": "This entity is no longer in the library."
     },
     "sources": {
+      "countPartial": "{shown} of {total}",
       "heading": "Sources",
       "partial": "Sources of the mentions loaded so far. Show more mentions to see the rest."
     },
