@@ -132,13 +132,13 @@ export function PlaceCell({ t, row }: { t: Translator; row: LibraryRow }) {
       </span>
     );
   const tentative = place.kind === "tentative";
-  const last = place.crumbs.length - 1;
   // One inline flow that wraps only between crumbs, at most two lines (the row's height): the
-  // first crumb keeps its glyph and the "…" before it, and a separator stays with the crumb it
-  // follows, so a line never starts with "›" nor ends on a lone "…".
+  // first crumb keeps its glyph and the "…" before it, and a separator travels with the crumb it
+  // introduces, so a wrapped second line starts "› Mobilidade ativa" and no line ends on a lone
+  // "›" or "…".
   const separator = (
     <>
-      <span aria-hidden="true" className="ml-1 text-muted-foreground">
+      <span aria-hidden="true" className="text-muted-foreground">
         ›
       </span>{" "}
     </>
@@ -157,6 +157,7 @@ export function PlaceCell({ t, row }: { t: Translator; row: LibraryRow }) {
         <Fragment key={crumb.id}>
           {index > 0 ? " " : null}
           <span className="whitespace-nowrap">
+            {index > 0 ? separator : null}
             {index === 0 ? (
               <>
                 <ObjectKindGlyph
@@ -180,7 +181,6 @@ export function PlaceCell({ t, row }: { t: Translator; row: LibraryRow }) {
             >
               {crumb.title === "" ? t("panelFrame.ribbon.untitled") : crumb.title}
             </span>
-            {index < last ? separator : null}
           </span>
         </Fragment>
       ))}

@@ -870,7 +870,7 @@
       "questionsFiltered": "Aucune question ne correspond à ce filtre.",
       "questionsKept": "Elles restent enregistrées sur ce Mac.",
       "sourcesEmpty": "Aucune source pour l'instant.",
-      "sourcesEmptyBody": "Ajoutez un PDF, un lien ou une note. Memora le lit, rédige les notes et les place dans l'arbre pour vous.",
+      "sourcesEmptyBody": "Ajoutez un fichier. Memora le lit, rédige les notes et les place dans l'arbre pour vous.",
       "sourcesEmptyDrop": "Déposez des fichiers ici pour commencer",
       "sourcesEmptyHint": "Depuis n'importe quel écran, le raccourci est",
       "sourcesError": "Impossible de lire la bibliothèque.",

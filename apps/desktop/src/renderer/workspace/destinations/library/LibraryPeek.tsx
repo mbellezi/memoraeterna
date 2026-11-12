@@ -119,18 +119,14 @@ function PeekBody({
           ) : null}
           {counts ? <p className="m-0 text-xs text-muted-foreground">{counts}</p> : null}
           {summary && peekIsEmpty(summary) ? (
-            <div className="grid gap-1 text-sm text-secondary-foreground">
-              <p className="m-0 [text-wrap:pretty]">
-                {t(
-                  kind === "question"
-                    ? "libraryTable.peek.noSummaryQuestion"
-                    : "libraryTable.peek.noSummarySource"
-                )}
-              </p>
-              <p className="m-0 inline-flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
-                <Kbd>↵</Kbd> {t("libraryTable.peek.opens")}
-              </p>
-            </div>
+            // The head already teaches "↵ abre ao lado": the body says only what is missing.
+            <p className="m-0 text-sm text-secondary-foreground [text-wrap:pretty]">
+              {t(
+                kind === "question"
+                  ? "libraryTable.peek.noSummaryQuestion"
+                  : "libraryTable.peek.noSummarySource"
+              )}
+            </p>
           ) : null}
         </>
       ) : (
@@ -170,6 +166,7 @@ export function LibraryPeek({
           // Centred in the window but never over the bars: below the filter, the chips and the
           // territory bar (two lines at 960), so no half-hidden chip shows above the sheet.
           className="top-[max(12rem,calc(50%-10rem))]!"
+          lift
           {...(portal === undefined ? {} : { portal })}
         >
           <SheetHeader className="flex-wrap gap-x-4 gap-y-1">

@@ -870,7 +870,7 @@
       "questionsFiltered": "No questions match this filter.",
       "questionsKept": "They are still stored on this Mac.",
       "sourcesEmpty": "No sources yet.",
-      "sourcesEmptyBody": "Add a PDF, a link or a note. Memora reads it, writes the notes and places them in the tree for you.",
+      "sourcesEmptyBody": "Add a file. Memora reads it, writes the notes and places them in the tree for you.",
       "sourcesEmptyDrop": "Drop files here to start",
       "sourcesEmptyHint": "From any screen, the shortcut is",
       "sourcesError": "Could not read the Library.",

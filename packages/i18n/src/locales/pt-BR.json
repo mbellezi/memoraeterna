@@ -870,7 +870,7 @@
       "questionsFiltered": "Nenhuma pergunta com esse filtro.",
       "questionsKept": "Elas continuam guardadas neste Mac.",
       "sourcesEmpty": "Nenhuma fonte ainda.",
-      "sourcesEmptyBody": "Adicione um PDF, um link ou uma nota. O Memora lê, escreve as notas e coloca tudo na árvore para você.",
+      "sourcesEmptyBody": "Adicione um arquivo. O Memora o lê, escreve as notas e coloca tudo na árvore para você.",
       "sourcesEmptyDrop": "Solte arquivos aqui para começar",
       "sourcesEmptyHint": "De qualquer tela, o atalho é",
       "sourcesError": "Não deu para ler a Biblioteca.",
