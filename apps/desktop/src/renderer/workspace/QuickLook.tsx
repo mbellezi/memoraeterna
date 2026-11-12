@@ -332,10 +332,8 @@ export function QuickLookHost({ t, store = quickLook }: { t: Translator; store?:
   // A Space the sheet took is not also a click on the button that holds the focus.
   const tookSpace = useRef(false);
   useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.defaultPrevented) return;
-      const open = store.get() !== null;
-      const action = quickLookKey(
+    const actionOf = (event: KeyboardEvent) =>
+      quickLookKey(
         {
           key: event.key,
           code: event.code,
@@ -346,17 +344,35 @@ export function QuickLookHost({ t, store = quickLook }: { t: Translator; store?:
           isComposing: event.isComposing,
           editable: isEditableElement(event.target as Element | null)
         },
-        open
+        store.get() !== null
       );
-      switch (action) {
+    // The arrows and Enter are the list's own keys, and a list that owns them cancels them (cmdk
+    // does, before the event reaches the document), so the sheet reads them first, in the capture
+    // phase and whether or not they are cancelled: it only follows the list after it has moved.
+    const onKeyDownCapture = (event: KeyboardEvent) => {
+      const action = actionOf(event);
+      if (action === "follow") {
+        requestAnimationFrame(() => {
+          const next = quickLookTarget(document);
+          if (next !== null && store.get() !== null) store.open(next);
+        });
+      } else if (action === "close-after-enter") {
+        requestAnimationFrame(() => store.close());
+      }
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      // A Space or Cmd-Y that something already took is not the sheet's.
+      if (event.defaultPrevented) return;
+      switch (actionOf(event)) {
         case "toggle": {
           event.preventDefault();
-          if (open) store.close();
+          if (store.get() !== null) store.close();
           else store.toggle(quickLookTarget(document));
           return;
         }
         case "open-from-row": {
-          const target = quickLookTarget(document);
+          // Space peeks only at the row the keyboard is on, never at a selected row elsewhere.
+          const target = quickLookTarget(document, false);
           if (target === null) return;
           event.preventDefault();
           tookSpace.current = true;
@@ -368,17 +384,7 @@ export function QuickLookHost({ t, store = quickLook }: { t: Translator; store?:
           tookSpace.current = true;
           store.close();
           return;
-        case "follow":
-          // The list moves its own row on this key; the sheet follows it once it has.
-          requestAnimationFrame(() => {
-            const next = quickLookTarget(document);
-            if (next !== null && store.get() !== null) store.open(next);
-          });
-          return;
-        case "close-after-enter":
-          requestAnimationFrame(() => store.close());
-          return;
-        case null:
+        default:
           return;
       }
     };
@@ -394,10 +400,12 @@ export function QuickLookHost({ t, store = quickLook }: { t: Translator; store?:
       const next = quickLookTarget(document);
       if (next !== null) store.open(next);
     };
+    document.addEventListener("keydown", onKeyDownCapture, true);
     document.addEventListener("keydown", onKeyDown);
     document.addEventListener("keyup", onKeyUp);
     document.addEventListener("focusin", onFocusIn);
     return () => {
+      document.removeEventListener("keydown", onKeyDownCapture, true);
       document.removeEventListener("keydown", onKeyDown);
       document.removeEventListener("keyup", onKeyUp);
       document.removeEventListener("focusin", onFocusIn);

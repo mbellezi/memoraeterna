@@ -98,7 +98,7 @@ const lookup = (parts: {
   ({
     activeElement: parts.active ?? null,
     getElementById: (id: string) => parts.byId?.[id] ?? null,
-    querySelector: () => parts.selected ?? null
+    querySelectorAll: () => (parts.selected ? [parts.selected] : [])
   }) as unknown as RowLookup;
 
 describe("which row quick-look peeks at", () => {
@@ -120,7 +120,30 @@ describe("which row quick-look peeks at", () => {
     const selected = element({ "data-quick-look": note(3), "aria-selected": "true" });
     expect(quickLookTarget(lookup({ active: body, selected }))).toBe(note(3));
     expect(quickLookTarget(lookup({ active: body }))).toBeNull();
+    // Space never reaches for a selected row: the focus may be on a button or a switch elsewhere.
+    expect(quickLookTarget(lookup({ active: body, selected }), false)).toBeNull();
     expect(quickLookTarget(lookup({}))).toBeNull();
+  });
+
+  it("skips a selected row inside a destination that is mounted but hidden", () => {
+    const body = element({});
+    const hiddenSelected = element({ "data-quick-look": note(4), "aria-selected": "true" });
+    hiddenSelected.closest = (selector) =>
+      selector === "[hidden], [inert]" ? element({ hidden: "" }) : null;
+    const shown = element({ "data-quick-look": note(6), "data-selected": "true" });
+    const doc = {
+      activeElement: body,
+      getElementById: () => null,
+      querySelectorAll: () => [hiddenSelected, shown]
+    } as unknown as RowLookup;
+    // `closest` of the shown fake answers the peekable selector only, so it is shown.
+    shown.closest = (selector) => (selector === "[data-quick-look]" ? shown : null);
+    expect(quickLookTarget(doc)).toBe(note(6));
+    const onlyHidden = {
+      ...doc,
+      querySelectorAll: () => [hiddenSelected]
+    } as unknown as RowLookup;
+    expect(quickLookTarget(onlyHidden)).toBeNull();
   });
 
   it("never peeks at an address that is not an object's", () => {

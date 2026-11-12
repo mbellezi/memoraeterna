@@ -94,8 +94,10 @@ export function useObjectPreview(
   useEffect(() => {
     if (!enabled) return undefined;
     let live = true;
+    // The first read of an address may share a call already on its way; a re-read after a change
+    // (or a retry) must not, since that call may have read before the commit.
     (batcher ?? previewBatcher())
-      .request(address)
+      .request(address, attempt > 0 ? { fresh: true } : undefined)
       .then((result) => {
         if (live) setHeld({ address, state: toState(result) });
       })

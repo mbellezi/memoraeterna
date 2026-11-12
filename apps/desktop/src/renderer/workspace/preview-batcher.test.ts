@@ -74,6 +74,43 @@ describe("the preview batcher", () => {
     expect(calls[0]?.addresses).toEqual([note(1)]);
   });
 
+  it("lets a re-read after a change start its own call instead of joining the one in flight", async () => {
+    // The first call reads the old title and settles late; the re-read starts after the commit.
+    const answers: Array<(title: string) => void> = [];
+    const calls: ObjectResolveManyInput[] = [];
+    const batcher = createPreviewBatcher({
+      resolveMany: (input) => {
+        calls.push(input);
+        return new Promise((resolve) => {
+          answers.push((title) =>
+            resolve({
+              items: Object.fromEntries(input.addresses.map((a) => [a, { ...resolved(a), title }])),
+              missing: []
+            })
+          );
+        });
+      }
+    });
+    const first = batcher.request(note(1));
+    vi.advanceTimersByTime(16);
+    const joined = batcher.request(note(1));
+    const fresh = batcher.request(note(1), { fresh: true });
+    expect(joined).toBe(first);
+    expect(fresh).not.toBe(first);
+    // A second fresh ask in the same window shares the fresh read, not the old one.
+    expect(batcher.request(note(1), { fresh: true })).toBe(fresh);
+    vi.advanceTimersByTime(16);
+    expect(calls).toHaveLength(2);
+    answers[0]?.("Old title");
+    answers[1]?.("New title");
+    expect(await first).toMatchObject({ item: { title: "Old title" } });
+    expect(await fresh).toMatchObject({ item: { title: "New title" } });
+    // The old call settling after the new one left nothing behind: a plain ask opens a new call.
+    void batcher.request(note(1));
+    vi.advanceTimersByTime(16);
+    expect(calls).toHaveLength(3);
+  });
+
   it("keeps an anchored address apart from the plain one", async () => {
     const { calls, batcher } = setup();
     const anchored = `${note(1)}#passage=${uuid(9)}`;
