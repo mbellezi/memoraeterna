@@ -5143,7 +5143,7 @@
   },
   "preview": {
     "card": {
-      "empty": "Pas encore de résumé. Ouvrez-le pour tout lire.",
+      "empty": "Pas encore de résumé. Ouvrez-le à côté pour tout lire.",
       "error": "Impossible de lire l’aperçu.",
       "errorKept": "Le lien fonctionne toujours ; rien n’a été modifié.",
       "goTo": "Aller à",

@@ -5143,7 +5143,7 @@
   },
   "preview": {
     "card": {
-      "empty": "Ainda sem resumo. Abra para ler tudo.",
+      "empty": "Ainda sem resumo. Abra ao lado para ler tudo.",
       "error": "Não foi possível ler a prévia.",
       "errorKept": "O link continua funcionando; nada foi alterado.",
       "goTo": "Vai para",

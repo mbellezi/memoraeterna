@@ -5143,7 +5143,7 @@
   },
   "preview": {
     "card": {
-      "empty": "Ancora nessun riassunto. Aprilo per leggere tutto.",
+      "empty": "Ancora nessun riassunto. Aprilo accanto per leggere tutto.",
       "error": "Impossibile leggere l’anteprima.",
       "errorKept": "Il link funziona ancora; non è stato cambiato nulla.",
       "goTo": "Vai a",

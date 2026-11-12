@@ -5143,7 +5143,7 @@
   },
   "preview": {
     "card": {
-      "empty": "No summary yet. Open it to read it all.",
+      "empty": "No summary yet. Open it beside to read it all.",
       "error": "Could not read the preview.",
       "errorKept": "The link still works; nothing was changed.",
       "goTo": "Go to",
