@@ -266,10 +266,60 @@ export function glyphForeground(
 const css = (colour: Rgb) =>
   `rgb(${Math.round(colour.r)}, ${Math.round(colour.g)}, ${Math.round(colour.b)})`;
 
+/** A colour with premultiplied channels (0-255 scaled by alpha) and its alpha. */
+interface Premultiplied {
+  r: number;
+  g: number;
+  b: number;
+  a: number;
+}
+
+const premultiply = (colour: Rgba): Premultiplied => ({
+  r: colour.r * colour.a,
+  g: colour.g * colour.a,
+  b: colour.b * colour.a,
+  a: colour.a
+});
+
+const over = (top: Premultiplied, bottom: Premultiplied): Premultiplied => ({
+  r: top.r + bottom.r * (1 - top.a),
+  g: top.g + bottom.g * (1 - top.a),
+  b: top.b + bottom.b * (1 - top.a),
+  a: top.a + bottom.a * (1 - top.a)
+});
+
 /**
- * The effective colours of a sample: the background composed from the nearest opaque layer (the
- * window's white when none is) down to the element, and the foreground over it. Null with a reason
- * when that cannot be known.
+ * What one pixel of the element looks like over the window's white, drawn the way the browser does:
+ * each element paints its own background, then what it holds (the next element in, or the paint
+ * itself at the sample's own element), and its `opacity` fades that whole group, so a faded ancestor
+ * fades the opaque panel and the text inside it together and toward what lies behind it.
+ */
+function renderPixel(
+  layers: readonly Rgba[],
+  opacities: readonly number[],
+  paint: Rgba | null
+): Rgb {
+  let group: Premultiplied | null = null;
+  layers.forEach((layer, index) => {
+    let buffer = premultiply(layer);
+    if (index === 0 && paint) buffer = over(premultiply(paint), buffer);
+    if (group) buffer = over(group, buffer);
+    const opacity = opacities[index] ?? 1;
+    group = {
+      r: buffer.r * opacity,
+      g: buffer.g * opacity,
+      b: buffer.b * opacity,
+      a: buffer.a * opacity
+    };
+  });
+  const pixel = over(group ?? { r: 0, g: 0, b: 0, a: 0 }, premultiply(white));
+  return { r: pixel.r, g: pixel.g, b: pixel.b };
+}
+
+/**
+ * The effective colours of a sample: the background and the foreground as the person sees them,
+ * the layers of every ancestor (tints, translucent fills, opacity) composed over the window's white.
+ * Null with a reason when that cannot be known.
  */
 export function effectiveColours(
   sample: ContrastSample
@@ -281,18 +331,18 @@ export function effectiveColours(
   const layers = sample.backgrounds.map(parseCssColor);
   if (!foreground || layers.some((layer) => layer === null))
     return { reason: `unparsed colour (${[sample.color, ...sample.backgrounds].join(" | ")})` };
-  const alphaOf = (index: number) => (layers[index] as Rgba).a * (sample.opacities[index] ?? 1);
-  let start = layers.findIndex((_layer, index) => alphaOf(index) >= 0.999);
+  const painted = layers as Rgba[];
+  // How much of a layer shows: its own alpha, faded by the opacity of its element and every ancestor.
+  const shown = (index: number) =>
+    (painted[index] as Rgba).a *
+    sample.opacities.slice(index).reduce((product, value) => product * value, 1);
+  // A background image decides the colour only down to the nearest layer that hides what is behind.
+  const start = painted.findIndex((_layer, index) => shown(index) >= 0.999);
   if (sample.images.slice(0, start === -1 ? undefined : start + 1).some(Boolean))
     return { reason: "background image under the element" };
-  let background: Rgb = start === -1 ? white : (layers[start] as Rgba);
-  if (start === -1) start = layers.length;
-  for (let index = start - 1; index >= 0; index -= 1)
-    background = composite({ ...(layers[index] as Rgba), a: alphaOf(index) }, background);
-  const opacity = sample.opacities.slice(0, start).reduce((product, value) => product * value, 1);
   return {
-    foreground: composite({ ...foreground, a: foreground.a * opacity }, background),
-    background
+    foreground: renderPixel(painted, sample.opacities, foreground),
+    background: renderPixel(painted, sample.opacities, null)
   };
 }
 

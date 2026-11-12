@@ -45,6 +45,9 @@ const fixture = `<!doctype html><html><head><meta charset="utf-8"><style>
   <div style="background: rgba(245, 158, 11, 0.16)"><span style="color:#e8b05a">Warning on its tint</span></div>
   <div style="background: rgba(255, 255, 255, 0.9)"><span style="color:#e4eaf2">White over a light veil</span></div>
 </section>
+<div style="opacity:0.5">
+  <section id="stale"><span style="color:#9daabd">Stale and faded</span></section>
+</div>
 <section id="inactive">
   <button disabled style="color:#2a3544;background:#171e28;border:0">Disabled low</button>
   <button style="color:#2a3544;background:#171e28;border:0">Enabled low</button>
@@ -121,6 +124,16 @@ describe.skipIf(!electronAvailable)("the contrast scan on a real page", () => {
 
     it("fails light text over a nearly opaque light veil, as the person sees it", () => {
       expect(failed("White over a light veil")).toMatchObject({ background: "rgb(232, 233, 234)" });
+    });
+  });
+
+  describe("faded ancestors", () => {
+    it("fades the panel with its text when an ancestor above the panel has opacity", () => {
+      // #9daabd on its raised panel is about 7:1 at rest; at opacity 0.5 over the page it is weaker.
+      expect(failed("Stale and faded")).toMatchObject({
+        foreground: "rgb(87, 96, 109)",
+        background: "rgb(20, 26, 35)"
+      });
     });
   });
 

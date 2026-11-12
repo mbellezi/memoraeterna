@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { contrastRatio } from "../../scripts/contrast/contrast.js";
+import { contrastRatio, type Rgb } from "../../scripts/contrast/contrast.js";
 import {
   composite,
   effectiveColours,
@@ -117,6 +117,41 @@ describe("effectiveColours and evaluateSamples", () => {
       foreground: { r: 127.5, g: 127.5, b: 127.5 },
       background: { r: 255, g: 255, b: 255 }
     });
+  });
+
+  it("fades an opaque panel and its text together when an ancestor above it has opacity", () => {
+    // A stale list under a wrapper at opacity 0.5: panel #171e28 and text #e4eaf2 both fade toward the
+    // page (#10151d), so the pair is far weaker than the same colours at rest.
+    const faded = sample({
+      color: "rgb(228, 234, 242)",
+      backgrounds: ["rgba(0, 0, 0, 0)", "rgb(23, 30, 40)", "rgba(0, 0, 0, 0)", "rgb(16, 21, 29)"],
+      images: [false, false, false, false],
+      opacities: [1, 1, 0.5, 1]
+    });
+    const colours = effectiveColours(faded) as { foreground: Rgb; background: Rgb };
+    expect(colours).toEqual({
+      foreground: { r: 122, g: 127.5, b: 135.5 },
+      background: { r: 19.5, g: 25.5, b: 34.5 }
+    });
+    const rest = effectiveColours({ ...faded, opacities: [1, 1, 1, 1] }) as typeof colours;
+    expect(contrastRatio(colours.foreground, colours.background)).toBeLessThan(
+      contrastRatio(rest.foreground, rest.background) / 2
+    );
+  });
+
+  it("composes a tint over a tinted opaque ancestor, not over white", () => {
+    const colours = effectiveColours(
+      sample({
+        color: "rgb(232, 176, 90)",
+        backgrounds: ["rgba(245, 158, 11, 0.16)", "rgb(23, 30, 40)", "rgba(0, 0, 0, 0)"],
+        images: [false, false, false],
+        opacities: [1, 1, 1]
+      })
+    );
+    const { background } = colours as { background: { r: number; g: number; b: number } };
+    near(background.r, 58.52, 3);
+    near(background.g, 50.48, 3);
+    near(background.b, 35.36, 3);
   });
 
   it("counts failures, passes large text at 3:1 and lists what it cannot verify", () => {
