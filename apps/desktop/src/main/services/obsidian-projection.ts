@@ -49,6 +49,20 @@ export function projectionObjectAddress(
 }
 
 /**
+ * The "open in the app" line that ends a projected source-relation page: the canonical address of
+ * the relation's source with the relation anchor (never the legacy `memora://open/source` form).
+ * An ID that is not a UUID has no address, and the line is the label alone.
+ */
+export function projectionRelationOpenLine(
+  label: string,
+  sourceItemId: string,
+  relationId: string
+): string {
+  const address = projectionObjectAddress("source", sourceItemId, { relation: relationId });
+  return address ? `[${safeWikiLabel(label)}](${address})` : safeWikiLabel(label);
+}
+
+/**
  * A link from a projected page: a wikilink to the page's file when it has one, else a Markdown
  * link that opens the object in the app by its canonical address. `kind` is an object kind, or
  * `wiki` for the vault's own index pages, which have no object (a missing one keeps the retired

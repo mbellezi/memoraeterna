@@ -44,6 +44,7 @@ import {
   collisionFileName,
   projectionLink,
   projectionObjectAddress,
+  projectionRelationOpenLine,
   slugify
 } from "./obsidian-projection.js";
 import { trackObsidianProjection } from "./obsidian-projection-events.js";
@@ -903,7 +904,7 @@ export class ObsidianWikiProjection {
         projectionHash(JSON.stringify([r, evidence])),
         `${r.sourceTitle}${relationPairSeparator(r.directed)}${r.targetTitle}`,
         `# ${safeWikiLabel(r.sourceTitle)}${relationPairSeparator(r.directed)}${safeWikiLabel(r.targetTitle)}\n\n`,
-        `${t("obsidianWiki.readOnly")}\n\n${r.id} · ${t(("knowledge.relations.types." + r.relation_type) as MessageKey)} · ${relationStatus(r.status)} · ${r.current ? t("obsidianWiki.current") : t("obsidianWiki.historical")}\n\n${link(r.source_item_id, r.sourceTitle)}${relationPairSeparator(r.directed)}${link(r.target_source_item_id, r.targetTitle)}\n\n${replace(r.source_idea)}\n\n${replace(r.target_idea)}\n\n${replace(r.explanation)}\n\n${evidence}\n\n[${t("obsidianWiki.openApp")}](memora://open/source/${r.source_item_id}?relation=${r.id})`
+        `${t("obsidianWiki.readOnly")}\n\n${r.id} · ${t(("knowledge.relations.types." + r.relation_type) as MessageKey)} · ${relationStatus(r.status)} · ${r.current ? t("obsidianWiki.current") : t("obsidianWiki.historical")}\n\n${link(r.source_item_id, r.sourceTitle)}${relationPairSeparator(r.directed)}${link(r.target_source_item_id, r.targetTitle)}\n\n${replace(r.source_idea)}\n\n${replace(r.target_idea)}\n\n${replace(r.explanation)}\n\n${evidence}\n\n${projectionRelationOpenLine(t("obsidianWiki.openApp"), r.source_item_id, r.id)}`
       );
     }
     const topicRoot = topics?.planned[0];

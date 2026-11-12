@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { normalizeMemoraLink } from "@app/domain";
 
@@ -8,6 +9,7 @@ import {
   parseManagedMarkdown,
   projectionLink,
   projectionObjectAddress,
+  projectionRelationOpenLine,
   renderObsidianProjection,
   stripObsidianRelations
 } from "./obsidian-projection.js";
@@ -128,6 +130,24 @@ describe("the links the projections write open objects by their canonical addres
       `memora://source/${sourceId}#relation=${relationId}`
     );
     expect(projectionObjectAddress("source", "not-a-uuid")).toBeNull();
+  });
+
+  it("ends a source-relation page with the canonical relation link, never the legacy form", () => {
+    expect(projectionRelationOpenLine("Open in Memora", sourceId, relationId)).toBe(
+      `[Open in Memora](memora://source/${sourceId}#relation=${relationId})`
+    );
+    expect(projectionRelationOpenLine("Open in Memora", "not-a-uuid", relationId)).toBe(
+      "Open in Memora"
+    );
+    // The wiki projection builds that page line through the helper: no writer holds a legacy link.
+    for (const file of ["obsidian-wiki-projection.ts", "obsidian-topic-projection.ts"]) {
+      const source = readFileSync(new URL(`./${file}`, import.meta.url), "utf8");
+      expect(source, file).not.toContain("memora://open/source");
+      expect(source, file).not.toContain("memora://open/topic");
+    }
+    expect(
+      readFileSync(new URL("./obsidian-wiki-projection.ts", import.meta.url), "utf8")
+    ).toContain("projectionRelationOpenLine(");
   });
 
   it("links a page with no file to its object, and keeps a wikilink where the file exists", () => {
