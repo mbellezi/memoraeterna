@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
 
+import type { InboxKind } from "@app/domain";
+
 import { InboxScreen } from "../../../components/inbox/InboxScreen";
 import type { PanelLoadState } from "../../PanelFrame";
 import type { PanelProps } from "../../PanelStack";
-import { formatView } from "../../route";
+import { formatView, parseViewAddress } from "../../route";
 import { useViewportWidth } from "../../use-workspace";
 import { columnWidth } from "../columns";
 
@@ -19,7 +21,13 @@ export const surfaceId = "destination-inbox";
 /** The root as the previous panel of a stack: its item list alone, reported as a surface of its own. */
 export const compactSurfaceId = "destination-inbox-compact";
 
-export function InboxRoot({ t, mode, active, onState, onOpen }: PanelProps) {
+/** The kind the root's address asks for (`memora://inbox?kind=…`), or undefined for the whole Inbox. */
+export function inboxKindOf(address: string): InboxKind | undefined {
+  const view = parseViewAddress(address);
+  return view?.view === "inbox" ? view.kind : undefined;
+}
+
+export function InboxRoot({ t, address, mode, active, onState, onOpen }: PanelProps) {
   const [state, setState] = useState<PanelLoadState>("loading");
   const reportState = useCallback((next: PanelLoadState) => setState(next), []);
   useEffect(() => {
@@ -44,6 +52,7 @@ export function InboxRoot({ t, mode, active, onState, onOpen }: PanelProps) {
           active={active}
           compact={compact}
           keyBar={!compact}
+          kind={inboxKindOf(address)}
           listWidth={columnWidth("inboxList", width)}
           onState={reportState}
           onNavigate={() => undefined}
