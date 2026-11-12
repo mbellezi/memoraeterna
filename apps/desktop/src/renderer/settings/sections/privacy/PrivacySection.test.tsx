@@ -62,7 +62,9 @@ const decisions = (over: Record<string, unknown> = {}) => ({
 const base = (over: Answers = {}): Answers => ({
   "ai.classRoutes": routes(),
   "ai.decisionsStatus": decisions(),
-  "ai.listProviders": [{ displayName: "ChatGPT subscription", secretConfigured: true }],
+  "ai.listProviders": [
+    { provider: "openai-codex", displayName: "ChatGPT subscription", secretConfigured: true }
+  ],
   "settings.getGoogleBooksKeyStatus": { configured: false },
   "questions.list": { items: [{}, {}, {}] },
   "monitoring.list": { rows: [], totals: { count: 1284 } },
@@ -91,6 +93,11 @@ describe("what leaves this Mac, by job", () => {
       ["books", "internet", true]
     ]);
     expect(rows[2]?.where).toEqual({ kind: "cloud", name: "ChatGPT subscription" });
+    const named = leaveRows(
+      input({ providerNames: new Map([["ChatGPT subscription", "Assinatura ChatGPT"]]) })
+    );
+    expect(named[2]?.where).toEqual({ kind: "cloud", name: "Assinatura ChatGPT" });
+    expect(named[5]?.where).toEqual({ kind: "cloud", name: "Assinatura ChatGPT" });
   });
 
   it("names every service a metadata lookup contacts: articles always go to Crossref", () => {
@@ -175,10 +182,10 @@ describe("Privacy, drawn from the registry", () => {
     expect(rows).toEqual([
       ["Busca e semelhança", "Neste Mac", "Nada"],
       ["Classificação", "Neste Mac", "Nada"],
-      ["Escrita rápida", "Na nuvem · ChatGPT subscription", "Trechos das fontes e resumos"],
-      ["Escrita cuidadosa", "Na nuvem · ChatGPT subscription", "Trechos das fontes"],
-      ["Respostas", "Na nuvem · ChatGPT subscription", "Sua pergunta e as notas citadas"],
-      ["Juiz das conexões", "Na nuvem · ChatGPT subscription", "Notas e trechos comparados"],
+      ["Escrita rápida", "Na nuvem · Assinatura ChatGPT", "Trechos das fontes e resumos"],
+      ["Escrita cuidadosa", "Na nuvem · Assinatura ChatGPT", "Trechos das fontes"],
+      ["Respostas", "Na nuvem · Assinatura ChatGPT", "Sua pergunta e as notas citadas"],
+      ["Juiz das conexões", "Na nuvem · Assinatura ChatGPT", "Notas e trechos comparados"],
       ["OpenAI Decisions", "Desligado", "Nada"],
       [
         "Dados de livros e artigos",
@@ -187,7 +194,29 @@ describe("Privacy, drawn from the registry", () => {
       ]
     ]);
     expect(table.querySelector("caption")?.textContent).toBe("O que sai deste Mac, por trabalho");
-    expect(h.row("privacy.summary")!.textContent).toContain("ChatGPT subscription.");
+    // The credentials line and the table name a provider as the AI section does, never in English.
+    expect(h.row("privacy.summary")!.textContent).toContain("Assinatura ChatGPT.");
+    expect(h.row("privacy.summary")!.textContent).not.toContain("ChatGPT subscription");
+  });
+
+  it("names a provider by its kind in the language of the app: the AI section's own label", async () => {
+    h = await mountSection({
+      section: "privacy",
+      locale: "pt-BR",
+      answers: base({
+        "ai.listProviders": [
+          { provider: "openai-codex", displayName: "ChatGPT subscription", secretConfigured: true },
+          {
+            provider: "openai-compatible",
+            displayName: "OpenAI-compatible",
+            secretConfigured: true
+          }
+        ]
+      })
+    });
+    const summary = h.row("privacy.summary")!.textContent!;
+    expect(summary).toContain("Assinatura ChatGPT, Compatível com OpenAI");
+    expect(summary).not.toContain("OpenAI-compatible");
   });
 
   it("says Crossref receives article lookups whichever book service is chosen", async () => {

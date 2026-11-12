@@ -84,8 +84,8 @@ export const fixtures: ScreenModule["fixtures"] = {
       lastUsedAt: null
     },
     "ai.listProviders": [
-      { displayName: "ChatGPT subscription", secretConfigured: true },
-      { displayName: "OpenAI-compatible", secretConfigured: true }
+      { provider: "openai-codex", displayName: "ChatGPT subscription", secretConfigured: true },
+      { provider: "openai-compatible", displayName: "OpenAI-compatible", secretConfigured: true }
     ],
     "settings.getGoogleBooksKeyStatus": { configured: false },
     "questions.list": {

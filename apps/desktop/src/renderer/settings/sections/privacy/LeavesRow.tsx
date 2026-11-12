@@ -6,11 +6,14 @@ import type { SettingEntryV2 } from "../../../../shared/settings-registry";
 import { ErrorState } from "../../../components/ui/error-state";
 import { LoadingState, Skeleton } from "../../../components/ui/skeleton";
 import { SolidCheck } from "../../../components/ui/solid-glyphs";
+import { settingsRegistryV2 } from "../../../../shared/settings-registry";
 import { settingsTouch } from "../../../lib/status-followers";
 import { InlineAction } from "../../InlineAction";
 import { RegistryRow } from "../../SettingRow";
 import { useSettings } from "../../settings-context";
 import { requestSettingsTarget } from "../../settings-target";
+import { labelOf } from "../../settings-model";
+import { providerEntryId, providerKinds } from "../ai/ai-model";
 import { useSectionRead } from "../general/use-section-read";
 import { credentialNames, leaveRows, type LeaveJob, type Where } from "./privacy-model";
 
@@ -92,6 +95,22 @@ function whereCell(t: Translator, where: Where): ReactNode {
   }
 }
 
+/** The stored display name of each provider to the name its kind has in the AI section. */
+function providerNamesOf(
+  t: Translator,
+  providers: readonly { provider: string; displayName: string }[]
+): Map<string, string> {
+  const names = new Map<string, string>();
+  for (const provider of providers) {
+    const kind = providerKinds.find((candidate) => candidate === provider.provider);
+    const entry = kind
+      ? settingsRegistryV2.find((candidate) => candidate.id === providerEntryId(kind))
+      : undefined;
+    if (entry) names.set(provider.displayName, labelOf(t, entry));
+  }
+  return names;
+}
+
 interface LeavesRead {
   routes: Awaited<ReturnType<typeof window.app.ai.classRoutes>>;
   decisions: Awaited<ReturnType<typeof window.app.ai.decisionsStatus>>;
@@ -120,17 +139,33 @@ export function LeavesRow({ entry }: { entry: SettingEntryV2 }) {
     ]);
     return { routes, decisions, providers, googleBooksKeyStored: googleBooks.configured };
   }, [{ type: "settings.changed", when: settingsTouch("ai", "app") }]);
+  // A provider is named as the AI section names its kind (the registry's label), in this language.
+  const providerNames = useMemo(
+    () =>
+      state.status === "ready"
+        ? providerNamesOf(t, state.value.providers)
+        : new Map<string, string>(),
+    [state, t]
+  );
   const rows = useMemo(
     () =>
       state.status === "ready"
-        ? leaveRows({ routes: state.value.routes, decisions: state.value.decisions, bookLookup })
+        ? leaveRows({
+            routes: state.value.routes,
+            decisions: state.value.decisions,
+            bookLookup,
+            providerNames
+          })
         : [],
-    [state, bookLookup]
+    [state, bookLookup, providerNames]
   );
   const credentials =
     state.status === "ready"
       ? credentialNames({
-          providers: state.value.providers,
+          providers: state.value.providers.map((provider) => ({
+            ...provider,
+            displayName: providerNames.get(provider.displayName) ?? provider.displayName
+          })),
           decisionsKeyStored: state.value.decisions.keyStored,
           decisionsName: t("settingsPrivacy.leaves.decisions"),
           googleBooksKeyStored: state.value.googleBooksKeyStored,

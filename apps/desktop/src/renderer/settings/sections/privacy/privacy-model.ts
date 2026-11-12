@@ -50,6 +50,12 @@ export interface LeavesInput {
   decisions: { enabled: boolean; state: "off" | "unavailable_preset" | "ready" | "fallback" };
   /** The book-lookup setting: "auto", "open-library", "google-books" or "off". */
   bookLookup: unknown;
+  /**
+   * A provider's stored display name to the name the AI section calls its kind in this language: a
+   * route that names a provider by its stored name is shown by that name (one name for a provider
+   * everywhere). A name not in the map (a profile's own name) is shown as it is.
+   */
+  providerNames?: ReadonlyMap<string, string>;
 }
 
 const classJobs = {
@@ -60,17 +66,20 @@ const classJobs = {
   answer: "answer"
 } as const satisfies Record<AiClassRoutes["classes"][number]["id"], LeaveJob>;
 
-const routeWhere = (route: {
-  profileId: string | null;
-  remote: boolean;
-  profileName: string | null;
-  providerName?: string | null;
-}): Where =>
-  route.profileId === null
-    ? { kind: "noModel" }
-    : route.remote
-      ? { kind: "cloud", name: route.providerName ?? route.profileName }
-      : { kind: "local" };
+const routeWhere = (
+  route: {
+    profileId: string | null;
+    remote: boolean;
+    profileName: string | null;
+    providerName?: string | null;
+  },
+  providerNames: ReadonlyMap<string, string> | undefined
+): Where => {
+  if (route.profileId === null) return { kind: "noModel" };
+  if (!route.remote) return { kind: "local" };
+  const name = route.providerName ?? route.profileName;
+  return { kind: "cloud", name: name === null ? null : (providerNames?.get(name) ?? name) };
+};
 
 const bookSource = (value: unknown): Extract<Where, { kind: "internet" }>["source"] | null =>
   value === "open-library"
@@ -89,11 +98,11 @@ export function leaveRows(input: LeavesInput): LeaveRow[] {
     if (job)
       rows.push({
         job,
-        where: routeWhere(route),
+        where: routeWhere(route, input.providerNames),
         leaves: route.profileId !== null && route.remote
       });
   }
-  const judge = routeWhere(input.routes.judge);
+  const judge = routeWhere(input.routes.judge, input.providerNames);
   rows.push({ job: "judge", where: judge, leaves: judge.kind === "cloud" });
   const decisionsOn = input.decisions.enabled && input.decisions.state !== "unavailable_preset";
   rows.push({
