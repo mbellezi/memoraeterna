@@ -240,3 +240,26 @@ export function bigNodes(count: number, levels = 4): TopicShapeNode[] {
   build(null, 0, { left: count - 1 });
   return nodes;
 }
+
+/**
+ * The arrivals of each topic of the sample tree over the days asked for, all on the last day: what
+ * `topics.history` answers for it. A topic not listed had none.
+ */
+const sampleArrivals: Readonly<Record<number, number>> = {
+  [sample.forgetting]: 2,
+  [sample.decay]: 3,
+  [sample.replications]: 3,
+  [sample.alienist]: 36,
+  [sample.social]: 1
+};
+
+export function sampleHistory(input: { topicIds: readonly string[]; days: number }) {
+  const owner = new Map(Object.keys(sampleArrivals).map((n) => [shapeId(Number(n)), Number(n)]));
+  return input.topicIds.map((topicId) => ({
+    topicId,
+    daily: Array.from({ length: input.days }, (_, index) => ({
+      day: `2026-10-${String(17 - input.days + 1 + index).padStart(2, "0")}`,
+      arrivals: index === input.days - 1 ? (sampleArrivals[owner.get(topicId) ?? -1] ?? 0) : 0
+    }))
+  }));
+}

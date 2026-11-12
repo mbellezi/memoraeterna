@@ -9,6 +9,7 @@ import type { MessageKey, Translator } from "@app/i18n";
 
 import { countLabel, type HealthTone } from "../../../../components/topic-page/topic-page-model";
 import { cellTrail, topicCellKey, type IcicleCell, type IcicleLayout } from "./icicle-layout";
+import { growthText } from "./shape-growth";
 
 /**
  * The decisions of the Shape view that need no renderer: what it calls things, how it counts and
@@ -63,6 +64,17 @@ export function coherenceText(t: Translator, coherence: number | null): string {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2
   }).format(coherence);
+}
+
+/** "Tamanho e saúde da árvore: 412 notas em 38 tópicos". */
+export function mapDescription(t: Translator, items: number, topics: number): string {
+  const topicsText =
+    topics === 1
+      ? t("map.count.topicsOne")
+      : t("map.count.topics", { values: { count: number(t, topics) } });
+  return t("map.shape.description", {
+    values: { notes: countLabel(t, "notes", items), topics: topicsText }
+  });
 }
 
 /** "+8" new items this week; nothing new reads "0". */
@@ -125,7 +137,11 @@ export interface PanelModel {
   items: number;
   level: number;
   childrenText: string;
-  weekText: string;
+  /** Subtopics and direct notes, for the line "7 subtópicos diretos". */
+  subtopics: number;
+  /** Notes that arrived in this topic and under it over the last days; null until read. */
+  growth: number | null;
+  growthText: string;
   coherenceText: string;
   health: TopicHealth | null;
   mark: string | null;
@@ -138,7 +154,8 @@ export function panelModel(
   layout: IcicleLayout,
   key: string,
   wholeTree: boolean,
-  levelOffset: number
+  levelOffset: number,
+  growth: ReadonlyMap<string, number> | null = null
 ): PanelModel | null {
   const cell = layout.byKey.get(key);
   if (!cell || (cell.kind !== "topic" && cell.kind !== "unsorted")) return null;
@@ -159,7 +176,9 @@ export function panelModel(
       ...base,
       kind: "unsorted",
       childrenText: "—",
-      weekText: "—",
+      subtopics: 0,
+      growth: null,
+      growthText: "—",
       coherenceText: "—",
       health: null,
       mark: null,
@@ -170,7 +189,9 @@ export function panelModel(
     ...base,
     kind: "topic",
     childrenText: childrenText(t, node.children, node.directItems),
-    weekText: weekText(t, node.newThisWeek),
+    subtopics: node.children,
+    growth: growth?.get(node.id) ?? null,
+    growthText: growthText(t, growth?.get(node.id)),
     coherenceText: coherenceText(t, node.coherence),
     health: node.health,
     mark: managementMark(t, node.management),
@@ -202,7 +223,8 @@ export interface TableRow {
   items: number;
   direct: number | null;
   subtopics: number | null;
-  week: string;
+  /** Notes that arrived in the topic and under it over the last days ("+8"; "—" until read). */
+  growth: string;
   coherence: string;
   health: TopicHealth | null;
   mark: string | null;
@@ -213,7 +235,8 @@ export function tableRows(
   t: Translator,
   layout: IcicleLayout,
   wholeTree: boolean,
-  levelOffset: number
+  levelOffset: number,
+  growth: ReadonlyMap<string, number> | null = null
 ): TableRow[] {
   const rows: TableRow[] = [];
   for (const key of layout.order) {
@@ -229,7 +252,7 @@ export function tableRows(
       items: cell.value,
       direct: node ? node.directItems : null,
       subtopics: node ? node.children : null,
-      week: node ? weekText(t, node.newThisWeek) : "—",
+      growth: node ? growthText(t, growth?.get(node.id)) : "—",
       coherence: node ? coherenceText(t, node.coherence) : "—",
       health: node ? node.health : null,
       mark: node ? managementMark(t, node.management) : null

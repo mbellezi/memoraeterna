@@ -11,6 +11,7 @@ import type { Translator } from "@app/i18n";
 
 import { closePanelPriority, subscribeClosePanel } from "../../lib/close-panel";
 import { navigationForAddress } from "../../lib/object-navigation";
+import type { PanelLoadState } from "../../workspace/PanelFrame";
 import { useObjectOpener, type OpenableNavigation } from "../WhereIsThis";
 import { InboxController } from "./inbox-controller";
 import { inboxCommand, reclaimsFocus } from "./inbox-keys";
@@ -24,6 +25,24 @@ export interface InboxScreenProps {
   onNavigate: (navigation: OpenableNavigation) => void;
   /** Where an Obsidian conflict is solved: Settings, under Connections. */
   onOpenConnections: () => void;
+  /**
+   * The workspace's way to open an object: its `memora://` address, which becomes a panel beside
+   * the Inbox. Absent, `onNavigate` opens it the old way (the Library or the Wiki).
+   */
+  onOpenAddress?: (address: string) => void;
+  /** Tells the host how the screen is doing, as the four states of a surface. */
+  onState?: (state: PanelLoadState) => void;
+  /** The Inbox is the previous panel of a stack: its item list alone (design record §8). */
+  compact?: boolean;
+  /** The item list's width in px. */
+  listWidth?: number;
+}
+
+/** The state the Inbox is in, as the frame names it: nothing waiting is empty, not an error. */
+export function inboxPanelState(load: { status: string }, items: number): PanelLoadState {
+  if (load.status === "loading") return "loading";
+  if (load.status === "error") return "error";
+  return items === 0 ? "empty" : "success";
 }
 
 /**
@@ -33,7 +52,16 @@ export interface InboxScreenProps {
  * hears them, and a key typed into a field or a dialog is never a command. The host keeps the
  * screen mounted while hidden, so the selection and the filter survive.
  */
-export function InboxScreen({ t, active, onNavigate, onOpenConnections }: InboxScreenProps) {
+export function InboxScreen({
+  t,
+  active,
+  onNavigate,
+  onOpenConnections,
+  onOpenAddress,
+  onState,
+  compact = false,
+  listWidth
+}: InboxScreenProps) {
   const [controller] = useState(() => new InboxController({ api: () => window.app }));
   const state = useSyncExternalStore(
     controller.subscribe,
@@ -48,6 +76,10 @@ export function InboxScreen({ t, active, onNavigate, onOpenConnections }: InboxS
   const idPrefix = `inbox-${useId().replace(/[^a-zA-Z0-9]/gu, "")}`;
   const focusPending = useRef(false);
   const opener = useObjectOpener(onNavigate);
+  const panelState = inboxPanelState(state.load, state.items.length);
+  useEffect(() => {
+    onState?.(panelState);
+  }, [onState, panelState]);
 
   useEffect(() => {
     controller.show(active);
@@ -80,15 +112,17 @@ export function InboxScreen({ t, active, onNavigate, onOpenConnections }: InboxS
     focusPending.current = active;
   }, [active]);
   useEffect(() => {
-    if (!active || !ready || !focusPending.current) return;
+    // The previous panel never takes the focus: the top panel holds it.
+    if (!active || !ready || !focusPending.current || compact) return;
     focusPending.current = false;
     (listRef.current ?? rootRef.current)?.focus({ preventScroll: true });
-  }, [active, ready]);
+  }, [active, ready, compact]);
 
   // The element that held the focus went away with this render: the focus stays on the screen (the
   // list, else the screen itself), so `u` after the last decision, `?` and the moves still work.
   const listShown = ready && state.items.length > 0;
   useEffect(() => {
+    if (compact) return;
     if (
       !reclaimsFocus({
         active,
@@ -99,7 +133,7 @@ export function InboxScreen({ t, active, onNavigate, onOpenConnections }: InboxS
     )
       return;
     (listRef.current ?? rootRef.current)?.focus({ preventScroll: true });
-  }, [active, listShown, state.load.status, state.selectedKey, state.undo, state.actions]);
+  }, [active, compact, listShown, state.load.status, state.selectedKey, state.undo, state.actions]);
 
   // The selected item stays in view as the keys move through a long list.
   useEffect(() => {
@@ -141,7 +175,9 @@ export function InboxScreen({ t, active, onNavigate, onOpenConnections }: InboxS
   }
 
   function openObject(object: InboxObject) {
-    opener.open(navigationForAddress(formatObjectAddress({ kind: object.kind, id: object.id })));
+    const address = formatObjectAddress({ kind: object.kind, id: object.id });
+    if (onOpenAddress) onOpenAddress(address);
+    else opener.open(navigationForAddress(address));
   }
 
   return (
@@ -165,6 +201,8 @@ export function InboxScreen({ t, active, onNavigate, onOpenConnections }: InboxS
       onRetryDiff={() => controller.retryDiff()}
       onOpenObject={openObject}
       onOpenSettings={onOpenConnections}
+      compact={compact}
+      {...(listWidth === undefined ? {} : { listWidth })}
     />
   );
 }

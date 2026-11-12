@@ -127,9 +127,9 @@ export function matchPanel(
   return registry.find((module) => module.match(address)) ?? null;
 }
 
-/** Every `panels/*.panel.tsx`, found at build time. */
+/** Every `panels/*.panel.tsx` and every destination's `destinations/<name>/*.panel.tsx`, found at build time. */
 export const panelRegistry: readonly PanelModule[] = registerPanels(
-  import.meta.glob("./panels/*.panel.tsx", { eager: true })
+  import.meta.glob(["./panels/*.panel.tsx", "./destinations/*/*.panel.tsx"], { eager: true })
 );
 
 // ---------------------------------------------------------------------------

@@ -321,12 +321,14 @@
       "move": "Élément suivant ou précédent",
       "open": "Aller aux détails",
       "apply": "Appliquer ou conserver",
-      "dismiss": "Écarter ou supprimer",
+      "dismiss": "Écarter : sort de la boîte et rien ne change",
       "retry": "Réessayer",
       "undo": "Annuler la dernière décision",
       "help": "Afficher ou masquer cette aide",
       "note": "Ces touches fonctionnent quand la liste ou les détails ont le focus, jamais pendant la saisie ni dans une boîte de dialogue.",
-      "money": "Continuer au-delà de la limite de dépenses se fait avec un bouton, jamais avec une touche."
+      "money": "Continuer au-delà de la limite de dépenses se fait avec un bouton, jamais avec une touche.",
+      "remove": "Retirer une connexion : elle n’est plus jamais suggérée",
+      "edit": "Modifier les noms avant d’appliquer"
     },
     "result": {
       "applied": "Appliqué.",
@@ -369,7 +371,8 @@
         "empty": "Pas encore d'aperçu",
         "divergences": "Là où les nouvelles preuves divergent",
         "divergence": "Paragraphes {existing} et {new} : {summary}"
-      }
+      },
+      "legend": "Petits blocs, par lettre"
     },
     "errors": {
       "invalidCursor": "La liste a changé entre-temps. Rechargez-la.",
@@ -3849,5 +3852,79 @@
     },
     "stackLabel": "Panneaux ouverts",
     "untitled": "Sans titre"
+  },
+  "map": {
+    "band": {
+      "action": "Retour",
+      "back": "revient à {topic}, où vous étiez.",
+      "whole": "Vous voyez l’arbre entier."
+    },
+    "chart": {
+      "columns": {
+        "areas": "Domaines",
+        "subtopics": "Sous-sujets",
+        "topics": "Sujets"
+      },
+      "deeper": "{count} sujets sont plus profonds : le tableau les liste tous et Entrée agrandit une branche.",
+      "here": "ici",
+      "label": "Arbre des sujets. Chaque bloc est un bouton qui sélectionne un sujet : les flèches déplacent et Entrée agrandit.",
+      "legend": {
+        "attention": "demande de l’attention",
+        "direct": "notes placées directement dans le sujet",
+        "height": "Hauteur = notes",
+        "here": "ici = contient où vous étiez",
+        "selected": "sélectionné"
+      },
+      "merged": "Les petits blocs sont regroupés ; le tableau liste chacun d’eux.",
+      "moreTopics": "{count} de plus · {notes}"
+    },
+    "count": {
+      "topics": "{count} sujets",
+      "topicsOne": "1 sujet"
+    },
+    "display": {
+      "both": "Graphique et tableau",
+      "label": "Affichage",
+      "table": "Tableau seul"
+    },
+    "inspector": {
+      "next": "Prochaine étape",
+      "nextInbox": "Voir la proposition dans la Boîte de réception",
+      "selected": "Sélectionné",
+      "table": "Les mêmes chiffres en tableau"
+    },
+    "lens": {
+      "label": "Vues de la carte",
+      "relations": "Graphe",
+      "shape": "Arbre"
+    },
+    "relations": {
+      "action": "Voir l’arbre",
+      "body": "Il montrera comment vos sujets sont reliés. D’ici là, l’Arbre montre leur taille et leur santé.",
+      "headline": "Le graphe des connexions arrive bientôt"
+    },
+    "selected": {
+      "growth": "{growth} notes en {days} jours",
+      "subtopics": "{count} sous-sujets directs",
+      "subtopicsOne": "1 sous-sujet direct"
+    },
+    "shape": {
+      "description": "Taille et santé de l’arbre : {notes} dans {topics}",
+      "descriptionPlain": "Taille et santé de l’arbre."
+    },
+    "states": {
+      "empty": "La carte apparaît quand il y a des sujets.",
+      "emptyBody": "Quand votre première source devient des notes, les sujets naissent d’eux-mêmes et la carte les montre ici.",
+      "error": "La carte n’a pas pu être chargée.",
+      "errorKept": "Vos sources et vos notes sont intactes."
+    },
+    "table": {
+      "caption": "Les mêmes chiffres que le graphique, une ligne par sujet",
+      "growth": "7 jours",
+      "health": "Santé",
+      "notes": "Notes",
+      "topic": "Sujet"
+    },
+    "title": "Carte"
   }
 }

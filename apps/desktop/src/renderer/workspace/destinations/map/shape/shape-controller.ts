@@ -5,6 +5,7 @@ import type { DesktopApi } from "../../../../../shared/ipc";
 import { onTreeChanged, type TreeChangedListener } from "../../../../lib/app-events";
 import { isSilentRefresh, type LoadOutcome } from "../../../../lib/hidden-view";
 import { nextAnnouncement } from "../../../../components/topic-page/topic-page-model";
+import { growthDays, growthRequests, subtreeGrowth } from "./shape-growth";
 
 export type ShapeLoad =
   | { status: "loading" }
@@ -35,8 +36,15 @@ export type ChangeDetail =
   | { status: "missing" }
   | { status: "ready"; changeSet: TopicChangeSet };
 
+/** The growth column: notes that arrived in each topic and under it over the last days. */
+export type ShapeGrowth =
+  | { status: "idle" | "loading" | "error" }
+  | { status: "ready"; byTopic: ReadonlyMap<string, number> };
+
 export interface ShapeSnapshot {
   load: ShapeLoad;
+  /** Read after the shape; a failure leaves the column empty and nothing else changes. */
+  growth: ShapeGrowth;
   /** The root of the tree first, the branch on screen last. */
   zoom: readonly ZoomStep[];
   /** The key of the selected cell; the view falls back to the root of the chart when it is gone. */
@@ -49,7 +57,10 @@ export interface ShapeSnapshot {
   readAt: number;
 }
 
-export type ShapeApi = Pick<DesktopApi["topics"], "shape" | "changeSet" | "undo" | "review">;
+export type ShapeApi = Pick<
+  DesktopApi["topics"],
+  "shape" | "changeSet" | "undo" | "review" | "history"
+>;
 
 export interface ShapeControllerDeps {
   api: () => ShapeApi;
@@ -64,6 +75,7 @@ const wholeTree: readonly ZoomStep[] = Object.freeze([{ id: null, title: null, d
 
 const initialSnapshot = (): ShapeSnapshot => ({
   load: { status: "loading" },
+  growth: { status: "idle" },
   zoom: wholeTree,
   selectedKey: null,
   actions: {},
@@ -114,6 +126,7 @@ export class ShapeController {
   private unsubscribe: (() => void) | null = null;
   private timer: ReturnType<typeof setTimeout> | null = null;
   private readonly detailTokens = new Map<string, number>();
+  private growthToken = 0;
 
   constructor(private readonly deps: ShapeControllerDeps) {}
 
@@ -276,6 +289,7 @@ export class ShapeController {
       zoom,
       selectedKey,
       load: { status: "loading" },
+      growth: { status: "idle" },
       actions: {},
       details: {}
     };
@@ -293,7 +307,7 @@ export class ShapeController {
       .api()
       .shape({
         rootId,
-        depth: topicReadLimits.shapeDepthDefault,
+        depth: topicReadLimits.shapeDepthMax,
         nodeLimit: topicReadLimits.shapeNodesMax
       })
       .then((shape) => {
@@ -307,8 +321,10 @@ export class ShapeController {
         this.seenGeneration = Math.max(this.seenGeneration, shape.generation);
         const current = this.snapshot.load;
         // The same content is not shown again: no render.
-        if (current.status !== "ready" || !sameShapeContent(current.shape, shape))
+        if (current.status !== "ready" || !sameShapeContent(current.shape, shape)) {
           this.update({ load: { status: "ready", shape }, readAt: this.now() });
+          void this.loadGrowth(shape.nodes);
+        }
       })
       .catch(() => {
         if (token !== this.token) return;
@@ -318,6 +334,27 @@ export class ShapeController {
         if (!silent || this.snapshot.load.status !== "ready")
           this.update({ load: { status: "error" } });
       });
+  }
+
+  /**
+   * The growth of every topic read: one `topics.history` per 200 topics, one after the other. A
+   * newer shape drops the answer of an older one, and a failure shows "—" in the column.
+   */
+  private async loadGrowth(nodes: TopicShape["nodes"]): Promise<void> {
+    const token = ++this.growthToken;
+    const keep = this.snapshot.growth.status === "ready";
+    if (!keep) this.update({ growth: { status: "loading" } });
+    try {
+      const series = [];
+      for (const topicIds of growthRequests(nodes)) {
+        const part = await this.deps.api().history({ topicIds, days: growthDays });
+        if (token !== this.growthToken) return;
+        series.push(...part);
+      }
+      this.update({ growth: { status: "ready", byTopic: subtreeGrowth(nodes, series) } });
+    } catch {
+      if (token === this.growthToken && !keep) this.update({ growth: { status: "error" } });
+    }
   }
 
   /** A read in place: the shape on screen stays until the new one arrives. */

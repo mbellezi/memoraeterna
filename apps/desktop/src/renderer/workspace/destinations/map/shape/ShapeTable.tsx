@@ -48,7 +48,7 @@ export function ShapeTable({ t, rows, selectedKey, onSelect }: ShapeTableProps) 
                 {t("topics.shape.table.subtopics")}
               </th>
               <th scope="col" className={cn(head, "text-right")}>
-                {t("topics.shape.table.week")}
+                {t("map.table.growth")}
               </th>
               <th scope="col" className={cn(head, "text-right")}>
                 {t("topics.shape.table.coherence")}
@@ -101,7 +101,7 @@ export function ShapeTable({ t, rows, selectedKey, onSelect }: ShapeTableProps) 
                     {row.subtopics === null ? "—" : number.format(row.subtopics)}
                   </td>
                   <td className="px-2 py-1.5 text-right whitespace-nowrap tabular-nums">
-                    {row.week}
+                    {row.growth}
                   </td>
                   <td className="px-2 py-1.5 text-right whitespace-nowrap tabular-nums">
                     {row.coherence}

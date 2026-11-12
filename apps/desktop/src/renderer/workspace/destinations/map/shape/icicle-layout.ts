@@ -93,6 +93,20 @@ export interface IcicleOptions {
    * ones. In a branch they are that topic's direct items like any other.
    */
   wholeTree: boolean;
+  /**
+   * Siblings from the largest to the smallest (ties by name), the items placed directly in a
+   * topic and the remainder after them: the Map's tree chart reads best that way.
+   */
+  sortBySize?: boolean;
+}
+
+/** The largest topic first; a tie keeps the name's order, an unnamed topic last. */
+export function bySizeThenName(a: TopicShapeNode, b: TopicShapeNode): number {
+  if (a.items !== b.items) return b.items - a.items;
+  if (a.title === b.title) return 0;
+  if (a.title === null) return 1;
+  if (b.title === null) return -1;
+  return a.title < b.title ? -1 : 1;
 }
 
 /**
@@ -126,7 +140,8 @@ export function buildIcicle(
     // A topic listed twice (or below itself) is built once.
     const children: Datum[] = [];
     let used = 0;
-    for (const child of below.get(node.id) ?? []) {
+    const listed = below.get(node.id) ?? [];
+    for (const child of options.sortBySize ? [...listed].sort(bySizeThenName) : listed) {
       if (seen.has(child.id)) continue;
       children.push(datum(child, false));
       used += child.items;
@@ -493,17 +508,6 @@ export function buildDiffIcicle(
   for (const keys of rowKeys) keys.sort((a, b) => byKey.get(a)!.x0 - byKey.get(b)!.x0);
 
   return { side, cells, byKey, order, rowKeys, rows, total: tree.value };
-}
-
-/** What a diff block can say: its name and change, only its glyph, or nothing (it is a sliver). */
-export type DiffContent = "full" | "glyph" | "none";
-export const diffFullWidth = 96;
-export const diffGlyphWidth = 20;
-
-export function diffCellContent(widthPx: number): DiffContent {
-  if (widthPx >= diffFullWidth) return "full";
-  if (widthPx >= diffGlyphWidth) return "glyph";
-  return "none";
 }
 
 export interface DrawnDiffCells {

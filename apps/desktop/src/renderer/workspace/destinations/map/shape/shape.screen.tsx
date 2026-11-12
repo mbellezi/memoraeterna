@@ -1,6 +1,6 @@
 import { screenTranslator } from "../../../screen-locale";
 import type { ScreenModule } from "../../../surfaces";
-import { sampleChangeSet, sampleShape } from "./shape-fixtures";
+import { sampleChangeSet, sampleHistory, sampleShape } from "./shape-fixtures";
 import { ShapeScreen } from "./ShapeScreen";
 
 export const surface = "shape";
@@ -11,11 +11,13 @@ const noop = () => undefined;
 export const fixtures: ScreenModule["fixtures"] = {
   success: {
     "topics.shape": sampleShape(),
+    "topics.history": sampleHistory,
     "topics.changeSet": sampleChangeSet(),
     "topics.review": null,
     "topics.undo": { status: "undone" }
   },
   empty: {
+    "topics.history": sampleHistory,
     "topics.shape": sampleShape({
       nodes: [],
       warnings: [],

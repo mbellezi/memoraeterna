@@ -11,10 +11,7 @@ import {
 import {
   buildDiffIcicle,
   cellSpan,
-  diffCellContent,
   diffCellKey,
-  diffFullWidth,
-  diffGlyphWidth,
   drawnDiffCells,
   keyboardFocus,
   minDrawnWidth,
@@ -216,13 +213,6 @@ describe("a bounded diff", () => {
 });
 
 describe("what a block says and how a key moves between blocks", () => {
-  it("names a block in full, only by its glyph, or not at all by its width", () => {
-    expect(diffCellContent(diffFullWidth)).toBe("full");
-    expect(diffCellContent(diffFullWidth - 1)).toBe("glyph");
-    expect(diffCellContent(diffGlyphWidth)).toBe("glyph");
-    expect(diffCellContent(diffGlyphWidth - 1)).toBe("none");
-  });
-
   const layout = buildDiffIcicle(sampleDiffNodes(), "after");
   const all = drawnDiffCells(layout, 10_000).reachable;
   const key = after;

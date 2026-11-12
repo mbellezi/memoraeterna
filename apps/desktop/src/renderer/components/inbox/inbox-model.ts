@@ -73,13 +73,6 @@ export function verbLabel(
   return t(labels[verb] ?? "inbox.verbs.dismiss");
 }
 
-/** The key that carries each verb out, as it is shown. */
-export const verbKeys: Readonly<Record<InboxVerb, string>> = {
-  apply: "A",
-  dismiss: "X",
-  retry: "R"
-};
-
 export function objectName(t: Translator, object: InboxObject): string {
   if (object.title !== null && object.title.trim() !== "") return object.title;
   return object.kind === "topic" ? t("topics.page.unnamed") : t("inbox.detail.unnamed");

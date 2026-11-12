@@ -1,5 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { TopicChangeSet, TopicShape, TopicUndoResult } from "@app/domain";
+import {
+  topicReadLimits,
+  type TopicChangeSet,
+  type TopicShape,
+  type TopicUndoResult
+} from "@app/domain";
 import { createTranslator } from "@app/i18n";
 
 import type { AppEventOf } from "../../../../../shared/app-events";
@@ -10,7 +15,14 @@ import {
   topicErrorMessage,
   type ShapeApi
 } from "./shape-controller";
-import { sample, sampleChangeSet, sampleNodes, sampleShape, shapeId } from "./shape-fixtures";
+import {
+  bigNodes,
+  sample,
+  sampleChangeSet,
+  sampleNodes,
+  sampleShape,
+  shapeId
+} from "./shape-fixtures";
 
 const t = createTranslator("en");
 const proposalId = shapeId(sample.pendingChange);
@@ -23,6 +35,7 @@ interface Harness {
     changeSet: ReturnType<typeof vi.fn<ShapeApi["changeSet"]>>;
     undo: ReturnType<typeof vi.fn<ShapeApi["undo"]>>;
     review: ReturnType<typeof vi.fn<ShapeApi["review"]>>;
+    history: ReturnType<typeof vi.fn<ShapeApi["history"]>>;
   };
   /** `tree.changed` on the bus, a fake of `window.app.onAppEvent`. */
   events: ReturnType<typeof createFakeAppEvents>;
@@ -41,7 +54,15 @@ function harness(
     undo: vi.fn<ShapeApi["undo"]>(() =>
       Promise.resolve({ status: "undone", changeSetId: shapeId(950), generation: 13 })
     ),
-    review: vi.fn<ShapeApi["review"]>(() => Promise.resolve({ status: "applied" }))
+    review: vi.fn<ShapeApi["review"]>(() => Promise.resolve({ status: "applied" })),
+    history: vi.fn<ShapeApi["history"]>((input) =>
+      Promise.resolve(
+        input.topicIds.map((topicId) => ({
+          topicId,
+          daily: [{ day: "2026-10-15", arrivals: 1 }]
+        }))
+      )
+    )
   };
   const controller = new ShapeController({
     api: () => api,
@@ -85,7 +106,7 @@ describe("showing the shape", () => {
     await settle();
     expect(h.controller.getSnapshot().load.status).toBe("ready");
     expect(h.api.shape).toHaveBeenCalledTimes(1);
-    expect(h.api.shape).toHaveBeenCalledWith({ rootId: null, depth: 4, nodeLimit: 2_000 });
+    expect(h.api.shape).toHaveBeenCalledWith({ rootId: null, depth: 7, nodeLimit: 2_000 });
     expect(h.api.changeSet).not.toHaveBeenCalled();
     expect(h.api.undo).not.toHaveBeenCalled();
     expect(h.api.review).not.toHaveBeenCalled();
@@ -94,6 +115,40 @@ describe("showing the shape", () => {
     h.controller.show(true, createTranslator("pt-BR"));
     await settle();
     expect(h.api.shape).toHaveBeenCalledTimes(1);
+  });
+
+  it("reads the tree to its depth cap of 7, never the default of 4", async () => {
+    const h = harness();
+    h.controller.show(true, t);
+    await settle();
+    expect(h.api.shape.mock.calls[0]?.[0]?.depth).toBe(topicReadLimits.shapeDepthMax);
+    expect(topicReadLimits.shapeDepthMax).toBe(7);
+  });
+
+  it("reads the growth of every topic in the last 7 days, 200 topics at a time", async () => {
+    const nodes = bigNodes(450);
+    const h = harness(() => Promise.resolve(sampleShape({ nodes })));
+    h.controller.show(true, t);
+    await settle();
+    await settle();
+    expect(h.api.history.mock.calls.map(([input]) => input.topicIds.length)).toEqual([
+      200, 200, 50
+    ]);
+    expect(h.api.history.mock.calls.every(([input]) => input.days === 7)).toBe(true);
+    const growth = h.controller.getSnapshot().growth;
+    expect(growth.status).toBe("ready");
+    // Every topic had one arrival of its own; the root holds all of them.
+    if (growth.status === "ready") expect(growth.byTopic.get(nodes[0]!.id)).toBe(450);
+  });
+
+  it("leaves the column empty, and the tree shown, when the history cannot be read", async () => {
+    const h = harness();
+    h.api.history.mockRejectedValue(new Error("down"));
+    h.controller.show(true, t);
+    await settle();
+    await settle();
+    expect(h.controller.getSnapshot().load.status).toBe("ready");
+    expect(h.controller.getSnapshot().growth.status).toBe("error");
   });
 
   it("loads nothing and listens to nothing while hidden", async () => {
@@ -171,7 +226,7 @@ describe("zooming into a branch", () => {
     await settle();
     expect(h.api.shape).toHaveBeenLastCalledWith({
       rootId: shapeId(sample.memory),
-      depth: 4,
+      depth: 7,
       nodeLimit: 2_000
     });
     h.controller.zoomInto(shapeId(sample.forgetting), "Forgetting curve", 1);
@@ -185,7 +240,7 @@ describe("zooming into a branch", () => {
     h.controller.zoomTo(0);
     expect(h.controller.getSnapshot().zoom).toHaveLength(1);
     await settle();
-    expect(h.api.shape).toHaveBeenLastCalledWith({ rootId: null, depth: 4, nodeLimit: 2_000 });
+    expect(h.api.shape).toHaveBeenLastCalledWith({ rootId: null, depth: 7, nodeLimit: 2_000 });
     expect(h.controller.getSnapshot().selectedKey).toBeNull();
   });
 

@@ -95,7 +95,8 @@ describe("the selected block", () => {
   });
 
   it("reads like the mockup: items, level, children, coherence, week and health", () => {
-    const model = panelModel(en, layout, key(sample.forgetting), true, 0)!;
+    const growth = new Map([[shapeId(sample.forgetting), 8]]);
+    const model = panelModel(en, layout, key(sample.forgetting), true, 0, growth)!;
     expect(model).toMatchObject({
       kind: "topic",
       title: "Forgetting curve",
@@ -103,7 +104,9 @@ describe("the selected block", () => {
       items: 26,
       level: 2,
       childrenText: "2 + 6 direct",
-      weekText: "+8",
+      growth: 8,
+      growthText: "+8",
+      subtopics: 2,
       coherenceText: "0.74",
       health: "good",
       mark: null,
@@ -141,13 +144,14 @@ describe("the table alternative", () => {
   });
 
   it("carries the numbers a person reads off the chart", () => {
-    const rows = new Map(tableRows(en, layout, true, 0).map((row) => [row.key, row]));
+    const growth = new Map([[shapeId(sample.forgetting), 8]]);
+    const rows = new Map(tableRows(en, layout, true, 0, growth).map((row) => [row.key, row]));
     expect(rows.get(key(sample.forgetting))).toMatchObject({
       name: "Forgetting curve",
       kind: "topic",
       direct: 6,
       subtopics: 2,
-      week: "+8",
+      growth: "+8",
       coherence: "0.74",
       health: "good"
     });

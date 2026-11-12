@@ -147,6 +147,7 @@
     "localModels.filters.embedding",
     "localModels.filters.ranking",
     "localModels.filters.runtime",
+    "map.table.notes",
     "markdown.placeholders.code",
     "markdown.placeholders.codeBlock",
     "monitoring.kinds.llm",

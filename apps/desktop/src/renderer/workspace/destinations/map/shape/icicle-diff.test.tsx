@@ -163,24 +163,50 @@ describe("the icicles of a change", () => {
       [block(html, "after", diffTopics.memory), "--state-info-soft", "lucide-arrow-right-left"],
       [block(html, "after", diffTopics.root), "--surface-soft", "lucide-circle-dashed"]
     ];
+    // A block too small for its name carries its glyph in the legend, beside its letter.
+    const legend = html.slice(html.indexOf("Small blocks, by letter"));
     for (const [entry, token, glyph] of expected) {
       expect(attribute(entry.tag, "style"), entry.key).toContain(`background:var(${token})`);
-      expect(entry.inner, entry.key).toContain(glyph);
+      expect(entry.inner + legend, entry.key).toContain(glyph);
     }
     const glyphs = new Set(expected.map(([, , glyph]) => glyph));
     expect(glyphs.size).toBe(expected.length);
     expect(html).not.toMatch(/#[0-9a-fA-F]{3,8}\b|rgba?\(/);
   });
 
-  it("writes the name and the change in a wide block and only the glyph in a narrow one", () => {
+  it("writes the name and the change in a wide block and a letter key in a narrow one", () => {
     const wide = block(html, "after", diffTopics.retrieval);
     expect(text(wide.inner)).toContain("Retrieval practice");
     expect(text(wide.inner)).toContain("Added");
     expect(text(wide.inner)).toContain("+4");
     const narrow = block(html, "after", diffTopics.forgetting);
-    expect(text(narrow.inner).trim()).toBe("");
-    expect(narrow.inner).toContain("lucide-pencil");
+    expect(text(narrow.inner).trim()).toMatch(/^[a-z]$/);
+    expect(narrow.label).toContain("Forgetting curve");
     expect(text(block(html, "before", diffTopics.misc).inner)).toContain("−6");
+  });
+
+  it("never shows a bare number in a block: a count always has its name or its words beside it", () => {
+    for (const entry of blocks(html)) {
+      const words = text(entry.inner).trim();
+      expect(words, entry.key).not.toMatch(/^[+−]?\d+$/);
+    }
+  });
+
+  it("names every lettered block in a legend under the lanes, once per topic", () => {
+    const legend = [
+      ...html.matchAll(/<li class="inline-flex items-center gap-1\.5"><span[^>]*>([a-z])<\/span>/g)
+    ].map((match) => match[1]);
+    expect(legend.length).toBeGreaterThan(0);
+    expect(new Set(legend).size).toBe(legend.length);
+    expect(html).toContain('aria-label="Small blocks, by letter"');
+    expect(text(html)).toContain("Forgetting · Renamed");
+    // A letter on a block is a letter of the legend, on either side of the diff.
+    const letters = new Set(
+      blocks(html)
+        .map((entry) => text(entry.inner).trim())
+        .filter((entry) => /^[a-z]$/.test(entry))
+    );
+    for (const letter of letters) expect(legend).toContain(letter);
   });
 
   it("holds one tab stop per side and moves it to the selected topic", () => {
