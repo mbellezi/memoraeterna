@@ -17,6 +17,7 @@ import {
   placeGroupNodes,
   relationOf,
   showsGroups,
+  superNodeRatio,
   stanceGlyphPaths,
   superEdgeThickness,
   turnPositions
@@ -60,9 +61,27 @@ describe("the Grafo's Sigma graph", () => {
     const superEdge = graph.edges().find((key) => graph.getEdgeAttribute(key, "kind") === "super")!;
     expect(branchEdgeDisplay(graph, superEdge, null, true, palette).hidden).toBe(false);
     expect(branchEdgeDisplay(graph, superEdge, null, false, palette).hidden).toBe(true);
-    expect(showsGroups(model, branchZoom.superNodes)).toBe(true);
-    expect(showsGroups(model, 1)).toBe(false);
-    expect(showsGroups({ groups: model.groups.slice(0, 1) }, 10)).toBe(false);
+    const wide = {
+      ...model,
+      nodes: Array.from({ length: branchZoom.small }, () => model.nodes[0]!)
+    };
+    expect(showsGroups(wide, branchZoom.superNodes)).toBe(true);
+    expect(showsGroups(wide, 1)).toBe(false);
+    expect(showsGroups({ ...model, groups: model.groups.slice(0, 1) }, 10)).toBe(false);
+  });
+
+  it("takes the groups' view only where it says more than the notes: not for a small branch, sooner for a crowded one", () => {
+    const notes = (count: number) => ({
+      ...model,
+      nodes: Array.from({ length: count }, () => model.nodes[0]!)
+    });
+    // The fixture's eight notes fit on screen: no pills, however far out the camera is.
+    expect(superNodeRatio(model)).toBeNull();
+    expect(showsGroups(model, 8)).toBe(false);
+    expect(superNodeRatio(notes(branchZoom.small))).toBe(branchZoom.superNodes);
+    expect(superNodeRatio(notes(branchZoom.crowded))).toBe(branchZoom.superNodes);
+    expect(superNodeRatio(notes(branchZoom.crowded + 1))).toBe(branchZoom.superNodesCrowded);
+    expect(superNodeRatio({ ...notes(400), groups: model.groups.slice(0, 1) })).toBeNull();
   });
 
   it("puts a pill at the centre of its group's notes and thickens a line with its connections", () => {

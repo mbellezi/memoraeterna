@@ -5084,11 +5084,18 @@
       "context": "Le graphe n’est plus dessiné.",
       "layout": "Impossible d’organiser le graphe.",
       "unavailable": "Cette fenêtre ne peut pas dessiner le graphe.",
-      "unavailableBody": "Le tableau présente les mêmes connexions.",
-      "unavailableTree": "L’Arbre présente les thèmes et les notes de cette branche ; chaque note liste ses connexions."
+      "unavailableBody": "Le tableau présente les mêmes connexions."
     },
     "group": {
       "description": "{topic}. Notes dans le graphe : {notes}. Connexions avec d’autres thèmes : {count}."
+    },
+    "groups": {
+      "all": "Voir les {count}",
+      "and": "et",
+      "body": "Les lignes que le graphe dessine de loin, une par paire de thèmes.",
+      "capped": "Seuls les liens les plus forts sont listés.",
+      "fewer": "Voir moins",
+      "title": "Entre les thèmes"
     },
     "legend": {
       "direct": "{topic} (notes directes)",
@@ -5103,6 +5110,16 @@
       "description": "{title}. Thème : {topic}. Connexions : {count}.",
       "meta": "Thème : {topic} · Connexions : {count}"
     },
+    "notice": {
+      "groupLines": "De loin, seuls les liens les plus forts entre thèmes sont dessinés.",
+      "truncated": "Cette branche est plus grande que ce que le graphe contient : il montre les notes et les connexions les plus liées. Choisissez une branche plus petite pour tout voir."
+    },
+    "outside": {
+      "action": "Voir la branche {title}",
+      "body": "Thèmes extérieurs reliés à des notes de cette branche. Cliquez pour voir leur branche.",
+      "capped": "Les {count} thèmes les plus connectés.",
+      "title": "Hors de la branche"
+    },
     "scope": {
       "above": "Au-dessus",
       "areas": "Domaines",
@@ -5112,6 +5129,20 @@
       "menu": "Choisir la branche",
       "source": "Source : {title}",
       "sourceUnnamed": "cette source"
+    },
+    "table": {
+      "caption": "Les mêmes connexions que le graphe, une ligne par connexion",
+      "count": "{count} connexions",
+      "countOne": "1 connexion",
+      "from": "De",
+      "keyMove": "choisir",
+      "keyOpen": "ouvrir la première note à côté",
+      "keyOpenSecond": "la seconde",
+      "link": "Connexion",
+      "more": "Afficher {count} de plus",
+      "suggested": "suggérée",
+      "title": "Mêmes connexions en tableau",
+      "to": "Vers"
     },
     "untitledTopic": "Thème sans nom"
   }

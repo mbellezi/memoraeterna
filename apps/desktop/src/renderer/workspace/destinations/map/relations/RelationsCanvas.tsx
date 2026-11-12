@@ -65,6 +65,7 @@ import {
   placeGroupNodes,
   relationOf,
   showsGroups,
+  superNodeRatio,
   turnPositions,
   type BranchCarry,
   type BranchGraph,
@@ -378,7 +379,8 @@ export function RelationsCanvas({
             (bottom - top) / Math.max(1, height - 120)
           );
         // Fitting never jumps to the groups' view: the notes are what a fit shows.
-        const ceiling = model.groups.length >= 2 ? branchZoom.superNodes * 0.95 : 8;
+        const groupsFrom = superNodeRatio(model);
+        const ceiling = groupsFrom === null ? 8 : groupsFrom * 0.95;
         camera.setState({ ...center, ratio: Math.max(0.08, Math.min(ceiling, ratio || 0.5)) });
       };
       const scheduleFit = () => {
@@ -464,7 +466,12 @@ export function RelationsCanvas({
         interacted = true;
         hoverIntent.clear();
         const point = renderer.graphToViewport(attributes);
-        camera.setState(renderer.getViewportZoomedState(point, branchZoom.superNodes * 0.6));
+        camera.setState(
+          renderer.getViewportZoomedState(
+            point,
+            (superNodeRatio(model) ?? branchZoom.superNodes) * 0.6
+          )
+        );
       });
       renderer.on("clickEdge", ({ edge, event }) => {
         if (graph.getEdgeAttribute(edge, "kind") === "super") return;

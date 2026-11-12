@@ -33,9 +33,15 @@ export const branchBackgroundOpacity = 0.16;
 export const branchZoom = {
   /**
    * The camera ratio past which the canvas shows topic groups instead of notes (Sigma's ratio grows
-   * as the camera zooms out). T152 may tune it with the table beside the canvas.
+   * as the camera zooms out): a branch of up to `crowded` notes, where the labels still fit.
    */
   superNodes: 2.2,
+  /** A branch of more than `crowded` notes crowds sooner, so its groups take over sooner *(cal.)*. */
+  superNodesCrowded: 1.6,
+  /** Notes from which a branch is crowded *(cal.)*. */
+  crowded: 150,
+  /** A branch of fewer notes is always read as notes: a few pills would hide what fits on screen *(cal.)*. */
+  small: 12,
   /** Super-edge thickness: the lightest and the heaviest line between two groups. */
   superEdgeMin: 1.5,
   superEdgeMax: 9
@@ -244,9 +250,25 @@ export function placeGroupNodes(graph: BranchGraph): void {
   }
 }
 
+/**
+ * The camera ratio past which topic groups replace the notes, or null when the branch has no such
+ * view: it has one topic group only, or too few notes for groups to say more than the notes do
+ * (the table beside the canvas lists the connections either way).
+ */
+export function superNodeRatio(model: Pick<BranchModel, "groups" | "nodes">): number | null {
+  if (model.groups.length < 2 || model.nodes.length < branchZoom.small) return null;
+  return model.nodes.length > branchZoom.crowded
+    ? branchZoom.superNodesCrowded
+    : branchZoom.superNodes;
+}
+
 /** Whether the camera is far enough out to show topic groups instead of notes. */
-export function showsGroups(model: Pick<BranchModel, "groups">, cameraRatio: number): boolean {
-  return model.groups.length >= 2 && cameraRatio >= branchZoom.superNodes;
+export function showsGroups(
+  model: Pick<BranchModel, "groups" | "nodes">,
+  cameraRatio: number
+): boolean {
+  const threshold = superNodeRatio(model);
+  return threshold !== null && cameraRatio >= threshold;
 }
 
 /** What is emphasised: a note, a relation or a group, by its key in the graph (never a hit area's). */
