@@ -4472,7 +4472,11 @@
         "heading": "Earlier questions",
         "label": "Open an earlier question"
       },
-      "empty": "Nothing asked about this yet. Each question is kept in Library › Questions, with its answer.",
+      "empty": {
+        "library": "No question about the library yet. Write one above; each question is kept in Library › Questions, with its answer.",
+        "source": "No question about this source yet. Write one above; each question is kept in Library › Questions, with its answer.",
+        "topic": "No question about this topic yet. Write one above; each question is kept in Library › Questions, with its answer."
+      },
       "errors": {
         "earlier": "Could not load the earlier questions.",
         "earlierKept": "You can still ask.",

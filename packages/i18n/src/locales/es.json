@@ -4472,7 +4472,11 @@
         "heading": "Preguntas anteriores",
         "label": "Abrir una pregunta anterior"
       },
-      "empty": "Aún no se ha preguntado nada sobre esto. Cada pregunta queda en Biblioteca › Preguntas, con su respuesta.",
+      "empty": {
+        "library": "Aún no hay preguntas sobre la biblioteca. Escribe una arriba; cada pregunta queda en Biblioteca › Preguntas, con su respuesta.",
+        "source": "Aún no hay preguntas sobre esta fuente. Escribe una arriba; cada pregunta queda en Biblioteca › Preguntas, con su respuesta.",
+        "topic": "Aún no hay preguntas sobre este tema. Escribe una arriba; cada pregunta queda en Biblioteca › Preguntas, con su respuesta."
+      },
       "errors": {
         "earlier": "No se pudieron cargar las preguntas anteriores.",
         "earlierKept": "Aún puedes preguntar.",

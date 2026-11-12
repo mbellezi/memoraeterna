@@ -4472,7 +4472,11 @@
         "heading": "Questions précédentes",
         "label": "Ouvrir une question précédente"
       },
-      "empty": "Rien n’a encore été demandé à ce sujet. Chaque question reste dans Bibliothèque › Questions, avec sa réponse.",
+      "empty": {
+        "library": "Aucune question sur la bibliothèque pour l’instant. Écrivez-en une ci-dessus ; chaque question reste dans Bibliothèque › Questions, avec sa réponse.",
+        "source": "Aucune question sur cette source pour l’instant. Écrivez-en une ci-dessus ; chaque question reste dans Bibliothèque › Questions, avec sa réponse.",
+        "topic": "Aucune question sur ce sujet pour l’instant. Écrivez-en une ci-dessus ; chaque question reste dans Bibliothèque › Questions, avec sa réponse."
+      },
       "errors": {
         "earlier": "Impossible de charger les questions précédentes.",
         "earlierKept": "Vous pouvez toujours poser une question.",

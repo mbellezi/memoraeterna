@@ -4472,7 +4472,11 @@
         "heading": "Domande precedenti",
         "label": "Apri una domanda precedente"
       },
-      "empty": "Non è ancora stato chiesto nulla su questo. Ogni domanda resta in Biblioteca › Domande, con la sua risposta.",
+      "empty": {
+        "library": "Ancora nessuna domanda sulla biblioteca. Scrivine una sopra; ogni domanda resta in Biblioteca › Domande, con la sua risposta.",
+        "source": "Ancora nessuna domanda su questa fonte. Scrivine una sopra; ogni domanda resta in Biblioteca › Domande, con la sua risposta.",
+        "topic": "Ancora nessuna domanda su questo argomento. Scrivine una sopra; ogni domanda resta in Biblioteca › Domande, con la sua risposta."
+      },
       "errors": {
         "earlier": "Impossibile caricare le domande precedenti.",
         "earlierKept": "Puoi comunque chiedere.",
