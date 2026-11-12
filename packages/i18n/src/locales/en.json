@@ -5810,8 +5810,7 @@
       "context": "The graph stopped drawing.",
       "layout": "The graph could not be arranged.",
       "unavailable": "This window cannot draw the graph.",
-      "unavailableBody": "The table lists the same connections.",
-      "unavailableTree": "The Tree shows this branch’s topics and notes; each note lists its connections."
+      "unavailableBody": "The table lists the same connections."
     },
     "group": {
       "description": "{topic}. Notes drawn: {notes}. Connections to other topics: {count}."

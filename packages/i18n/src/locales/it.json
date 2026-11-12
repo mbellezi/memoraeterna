@@ -5810,8 +5810,7 @@
       "context": "Il grafo non viene più disegnato.",
       "layout": "Impossibile disporre il grafo.",
       "unavailable": "Questa finestra non può disegnare il grafo.",
-      "unavailableBody": "La tabella riporta le stesse connessioni.",
-      "unavailableTree": "L’Albero mostra gli argomenti e le note di questo ramo; ogni nota elenca le sue connessioni."
+      "unavailableBody": "La tabella riporta le stesse connessioni."
     },
     "group": {
       "description": "{topic}. Note nel grafo: {notes}. Connessioni con altri argomenti: {count}."

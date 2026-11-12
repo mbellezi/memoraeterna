@@ -5810,8 +5810,7 @@
       "context": "Le graphe n’est plus dessiné.",
       "layout": "Impossible d’organiser le graphe.",
       "unavailable": "Cette fenêtre ne peut pas dessiner le graphe.",
-      "unavailableBody": "Le tableau présente les mêmes connexions.",
-      "unavailableTree": "L’Arbre présente les thèmes et les notes de cette branche ; chaque note liste ses connexions."
+      "unavailableBody": "Le tableau présente les mêmes connexions."
     },
     "group": {
       "description": "{topic}. Notes dans le graphe : {notes}. Connexions avec d’autres thèmes : {count}."

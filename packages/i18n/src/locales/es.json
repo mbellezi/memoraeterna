@@ -5810,8 +5810,7 @@
       "context": "El grafo dejó de dibujarse.",
       "layout": "No se pudo organizar el grafo.",
       "unavailable": "Esta ventana no puede dibujar el grafo.",
-      "unavailableBody": "La tabla muestra las mismas conexiones.",
-      "unavailableTree": "El Árbol muestra los temas y las notas de esta rama; cada nota lista sus conexiones."
+      "unavailableBody": "La tabla muestra las mismas conexiones."
     },
     "group": {
       "description": "{topic}. Notas en el grafo: {notes}. Conexiones con otros temas: {count}."
