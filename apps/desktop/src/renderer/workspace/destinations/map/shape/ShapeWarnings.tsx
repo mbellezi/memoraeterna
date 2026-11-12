@@ -1,7 +1,7 @@
 import { useId } from "react";
 import type { Translator } from "@app/i18n";
 
-import { Button } from "../ui/button";
+import { Button } from "../../../../components/ui/button";
 import { CompareRegion, CompareToggle } from "./ChangeCompare";
 import { toneClass, toneIcon } from "./health-marks";
 import type { ChangeAction, ChangeDetail } from "./shape-controller";

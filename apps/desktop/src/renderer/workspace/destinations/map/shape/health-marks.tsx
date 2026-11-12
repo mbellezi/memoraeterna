@@ -2,8 +2,8 @@ import { CircleCheck, OctagonAlert, TriangleAlert } from "lucide-react";
 import type { TopicHealth } from "@app/domain";
 import type { Translator } from "@app/i18n";
 
-import { cn } from "../../lib/cn";
-import type { HealthTone } from "../topic-page/topic-page-model";
+import { cn } from "../../../../lib/cn";
+import type { HealthTone } from "../../../../components/topic-page/topic-page-model";
 import { shapeHealth } from "./shape-model";
 
 export const toneClass: Record<HealthTone, string> = {

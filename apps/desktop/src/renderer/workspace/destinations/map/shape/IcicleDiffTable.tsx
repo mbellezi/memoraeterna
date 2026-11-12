@@ -1,6 +1,6 @@
 import type { Translator } from "@app/i18n";
 
-import { cn } from "../../lib/cn";
+import { cn } from "../../../../lib/cn";
 import { DiffMark } from "./diff-marks";
 import type { DiffRow } from "./icicle-diff-model";
 

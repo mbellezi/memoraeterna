@@ -2,8 +2,8 @@ import { useId, type ReactNode } from "react";
 import { ZoomIn } from "lucide-react";
 import type { Translator } from "@app/i18n";
 
-import { ObjectKindGlyph } from "../glyphs";
-import { Button } from "../ui/button";
+import { ObjectKindGlyph } from "../../../../components/glyphs";
+import { Button } from "../../../../components/ui/button";
 import { HealthMark } from "./health-marks";
 import type { PanelModel } from "./shape-model";
 

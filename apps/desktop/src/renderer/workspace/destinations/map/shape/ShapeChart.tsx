@@ -9,7 +9,7 @@ import {
 import type { TopicHealth } from "@app/domain";
 import type { Translator } from "@app/i18n";
 
-import { cn } from "../../lib/cn";
+import { cn } from "../../../../lib/cn";
 import { toneClass, toneIcon } from "./health-marks";
 import {
   cellContent,

@@ -10,7 +10,7 @@ import {
 import type { TopicDiffChange } from "@app/domain";
 import type { Translator } from "@app/i18n";
 
-import { cn } from "../../lib/cn";
+import { cn } from "../../../../lib/cn";
 import { diffToneTokens, toneVar } from "./diff-tones";
 import { diffChanges } from "./icicle-diff-model";
 

@@ -9,7 +9,7 @@ import {
 import type { TopicDiffNode } from "@app/domain";
 import type { Translator } from "@app/i18n";
 
-import { cn } from "../../lib/cn";
+import { cn } from "../../../../lib/cn";
 import { DiffGlyph, DiffSwatch, diffFill } from "./diff-marks";
 import {
   diffChanges,

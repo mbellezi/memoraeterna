@@ -189,8 +189,8 @@ export const surfaces: readonly SurfaceEntry[] = [
   entry(
     "shape",
     "hosted",
-    "components/topic-shape/ShapeScreen.tsx",
-    "components/topic-shape/shape.screen.tsx"
+    "workspace/destinations/map/shape/ShapeScreen.tsx",
+    "workspace/destinations/map/shape/shape.screen.tsx"
   ),
   entry(
     "activity",

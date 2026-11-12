@@ -3,9 +3,9 @@ import { Maximize, RefreshCw, TableProperties, Telescope, ZoomIn, ZoomOut } from
 import type { TopicShape } from "@app/domain";
 import type { Translator } from "@app/i18n";
 
-import { cn } from "../../lib/cn";
-import { ObjectKindGlyph } from "../glyphs";
-import { Button } from "../ui/button";
+import { cn } from "../../../../lib/cn";
+import { ObjectKindGlyph } from "../../../../components/glyphs";
+import { Button } from "../../../../components/ui/button";
 import { toneClass, toneIcon } from "./health-marks";
 import { buildIcicle, stepZoom, zoomSteps, type IcicleCell } from "./icicle-layout";
 import { ShapeChanges } from "./ShapeChanges";

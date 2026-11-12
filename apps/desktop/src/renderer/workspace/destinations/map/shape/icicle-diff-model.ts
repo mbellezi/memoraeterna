@@ -1,7 +1,7 @@
 import type { ChangesDiff, TopicDiffChange, TopicDiffNode } from "@app/domain";
 import type { MessageKey, Translator } from "@app/i18n";
 
-import { countLabel } from "../topic-page/topic-page-model";
+import { countLabel } from "../../../../components/topic-page/topic-page-model";
 import type { DiffTone } from "./diff-tones";
 import type { DiffCell, DiffSide } from "./icicle-layout";
 import { nodeName } from "./shape-model";

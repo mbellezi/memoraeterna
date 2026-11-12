@@ -7,7 +7,7 @@ import type {
 } from "@app/domain";
 import type { MessageKey, Translator } from "@app/i18n";
 
-import { countLabel, type HealthTone } from "../topic-page/topic-page-model";
+import { countLabel, type HealthTone } from "../../../../components/topic-page/topic-page-model";
 import { cellTrail, topicCellKey, type IcicleCell, type IcicleLayout } from "./icicle-layout";
 
 /**

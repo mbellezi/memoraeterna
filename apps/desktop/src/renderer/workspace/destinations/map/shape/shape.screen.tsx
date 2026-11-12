@@ -1,5 +1,5 @@
-import { screenTranslator } from "../../workspace/screen-locale";
-import type { ScreenModule } from "../../workspace/surfaces";
+import { screenTranslator } from "../../../screen-locale";
+import type { ScreenModule } from "../../../surfaces";
 import { sampleChangeSet, sampleShape } from "./shape-fixtures";
 import { ShapeScreen } from "./ShapeScreen";
 

@@ -2,8 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { TopicChangeSet, TopicShape, TopicUndoResult } from "@app/domain";
 import { createTranslator } from "@app/i18n";
 
-import type { AppEventOf } from "../../../shared/app-events";
-import { createFakeAppEvents } from "../../lib/fake-app-events";
+import type { AppEventOf } from "../../../../../shared/app-events";
+import { createFakeAppEvents } from "../../../../lib/fake-app-events";
 import {
   sameShapeContent,
   ShapeController,

@@ -1,6 +1,6 @@
 import type { Translator } from "@app/i18n";
 
-import { Button } from "../ui/button";
+import { Button } from "../../../../components/ui/button";
 import type { ChangeDetail } from "./shape-controller";
 import { compareView } from "./shape-model";
 

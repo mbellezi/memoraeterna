@@ -3,7 +3,7 @@ import { ListTree } from "lucide-react";
 import type { TopicChangeSetSummary } from "@app/domain";
 import type { Translator } from "@app/i18n";
 
-import { Button } from "../ui/button";
+import { Button } from "../../../../components/ui/button";
 import { CompareRegion, CompareToggle } from "./ChangeCompare";
 import type { ChangeAction, ChangeDetail } from "./shape-controller";
 import { changeText, timeText } from "./shape-model";
