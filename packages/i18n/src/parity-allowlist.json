@@ -217,6 +217,7 @@
     "sourcePage.meta.pagesOne",
     "sourcePage.meta.volume",
     "sourcePage.notes.page",
+    "sourcePage.notes.section",
     "sourcePage.strip.steps.notes",
     "sourcePage.strip.values.notesDone",
     "sourcePage.strip.values.notesDoneOne",

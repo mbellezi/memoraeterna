@@ -2537,6 +2537,7 @@
       "page": "p. {page}",
       "passage": "frammento {index}",
       "placing": "Ricerca della posizione nell’albero…",
+      "section": "sezione {name}",
       "seeAll": "Vedi tutte le {count} note",
       "showMore": "Mostra altre {count}",
       "unplaced": "Senza posizione"

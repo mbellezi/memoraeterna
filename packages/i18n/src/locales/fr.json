@@ -2544,6 +2544,7 @@
       "page": "p. {page}",
       "passage": "segment {index}",
       "placing": "Recherche de l’emplacement dans l’arbre…",
+      "section": "section {name}",
       "seeAll": "Voir les {count} notes",
       "showMore": "Afficher {count} de plus",
       "unplaced": "Sans emplacement"

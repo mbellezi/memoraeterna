@@ -211,7 +211,7 @@ function Ruler({ sections, t }: { sections: readonly StripSection[]; t: Translat
                 "block h-2 rounded-sm border",
                 section.state === "done" && "border-muted-foreground bg-muted-foreground",
                 section.state === "reading" && "border-accent",
-                section.state === "pending" && "border-border bg-surface-hover"
+                section.state === "pending" && "border-border-strong bg-surface-hover"
               )}
               style={section.state === "reading" ? hatch : undefined}
             />

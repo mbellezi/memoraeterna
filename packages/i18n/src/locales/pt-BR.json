@@ -2542,6 +2542,7 @@
       "page": "p. {page}",
       "passage": "trecho {index}",
       "placing": "Procurando lugar na árvore…",
+      "section": "seção {name}",
       "seeAll": "Ver as {count} notas",
       "showMore": "Mostrar mais {count}",
       "unplaced": "Sem lugar"

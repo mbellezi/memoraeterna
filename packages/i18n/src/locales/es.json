@@ -2546,6 +2546,7 @@
       "page": "p. {page}",
       "passage": "fragmento {index}",
       "placing": "Buscando el lugar en el árbol…",
+      "section": "sección {name}",
       "seeAll": "Ver las {count} notas",
       "showMore": "Mostrar {count} más",
       "unplaced": "Sin lugar"

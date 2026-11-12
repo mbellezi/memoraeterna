@@ -25,7 +25,10 @@ const paragraphs = [
   "Traffic did not worsen after the car lanes were reduced, and the effect held over three years.",
   "Continuous sidewalks at the corners slowed the cars more than any sign did."
 ];
-const markdown = `# ${sourceFixtureTitle}\n\n${paragraphs.join("\n\n")}\n`;
+const sectionTitles = ["Introduction", "Bogotá", "Medellín", "Results"];
+const markdown = `# ${sourceFixtureTitle}\n\n${paragraphs
+  .map((paragraph, index) => `## ${sectionTitles[index]}\n\n${paragraph}`)
+  .join("\n\n")}\n`;
 const chunkIds = paragraphs.map((_, index) => uuid(10 + index));
 const spanIds = paragraphs.map((_, index) => uuid(20 + index));
 

@@ -203,8 +203,8 @@ describe("the notes", () => {
     expect(html.indexOf("Protected bike lanes")).toBeLessThan(html.indexOf("A bus-only lane"));
     expect(html).toContain("7 so far · newest first");
     expect(html).toContain(`data-address="memora://note/${noteIds[1]}"`);
-    expect(html).toContain("p. 9");
-    expect(html).toContain("passage 1");
+    expect(html).toContain("section Introduction");
+    expect(html).toContain("section Bogotá");
   });
 
   it("shows only the first six in the Overview, with a way to see all of them", () => {
