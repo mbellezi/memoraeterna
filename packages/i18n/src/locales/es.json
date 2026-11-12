@@ -4895,8 +4895,8 @@
       "readFromMany": "de {count} fuentes",
       "readFromOne": "de {count} fuente",
       "readNotCited": "Leídos, no citados",
-      "readNotCitedReason": "no trataba esta pregunta",
-      "readNotCitedUnknown": "Esta respuesta no guardó qué pasajes se leyeron sin citarse.",
+      "readNotCitedReason": "no usado en la respuesta",
+      "readNotCitedSibling": "Otro fragmento de la fuente {number}",
       "readPassagesMany": "{count} pasajes leídos",
       "readPassagesOne": "{count} pasaje leído",
       "reading": "leyendo…",
@@ -4906,8 +4906,7 @@
     "tray": {
       "empty": "Pasa el ratón o el foco por una cita para leer aquí su fragmento.",
       "heading": "Cita {number}",
-      "label": "Fragmento de la cita",
-      "open": "abrir el fragmento al lado"
+      "label": "Fragmento de la cita"
     },
     "versions": {
       "label": "Versiones de la respuesta",

@@ -4891,8 +4891,8 @@
       "readFromMany": "de {count} fontes",
       "readFromOne": "de {count} fonte",
       "readNotCited": "Lidas, não citadas",
-      "readNotCitedReason": "não tinha nada sobre esta pergunta",
-      "readNotCitedUnknown": "Esta resposta não guardou quais trechos foram lidos sem serem citados.",
+      "readNotCitedReason": "não usado na resposta",
+      "readNotCitedSibling": "Outro trecho da fonte {number}",
       "readPassagesMany": "{count} trechos lidos",
       "readPassagesOne": "{count} trecho lido",
       "reading": "lendo…",
@@ -4902,8 +4902,7 @@
     "tray": {
       "empty": "Passe o mouse ou o foco em uma citação para ler o trecho dela aqui.",
       "heading": "Citação {number}",
-      "label": "Trecho da citação",
-      "open": "abrir o trecho ao lado"
+      "label": "Trecho da citação"
     },
     "versions": {
       "label": "Versões da resposta",

@@ -367,6 +367,40 @@ export function citedObjectCount(sources: readonly SourceEntry[]): number {
   return new Set(sources.map((entry) => entry.open?.split("#")[0] ?? `gone:${entry.number}`)).size;
 }
 
+/** One passage the retrieval read and the answer left out, and the citation of its own source, if any. */
+export interface UncitedPassage<T> {
+  item: T;
+  /** The number of the first citation that points into the same source: this is another of its passages. */
+  sibling: number | null;
+}
+
+/**
+ * What "Lidas, não citadas" lists: the read passages the answer does not cite. A passage that a
+ * citation points at (whatever span it marks) is cited, so it is dropped; a passage of a source the
+ * answer cites elsewhere stays, with the number of that citation, so the row says it is another
+ * passage and never reads as the source being unused.
+ */
+export function uncitedPassages<T extends { address: string }>(
+  sources: readonly SourceEntry[],
+  read: readonly T[]
+): UncitedPassage<T>[] {
+  const passageOf = (address: string | null) => {
+    const parsed = address === null ? null : parseObjectAddress(address);
+    return parsed
+      ? { object: `${parsed.kind}:${parsed.id}`, passage: parsed.anchor?.passage }
+      : null;
+  };
+  const cited = sources.map((entry) => ({ number: entry.number, at: passageOf(entry.open) }));
+  const result: UncitedPassage<T>[] = [];
+  for (const item of read) {
+    const at = passageOf(item.address);
+    const same = cited.filter((c) => c.at !== null && at !== null && c.at.object === at.object);
+    if (same.some((c) => c.at?.passage !== undefined && c.at.passage === at?.passage)) continue;
+    result.push({ item, sibling: same[0]?.number ?? null });
+  }
+  return result;
+}
+
 /**
  * The message key of a failure when it is one of ours, else null (a redacted provider text is
  * never shown as the sentence).

@@ -6,7 +6,13 @@ import { Skeleton } from "../../../components/ui/skeleton";
 import { cn } from "../../../lib/cn";
 import { useObjectPreview } from "../../ObjectLink";
 import { titleOf } from "../../ObjectLinkModel";
-import { citationObject, citedObjectCount, type SourceEntry } from "./answer-model";
+import {
+  citationObject,
+  citedObjectCount,
+  uncitedPassages,
+  type SourceEntry,
+  type UncitedPassage
+} from "./answer-model";
 import type { ReadNotCited, ReadSummary } from "./ask-session";
 
 /**
@@ -48,6 +54,17 @@ export function useEntryPassage(t: Translator, entry: SourceEntry | null): Entry
 export const entryElementId = (base: string, number: number): string => `${base}-source-${number}`;
 
 const hint = "inline-flex items-center gap-1.5 text-xs text-accent";
+
+/**
+ * Below 1280 px the passage tray is stuck over the foot of the panel and is at most 8rem tall
+ * (`max-h-32`). A row that takes keyboard focus scrolls at least 9rem clear of the panel's foot (the
+ * tray and a rem of air for its ring), so the focused row is never behind the tray. Above 1280 px
+ * there is no tray and no margin.
+ */
+export const trayClearance = "scroll-mb-36";
+
+/** The width of the column that holds a citation's number chip: titles of both lists start after it. */
+const leadColumn = "w-10 shrink-0";
 
 function Passage({ text }: { text: string }) {
   return (
@@ -102,7 +119,8 @@ function SourceEntryRow({
         onFocus={() => onActivate(entry.number)}
         onClick={() => target !== null && onOpen(target)}
         className={cn(
-          "relative grid w-full min-w-0 scroll-mb-40 gap-1.5 rounded-md px-3 py-2 text-left text-sm text-foreground",
+          "relative grid w-full min-w-0 gap-1.5 rounded-md px-3 py-2 text-left text-sm text-foreground",
+          tray && trayClearance,
           "focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-accent",
           active
             ? "bg-surface [box-shadow:var(--shadow-sheet)] before:absolute before:inset-y-2 before:left-0 before:w-0.5 before:rounded-full before:bg-accent"
@@ -112,7 +130,10 @@ function SourceEntryRow({
         <span className="flex min-w-0 items-start gap-2">
           <span
             aria-hidden="true"
-            className="mt-0.5 inline-flex h-5 shrink-0 items-center gap-0.5 rounded-sm border border-border bg-soft px-1 text-xs font-medium tabular-nums text-secondary-foreground"
+            className={cn(
+              leadColumn,
+              "mt-0.5 inline-flex h-5 items-center justify-center gap-0.5 rounded-sm border border-border bg-soft px-1 text-xs font-medium tabular-nums text-secondary-foreground"
+            )}
           >
             <ObjectKindGlyph kind="source" size={12} className={objectKindTextClass.source} />
             {entry.number}
@@ -172,14 +193,22 @@ function SourceEntryRow({
   );
 }
 
-/** One passage the Ask read and left out: the kind glyph, its source's title and why it was left out. */
+/**
+ * One passage the Ask read and left out: the kind glyph, its source's title and, when the answer
+ * cites another passage of that source, which citation it is; then the Ask's own reason, if it gave one.
+ */
 function NotCitedRow({
   t,
   item,
+  sibling,
+  tray,
   onOpen
 }: {
   t: Translator;
   item: ReadNotCited;
+  /** The number of the citation into the same source, when the answer cites another passage of it. */
+  sibling: number | null;
+  tray: boolean;
   onOpen: (address: string) => void;
 }) {
   const preview = useObjectPreview(item.address, true);
@@ -198,13 +227,14 @@ function NotCitedRow({
         onClick={() => onOpen(item.address)}
         className={cn(
           "flex w-full min-w-0 items-start gap-2 rounded-md px-3 py-1.5 text-left text-sm text-secondary-foreground",
+          tray && trayClearance,
           "hover:bg-surface-hover focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-accent",
           "disabled:cursor-default disabled:hover:bg-transparent"
         )}
       >
         <span
           aria-hidden="true"
-          className="inline-flex h-5 w-5 shrink-0 items-center justify-center"
+          className={cn(leadColumn, "inline-flex h-5 items-center justify-center")}
         >
           <ObjectKindGlyph kind="source" size={12} className={objectKindTextClass.source} />
         </span>
@@ -221,7 +251,17 @@ function NotCitedRow({
             <span className="block text-xs text-muted-foreground [text-wrap:pretty]">
               {gone
                 ? t("askPanel.sources.removed")
-                : (item.reason ?? t("askPanel.sources.readNotCitedReason"))}
+                : [
+                    sibling !== null
+                      ? t("askPanel.sources.readNotCitedSibling", { values: { number: sibling } })
+                      : null,
+                    // The Ask's own words; with none, only that the answer did not use it (the app
+                    // does not know why, so it says no more).
+                    item.reason ??
+                      (sibling === null ? t("askPanel.sources.readNotCitedReason") : null)
+                  ]
+                    .filter((part) => part !== null)
+                    .join(" · ")}
             </span>
           )}
         </span>
@@ -249,6 +289,8 @@ export interface SourcesRailProps {
   read: ReadSummary | null;
   /** The answer is still being written: what was read and not cited is not settled yet. */
   live: boolean;
+  /** Where the page places the list (a column beside the answer from 1280 px). */
+  className?: string;
 }
 
 /** The numbered list of an answer's sources. It is empty only while the answer has cited nothing. */
@@ -264,7 +306,8 @@ export function SourcesRail({
   tray,
   scope,
   read,
-  live
+  live,
+  className
 }: SourcesRailProps) {
   if (sources.length === 0) return null;
   // What the answer knows: the passages it cites and the sources they sit in; what the retrieval
@@ -285,10 +328,16 @@ export function SourcesRail({
       })} · ${t(around === 1 ? "askPanel.band.sourcesOne" : "askPanel.band.sourcesMany", {
         values: { count: around }
       })}`;
-  const notCited = read?.notCited ?? [];
+  // Only what the answer does not cite: a passage a citation points at is not listed here.
+  const notCited: UncitedPassage<ReadNotCited>[] = read
+    ? uncitedPassages(sources, read.notCited)
+    : [];
   const notCitedId = `${headingId}-not-cited`;
   return (
-    <section aria-labelledby={headingId} className="grid min-w-0 max-w-(--measure) gap-3">
+    <section
+      aria-labelledby={headingId}
+      className={cn("grid min-w-0 max-w-(--measure) gap-3", className)}
+    >
       <div className="grid gap-1">
         <h2 id={headingId} className="m-0 grid gap-0.5 text-sm font-semibold text-foreground">
           {t("askPanel.sources.heading")}
@@ -318,24 +367,24 @@ export function SourcesRail({
           ))}
         </ol>
       </div>
-      {live || (read !== null && notCited.length === 0) ? null : (
+      {live || read === null || notCited.length === 0 ? null : (
         // What was read and left out: the answer rests on the entries above, never on these.
         <div className="grid gap-1" role="group" aria-labelledby={notCitedId}>
           <h3 id={notCitedId} className="m-0 text-xs font-semibold text-secondary-foreground">
-            {t("askPanel.sources.readNotCited")}
-            {read ? ` (${notCited.length})` : ""}
+            {t("askPanel.sources.readNotCited")} ({notCited.length})
           </h3>
-          {read === null ? (
-            <p className="m-0 text-xs text-muted-foreground [text-wrap:pretty]">
-              {t("askPanel.sources.readNotCitedUnknown")}
-            </p>
-          ) : (
-            <ul className="m-0 -mx-1 grid list-none gap-0.5 p-0">
-              {notCited.map((item) => (
-                <NotCitedRow key={item.address} t={t} item={item} onOpen={onOpen} />
-              ))}
-            </ul>
-          )}
+          <ul className="m-0 -mx-1 grid list-none gap-0.5 p-0">
+            {notCited.map(({ item, sibling }) => (
+              <NotCitedRow
+                key={item.address}
+                t={t}
+                item={item}
+                sibling={sibling}
+                tray={tray}
+                onOpen={onOpen}
+              />
+            ))}
+          </ul>
         </div>
       )}
     </section>
@@ -368,7 +417,7 @@ export function PassageTray({ t, entry }: PassageTrayProps) {
       }}
       // The panel body keeps 3rem of padding under its content and a sticky edge stops at the
       // padding, so the tray reaches past it to rest on the panel's foot.
-      className="sticky [bottom:-3rem] z-[1] mt-6 max-h-32 overflow-hidden border-t border-border bg-surface py-2.5 [box-shadow:var(--shadow-edge-up)]"
+      className="sticky order-2 [bottom:-3rem] z-[1] mt-6 max-h-32 overflow-hidden border-t border-border bg-surface py-2.5 [box-shadow:var(--shadow-edge-up)]"
     >
       <div className="grid max-w-(--measure) gap-1">
         <p className="m-0 flex min-w-0 items-baseline text-xs font-medium text-foreground">
@@ -405,9 +454,9 @@ export function PassageTray({ t, entry }: PassageTrayProps) {
             {t("askPanel.sources.readFailed")}
           </span>
         )}
-        <p className="m-0 flex items-center gap-1.5 text-xs text-accent">
+        <p className={cn(hint, "m-0")}>
+          {t("askPanel.sources.open")}
           <Kbd>↵</Kbd>
-          {t("askPanel.tray.open")}
         </p>
       </div>
     </aside>

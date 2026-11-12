@@ -4888,8 +4888,8 @@
       "readFromMany": "from {count} sources",
       "readFromOne": "from {count} source",
       "readNotCited": "Read, not cited",
-      "readNotCitedReason": "did not bear on this question",
-      "readNotCitedUnknown": "This answer did not keep which passages were read without being cited.",
+      "readNotCitedReason": "not used in the answer",
+      "readNotCitedSibling": "Another passage of source {number}",
       "readPassagesMany": "{count} passages read",
       "readPassagesOne": "{count} passage read",
       "reading": "reading…",
@@ -4899,8 +4899,7 @@
     "tray": {
       "empty": "Hover or focus a citation to read its passage here.",
       "heading": "Citation {number}",
-      "label": "Passage of the citation",
-      "open": "open the passage beside"
+      "label": "Passage of the citation"
     },
     "versions": {
       "label": "Answer versions",

@@ -4886,8 +4886,8 @@
       "readFromMany": "da {count} fonti",
       "readFromOne": "da {count} fonte",
       "readNotCited": "Letti, non citati",
-      "readNotCitedReason": "non riguardava questa domanda",
-      "readNotCitedUnknown": "Questa risposta non ha conservato i passaggi letti senza essere citati.",
+      "readNotCitedReason": "non usato nella risposta",
+      "readNotCitedSibling": "Un altro passaggio della fonte {number}",
       "readPassagesMany": "{count} passaggi letti",
       "readPassagesOne": "{count} passaggio letto",
       "reading": "lettura…",
@@ -4897,8 +4897,7 @@
     "tray": {
       "empty": "Passa il mouse o il focus su una citazione per leggere qui il suo passaggio.",
       "heading": "Citazione {number}",
-      "label": "Passaggio della citazione",
-      "open": "apri il passaggio accanto"
+      "label": "Passaggio della citazione"
     },
     "versions": {
       "label": "Versioni della risposta",
