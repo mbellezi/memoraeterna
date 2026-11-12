@@ -13,6 +13,9 @@ export interface PlaceInTopicProps {
   active: boolean;
   /** After the note was placed, so the page shows where it is now. */
   onPlaced: () => void;
+  /** The note already has a place: the action moves it, and a panel draws it as a quiet link. */
+  placed?: boolean;
+  quiet?: boolean;
 }
 
 /**
@@ -20,14 +23,22 @@ export interface PlaceInTopicProps {
  * more topic it shows up in. The placement is theirs: the engine never moves it. The change comes
  * with an Undo in the window's one notice, which stays long enough to be reached by keyboard.
  */
-export function PlaceInTopic({ t, noteId, noteTitle, active, onPlaced }: PlaceInTopicProps) {
+export function PlaceInTopic({
+  t,
+  noteId,
+  noteTitle,
+  active,
+  onPlaced,
+  placed = false,
+  quiet = false
+}: PlaceInTopicProps) {
   const ops = useTopicOps(active);
   const { error } = ops.snapshot;
   return (
     <>
       <Button
         type="button"
-        variant="secondary"
+        variant={quiet ? "link" : "secondary"}
         aria-haspopup="dialog"
         onClick={() =>
           ops.openDialog({
@@ -37,7 +48,7 @@ export function PlaceInTopic({ t, noteId, noteTitle, active, onPlaced }: PlaceIn
         }
       >
         <FolderInput aria-hidden="true" />
-        {t("topics.ops.actions.place")}
+        {t(placed ? "topics.ops.actions.move" : "topics.ops.actions.place")}
       </Button>
       {error && ops.dialog === null ? (
         <span role="alert" className="text-xs text-danger">

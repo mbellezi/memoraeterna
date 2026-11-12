@@ -1,4 +1,4 @@
-import type { CSSProperties, KeyboardEvent, ReactNode } from "react";
+import { useState, type CSSProperties, type KeyboardEvent, type ReactNode } from "react";
 import {
   ChevronRight,
   CornerDownRight,
@@ -13,6 +13,7 @@ import {
 import type { TopicHealth, TopicItemLeaf } from "@app/domain";
 import type { Translator } from "@app/i18n";
 import { cn } from "../../lib/cn";
+import { FittedLabel, WrappedLabel } from "../../workspace/destinations/explore/FittedLabel";
 import { ObjectKindGlyph, objectKindTextClass } from "../glyphs";
 import { InlineTitleEditor } from "./ops/InlineTitleEditor";
 import { actionRowOf, actionsLabelKey, itemIdentity, type NavRowOps } from "./ops/nav-ops";
@@ -31,6 +32,17 @@ export interface NavRowProps {
   tabStop: boolean;
   /** The topic that is open. */
   selected: boolean;
+  /**
+   * The row shows its whole name on up to two lines (the open row and its ancestors), and tells the
+   * list how many it drew so the list can place the rows below it.
+   */
+  wrap?: boolean;
+  onLines?: ((key: string, lines: number) => void) | undefined;
+  /**
+   * Compact windows (960-1179 px): a count shows on hover and focus, and on the open row, so the
+   * name has the width.
+   */
+  quietCounts?: boolean;
   /** Absolute placement inside a windowed list. */
   style?: CSSProperties | undefined;
   /** Renaming in place and the actions of a topic (T26); absent, the row is read-only. */
@@ -83,18 +95,33 @@ function PinMark({ t }: { t: Translator }) {
 function Count({
   value,
   spoken,
-  format
+  format,
+  onDemand = false,
+  menuRoom = false
 }: {
   value: number | null;
   spoken: string;
   format: (value: number) => string;
+  /** Drawn over the row's end on hover and focus only, taking no width from the name. */
+  onDemand?: boolean;
+  /** The row has its actions button at the end: the count stops short of it, never over it. */
+  menuRoom?: boolean;
 }) {
   if (value === null) return null;
   return (
     <>
       <span
         aria-hidden="true"
-        className="min-w-5 shrink-0 text-right text-xs tabular-nums text-muted-foreground"
+        className={cn(
+          "min-w-5 text-right text-xs tabular-nums text-muted-foreground",
+          onDemand
+            ? cn(
+                // Inside the 2 px focus ring (3 px from the top and the bottom), so the ring stays whole.
+                "pointer-events-none absolute inset-y-[3px] flex items-center rounded-sm bg-soft pl-1 opacity-0 group-hover/row:opacity-100 group-focus-within/row:opacity-100",
+                menuRoom ? "right-8" : "right-2"
+              )
+            : "shrink-0"
+        )}
       >
         {format(value)}
       </span>
@@ -149,6 +176,9 @@ export function TopicNavRow({
   format,
   tabStop,
   selected,
+  wrap = false,
+  onLines,
+  quietCounts = false,
   style,
   ops,
   onToggle,
@@ -174,9 +204,15 @@ export function TopicNavRow({
       title={title?.tooltip}
       style={{ ...style, paddingLeft: baseInset + (row.level - 1) * levelIndent }}
       className={cn(
-        "group/row flex h-7 items-center gap-1 rounded-md pr-2 text-sm outline-none",
-        "focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent",
-        selected ? "bg-accent-soft font-semibold text-foreground" : "text-foreground hover:bg-soft"
+        "group/row relative flex items-center gap-1 rounded-md pr-2 text-sm",
+        wrap ? "min-h-7 py-1" : "h-7",
+        // One declaration for the ring: two utilities for `outline-style` would be decided by the
+        // stylesheet's order, and the ring would not show.
+        "focus-visible:[outline-offset:-2px] focus-visible:[outline:2px_solid_var(--accent)]",
+        // The open row: the soft accent fill and the 2 px accent bar (design record 5.3).
+        selected
+          ? "bg-accent-soft font-semibold text-foreground before:absolute before:inset-y-1 before:left-0 before:w-0.5 before:rounded-full before:bg-accent before:content-['']"
+          : "text-foreground hover:bg-soft"
       )}
       onClick={() => onActivate(row)}
       onFocus={() => onFocusRow(row.key)}
@@ -191,7 +227,17 @@ export function TopicNavRow({
       }
     >
       <Chevron row={row} onToggle={onToggle} />
-      <RowContent t={t} row={row} format={format} ops={ops} />
+      <RowContent
+        t={t}
+        row={row}
+        format={format}
+        ops={ops}
+        wrap={wrap}
+        onLines={onLines}
+        quietCount={quietCounts && !selected}
+        open={selected}
+        menuRoom={Boolean(ops && actionRow)}
+      />
       {ops && actionRow ? (
         <button
           type="button"
@@ -236,17 +282,68 @@ function rowTitle(t: Translator, row: NavRow): { tooltip: string } | null {
   }
 }
 
+/**
+ * A topic's name: cut at word boundaries by its width, or, on the open row and its ancestors,
+ * whole on up to two lines. The two never share a node, so a row that becomes open is fitted again
+ * in the weight it is drawn in.
+ */
+function NameLabel({
+  text,
+  unnamed,
+  wrap,
+  onLines,
+  countRoom,
+  onDropCount
+}: {
+  text: string;
+  unnamed: boolean;
+  wrap: boolean;
+  onLines: ((lines: number) => void) | undefined;
+  countRoom: number;
+  onDropCount: (dropped: boolean) => void;
+}) {
+  const className = unnamed ? "italic text-muted-foreground" : undefined;
+  return wrap ? (
+    <WrappedLabel text={text} onLines={onLines} {...(className ? { className } : {})} />
+  ) : (
+    <FittedLabel
+      text={text}
+      countRoom={countRoom}
+      onDropCount={onDropCount}
+      {...(className ? { className } : {})}
+    />
+  );
+}
+
 function RowContent({
   t,
   row,
   format,
-  ops
+  ops,
+  wrap,
+  onLines,
+  quietCount,
+  open,
+  menuRoom
 }: {
   t: Translator;
   row: NavRow;
   format: (value: number) => string;
   ops?: NavRowOps | undefined;
+  wrap: boolean;
+  onLines: ((key: string, lines: number) => void) | undefined;
+  quietCount: boolean;
+  /** The open row keeps its count in the row; any other drops it before a word of its name is cut. */
+  open: boolean;
+  menuRoom: boolean;
 }) {
+  const [countDropped, setCountDropped] = useState(false);
+  // The room a count takes beside a name: its digits and the gap before it.
+  const roomFor = (value: number | null) =>
+    open || quietCount || value === null ? 0 : 4 + Math.max(20, format(value).length * 7);
+  const onDemand = quietCount || (countDropped && !open);
+  const key = row.key;
+  const reportLines = onLines ? (lines: number) => onLines(key, lines) : undefined;
   switch (row.type) {
     case "topic": {
       const { node } = row;
@@ -264,14 +361,14 @@ function RowContent({
               onCancel={ops.onCancelRename}
             />
           ) : (
-            <span
-              className={cn(
-                "min-w-0 flex-1 truncate",
-                node.title === null && "italic text-muted-foreground"
-              )}
-            >
-              {node.title ?? t("topics.navigator.unnamed")}
-            </span>
+            <NameLabel
+              text={node.title ?? t("topics.navigator.unnamed")}
+              unnamed={node.title === null}
+              wrap={wrap}
+              onLines={reportLines}
+              countRoom={roomFor(node.items)}
+              onDropCount={setCountDropped}
+            />
           )}
           {node.management === "human" ? (
             <Mark
@@ -289,6 +386,8 @@ function RowContent({
             value={node.items}
             spoken={t("topics.navigator.itemCount", { values: { count: node.items } })}
             format={format}
+            onDemand={onDemand}
+            menuRoom={menuRoom}
           />
         </>
       );
@@ -299,7 +398,13 @@ function RowContent({
         <>
           <ObjectKindGlyph kind={leaf.kind} className={objectKindTextClass[leaf.kind]} />
           <span className="sr-only">{t(`topics.navigator.kinds.${leaf.kind}`)}: </span>
-          <span className="min-w-0 flex-1 truncate">{leafLabel(t, leaf)}</span>
+          <FittedLabel
+            text={leafLabel(t, leaf)}
+            countRoom={roomFor(
+              leaf.kind === "source" && leaf.noteCount > 0 ? leaf.noteCount : null
+            )}
+            onDropCount={setCountDropped}
+          />
           {leaf.role === "secondary" ? (
             <Mark label={t("topics.navigator.marks.alsoHere")} className="text-muted-foreground">
               <CornerDownRight aria-hidden="true" className="size-3" />
@@ -316,6 +421,8 @@ function RowContent({
               value={leaf.noteCount}
               spoken={t("topics.navigator.noteCount", { values: { count: leaf.noteCount } })}
               format={format}
+              onDemand={onDemand}
+              menuRoom={menuRoom}
             />
           ) : null}
         </>
@@ -330,6 +437,8 @@ function RowContent({
             value={row.count}
             spoken={t("topics.navigator.itemCount", { values: { count: row.count } })}
             format={format}
+            onDemand={onDemand}
+            menuRoom={menuRoom}
           />
         </>
       );
@@ -339,17 +448,23 @@ function RowContent({
         <>
           <ObjectKindGlyph kind={place.kind} className={objectKindTextClass[place.kind]} />
           <span className="sr-only">{t(`topics.navigator.kinds.${place.kind}`)}: </span>
-          <span
-            className={cn(
-              "min-w-0 flex-1 truncate",
-              place.title === null && "italic text-muted-foreground"
-            )}
-          >
-            {place.title ?? t("topics.navigator.unnamed")}
-          </span>
+          <NameLabel
+            text={place.title ?? t("topics.navigator.unnamed")}
+            unnamed={place.title === null}
+            wrap={wrap}
+            onLines={reportLines}
+            countRoom={roomFor(place.count)}
+            onDropCount={setCountDropped}
+          />
           {place.pinned || place.management === "pinned" ? <PinMark t={t} /> : null}
           <HealthMark t={t} health={place.health} />
-          <Count value={place.count} spoken={placeCountLabel(t, place)} format={format} />
+          <Count
+            value={place.count}
+            spoken={placeCountLabel(t, place)}
+            format={format}
+            onDemand={onDemand}
+            menuRoom={menuRoom}
+          />
         </>
       );
     }

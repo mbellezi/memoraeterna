@@ -4,6 +4,8 @@ import { createTranslator } from "@app/i18n";
 
 import { legacyViewIds } from "../../shared/app-menu";
 import type { WorkspacePlace } from "./destinations";
+import { AddMenu } from "./add/AddMenu";
+import { AddFlow } from "./add/add-flow";
 import { LegacyMenu, legacyMenuViews } from "./LegacyMenu";
 import { Rail, inboxWaitingText, railState } from "./Rail";
 import { NavigatorHost } from "./NavigatorHost";
@@ -14,6 +16,13 @@ import { TitleBar } from "./TitleBar";
 
 const en = createTranslator("en");
 const noop = () => undefined;
+/** A flow over no window: the menu and the drop host only read its snapshot while rendered to a string. */
+const addFlow = new AddFlow({
+  api: () => ({}) as never,
+  openSource: noop,
+  openImportPanel: noop,
+  storage: null
+});
 
 const rail = (inbox: Parameters<typeof Rail>[0]["inbox"], place: WorkspacePlace = "explore") =>
   renderToString(<Rail t={en} place={place} inbox={inbox} onGo={noop} onOpenLegacy={noop} />);
@@ -102,8 +111,7 @@ describe("the title bar", () => {
       title="Explore"
       onOpenPalette={noop}
       status={<span>pill</span>}
-      onAdd={noop}
-      onAddMore={noop}
+      add={<AddMenu t={en} flow={addFlow} portal={false} />}
     />
   );
 
@@ -146,8 +154,7 @@ describe("the shell frame", () => {
           onGo={vi.fn()}
           onOpenLegacy={vi.fn()}
           onOpenPalette={vi.fn()}
-          onAdd={vi.fn()}
-          onAddMore={vi.fn()}
+          addFlow={addFlow}
           onNavigateActivity={vi.fn()}
           onOpenInbox={vi.fn()}
         >

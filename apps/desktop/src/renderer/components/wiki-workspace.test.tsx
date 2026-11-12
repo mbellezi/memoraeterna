@@ -69,7 +69,7 @@ describe("wiki workspace shell", () => {
       const copy = messages[language].topics;
       expect(html, language).toContain(`aria-label="${messages[language].wiki.navigation}"`);
       expect(html, language).toContain(copy.navigator.title);
-      expect(html, language).toContain(copy.navigator.topics);
+      expect(html, language).toContain(messages[language].workspace.navigator.title);
       expect(html, language).toContain('aria-labelledby="wiki-placeholder-title"');
       expect(html, language).toContain(copy.placeholder.openLibrary);
       expect(html, language).not.toContain("[[missing:");
@@ -175,7 +175,7 @@ describe("wiki workspace shell", () => {
     expect(onNavigate).toHaveBeenCalledWith({ type: "topic", topicId: otherTopicId });
     navigator.onOpenSource("source-id", "note-id");
     expect(onOpenSource).toHaveBeenCalledWith("source-id", "note-id");
-    navigator.onAsk();
+    navigator.onAsk?.();
     expect(onAsk).toHaveBeenCalledTimes(1);
 
     view("en", { topicId: null });

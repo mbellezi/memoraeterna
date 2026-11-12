@@ -36,12 +36,17 @@ import {
   serializeManagedFrontmatter,
   wikiGeneratedStart,
   wikiGeneratedEnd,
-  wikiLink,
   safeWikiLabel,
   type ObsidianManagedFrontmatter
 } from "@app/integration-contracts";
 import type { StorageSettings } from "../../shared/ipc.js";
-import { collisionFileName, slugify } from "./obsidian-projection.js";
+import {
+  collisionFileName,
+  projectionLink,
+  projectionObjectAddress,
+  projectionRelationOpenLine,
+  slugify
+} from "./obsidian-projection.js";
 import { trackObsidianProjection } from "./obsidian-projection-events.js";
 import {
   safeVaultPath,
@@ -777,13 +782,16 @@ export class ObsidianWikiProjection {
         `${slugify(r.sourceTitle)}--${slugify(r.targetTitle)}.md`
       );
     const link = (id: string, title: string, kind = "source") => {
-      if (!missing.has(id)) return wikiLink(paths.get(id), title, id, kind);
+      if (!missing.has(id)) return projectionLink(paths.get(id), title, id, kind);
       const note = noteById.get(id),
         relation = relations.find((r) => r.id === id);
+      const relationAddress = relation
+        ? projectionObjectAddress("source", relation.source_item_id, { relation: id })
+        : null;
       return (
-        (relation
-          ? `[${safeWikiLabel(title)}](memora://open/source/${relation.source_item_id}?relation=${id})`
-          : wikiLink(undefined, title, note?.sourceId ?? id, note ? "source" : kind)) +
+        (relationAddress
+          ? `[${safeWikiLabel(title)}](${relationAddress})`
+          : projectionLink(undefined, title, note?.sourceId ?? id, note ? "source" : kind)) +
         " · " +
         t("obsidianEditing.deleted")
       );
@@ -896,7 +904,7 @@ export class ObsidianWikiProjection {
         projectionHash(JSON.stringify([r, evidence])),
         `${r.sourceTitle}${relationPairSeparator(r.directed)}${r.targetTitle}`,
         `# ${safeWikiLabel(r.sourceTitle)}${relationPairSeparator(r.directed)}${safeWikiLabel(r.targetTitle)}\n\n`,
-        `${t("obsidianWiki.readOnly")}\n\n${r.id} · ${t(("knowledge.relations.types." + r.relation_type) as MessageKey)} · ${relationStatus(r.status)} · ${r.current ? t("obsidianWiki.current") : t("obsidianWiki.historical")}\n\n${link(r.source_item_id, r.sourceTitle)}${relationPairSeparator(r.directed)}${link(r.target_source_item_id, r.targetTitle)}\n\n${replace(r.source_idea)}\n\n${replace(r.target_idea)}\n\n${replace(r.explanation)}\n\n${evidence}\n\n[${t("obsidianWiki.openApp")}](memora://open/source/${r.source_item_id}?relation=${r.id})`
+        `${t("obsidianWiki.readOnly")}\n\n${r.id} · ${t(("knowledge.relations.types." + r.relation_type) as MessageKey)} · ${relationStatus(r.status)} · ${r.current ? t("obsidianWiki.current") : t("obsidianWiki.historical")}\n\n${link(r.source_item_id, r.sourceTitle)}${relationPairSeparator(r.directed)}${link(r.target_source_item_id, r.targetTitle)}\n\n${replace(r.source_idea)}\n\n${replace(r.target_idea)}\n\n${replace(r.explanation)}\n\n${evidence}\n\n${projectionRelationOpenLine(t("obsidianWiki.openApp"), r.source_item_id, r.id)}`
       );
     }
     const topicRoot = topics?.planned[0];
@@ -907,8 +915,8 @@ export class ObsidianWikiProjection {
           .map((entry) => ({ id: entry.topic.id, title: entry.title }))
       : [];
     const indexGenerated = [
-      topicRoot ? link(topicRoot.topic.id, topicRoot.title, "wiki") : "",
-      list(areas),
+      topicRoot ? link(topicRoot.topic.id, topicRoot.title, "topic") : "",
+      list(areas, "topic"),
       link(CATALOG, t("obsidianWiki.catalog"), "wiki"),
       link(RELATIONS, t("obsidianWiki.connections"), "wiki")
     ]

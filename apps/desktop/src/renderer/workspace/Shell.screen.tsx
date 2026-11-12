@@ -1,5 +1,6 @@
 import { idleStatus, inboxCounts, runningStatus } from "../components/activity/activity-fixtures";
 import { id, nodeSummary } from "../components/topics/topic-fixtures";
+import { AddFlow } from "./add/add-flow";
 import { Shell } from "./Shell";
 import { screenTranslator } from "./screen-locale";
 import type { ScreenModule } from "./surfaces";
@@ -11,6 +12,12 @@ export const surface = "shell";
 
 const t = screenTranslator();
 const noop = () => undefined;
+const addFlow = new AddFlow({
+  api: () => window.app,
+  openSource: noop,
+  openImportPanel: noop,
+  storage: null
+});
 
 const tree = {
   generation: 4,
@@ -62,8 +69,7 @@ export function render() {
       onGo={noop}
       onOpenLegacy={noop}
       onOpenPalette={noop}
-      onAdd={noop}
-      onAddMore={noop}
+      addFlow={addFlow}
       onNavigateActivity={noop}
       onOpenInbox={noop}
     >

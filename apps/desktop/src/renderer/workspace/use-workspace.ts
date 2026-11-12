@@ -4,6 +4,7 @@ import { announceSettingsAddress } from "../settings/settings-target";
 import { closePanelPriority, subscribeClosePanel } from "../lib/close-panel";
 import { subscribeWindowNavigation } from "../lib/window-navigation";
 import { createWorkspaceSaver, loadWorkspace } from "./persist";
+import { guardedMove } from "./panel-guards";
 import { reduce, type WorkspaceAction, type WorkspaceState } from "./state";
 
 /**
@@ -11,7 +12,8 @@ import { reduce, type WorkspaceAction, type WorkspaceState } from "./state";
  * at most every 500 ms and flushed on unload; focus mode (⌘⇧F), which is a moment's choice and not
  * persisted; and the stack's share of the window commands. ⌘W closes the focused panel of the
  * destination on screen, and ⌘[ / ⌘] (and the mouse buttons) walk its history, before the old
- * views' own handlers; with the root focused, both fall through to them.
+ * views' own handlers; with the root focused, both fall through to them. The `dispatch` it returns
+ * asks the panels that hold unsaved work before a move would unmount them.
  */
 export interface Workspace {
   workspace: WorkspaceState;
@@ -32,17 +34,11 @@ export function focusedPanel(state: WorkspaceState): number | null {
 
 export function useWorkspace(options: { commands?: boolean } = {}): Workspace {
   const commands = options.commands ?? true;
-  const [workspace, dispatchToState] = useReducer(
+  const [workspace, rawDispatch] = useReducer(
     (state: WorkspaceState, action: WorkspaceAction) => reduce(state, action),
     undefined,
     () => loadWorkspace()
   );
-  // An address that names a Settings section or setting also tells Settings, which reads its own
-  // section (the state keeps only that the place is Settings).
-  const dispatch = useCallback<Dispatch<WorkspaceAction>>((action) => {
-    announceSettingsAddress(action);
-    dispatchToState(action);
-  }, []);
   const [saver] = useState(() => createWorkspaceSaver());
   useEffect(() => {
     saver.save(workspace);
@@ -64,6 +60,17 @@ export function useWorkspace(options: { commands?: boolean } = {}): Workspace {
   useEffect(() => {
     latest.current = workspace;
   }, [workspace]);
+  // Every move asks the panels that would lose unsaved work first (panel-guards.ts).
+  const dispatch = useCallback<Dispatch<WorkspaceAction>>((action) => {
+    guardedMove(latest.current, action, () => {
+      // A move that follows in the same tick (a link's "go", then "open") reads this one's result.
+      latest.current = reduce(latest.current, action);
+      // An address that names a Settings section or setting also tells Settings, which reads its
+      // own section (the state keeps only that the place is Settings).
+      announceSettingsAddress(action);
+      rawDispatch(action);
+    });
+  }, []);
   useEffect(() => {
     if (!commands) return undefined;
     const offClose = subscribeClosePanel(() => {

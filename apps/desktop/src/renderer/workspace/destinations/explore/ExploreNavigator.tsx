@@ -1,0 +1,70 @@
+import type { Dispatch } from "react";
+import { formatObjectAddress, parseObjectAddress } from "@app/domain";
+import type { Translator } from "@app/i18n";
+
+import { TopicNavigator } from "../../../components/topics/TopicNavigator";
+import { tierFor } from "../../layout-config";
+import { useViewportWidth } from "../../use-workspace";
+import type { WorkspaceAction, WorkspaceState } from "../../state";
+
+/**
+ * Explore's navigator (design record 5.3): the topic tree hosted in the navigator column. A click
+ * on a topic, a note or a source opens it beside the focused panel of Explore's stack and never
+ * leaves Explore; the tree follows the top panel when it is a topic; "Show only this branch"
+ * hoists the tree to a topic, and the breadcrumb at its top brings the whole tree back.
+ */
+
+/** The topic the top panel of Explore shows, which the tree follows; null for another kind. */
+export function followedTopic(workspace: WorkspaceState): string | null {
+  const stack = workspace.stacks.explore;
+  const panel = stack.panels[stack.focus];
+  const address = panel?.history[panel.index];
+  const parsed = address ? parseObjectAddress(address) : null;
+  return parsed?.kind === "topic" ? parsed.id : null;
+}
+
+/** The hoist the "Show only this branch" command applies: the topic in the top panel, else none. */
+export function hoistAction(workspace: WorkspaceState): WorkspaceAction | null {
+  const topicId = followedTopic(workspace);
+  return topicId === null ? null : { type: "hoist", topicId };
+}
+
+export interface ExploreNavigatorProps {
+  t: Translator;
+  workspace: WorkspaceState;
+  dispatch: Dispatch<WorkspaceAction>;
+  /** Whether Explore's root is on screen beside the tree; by default, when no panel is open. */
+  rootShown?: boolean | undefined;
+}
+
+export function ExploreNavigator({ t, workspace, dispatch, rootShown }: ExploreNavigatorProps) {
+  // At 960-1179 px a row's count shows on hover, focus and the open row (design record 5.3).
+  const compact = tierFor(useViewportWidth()).name === "compact";
+  const openBeside = (address: string) =>
+    dispatch({
+      type: "open",
+      address,
+      from: workspace.stacks.explore.focus,
+      mode: "push"
+    });
+  return (
+    <TopicNavigator
+      t={t}
+      active
+      selectedTopicId={followedTopic(workspace)}
+      quietCounts={compact}
+      // With no panel open Explore's root is on screen, and it carries the retry of a failed read.
+      retryBeside={rootShown ?? workspace.stacks.explore.panels.length === 0}
+      hoistId={workspace.hoist}
+      onExitHoist={() => dispatch({ type: "hoist", topicId: null })}
+      onOpenTopic={(id) => openBeside(formatObjectAddress({ kind: "topic", id }))}
+      onOpenSource={(sourceItemId, atomicNoteId) =>
+        openBeside(
+          atomicNoteId
+            ? formatObjectAddress({ kind: "note", id: atomicNoteId })
+            : formatObjectAddress({ kind: "source", id: sourceItemId })
+        )
+      }
+    />
+  );
+}

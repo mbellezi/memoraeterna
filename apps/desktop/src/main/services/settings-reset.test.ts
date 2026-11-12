@@ -246,11 +246,18 @@ describe("settings.describe", () => {
 
   it("marks a value away from its default and names the default", async () => {
     const { reset, settings } = await setup();
-    await settings.updateApp({ themeMode: "dark", summaryMinimumWordCount: 120 });
+    await settings.updateApp({ themeMode: "light", summaryMinimumWordCount: 120 });
     expect(await described(reset, "themeMode")).toEqual({
       id: "themeMode",
-      value: "dark",
-      default: "system",
+      value: "light",
+      default: "dark",
+      changed: true
+    });
+    // A stored "system" is a choice away from the new default too.
+    await settings.updateApp({ themeMode: "system" });
+    expect(await described(reset, "themeMode")).toMatchObject({
+      value: "system",
+      default: "dark",
       changed: true
     });
     expect(await described(reset, "summaryMinimumWordCount")).toMatchObject({
@@ -466,7 +473,7 @@ describe("settings.reset", () => {
   it("writes nothing and announces nothing for a setting that holds its default", async () => {
     const { reset, published, events, world } = await setup();
     const before = await reset.describe();
-    expect(await reset.reset({ id: "themeMode" })).toEqual({ id: "themeMode", value: "system" });
+    expect(await reset.reset({ id: "themeMode" })).toEqual({ id: "themeMode", value: "dark" });
     expect(await reset.reset({ id: "ai.preset.v1" })).toEqual({ id: "ai.preset.v1", value: null });
     expect(published).toEqual([]);
     expect(settingsEvents(events)).toEqual([]);
@@ -476,14 +483,14 @@ describe("settings.reset", () => {
 
   it("app-preference: puts a preference back through updateApp, and the settings service announces it", async () => {
     const { reset, settings, events, published } = await setup();
-    await settings.updateApp({ themeMode: "dark", contentLanguage: "es" });
+    await settings.updateApp({ themeMode: "light", contentLanguage: "es" });
     events.length = 0;
-    expect(await reset.reset({ id: "themeMode" })).toEqual({ id: "themeMode", value: "system" });
+    expect(await reset.reset({ id: "themeMode" })).toEqual({ id: "themeMode", value: "dark" });
     expect(await reset.reset({ id: "contentLanguage" })).toEqual({
       id: "contentLanguage",
       value: "pt-BR"
     });
-    expect((await settings.getApp()).themeMode).toBe("system");
+    expect((await settings.getApp()).themeMode).toBe("dark");
     expect(settingsEvents(events)).toEqual([
       { type: "settings.changed", stores: ["app"], keys: ["themeMode"] },
       { type: "settings.changed", stores: ["app"], keys: ["contentLanguage"] }

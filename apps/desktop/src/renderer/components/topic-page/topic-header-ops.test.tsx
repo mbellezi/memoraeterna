@@ -44,7 +44,7 @@ function render(
         t={t}
         snapshot={snapshot}
         active
-        actions={{ openTopic: noop, openNote: noop, openSource: noop }}
+        actions={{ openTopic: noop, openNote: noop, openSource: noop, openAddress: noop }}
         openFailed={false}
         onRetry={noop}
         onUndo={noop}

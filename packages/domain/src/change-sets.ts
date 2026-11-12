@@ -126,6 +126,8 @@ export const changeSetConfig: ChangeSetConfig = ChangeSetConfigSchema.parse({});
 export const changeSetReadLimits = {
   pageDefault: 50,
   pageMax: 50,
+  /** `changes.forObject`: the History tab of the context panel lists the last twenty. */
+  objectMax: 20,
   cursorMax: 200,
   originMax: 40,
   blockersMax: 20,

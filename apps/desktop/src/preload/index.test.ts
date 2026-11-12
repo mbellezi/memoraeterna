@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { beforeAll, describe, expect, it, vi } from "vitest";
 
 import { ipcChannels, type DesktopApi } from "../shared/ipc.js";
+import { dropChannels } from "../shared/ipc-drop.js";
 import { entitiesChannels } from "../shared/ipc-entities.js";
 import { homeChannels } from "../shared/ipc-home.js";
 import { libraryChannels } from "../shared/ipc-library.js";
@@ -43,7 +44,8 @@ vi.mock("electron", () => ({
     prependListener: electron.record,
     prependOnceListener: electron.record,
     removeListener: vi.fn()
-  }
+  },
+  webUtils: { getPathForFile: () => "" }
 }));
 
 const note = "memora://note/00000000-0000-4000-8000-000000000001";
@@ -101,6 +103,15 @@ describe("the preload's window.app (F5 T170)", () => {
       questionsChannels.ask,
       questionsChannels.cancel
     ]);
+  });
+
+  it("exposes the drop bridge, which refuses an item with no path before asking main", async () => {
+    expect(typeof app.ingestion.prepareDroppedFiles).toBe("function");
+    electron.invoke.mockClear();
+    const results = await app.ingestion.prepareDroppedFiles([{ name: "colada.png" }]);
+    expect(results).toEqual([{ status: "refused", name: "colada.png", reason: "notAFile" }]);
+    expect(electron.invoke).not.toHaveBeenCalled();
+    expect(Object.values(ipcChannels)).toContain(dropChannels.prepare);
   });
 
   it("refuses a malformed request before anything is sent", async () => {
@@ -211,14 +222,14 @@ describe("the area channels in ipcChannels", () => {
 const pushChannels = [
   ipcChannels.appEvents,
   ipcChannels.menuCommand,
-  ipcChannels.obsidianDeepLink,
+  ipcChannels.deepLinkOpen,
   ipcChannels.windowNavigation
 ].sort();
 
 describe("the push channels the preload listens on (F5 D16, T125)", () => {
   it("are, in the source, the bus, the menu, the window navigation and the deep link, and no other", () => {
     const allowed = new Set(
-      ["appEvents", "menuCommand", "obsidianDeepLink", "windowNavigation"].map(
+      ["appEvents", "menuCommand", "deepLinkOpen", "windowNavigation"].map(
         (name) => `ipcChannels.${name}`
       )
     );
@@ -260,7 +271,7 @@ describe("the push channels the preload listens on (F5 D16, T125)", () => {
     visit(exposed, 0);
     exposed.system.subscribeNavigation(noop);
     exposed.menu.subscribeCommand(noop);
-    exposed.obsidian.onOpen(noop);
+    exposed.deepLink.onOpen(noop);
     expect([...new Set(electron.listened)].sort()).toEqual(pushChannels);
   });
 });

@@ -1537,7 +1537,7 @@ export function KnowledgeGraphDashboard({
         </div>
       </header>
 
-      <div className="relative min-h-0 flex-1 graph-surface">
+      <div className="dark relative min-h-0 flex-1 graph-surface">
         <div
           ref={containerRef}
           className="absolute inset-0"
@@ -2493,7 +2493,7 @@ function SourceHierarchyPreviewGraph({
   }, [bundle, forces, onOpenSource, wheelZoomSensitivity, graphPopup, dismissConnectionRef]);
 
   return (
-    <div className="relative h-full overflow-hidden graph-surface">
+    <div className="dark relative h-full overflow-hidden graph-surface">
       <div
         ref={containerRef}
         className="absolute inset-0"

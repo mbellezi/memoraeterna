@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { AtomicNoteRelationTypeSchema } from "@app/domain";
 import { createTranslator, supportedLanguageCodes } from "@app/i18n";
 
+import { relationBranchStance } from "../../shared/ipc-relations-branch";
 import { relationPairArrow, relationTypeView, stanceTextClass, stances } from "./relation-stance";
 
 describe("relation pair arrow", () => {
@@ -76,5 +77,12 @@ describe("relation stance map", () => {
       example_of: "text-stance-example-of",
       related: "text-stance-related"
     });
+  });
+});
+
+describe("one stance map", () => {
+  it("reads a type's stance from the map the main process uses, a new type included", () => {
+    for (const type of [...AtomicNoteRelationTypeSchema.options, "contrasts", "a_new_type"])
+      expect(relationTypeView(type).stance, type).toBe(relationBranchStance(type));
   });
 });

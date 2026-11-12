@@ -43,7 +43,7 @@ function render(
         t={t}
         snapshot={snapshot(load, state)}
         active
-        actions={{ openTopic: noop, openNote: noop, openSource: noop }}
+        actions={{ openTopic: noop, openNote: noop, openSource: noop, openAddress: noop }}
         openFailed={false}
         onRetry={noop}
         onUndo={noop}
@@ -129,7 +129,7 @@ describe("Topic page header", () => {
     expect(text(html)).toContain("23 notes");
     expect(text(html)).toContain("4 sources");
     expect(text(html)).toContain("2 subtopics");
-    expect(html).toContain("Good health");
+    expect(html).toContain("balanced size");
     expect(html).toContain("Also called: Ebbinghaus curve, memory decay");
   });
 
@@ -402,7 +402,7 @@ describe("Topic page side column", () => {
 
 describe("Topic page slots", () => {
   it("leaves the overview slot empty for the task that fills it", () => {
-    const actions = { openTopic: noop, openNote: noop, openSource: noop };
+    const actions = { openTopic: noop, openNote: noop, openSource: noop, openAddress: noop };
     const topic = { id: topicFixtureId(3), title: "Forgetting curve" };
     expect(
       renderToString(

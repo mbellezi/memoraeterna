@@ -1,15 +1,8 @@
 import type { ReactNode } from "react";
-import { ChevronDown, Plus, Search } from "lucide-react";
+import { Search } from "lucide-react";
 import type { Translator } from "@app/i18n";
 
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger
-} from "../components/ui/dropdown-menu";
 import { Kbd } from "../components/ui/kbd";
-import { Tooltip } from "../components/ui/tooltip";
 import { cn } from "../lib/cn";
 import { useOverflowLevel } from "../lib/use-overflow-level";
 
@@ -21,10 +14,8 @@ export interface TitleBarProps {
   onOpenPalette: () => void;
   /** The status slot: the Activity pill and its drawer. */
   status: ReactNode;
-  /** Adicionar. T150 passes its split button with the import menu; the default stands until then. */
-  add?: ReactNode;
-  onAdd: () => void;
-  onAddMore: () => void;
+  /** Adicionar: the split button with its menu (`add/AddMenu.tsx`). */
+  add: ReactNode;
 }
 
 /**
@@ -35,15 +26,7 @@ export interface TitleBarProps {
  * `titleBarLayout` (`shell-model.ts`): the trigger keeps its floor of `--omni-min`, and the status
  * slot truncates inside the pill and never covers it.
  */
-export function TitleBar({
-  t,
-  title,
-  onOpenPalette,
-  status,
-  add,
-  onAdd,
-  onAddMore
-}: TitleBarProps) {
+export function TitleBar({ t, title, onOpenPalette, status, add }: TitleBarProps) {
   return (
     <header
       aria-label={t("workspace.regions.titleBar")}
@@ -81,7 +64,7 @@ export function TitleBar({
       >
         {status}
       </div>
-      {add ?? <AddSplitButton t={t} onAdd={onAdd} onAddMore={onAddMore} />}
+      {add}
     </header>
   );
 }
@@ -109,68 +92,5 @@ function OmniLabel({ t }: { t: Translator }) {
         {level === 0 ? full : short}
       </span>
     </span>
-  );
-}
-
-/**
- * Adicionar as an outlined split button: the main part adds a source (the file picker, Cmd-N) and a
- * 24 px chevron part opens the menu of other ways. Each part has its own focus ring and name.
- */
-function AddSplitButton({
-  t,
-  onAdd,
-  onAddMore
-}: {
-  t: Translator;
-  onAdd: () => void;
-  onAddMore: () => void;
-}) {
-  return (
-    <div
-      className={cn(
-        "inline-flex h-8 shrink-0 items-stretch rounded-lg border border-border-strong bg-surface",
-        "text-sm font-medium text-foreground"
-      )}
-    >
-      <Tooltip label={t("workspace.titleBar.addSource")} shortcut="⌘N">
-        <button
-          type="button"
-          aria-label={t("workspace.titleBar.addSource")}
-          aria-keyshortcuts="Meta+N"
-          className={cn(
-            "inline-flex items-center gap-2 rounded-l-lg px-3 transition-colors hover:bg-surface-hover",
-            "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-          )}
-          onClick={onAdd}
-        >
-          <Plus aria-hidden="true" className="size-4" />
-          {t("workspace.titleBar.add")}
-        </button>
-      </Tooltip>
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <button
-            type="button"
-            aria-label={t("workspace.titleBar.addMore")}
-            className={cn(
-              "inline-flex w-6 items-center justify-center rounded-r-lg border-l border-border",
-              "text-secondary-foreground transition-colors hover:bg-surface-hover",
-              "data-[state=open]:bg-accent-soft data-[state=open]:text-accent",
-              "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-            )}
-          >
-            <ChevronDown aria-hidden="true" className="size-3.5" />
-          </button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
-          <DropdownMenuItem shortcut="⌘N" onSelect={onAdd}>
-            {t("workspace.titleBar.addFile")}
-          </DropdownMenuItem>
-          <DropdownMenuItem onSelect={onAddMore}>
-            {t("workspace.titleBar.addMoreOptions")}
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
-    </div>
   );
 }

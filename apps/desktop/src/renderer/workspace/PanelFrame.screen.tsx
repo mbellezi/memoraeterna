@@ -25,6 +25,8 @@ export const fixtures: ScreenModule["fixtures"] = {
 function FramedPanel() {
   const [state, setState] = useState<PanelLoadState>("loading");
   const [focusMode, setFocusMode] = useState(false);
+  // The object starts pinned, so the capture shows the pressed pin; the button toggles it.
+  const [pinned, setPinned] = useState(true);
   const report = useCallback((next: PanelLoadState) => setState(next), []);
   const width = useViewportWidth();
   // The top panel beside one spine, with the layout constants the shell writes.
@@ -52,7 +54,8 @@ function FramedPanel() {
           onClose={noop}
           focusMode={focusMode}
           onToggleFocusMode={() => setFocusMode((value) => !value)}
-          onPin={noop}
+          onPin={() => setPinned((value) => !value)}
+          pinned={pinned}
           onOpen={noop}
         >
           <StandInPage
