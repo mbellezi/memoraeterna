@@ -244,6 +244,11 @@ test("J3 read topic: a navigator topic, its member note beside it, back within t
     test
       .info()
       .annotations.push({ type: "overview", description: topicPage?.overview?.status ?? "unread" });
+    // The overview region stands in the panel in whichever of its states (ready, absent, writing).
+    await expect(
+      topic.locator("section[aria-busy][aria-labelledby]").first(),
+      "the Topic panel has no overview region"
+    ).toBeVisible({ timeout: 30_000 });
     const members = topic.locator("button:has(svg.text-object-note)");
     await expect(members.first(), "the Topic panel lists no member note").toBeVisible({
       timeout: 30_000
@@ -372,9 +377,9 @@ test("J3 path with 0 clicks (X2): each of the five kinds shows the path of objec
           );
           return list.items.find((item) => item.id === asked.questionId)?.status ?? "missing";
         },
-        { message: "the Question never left running", timeout: 120_000 }
+        { message: "the Question did not complete", timeout: 120_000 }
       )
-      .not.toBe("running");
+      .toBe("complete");
 
     const targets: { kind: Kind; id: string; query: string }[] = [
       { kind: "source", id: source!.id, query: source!.title },
@@ -396,10 +401,12 @@ test("J3 path with 0 clicks (X2): each of the five kinds shows the path of objec
     for (const target of targets) {
       const want = address(target.kind, target.id);
       const located = await locate(page, want);
-      // A Question with no citations has no place: locate answers null and the ribbon says it is unsorted.
-      if (!located && target.kind !== "question")
-        throw new Error(`objects.locate found nothing for ${want}`);
-      const expected = located ? expectedSegments(located) : [];
+      // Every kind has a place: the answer of the Question cites a placed note, so locate must answer for it.
+      if (!located) throw new Error(`objects.locate found nothing for ${want}`);
+      const expected = expectedSegments(located);
+      if (target.kind === "question")
+        expect(expected.length, "the Question's path is empty: its answer cites no placed note")
+          .toBeGreaterThan(0);
       if (target.kind === "note")
         expect
           .soft(below.belowLevelOne, "BASE-J's tree has no note below level 1 (X2's [I])")
@@ -418,6 +425,11 @@ test("J3 path with 0 clicks (X2): each of the five kinds shows the path of objec
           await expect(choice, `Cmd-K did not list the ${target.kind}`).toBeVisible({
             timeout: 30_000
           });
+          // X12: the open palette, with its results, is a step of its own.
+          if (route === "Cmd-K") {
+            step += 1;
+            await captureAndCheck(session, "j3-x2", step, `${target.kind}-palette`);
+          }
           await choice.click();
         }
         const panel = await expectPanelUp(page, target.kind);
@@ -433,6 +445,13 @@ test("J3 path with 0 clicks (X2): each of the five kinds shows the path of objec
           gesturesToRibbon: gesturesAfter - gesturesBefore,
           gesturesToOpen: gesturesBefore
         });
+        if (target.kind === "question")
+          expect
+            .soft(
+              { state, segments: segments.length > 0 },
+              `question by ${route}: the ribbon shows no path`
+            )
+            .toEqual({ state: expect.stringMatching(/^(placed|tentative)$/u), segments: true });
         // The path is there with no gesture beyond the opening, and it is the path of locate.
         expect
           .soft(gesturesAfter, `${target.kind} by ${route}: a gesture was needed`)

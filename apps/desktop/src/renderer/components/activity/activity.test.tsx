@@ -163,6 +163,8 @@ describe("the Activity pill", () => {
     expect(html).toContain(" · 2 waiting");
     expect(html).toContain('data-fit="pill"');
     expect(html).toContain('data-fit-level="0"');
+    // The journeys read the glyph the pill draws from this attribute.
+    expect(html).toContain('data-glyph="working"');
     expect(html).toContain("2 need you");
   });
 

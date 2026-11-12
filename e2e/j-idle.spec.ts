@@ -14,7 +14,9 @@
 //   - the renderer listens to every bus event type from the start (a recorder installed with
 //     `page.evaluate`, which stamps each event with `Date.now()`, the clock main's trace uses too);
 //   - Knowledge controls are paused on a BASE-J clone: no background work starts by itself.
-// A place whose surface never leaves `loading` is a failure of the journey, not an idle window.
+// A place whose surface never leaves `loading`, or rests in `error` (or `empty`, but for the Inbox), is a
+// failure of the journey, not an idle window: a poller lives in the success list, so only a loaded
+// place proves anything. The report records the state each place measured.
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
@@ -69,17 +71,19 @@ interface Place {
   id: string;
   /** The key that reaches it (Cmd-1..5 in rail order, Cmd-, for Settings). */
   key: string;
-  /** The root surface the frame reports, or null for Settings (the rail marks it current). */
-  surface: string | null;
+  /** The root surface the frame reports. */
+  surface: string;
+  /** Another loaded state the place may rest in on BASE-J (an empty Inbox is a place at rest); success is the rule. */
+  alsoLoaded?: "empty";
 }
 
 const places: readonly Place[] = [
   { id: "home", key: "Meta+1", surface: "destination-home" },
   { id: "explore", key: "Meta+2", surface: "destination-explore" },
   { id: "library", key: "Meta+3", surface: "destination-library" },
-  { id: "inbox", key: "Meta+4", surface: "destination-inbox" },
+  { id: "inbox", key: "Meta+4", surface: "destination-inbox", alsoLoaded: "empty" },
   { id: "map", key: "Meta+5", surface: "destination-map" },
-  { id: "settings", key: "Meta+,", surface: null }
+  { id: "settings", key: "Meta+,", surface: "settings" }
 ];
 
 /** The rail button of Settings carries Cmd-, as its key shortcut; it is the current place when open. */
@@ -113,6 +117,10 @@ interface WindowReport {
   place: string;
   /** Invocations main saw in the window. */
   invocations: number;
+  /** The state the place rested in (the frame's `data-state`). */
+  state: string;
+  /** Invocations main saw from the place's own load (the positive control: the trace records). */
+  loadInvocations: number;
   /** The bus events the renderer heard in the window. */
   busEvents: number;
   /** Invocations no cause explains, by channel (the bar is none). */
@@ -143,16 +151,23 @@ test("J-idle: 60 s idle in each destination and Settings, no invocation without 
       index += 1;
       gestureTimes.push(Date.now());
       await pressShortcut(session, place.key);
-      if (place.surface)
-        await expect(
-          page.locator(`[data-surface="${place.surface}"]:not([data-state="loading"])`).first(),
-          `${place.id} never left loading`
-        ).toBeVisible({ timeout: 60_000 });
-      else await expect(page.locator(settingsCurrent)).toBeVisible({ timeout: 60_000 });
+      const surface = page.locator(`[data-surface="${place.surface}"]`).first();
+      await expect(surface, `${place.id} never left loading`).not.toHaveAttribute(
+        "data-state",
+        "loading",
+        { timeout: 60_000 }
+      );
+      // An error or empty place has no poller to catch: only a loaded place is an idle window.
+      const state = (await surface.getAttribute("data-state")) ?? "";
+      expect(
+        ["success", place.alsoLoaded].includes(state as never),
+        `${place.id} rested in "${state}", not a loaded state: its idle window would prove nothing`
+      ).toBe(true);
+      if (place.id === "settings") await expect(page.locator(settingsCurrent)).toBeVisible();
 
       const step = await captureStep(session, "j-idle", index, place.id);
       // Settings is J7's (T174): its contrast is recorded here, never asserted.
-      if (place.surface !== null)
+      if (place.id !== "settings")
         for (const theme of ["light", "dark"] as const)
           expect
             .soft(
@@ -166,6 +181,12 @@ test("J-idle: 60 s idle in each destination and Settings, no invocation without 
       await setTheme(session, "light");
       await page.waitForTimeout(settleMs);
 
+      // Positive control: the place's own load went through the trace, so a silent window is a real 0.
+      const loadInvocations = ((await readIpcTrace(electronApp))?.entries ?? []).length;
+      if (index === 1)
+        expect(loadInvocations, "the trace saw nothing of the first place's own load").toBeGreaterThan(
+          0
+        );
       const cleared = await clearIpcTrace(electronApp);
       expect(cleared, "the IPC trace cannot be cleared").toBe(true);
       const startedAt = Date.now();
@@ -181,6 +202,8 @@ test("J-idle: 60 s idle in each destination and Settings, no invocation without 
       const uncaused = uncausedInvocations(entries, causes, causeWindowMs);
       reports.push({
         place: place.id,
+        state,
+        loadInvocations,
         invocations: entries.length,
         busEvents: bus.filter((event) => event.at >= startedAt).length,
         uncaused: uncaused.map((entry) => ({

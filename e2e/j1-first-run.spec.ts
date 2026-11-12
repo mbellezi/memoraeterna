@@ -287,6 +287,8 @@ test("J1 first run: onboarding, Home as the first-run surface, the first source 
     });
     await expect(page.locator('[data-surface="shell"]')).toHaveCount(0);
     await expect(page.locator("main form select")).toHaveCount(2, { timeout: 60_000 });
+    // X12 scans the first-run view too: the languages step stands in both themes.
+    await captureAndCheck(session, 0, "first-run-languages");
     await page.locator("main form select").nth(1).selectOption(contentLanguage);
     await page.locator("main form button[type=submit]").click();
     // The step saved: the settings hold the content language the form was given.
@@ -318,7 +320,7 @@ test("J1 first run: onboarding, Home as the first-run surface, the first source 
         (buttons) =>
           buttons
             .map((button) => button.getAttribute("aria-keyshortcuts") ?? "")
-            .filter((keys) => /^Meta\+[1-5]$/u.test(keys)).length
+            .filter((keys) => /^Meta\+\d+$/u.test(keys)).length
       );
     expect(destinations, "X7: the rail's destinations").toBe(5);
     lap("homeFirstRun");

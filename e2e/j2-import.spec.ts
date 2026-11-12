@@ -102,10 +102,8 @@ async function jobs(page: Page): Promise<{ at: number; active: number }[]> {
 async function pillGlyph(page: Page): Promise<string | null> {
   const pill = page.locator('[data-status] [data-fit="pill"]').first();
   if ((await pill.count()) === 0) return null;
-  return pill
-    .locator("svg")
-    .first()
-    .evaluate((svg) => svg.getAttribute("class") ?? "");
+  // The pill names the glyph it draws: working (the running ring), check, waiting, attention, error, loading.
+  return pill.getAttribute("data-glyph");
 }
 
 /** One step in both themes, contrast scanned (X12, soft: every step is walked); leaves the light theme. */
@@ -217,7 +215,13 @@ test("J2 import to tree: Add through Cmd-N pushes the Source at once and its not
     const known = new Set(sourcesBefore.map((row) => row.id));
     const added = afterImport.filter((row) => !known.has(row.id));
     expect(added, "the import stored no new source").not.toHaveLength(0);
-    const running = await pillGlyph(page);
+    // While the import's jobs are active the pill draws the running ring.
+    await expect
+      .poll(() => pillGlyph(page), {
+        message: "the Activity pill never drew the running ring while the import worked",
+        timeout: 60_000
+      })
+      .toBe("working");
     await captureAndCheck(session, 1, "source-pushed");
 
     // The first note with its path: X1's end. The chip equals objects.locate(primary).
@@ -253,19 +257,18 @@ test("J2 import to tree: Add through Cmd-N pushes the Source at once and its not
 
     // The work behind it settles; the pill went from running to done.
     const settled = await waitForSettled(db, { timeoutMs: 60 * 60_000 });
-    const done = await (async () => {
-      await expect
-        .poll(async () => (await jobs(page)).at(-1)?.active ?? -1, { timeout: 60_000 })
-        .toBe(0);
-      return pillGlyph(page);
-    })();
+    await expect
+      .poll(async () => (await jobs(page)).at(-1)?.active ?? -1, { timeout: 60_000 })
+      .toBe(0);
+    await expect
+      .poll(() => pillGlyph(page), {
+        message: "the Activity pill did not draw the check once the work settled",
+        timeout: 60_000
+      })
+      .toBe("check");
     const events = await jobs(page);
     const sawRunning = events.some((event) => event.active > 0);
     expect(sawRunning, "the bus never reported work in the import").toBe(true);
-    expect(running, "the Activity pill is not in the status slot").not.toBeNull();
-    expect(done, "the Activity pill drew the same glyph while running and when done").not.toBe(
-      running
-    );
     const notes = await countRows(db, "atomic_notes");
     await invokeApp(page, "knowledgeControls.update", { paused: true, autonomy: "off" });
 
@@ -277,7 +280,7 @@ test("J2 import to tree: Add through Cmd-N pushes the Source at once and its not
       pushedAfterMs,
       chip,
       notes,
-      pill: { running, done },
+      pill: { running: "working", done: "check" },
       jobEvents: events.length,
       setAside: settled.setAside,
       misses: { count: missed, byTask: missesAfter.byTask }
