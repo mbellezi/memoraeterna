@@ -193,7 +193,11 @@ function relationItem(row: InboxRowKey, lookups: Lookups): InboxItem | null {
     risk: row.risk,
     variant: withdrawn ? pickVariant("withdrawn", relation.vetoSource, "unknown") : "relation",
     at: row.at,
-    params: { relationType: relation.relationType },
+    // A suggestion's sentence names how sure the decider was; null stays null (unknown, D33).
+    params:
+      row.kind === "suggestion"
+        ? { relationType: relation.relationType, probability: relation.probability }
+        : { relationType: relation.relationType },
     objects: [
       { kind: "note", id: relation.sourceNote.id, title: relation.sourceNote.title },
       { kind: "note", id: relation.targetNote.id, title: relation.targetNote.title }
@@ -297,7 +301,7 @@ export async function inboxItems(pool: PgPool, rows: readonly InboxRowKey[]): Pr
   const divergenceIds = ofKind("contradiction").flatMap(
     (row) => parseDivergenceItemId(row.id) ?? []
   );
-  const relationIds = ofKind("contradiction", "withdrawn")
+  const relationIds = ofKind("contradiction", "suggestion", "withdrawn")
     .filter((row) => parseDivergenceItemId(row.id) === null)
     .map((row) => row.id);
   const findingIds = [
@@ -370,7 +374,7 @@ export async function inboxItems(pool: PgPool, rows: readonly InboxRowKey[]): Pr
           ? quarantinedItem(row, lookups)
           : row.kind === "contradiction" && parseDivergenceItemId(row.id) !== null
             ? divergenceItem(row, lookups)
-            : row.kind === "contradiction" || row.kind === "withdrawn"
+            : row.kind === "contradiction" || row.kind === "suggestion" || row.kind === "withdrawn"
               ? relationItem(row, lookups)
               : findingItem(row, lookups);
     if (item) items.push(item);
