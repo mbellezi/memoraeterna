@@ -50,13 +50,13 @@ describe("the theme choice in Settings", () => {
     }
   });
 
-  it("starts on System for a new install and on the stored choice otherwise", () => {
-    expect(defaultAppSettings.themeMode).toBe("system");
+  it("starts on Dark for a new install and on the stored choice otherwise", () => {
+    expect(defaultAppSettings.themeMode).toBe("dark");
     expect(render(defaultAppSettings.themeMode)).toMatch(
-      /aria-label="System"[^>]*aria-pressed="true"/u
+      /aria-label="Dark"[^>]*aria-pressed="true"/u
     );
-    expect(render("dark")).toMatch(/aria-label="Dark"[^>]*aria-pressed="true"/u);
-    expect(render("dark")).toMatch(/aria-label="System"[^>]*aria-pressed="false"/u);
+    expect(render("system")).toMatch(/aria-label="System"[^>]*aria-pressed="true"/u);
+    expect(render("system")).toMatch(/aria-label="Dark"[^>]*aria-pressed="false"/u);
   });
 
   it("is written in every interface language", () => {

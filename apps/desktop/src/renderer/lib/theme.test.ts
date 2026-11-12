@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import {
   applyRememberedTheme,
   applyTheme,
+  defaultThemePreference,
   parseThemePreference,
   readRememberedTheme,
   readSystemPrefersDark,
@@ -253,12 +254,24 @@ describe("the remembered theme", () => {
     expect([...system.classes]).toEqual(["dark"]);
   });
 
-  it("leaves the root alone when nothing is remembered or storage fails", () => {
+  it("draws the default dark theme from the first frame when nothing is remembered", () => {
+    // A first launch on a light macOS, and a blocked or empty store, all open dark: never light
+    // first and dark after the settings load.
     for (const storage of [fakeStorage().storage, throwing, null]) {
-      const { root, classes } = fakeRoot();
-      applyRememberedTheme(root, storage, fakeScheme(true).matchMedia);
-      expect([...classes]).toEqual([]);
-      expect(root.style.colorScheme).toBe("");
+      for (const osDark of [false, true]) {
+        const { root, classes } = fakeRoot();
+        applyRememberedTheme(root, storage, fakeScheme(osDark).matchMedia);
+        expect([...classes]).toEqual(["dark"]);
+        expect(root.style.colorScheme).toBe("dark");
+      }
     }
+    expect(defaultThemePreference).toBe("dark");
+    const unusable = fakeRoot();
+    applyRememberedTheme(
+      unusable.root,
+      fakeStorage({ [rememberedThemeKey]: "sepia" }).storage,
+      fakeScheme(false).matchMedia
+    );
+    expect([...unusable.classes]).toEqual(["dark"]);
   });
 });

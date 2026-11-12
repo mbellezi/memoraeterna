@@ -1,0 +1,176 @@
+import { useReducer, type CSSProperties } from "react";
+
+import { historyEntry, id, nodeSummary } from "../../../components/topics/topic-fixtures";
+import { screenTranslator } from "../../screen-locale";
+import { layoutCustomProperties } from "../../shell-model";
+import { defaultWorkspace, reduce, type WorkspaceAction, type WorkspaceState } from "../../state";
+import type { ScreenModule } from "../../surfaces";
+import { useViewportWidth } from "../../use-workspace";
+import { AddSourceContext } from "../../workspace-bridge";
+import { ExploreNavigator } from "./ExploreNavigator";
+import { Component } from "./ExploreRoot";
+
+export const surface = "destination-explore";
+
+const t = screenTranslator();
+const noop = () => undefined;
+
+const area = (n: number, title: string, items: number, children: number) =>
+  nodeSummary({ id: id(n), title, items, children, directItems: 2, position: n });
+
+const tree = {
+  generation: 4,
+  parent: nodeSummary({ id: id(1), title: null, items: 412, children: 6 }),
+  nodes: [
+    area(2, "Life sciences", 128, 3),
+    area(3, "Nutrition", 96, 4),
+    area(4, "Urban planning", 84, 2),
+    area(5, "Music theory", 70, 3),
+    area(
+      6,
+      "History of science and of the scientific method in Europe, from the Renaissance on",
+      34,
+      1
+    ),
+    area(7, "Physiology", 12, 0)
+  ],
+  items: [],
+  moreItems: 0,
+  unsorted: 5,
+  nextCursor: null
+};
+
+/** One branch below "Life sciences": topics with long names, and a note and a source as leaves. */
+const lifeSciences = {
+  generation: 4,
+  parent: tree.nodes[0]!,
+  nodes: [
+    area(20, "Microbiologia dos alimentos fermentados e de conservas", 54, 2),
+    area(21, "Fermentação lática", 18, 0),
+    area(22, "Imunologia", 22, 0)
+  ],
+  items: [],
+  moreItems: 0,
+  unsorted: 0,
+  nextCursor: null
+};
+
+const nodesById = new Map(
+  [...tree.nodes, ...lifeSciences.nodes].map((node) => [node.id, node] as const)
+);
+
+/** `topics.tree` for a parent: the root's areas, a branch, or a topic with nothing below it. */
+const treeFor = ({ parentId }: { parentId?: string | null }) => {
+  if (parentId === id(2)) return lifeSciences;
+  const node = parentId ? nodesById.get(parentId) : undefined;
+  return node ? { ...lifeSciences, parent: node, nodes: [] } : tree;
+};
+
+/** `topics.path`: a topic at the top level or one below "Life sciences". */
+const pathFor = ({ id: topicId }: { id: string }) => {
+  const node = nodesById.get(topicId);
+  if (!node) return null;
+  const below = lifeSciences.nodes.some((child) => child.id === topicId);
+  return {
+    resolvedId: topicId,
+    redirectedFrom: null,
+    path: [
+      ...(below ? [{ id: id(2), title: "Life sciences" }] : []),
+      { id: topicId, title: node.title }
+    ]
+  };
+};
+
+/** The view history: "Life sciences" pinned, and a note opened last. */
+const history = [
+  historyEntry({
+    address: `memora://topic/${id(2)}`,
+    kind: "topic",
+    id: id(2),
+    title: "Life sciences",
+    pinned: true
+  }),
+  historyEntry({
+    address: `memora://note/${id(30)}`,
+    kind: "note",
+    id: id(30),
+    title: "Temperature controls the final acidity of a ferment",
+    parentAddress: `memora://source/${id(31)}`
+  })
+];
+
+const status = {
+  phase: "active" as const,
+  counts: { items: 412, placed: 407, pending: 0, needsGate: 0 }
+};
+
+export const fixtures: ScreenModule["fixtures"] = {
+  success: {
+    "topics.tree": treeFor,
+    "topics.notes": { items: [], nextCursor: null },
+    "topics.path": pathFor,
+    "topics.status": status,
+    "viewHistory.list": history
+  },
+  // An empty library: no topic and no item.
+  empty: {
+    "topics.tree": null,
+    "topics.notes": { items: [], nextCursor: null },
+    "topics.path": null,
+    "topics.status": {
+      phase: "active",
+      counts: { items: 0, placed: 0, pending: 0, needsGate: 0 }
+    },
+    "viewHistory.list": []
+  },
+  // One failing read: the tree. Pinned and Recents still load, as the sentence says.
+  error: {
+    "topics.status": status,
+    "viewHistory.list": history
+  }
+};
+
+/**
+ * Explore as the shell draws it with nothing open: its navigator and the root beside it. No row is
+ * the open one, because no panel is (the long area name shows clamped on two lines in the tree).
+ */
+function Explore() {
+  const width = useViewportWidth();
+  const [workspace, dispatch] = useReducer(
+    (state: WorkspaceState, action: WorkspaceAction) => reduce(state, action),
+    undefined,
+    () => reduce(defaultWorkspace("2026-11-12"), { type: "go", destination: "explore" })
+  );
+  return (
+    <AddSourceContext.Provider value={noop}>
+      <div
+        className="flex h-full bg-background"
+        style={layoutCustomProperties(width) as CSSProperties}
+      >
+        <aside
+          aria-label={t("workspace.navigator.label")}
+          className="flex h-full w-(--nav-w) shrink-0 flex-col border-r border-border bg-background"
+        >
+          <div className="min-h-0 flex-1 overflow-y-auto py-3 pr-2 pl-3">
+            <ExploreNavigator t={t} workspace={workspace} dispatch={dispatch} rootShown />
+          </div>
+        </aside>
+        <div className="min-w-0 flex-1">
+          <Component
+            t={t}
+            address="memora://explore"
+            mode="full"
+            active
+            onState={noop}
+            onPlace={noop}
+            onOpen={noop}
+          />
+        </div>
+      </div>
+    </AddSourceContext.Provider>
+  );
+}
+
+export function render() {
+  return <Explore />;
+}

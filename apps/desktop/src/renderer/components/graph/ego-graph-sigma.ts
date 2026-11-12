@@ -96,7 +96,7 @@ export function buildEgoSigmaGraph(model: EgoGraphModel, palette: GraphPalette):
 
 export function nodeColor(depth: 0 | 1 | 2, palette: GraphPalette): string {
   return depth === 2
-    ? blendGraphColor(palette.note, palette.canvasEdge, egoSecondRingFade)
+    ? blendGraphColor(palette.note, palette.canvas, egoSecondRingFade)
     : palette.note;
 }
 
@@ -140,10 +140,10 @@ export function nodeDisplay(
   return {
     color: emphasised
       ? base
-      : blendGraphColor(palette.note, palette.canvasEdge, 0.7, egoBackgroundOpacity),
+      : blendGraphColor(palette.note, palette.canvas, 0.7, egoBackgroundOpacity),
     labelColor: emphasised
       ? palette.label
-      : blendGraphColor(palette.labelMuted, palette.canvasEdge, 0.7, 0.4),
+      : blendGraphColor(palette.labelMuted, palette.canvas, 0.7, 0.4),
     zIndex: chosen ? 3 : emphasised ? 2 : 0,
     ...(chosen ? { forceLabel: true } : {})
   };
@@ -166,7 +166,7 @@ export function edgeDisplay(
       ? edgeColor(stance, suggested, palette)
       : blendGraphColor(
           palette.stance[stance as keyof GraphPalette["stance"]] ?? palette.stance.related,
-          palette.canvasEdge,
+          palette.canvas,
           0.7,
           egoBackgroundOpacity
         ),

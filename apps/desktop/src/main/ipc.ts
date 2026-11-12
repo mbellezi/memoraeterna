@@ -80,6 +80,8 @@ import { AiReasoningLevelSchema, SourceItemTypeSchema } from "@app/domain";
 import type { SettingsService } from "./services/settings-service";
 import type { AiService } from "./services/ai-service.js";
 import type { IngestionService } from "./services/ingestion-service.js";
+import { oneConversionAtATime, prepareDroppedFiles } from "./services/import-drop.js";
+import { PrepareDroppedInputSchema } from "../shared/ipc-drop.js";
 import type { JobSupervisor } from "./services/job-supervisor.js";
 import { canDeleteCanceledJob, canManuallyRetryJob } from "./services/job-retry.js";
 import type { SearchService } from "./services/search-service.js";
@@ -335,7 +337,9 @@ export function registerIpcHandlers(
         ...(parsed.totalPages === undefined ? {} : { totalPages: parsed.totalPages })
       });
     };
-    return ingestionService.prepareFileMetadata(path, input.sourceType, report);
+    return oneConversionAtATime(() =>
+      ingestionService.prepareFileMetadata(path, input.sourceType, report)
+    );
   });
   ipcMain.handle(ipcChannels.ingestionEnrichMetadata, (_event, payload: unknown) =>
     metadataEnrichmentService.search(metadataEnrichmentInputSchema.parse(payload))
@@ -364,6 +368,14 @@ export function registerIpcHandlers(
     const path = await chooseImportFile();
     return path ? ingestionService.importFile(path, input) : null;
   });
+  // Files dropped on the window: the preload resolved each path, main validates it and answers with a
+  // token. A dialog choice becomes a token through the same `prepareFileMetadata`.
+  ipcMain.handle(ipcChannels.ingestionPrepareDropped, (_event, payload: unknown) =>
+    prepareDroppedFiles(PrepareDroppedInputSchema.parse(payload).paths, {
+      prepare: (path) =>
+        oneConversionAtATime(() => ingestionService.prepareFileMetadata(path, "GenericDocument"))
+    })
+  );
   ipcMain.handle(ipcChannels.ingestionLookupSources, (_event, payload: unknown) => {
     const input = sourceLookupInputSchema.parse(payload);
     return ingestionService.lookupSources(input.query, input.sourceTypes);

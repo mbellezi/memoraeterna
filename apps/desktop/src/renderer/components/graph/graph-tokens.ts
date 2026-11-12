@@ -1,57 +1,90 @@
 import { stances, type Stance } from "../../lib/relation-stance";
 
 /**
- * The colours of a graph, read from the design tokens (`tokens.css`, "Graph canvas") and never
- * written here: a canvas cannot use CSS variables, so the reader resolves them through
- * `getComputedStyle` on the graph's container and hands back `#rrggbb` strings only. Anything that
- * is not exactly `#rrggbb` is refused (Sigma's colour parsing and the blends of `interaction.ts`
- * take no other form), and a token that cannot be read falls back to the value `tokens.css`
- * declares (a test keeps them equal), so a graph is never drawn with a colour nobody chose.
+ * The colours of a graph, read from the design tokens (`tokens.css`) and never written here. A
+ * graph reads the theme (design record 4.1): its canvas is the raised surface, its labels are the
+ * primary text, its lines are the stance colours and, on the Map › Grafo, a note's dot is the
+ * colour of its topic group (`--graph-topic-1..12`). A canvas cannot use CSS variables, so the
+ * reader resolves them through `getComputedStyle` on the graph's container and hands back
+ * `#rrggbb` strings only. Anything that is not exactly `#rrggbb` is refused (Sigma's colour parsing
+ * and the blends of `interaction.ts` take no other form), and a token that cannot be read falls
+ * back to the light value `tokens.css` declares (a test keeps them equal), so a graph is never
+ * drawn with a colour nobody chose.
  */
 export const graphTokenNames = {
-  canvasCenter: "--graph-canvas-center",
-  canvasEdge: "--graph-canvas-edge",
-  label: "--graph-label",
-  labelMuted: "--graph-label-muted",
-  note: "--graph-object-note"
+  canvas: "--surface-raised",
+  label: "--text-primary",
+  labelMuted: "--text-secondary",
+  note: "--object-note"
 } as const;
 
 export const graphStanceTokenNames: Readonly<Record<Stance, string>> = {
-  supports: "--graph-stance-supports",
-  contradicts: "--graph-stance-contradicts",
-  extends: "--graph-stance-extends",
-  depends_on: "--graph-stance-depends-on",
-  example_of: "--graph-stance-example-of",
-  related: "--graph-stance-related"
+  supports: "--stance-supports",
+  contradicts: "--stance-contradicts",
+  extends: "--stance-extends",
+  depends_on: "--stance-depends-on",
+  example_of: "--stance-example-of",
+  related: "--stance-related"
 };
 
-export interface GraphPalette {
-  canvasCenter: string;
-  canvasEdge: string;
-  label: string;
-  labelMuted: string;
-  /** The colour of a note (`--graph-object-note`). */
-  note: string;
-  /** The colour of each relation stance (`--graph-stance-*`). */
-  stance: Readonly<Record<Stance, string>>;
+/** How many topic colours there are; a topic group's `colourIndex` i is `--graph-topic-<i + 1>`. */
+export const graphTopicColourCount = 12;
+
+const wrap = (index: number, count: number) => ((Math.trunc(index) % count) + count) % count;
+
+/** `--graph-topic-<index + 1>`, the token of colour index `index` (taken modulo the count). */
+export function graphTopicTokenName(index: number): string {
+  return `--graph-topic-${wrap(index, graphTopicColourCount) + 1}`;
 }
 
-/** The values `tokens.css` declares, used only for a token the element cannot resolve. */
+export interface GraphPalette {
+  /** The canvas (`--surface-raised`): label halos and faded colours blend into it. */
+  canvas: string;
+  label: string;
+  labelMuted: string;
+  /** The colour of a note (`--object-note`) where no topic colours it. */
+  note: string;
+  /** The colour of each relation stance (`--stance-*`). */
+  stance: Readonly<Record<Stance, string>>;
+  /** `--graph-topic-1..12`, in order. */
+  topic: readonly string[];
+}
+
+/** The light values `tokens.css` declares, used only for a token the element cannot resolve. */
 export const fallbackGraphPalette: GraphPalette = {
-  canvasCenter: "#202b39",
-  canvasEdge: "#10151d",
-  label: "#cbd5e1",
-  labelMuted: "#94a3b8",
-  note: "#a5c862",
+  canvas: "#ffffff",
+  label: "#263140",
+  labelMuted: "#4a5668",
+  note: "#527017",
   stance: {
-    supports: "#5fd08f",
-    contradicts: "#f58b84",
-    extends: "#7db4ee",
-    depends_on: "#f0a35a",
-    example_of: "#b9a3f0",
-    related: "#9daabd"
-  }
+    supports: "#1a7345",
+    contradicts: "#b3261e",
+    extends: "#2a5f9e",
+    depends_on: "#9a4a00",
+    example_of: "#7048b8",
+    related: "#5a6577"
+  },
+  topic: [
+    "#3d6f9e",
+    "#a0522d",
+    "#3f7f4f",
+    "#7d5aa6",
+    "#7f7020",
+    "#5b6878",
+    "#4e7a28",
+    "#4a5aa8",
+    "#7c5634",
+    "#8a4a92",
+    "#1d7470",
+    "#a83a64"
+  ]
 };
+
+/** The topic colour of `colourIndex` in `palette` (the index is taken modulo the count). */
+export function topicColour(palette: GraphPalette, colourIndex: number): string {
+  if (palette.topic.length === 0) return palette.note;
+  return palette.topic[wrap(colourIndex, palette.topic.length)]!;
+}
 
 const hexColor = /^#[0-9a-fA-F]{6}$/u;
 
@@ -78,8 +111,7 @@ export function readGraphPalette(
   const color = (name: string, fallback: string) =>
     parseGraphColor(style.getPropertyValue(name)) ?? fallback;
   return {
-    canvasCenter: color(graphTokenNames.canvasCenter, fallbackGraphPalette.canvasCenter),
-    canvasEdge: color(graphTokenNames.canvasEdge, fallbackGraphPalette.canvasEdge),
+    canvas: color(graphTokenNames.canvas, fallbackGraphPalette.canvas),
     label: color(graphTokenNames.label, fallbackGraphPalette.label),
     labelMuted: color(graphTokenNames.labelMuted, fallbackGraphPalette.labelMuted),
     note: color(graphTokenNames.note, fallbackGraphPalette.note),
@@ -88,18 +120,22 @@ export function readGraphPalette(
         stance,
         color(graphStanceTokenNames[stance], fallbackGraphPalette.stance[stance])
       ])
-    ) as Record<Stance, string>
+    ) as Record<Stance, string>,
+    topic: fallbackGraphPalette.topic.map((fallback, index) =>
+      color(graphTopicTokenName(index), fallback)
+    )
   };
 }
 
 export function samePalette(left: GraphPalette, right: GraphPalette): boolean {
   return (
-    left.canvasCenter === right.canvasCenter &&
-    left.canvasEdge === right.canvasEdge &&
+    left.canvas === right.canvas &&
     left.label === right.label &&
     left.labelMuted === right.labelMuted &&
     left.note === right.note &&
-    stances.every((stance) => left.stance[stance] === right.stance[stance])
+    stances.every((stance) => left.stance[stance] === right.stance[stance]) &&
+    left.topic.length === right.topic.length &&
+    left.topic.every((colour, index) => colour === right.topic[index])
   );
 }
 
@@ -130,9 +166,8 @@ function browserThemeSource(): ThemeChangeSource {
 
 /**
  * Reads the palette again whenever the theme changes and calls `onChange` with it when a colour
- * differs, so a canvas repaints with the new colours without being rebuilt. The tokens of the graph
- * are the same in both themes today; the reader does not assume it. The returned function stops
- * watching and is safe to call twice.
+ * differs, so a canvas repaints with the new colours without being rebuilt. The returned function
+ * stops watching and is safe to call twice.
  */
 export function watchGraphPalette(
   element: Element,

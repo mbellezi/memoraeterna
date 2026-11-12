@@ -1,48 +1,43 @@
 import { z } from "zod";
+import {
+  formatObjectAddress,
+  normalizeMemoraLink,
+  ObjectAddressTextSchema,
+  type NormalizedLink
+} from "@app/domain";
+
 /**
- * What a `memora://` link from Obsidian may open: `memora://open/{wiki|source}/<id>` (with the
- * fields its kind allows) and `memora://topic/<id>`, the object address every topic map carries.
+ * What a `memora://` link from outside may do (docs/f5-decisions.md D10): open one object, or say
+ * that the page of the retired wiki it names is gone. The reading is `normalizeMemoraLink` in
+ * `@app/domain`, the one reader of these links (the canonical address with its anchors, and the
+ * legacy forms the Obsidian projections wrote); this module only gives the result the shape that
+ * crosses to the renderer on `deepLinkOpen`. A link never opens a view, a setting or anything else.
  */
-export const obsidianDeepLinkSchema = z
-  .object({
-    kind: z.enum(["wiki", "source", "topic"]),
-    id: z.string().uuid(),
-    revision: z.string().uuid().optional(),
-    evidence: z.string().uuid().optional(),
-    relation: z.string().uuid().optional()
-  })
-  .strict();
-export type ObsidianDeepLink = z.infer<typeof obsidianDeepLinkSchema>;
-export function parseObsidianDeepLink(raw: string): ObsidianDeepLink | null {
-  try {
-    const url = new URL(raw);
-    if (url.protocol !== "memora:" || url.username || url.password || url.port || url.hash)
-      return null;
-    if (url.hostname === "topic") return parseTopicRoute(url);
-    if (url.hostname !== "open") return null;
-    const [empty, kind, id, ...rest] = url.pathname.split("/");
-    // A topic has one spelling, `memora://topic/<id>`, not a second one under `open`.
-    if (empty !== "" || rest.length || kind === "topic") return null;
-    const query: Record<string, string> = {};
-    for (const [key, value] of url.searchParams) {
-      if (!["revision", "evidence", "relation"].includes(key) || key in query) return null;
-      query[key] = value;
-    }
-    if (
-      (kind === "source" && (query.revision || query.evidence)) ||
-      (kind === "wiki" && query.relation)
-    )
-      return null;
-    const result = obsidianDeepLinkSchema.safeParse({ kind, id, ...query });
-    return result.success ? result.data : null;
-  } catch {
-    return null;
-  }
+export const deepLinkSchema = z.discriminatedUnion("kind", [
+  /** An object, by its canonical address (anchors included). */
+  z.object({ kind: z.literal("object"), address: ObjectAddressTextSchema }).strict(),
+  /** A page of the retired wiki: a notice, never a page. */
+  z.object({ kind: z.literal("retired-wiki"), id: z.string().uuid() }).strict()
+]);
+export type DeepLink = z.infer<typeof deepLinkSchema>;
+
+/** Why a link was refused (the reason alone is logged: the text of a link is not). */
+export type DeepLinkRejection = Extract<NormalizedLink, { kind: "invalid" }>["reason"];
+
+export type DeepLinkReading =
+  { ok: true; link: DeepLink } | { ok: false; reason: DeepLinkRejection };
+
+/** Reads a link from outside, or says why it was refused. */
+export function readDeepLink(raw: string): DeepLinkReading {
+  const link = normalizeMemoraLink(raw);
+  if (link.kind === "invalid") return { ok: false, reason: link.reason };
+  if (link.kind === "retired-wiki")
+    return { ok: true, link: { kind: "retired-wiki", id: link.id } };
+  return { ok: true, link: { kind: "object", address: formatObjectAddress(link.address) } };
 }
-/** `memora://topic/<id>`: only the ID; a topic page has no query to carry and no anchor to open. */
-function parseTopicRoute(url: URL): ObsidianDeepLink | null {
-  const [empty, id, ...rest] = url.pathname.split("/");
-  if (empty !== "" || !id || rest.length || url.search) return null;
-  const result = obsidianDeepLinkSchema.safeParse({ kind: "topic", id: id.toLowerCase() });
-  return result.success ? result.data : null;
+
+/** The link, or null when it is not one the app opens. */
+export function parseDeepLink(raw: string): DeepLink | null {
+  const reading = readDeepLink(raw);
+  return reading.ok ? reading.link : null;
 }

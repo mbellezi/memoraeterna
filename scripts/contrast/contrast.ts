@@ -97,17 +97,10 @@ export const contract: readonly ContrastRule[] = [
     minimum: glyphMinimum
   },
   {
-    id: "graph-label",
-    description: "graph labels on the graph canvas",
-    foreground: /^--graph-label(-muted)?$/u,
-    background: /^--graph-canvas-[a-z]+$/u,
-    minimum: textMinimum
-  },
-  {
-    id: "graph-glyph",
-    description: "graph nodes and edges on the graph canvas",
-    foreground: /^--graph-(object|stance)-[a-z-]+$/u,
-    background: /^--graph-canvas-[a-z]+$/u,
+    id: "graph-topic",
+    description: "Map › Grafo topic dots on app surfaces (WCAG 1.4.11)",
+    foreground: /^--graph-topic-\d+$/u,
+    background: /^--surface-[a-z]+$/u,
     minimum: glyphMinimum
   }
 ];
@@ -115,8 +108,12 @@ export const contract: readonly ContrastRule[] = [
 /** Colour tokens that are deliberately not part of any pair (decorative separators). */
 export const decorativeTokens: ReadonlySet<string> = new Set(["--border-subtle", "--thread"]);
 
-/** Tokens drawn on the always-dark graph canvas: the same in every theme, mirroring the dark set. */
-const themeInvariantPrefix = "--graph-";
+/**
+ * Neighbouring topic colours (index i and i + 1, the last and the first) differ by at least this
+ * CIEDE2000 distance in each theme, so two sibling topics never read as one *(cal.)*.
+ */
+export const topicColourMinimumDeltaE = 20;
+const topicToken = /^--graph-topic-(\d+)$/u;
 const colourFamily = /^--(surface|text|border|accent|object|stance|state|graph)(-|$)/u;
 const hexColour = /^#(?:[0-9a-f]{3}|[0-9a-f]{4}|[0-9a-f]{6}|[0-9a-f]{8})$/iu;
 
@@ -317,14 +314,10 @@ export function checkTokens(css: string, rules: readonly ContrastRule[] = contra
       problems.push(`${name}: "${value}" is not an opaque #rgb or #rrggbb colour`);
   }
 
-  const lightOnly = [...sets.light.keys()].filter(
-    (name) => !sets.dark.has(name) && !name.startsWith(themeInvariantPrefix)
-  );
+  const lightOnly = [...sets.light.keys()].filter((name) => !sets.dark.has(name));
   for (const name of lightOnly.sort()) problems.push(`${name}: defined for light but not for dark`);
   for (const name of [...sets.dark.keys()].sort()) {
     if (!sets.light.has(name)) problems.push(`${name}: defined for dark but not for light`);
-    if (name.startsWith(themeInvariantPrefix))
-      problems.push(`${name}: graph tokens are theme-invariant and belong under :root only`);
   }
 
   const dark = effectiveTheme(sets, "dark");
@@ -332,13 +325,8 @@ export function checkTokens(css: string, rules: readonly ContrastRule[] = contra
   for (const name of sameMap(dark, systemDark))
     problems.push(`${name}: the system dark fallback differs from the .dark theme`);
 
-  for (const [name, value] of sets.light) {
-    const match = /^--graph-(object|stance)-(.+)$/u.exec(name);
-    if (!match) continue;
-    const mirrored = dark.get(`--${match[1]}-${match[2]}`);
-    if (mirrored === undefined || mirrored.toLowerCase() !== value.toLowerCase())
-      problems.push(`${name}: must mirror the dark theme's --${match[1]}-${match[2]}`);
-  }
+  for (const theme of ["light", "dark"] as const)
+    problems.push(...topicColourProblems(effectiveTheme(sets, theme), theme));
 
   const covered = new Set<string>();
   for (const theme of ["light", "dark"] as const) {
@@ -379,6 +367,112 @@ export function checkTokens(css: string, rules: readonly ContrastRule[] = contra
 
   const failures = pairs.filter((pair) => pair.ratio < pair.rule.minimum);
   return { pairs, failures, problems };
+}
+
+/** CIE L*a*b* (D65) of an sRGB colour. */
+export function rgbToLab(colour: Rgb): Lab {
+  const r = linearChannel(colour.r);
+  const g = linearChannel(colour.g);
+  const b = linearChannel(colour.b);
+  const x = (0.4124564 * r + 0.3575761 * g + 0.1804375 * b) / 0.95047;
+  const y = 0.2126729 * r + 0.7151522 * g + 0.072175 * b;
+  const z = (0.0193339 * r + 0.119192 * g + 0.9503041 * b) / 1.08883;
+  const f = (t: number) => (t > 216 / 24389 ? Math.cbrt(t) : ((24389 / 27) * t + 16) / 116);
+  return { l: 116 * f(y) - 16, a: 500 * (f(x) - f(y)), b: 200 * (f(y) - f(z)) };
+}
+
+const radians = (degrees: number) => (degrees * Math.PI) / 180;
+const degrees = (value: number) => {
+  const angle = (value * 180) / Math.PI;
+  return angle < 0 ? angle + 360 : angle;
+};
+
+export interface Lab {
+  readonly l: number;
+  readonly a: number;
+  readonly b: number;
+}
+
+/** The CIEDE2000 colour difference of two sRGB colours. */
+export function deltaE2000(first: Rgb, second: Rgb): number {
+  return deltaE2000Lab(rgbToLab(first), rgbToLab(second));
+}
+
+/** The CIEDE2000 colour difference (Sharma, Wu and Dalal's formulation). */
+export function deltaE2000Lab(one: Lab, two: Lab): number {
+  const chromaMean = (Math.hypot(one.a, one.b) + Math.hypot(two.a, two.b)) / 2;
+  const g = 0.5 * (1 - Math.sqrt(chromaMean ** 7 / (chromaMean ** 7 + 25 ** 7)));
+  const a1 = (1 + g) * one.a;
+  const a2 = (1 + g) * two.a;
+  const c1 = Math.hypot(a1, one.b);
+  const c2 = Math.hypot(a2, two.b);
+  const h1 = c1 === 0 ? 0 : degrees(Math.atan2(one.b, a1));
+  const h2 = c2 === 0 ? 0 : degrees(Math.atan2(two.b, a2));
+  const deltaL = two.l - one.l;
+  const deltaC = c2 - c1;
+  let deltaHue = 0;
+  if (c1 * c2 !== 0) {
+    deltaHue = h2 - h1;
+    if (deltaHue > 180) deltaHue -= 360;
+    else if (deltaHue < -180) deltaHue += 360;
+  }
+  const deltaH = 2 * Math.sqrt(c1 * c2) * Math.sin(radians(deltaHue / 2));
+  const lMean = (one.l + two.l) / 2;
+  const cMean = (c1 + c2) / 2;
+  let hMean = h1 + h2;
+  if (c1 * c2 !== 0) {
+    hMean = Math.abs(h1 - h2) <= 180 ? (h1 + h2) / 2 : (h1 + h2 + (h1 + h2 < 360 ? 360 : -360)) / 2;
+  }
+  const t =
+    1 -
+    0.17 * Math.cos(radians(hMean - 30)) +
+    0.24 * Math.cos(radians(2 * hMean)) +
+    0.32 * Math.cos(radians(3 * hMean + 6)) -
+    0.2 * Math.cos(radians(4 * hMean - 63));
+  const rotation = 30 * Math.exp(-(((hMean - 275) / 25) ** 2));
+  const rc = 2 * Math.sqrt(cMean ** 7 / (cMean ** 7 + 25 ** 7));
+  const sl = 1 + (0.015 * (lMean - 50) ** 2) / Math.sqrt(20 + (lMean - 50) ** 2);
+  const sc = 1 + 0.045 * cMean;
+  const sh = 1 + 0.015 * cMean * t;
+  const rt = -Math.sin(radians(2 * rotation)) * rc;
+  return Math.sqrt(
+    (deltaL / sl) ** 2 +
+      (deltaC / sc) ** 2 +
+      (deltaH / sh) ** 2 +
+      rt * (deltaC / sc) * (deltaH / sh)
+  );
+}
+
+/**
+ * The topic colours of one theme: numbered 1..n with no gap, and each one at least
+ * `topicColourMinimumDeltaE` from the next (the last from the first).
+ */
+export function topicColourProblems(tokens: Map<string, string>, theme: ThemeName): string[] {
+  const indices = [...tokens.keys()]
+    .map((name) => Number(topicToken.exec(name)?.[1] ?? Number.NaN))
+    .filter((index) => Number.isInteger(index))
+    .sort((a, b) => a - b);
+  if (indices.length === 0) return [];
+  const problems: string[] = [];
+  indices.forEach((index, position) => {
+    if (index !== position + 1)
+      problems.push(
+        `--graph-topic-${position + 1}: missing in ${theme} (topic colours count from 1)`
+      );
+  });
+  if (problems.length > 0) return problems;
+  const colours = indices.map((index) => parseHexColour(tokens.get(`--graph-topic-${index}`)!));
+  if (colours.some((colour) => colour === null)) return problems;
+  for (let index = 0; index < colours.length; index += 1) {
+    const next = (index + 1) % colours.length;
+    if (next === index) continue;
+    const distance = deltaE2000(colours[index]!, colours[next]!);
+    if (distance < topicColourMinimumDeltaE)
+      problems.push(
+        `${theme} --graph-topic-${index + 1} and --graph-topic-${next + 1}: CIEDE2000 ${distance.toFixed(1)} is below ${topicColourMinimumDeltaE}`
+      );
+  }
+  return problems;
 }
 
 function formatRatio(ratio: number): string {

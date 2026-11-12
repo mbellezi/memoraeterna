@@ -76,6 +76,11 @@ describe("the surface, rendered once", () => {
     expect(html).toContain('aria-current="true"');
   });
 
+  it("marks no section as current while a search replaces the section", () => {
+    const html = renderToString(<SettingsSurface t={en} initialQuery="language" />);
+    expect(html).not.toContain("aria-current");
+  });
+
   it("reports empty for a search nothing answers, and success with a list for one that does", () => {
     const none = renderToString(<SettingsSurface t={en} initialQuery="impressora" />);
     expect(none).toContain('data-state="empty"');
@@ -231,6 +236,49 @@ describe("the surface, in the DOM", () => {
     const general = dom.document.querySelector('[data-section="general"]') as HTMLElement;
     expect(general.textContent).toContain("1");
     expect(dom.document.body.textContent).toContain("1 setting changed");
+  });
+
+  it("draws the loading bars of the section it opens: its rows, and no control it does not have", async () => {
+    describeAnswer = () => new Promise(() => undefined);
+    await mount();
+    await dom.act(() => void vi.advanceTimersByTime(200));
+    const bars = () => dom.document.querySelector("[aria-busy]")?.innerHTML ?? "";
+    // General has 2 groups and 3 rows; no control-sized block while the section has no body of its own.
+    expect(bars().match(/gap-y-2 border-b border-border/g)).toHaveLength(3);
+    expect(bars()).not.toContain("w-40 rounded-md");
+    await dom.render(
+      <SettingsSurface
+        t={en}
+        sections={{ general: { id: "general", Section: () => null } }}
+        onOpenClassic={noop}
+      />
+    );
+    await dom.act(() => void vi.advanceTimersByTime(200));
+    expect(bars()).toContain("w-40 rounded-md");
+  });
+
+  it("keeps the changed count as one sentence, with the list it opens inside it, and names values", async () => {
+    const known: Record<string, [string, string]> = {
+      themeMode: ["dark", "dark"],
+      language: ["en", "en"],
+      contentLanguage: ["pt-BR", "en"]
+    };
+    describeAnswer = () =>
+      Promise.resolve({
+        entries: entries().map((entry) => ({
+          ...entry,
+          ...(known[entry.id] ? { value: known[entry.id]![0], default: known[entry.id]![1] } : {})
+        }))
+      });
+    await mount();
+    const toggle = dom.document.querySelector("[aria-controls]") as HTMLElement;
+    expect(toggle.textContent).toBe("1 setting changed in this section");
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    // The theme and the language are said in words, in the row's control place.
+    expect(row("themeMode")?.textContent).toContain("Dark");
+    expect(row("language")?.textContent).toContain("English");
+    expect(row("contentLanguage")?.textContent).toContain("Portuguese (Brazil)");
+    expect(row("contentLanguage")?.textContent).toContain("Default:English");
   });
 
   it("focuses the search field when the saved values arrive after Settings opened", async () => {

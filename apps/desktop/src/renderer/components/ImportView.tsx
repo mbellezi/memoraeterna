@@ -182,7 +182,8 @@ export function ImportView({
   editing,
   parent,
   onSaved,
-  onCancel
+  onCancel,
+  onDirtyChange
 }: {
   t: Translator;
   /** Embedded in a view that stays mounted while hidden: a hidden import form asks for nothing. */
@@ -199,6 +200,11 @@ export function ImportView({
   /** The status key describes the outcome so a host that navigates away can still report it. */
   onSaved?: (sourceItemId: string, status?: MessageKey) => void;
   onCancel?: () => void;
+  /**
+   * A host that can be left (a panel) is told whether leaving now would lose what was entered: a
+   * step past the first, a picked file, or a field, the text or the parts changed.
+   */
+  onDirtyChange?: (dirty: boolean) => void;
 }) {
   const initialType =
     editing?.type ?? (parent ? childSourceType(parent.type) : null) ?? "PersonalNote";
@@ -288,6 +294,19 @@ export function ImportView({
     [active]
   );
   const [progressStartedAt, setProgressStartedAt] = useState<number | null>(null);
+
+  const startStep = editing || parent ? 2 : 0;
+  const startValues = useRef(values);
+  const startSubitems = useRef(manualSubitems);
+  const dirty =
+    step > startStep ||
+    file !== null ||
+    values !== startValues.current ||
+    content !== originalContent ||
+    manualSubitems !== startSubitems.current;
+  useEffect(() => {
+    onDirtyChange?.(dirty);
+  }, [dirty, onDirtyChange]);
 
   const descriptor = useMemo(
     () => buildDescriptor(sourceType, values, coverAssetId, fieldProvenance),
