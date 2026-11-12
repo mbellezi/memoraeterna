@@ -71,7 +71,8 @@ function Keys({ t }: { t: Translator }) {
       {rows.map(([key, what]) => (
         <li key={key} className="flex items-center gap-3 border-t border-border py-2 last:border-b">
           <span className="w-16 shrink-0">
-            <Kbd>{key}</Kbd>
+            {/* One size for the three caps: a symbol (↵, ⌘W) draws small at 12 px, so all three step up. */}
+            <Kbd className="h-6 min-w-8 px-1.5 text-[13px]">{key}</Kbd>
           </span>
           <span>{what}</span>
         </li>
@@ -183,10 +184,11 @@ function Areas({
 
 function Loading({ t }: { t: Translator }) {
   return (
-    <LoadingState t={t} className="max-w-3xl gap-5">
+    // The same container and grid as the areas, so the cards do not jump wider when they arrive.
+    <LoadingState t={t} className="gap-5">
       <Skeleton className="h-7 w-48" />
       <Skeleton className="w-2/3 max-w-(--measure)" />
-      <div className="grid grid-cols-[repeat(auto-fill,minmax(14rem,1fr))] gap-3">
+      <div className="m-0 grid grid-cols-[repeat(auto-fill,minmax(14rem,1fr))] gap-3 p-0">
         {Array.from({ length: 6 }, (_, index) => (
           <div key={index} className="grid gap-3 rounded-lg border border-border p-4">
             <Skeleton className="h-4 w-3/4" />

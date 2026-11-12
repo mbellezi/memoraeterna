@@ -161,19 +161,20 @@ function EmbeddedStates({ t, snapshot, compact, onRetry }: TopicPageViewProps) {
         onRetry={onRetry}
       />
     );
+  // The previous panel says only a neutral word for a gone object: the top panel's box says what
+  // happened, once.
+  if (load.status === "missing" && compact)
+    return <p className="m-0 text-sm text-muted-foreground">{t("explore.compactGone")}</p>;
   if (load.status === "missing")
     return (
       <EmptyState
         className="max-w-(--measure)"
         headline={t("explore.topic.goneHeadline")}
         action={
-          // The one way on: the top panel closes and the person is back at the one before it. The
-          // previous panel offers none: the close would be the top panel's.
-          compact ? undefined : (
-            <Button type="button" onClick={() => void dispatchClosePanel()}>
-              {t("panelFrame.close")}
-            </Button>
-          )
+          // The one way on: the top panel closes and the person is back at the one before it.
+          <Button type="button" onClick={() => void dispatchClosePanel()}>
+            {t("panelFrame.close")}
+          </Button>
         }
       >
         {t("explore.topic.goneBody")}

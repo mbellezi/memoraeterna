@@ -106,13 +106,17 @@ describe("the Topic page in a panel (design record 6.1)", () => {
     const html = render({ status: "missing" });
     expect(html).toContain("This topic is no longer in the tree.");
     expect(html).toContain(">Close panel<");
-    // The previous panel would close the top one: it offers no button.
-    expect(render({ status: "missing" }, { compact: true })).not.toContain(">Close panel<");
+    // The previous panel would close the top one, and says the gone message once, in the top
+    // panel: it keeps a neutral word and no box.
+    const quiet = render({ status: "missing" }, { compact: true });
+    expect(quiet).toContain("No longer here");
+    expect(quiet).not.toContain(">Close panel<");
+    expect(quiet).not.toContain("no longer in the tree");
   });
 
   it("says a failed read once: the previous panel is a quiet caption, the top panel the sentence", () => {
     const quiet = render({ status: "error" }, { compact: true });
-    expect(quiet).toContain("Could not open this.");
+    expect(quiet).toContain("Unavailable");
     expect(quiet).not.toContain("Retry");
     const top = render({ status: "error" });
     expect(top).toContain("Could not open this topic.");

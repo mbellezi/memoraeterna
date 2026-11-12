@@ -43,11 +43,16 @@ describe("the Note page in a panel (design record 6.3)", () => {
     const html = render({ status: "missing" });
     expect(html).toContain("This note is no longer in your library.");
     expect(html).toContain(">Close panel<");
+    // The previous panel says it once: a neutral word, no second sentence and no close.
+    const quiet = render({ status: "missing" }, { compact: true });
+    expect(quiet).toContain("No longer here");
+    expect(quiet).not.toContain("no longer in your library");
+    expect(quiet).not.toContain(">Close panel<");
   });
 
   it("keeps the previous panel quiet when the read failed: one caption, no glyph, no retry", () => {
     const html = render({ status: "error" }, { compact: true });
-    expect(html).toContain("Could not open this.");
+    expect(html).toContain("Unavailable");
     expect(html).not.toContain("Retry");
     expect(html).not.toContain('role="alert"');
   });

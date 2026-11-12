@@ -4677,7 +4677,8 @@
     }
   },
   "explore": {
-    "compactError": "Could not open this.",
+    "compactError": "Unavailable",
+    "compactGone": "No longer here",
     "navigator": {
       "branch": "Branch",
       "branchLabel": "Showing only one branch of the tree",

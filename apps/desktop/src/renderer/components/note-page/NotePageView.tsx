@@ -158,11 +158,22 @@ export function NotePageView(props: NotePageViewProps) {
 function EmbeddedStates({ t, load, compact, onRetry }: NotePageViewProps) {
   if (load.status === "loading")
     return (
-      <LoadingState t={t} className="max-w-(--measure) gap-4">
-        <Skeleton className="h-4 w-1/3" />
-        <Skeleton className="h-7 w-4/5" />
-        <Skeleton className="w-1/2" />
-        <SkeletonLines lines={5} className="mt-3" />
+      // The wide sheet keeps its margin while it loads (from 760 px: the text column and the
+      // Evidence margin), so the page does not jump when the note arrives.
+      <LoadingState
+        t={t}
+        className="max-w-(--measure) gap-4 @min-[760px]:max-w-none @min-[760px]:grid-cols-[minmax(0,600px)_264px] @min-[760px]:gap-x-12"
+      >
+        <div className="grid min-w-0 gap-4">
+          <Skeleton className="h-4 w-1/3" />
+          <Skeleton className="h-7 w-4/5" />
+          <Skeleton className="w-1/2" />
+          <SkeletonLines lines={5} className="mt-3" />
+        </div>
+        <div className="hidden min-w-0 gap-3 @min-[760px]:grid">
+          <Skeleton className="h-4 w-1/3" />
+          <SkeletonLines lines={4} />
+        </div>
       </LoadingState>
     );
   if (load.status === "error")
@@ -179,19 +190,20 @@ function EmbeddedStates({ t, load, compact, onRetry }: NotePageViewProps) {
         onRetry={onRetry}
       />
     );
+  // The previous panel says only a neutral word for a gone object: the top panel's box says what
+  // happened, once.
+  if (load.status === "missing" && compact)
+    return <p className="m-0 text-sm text-muted-foreground">{t("explore.compactGone")}</p>;
   if (load.status === "missing")
     return (
       <EmptyState
         className="max-w-(--measure)"
         headline={t("explore.note.goneHeadline")}
         action={
-          // The one way on: the top panel closes and the person is back at the one before it. The
-          // previous panel offers none: the close would be the top panel's.
-          compact ? undefined : (
-            <Button type="button" onClick={() => void dispatchClosePanel()}>
-              {t("panelFrame.close")}
-            </Button>
-          )
+          // The one way on: the top panel closes and the person is back at the one before it.
+          <Button type="button" onClick={() => void dispatchClosePanel()}>
+            {t("panelFrame.close")}
+          </Button>
         }
       >
         {t("explore.note.goneBody")}

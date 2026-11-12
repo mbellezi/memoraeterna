@@ -4677,7 +4677,8 @@
     }
   },
   "explore": {
-    "compactError": "Impossible d’ouvrir.",
+    "compactError": "Indisponible",
+    "compactGone": "N’est plus là",
     "navigator": {
       "branch": "Branche",
       "branchLabel": "Affichage d’une seule branche de l’arbre",

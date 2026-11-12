@@ -23,8 +23,9 @@ export function RelationStanceLabel({
   className?: string;
   linked?: boolean;
   /**
-   * The wide sheet's directional phrase ("supports this note"), shown in place of the word from
-   * 760 px of the page's container; narrower, the word.
+   * The directional phrase ("this note supports"), shown in place of the word from 480 px of the
+   * page's container, wrapped at a word when the column is narrow ("this note / supports"), so a
+   * narrow panel still says who supports whom; narrower than that, the word.
    */
   phrase?: string | null;
 }) {
@@ -32,7 +33,9 @@ export function RelationStanceLabel({
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1.5 text-xs font-semibold whitespace-nowrap",
+        "inline-flex gap-1.5 text-xs font-semibold whitespace-nowrap",
+        // A phrase can take two lines: the glyph stays level with the first.
+        phrase ? "items-start [&>svg]:mt-0.5" : "items-center",
         stanceTextClass[view.stance],
         className
       )}
@@ -40,8 +43,8 @@ export function RelationStanceLabel({
       <StanceGlyph stance={view.stance} size={size} />
       {phrase ? (
         <>
-          <span className="@min-[760px]:hidden">{t(view.wordKey)}</span>
-          <span className="hidden whitespace-normal @min-[760px]:inline">{phrase}</span>
+          <span className="@min-[480px]:hidden">{t(view.wordKey)}</span>
+          <span className="hidden whitespace-normal @min-[480px]:inline">{phrase}</span>
         </>
       ) : linked ? (
         t("notePage.linkedStance", { values: { type: t(view.wordKey) } })
