@@ -4674,7 +4674,7 @@
     "navLabel": "Sections des réglages",
     "row": {
       "changed": "Modifié",
-      "default": "Par défaut : {value}",
+      "default": "Par défaut :",
       "defaultVaries": "Par défaut : dépend de ce Mac et des autres options",
       "reset": "Rétablir la valeur par défaut",
       "resetFailed": "Impossible de rétablir. Rien n’a changé.",
@@ -4701,6 +4701,7 @@
       "keysOpen": "ouvre le meilleur",
       "label": "Rechercher dans les réglages",
       "placeholder": "Rechercher : thème, dépenses…",
+      "placeholderShort": "Rechercher…",
       "resultsMany": "{count} résultats pour « {query} »",
       "resultsOne": "1 résultat pour « {query} »"
     },

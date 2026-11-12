@@ -4667,7 +4667,7 @@
     "navLabel": "Sezioni delle impostazioni",
     "row": {
       "changed": "Modificata",
-      "default": "Predefinito: {value}",
+      "default": "Predefinito:",
       "defaultVaries": "Predefinito: dipende da questo Mac e dalle altre opzioni",
       "reset": "Ripristina predefinito",
       "resetFailed": "Impossibile ripristinare. Non è cambiato nulla.",
@@ -4694,6 +4694,7 @@
       "keysOpen": "apre il migliore",
       "label": "Cerca nelle impostazioni",
       "placeholder": "Cerca: tema, spese…",
+      "placeholderShort": "Cerca…",
       "resultsMany": "{count} risultati per “{query}”",
       "resultsOne": "1 risultato per “{query}”"
     },

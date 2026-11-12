@@ -4672,7 +4672,7 @@
     "navLabel": "Seções dos ajustes",
     "row": {
       "changed": "Alterado",
-      "default": "Padrão: {value}",
+      "default": "Padrão:",
       "defaultVaries": "Padrão: depende deste Mac e das outras opções",
       "reset": "Restaurar padrão",
       "resetFailed": "Não deu para restaurar. Nada foi alterado.",
@@ -4699,6 +4699,7 @@
       "keysOpen": "abre o melhor",
       "label": "Buscar nos ajustes",
       "placeholder": "Buscar: tema, orçamento…",
+      "placeholderShort": "Buscar…",
       "resultsMany": "{count} resultados para “{query}”",
       "resultsOne": "1 resultado para “{query}”"
     },

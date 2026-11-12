@@ -4669,7 +4669,7 @@
     "navLabel": "Settings sections",
     "row": {
       "changed": "Changed",
-      "default": "Default: {value}",
+      "default": "Default:",
       "defaultVaries": "Default: depends on this Mac and the other options",
       "reset": "Restore default",
       "resetFailed": "Could not restore it. Nothing was changed.",
@@ -4696,6 +4696,7 @@
       "keysOpen": "opens the best",
       "label": "Search settings",
       "placeholder": "Search: theme, budget…",
+      "placeholderShort": "Search…",
       "resultsMany": "{count} results for “{query}”",
       "resultsOne": "1 result for “{query}”"
     },
