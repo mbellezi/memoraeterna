@@ -3820,6 +3820,7 @@
       "label": "Posizione nell’albero",
       "loading": "Ricerca della posizione nell’albero…",
       "mostCited": "La più citata in",
+      "mostCitedNone": "Ancora non citata in nessun argomento",
       "placedByCitations": "collocata dalle citazioni",
       "retry": "Riprova",
       "tentative": "Posizione probabile:",
@@ -3841,10 +3842,12 @@
       "sharedOne": "{count} nota in comune"
     },
     "empty": {
+      "ask": "Chiedi di {name}",
       "body": "Le note che citeranno questo nome compariranno qui appena saranno scritte.",
       "headline": "Ancora nessuna menzione diretta."
     },
     "error": {
+      "compact": "Impossibile aprire.",
       "kept": "Le tue note e le tue fonti sono rimaste come erano.",
       "message": "Impossibile aprire questa entità."
     },

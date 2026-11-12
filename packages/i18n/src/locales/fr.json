@@ -3827,6 +3827,7 @@
       "label": "Emplacement dans l’arbre",
       "loading": "Recherche de l’emplacement dans l’arbre…",
       "mostCited": "La plus citée dans",
+      "mostCitedNone": "Pas encore citée dans un sujet",
       "placedByCitations": "placée par les citations",
       "retry": "Réessayer",
       "tentative": "Emplacement probable :",
@@ -3848,10 +3849,12 @@
       "sharedOne": "{count} note en commun"
     },
     "empty": {
+      "ask": "Poser une question sur {name}",
       "body": "Les notes qui citeront ce nom apparaîtront ici dès qu’elles seront écrites.",
       "headline": "Pas encore de mentions directes."
     },
     "error": {
+      "compact": "Impossible d’ouvrir.",
       "kept": "Vos notes et vos sources sont restées telles quelles.",
       "message": "Impossible d’ouvrir cette entité."
     },

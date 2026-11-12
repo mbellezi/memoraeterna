@@ -3822,6 +3822,7 @@
       "label": "Place in the tree",
       "loading": "Finding the place in the tree…",
       "mostCited": "Most cited in",
+      "mostCitedNone": "Not cited under any topic yet",
       "placedByCitations": "placed by the citations",
       "retry": "Try again",
       "tentative": "Likely place:",
@@ -3843,10 +3844,12 @@
       "sharedOne": "{count} note in common"
     },
     "empty": {
+      "ask": "Ask about {name}",
       "body": "Notes that cite this name appear here as soon as they are written.",
       "headline": "No direct mentions yet."
     },
     "error": {
+      "compact": "Could not open.",
       "kept": "Your notes and sources are as they were.",
       "message": "This entity could not be opened."
     },

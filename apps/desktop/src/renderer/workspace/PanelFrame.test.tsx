@@ -225,6 +225,50 @@ describe("the path ribbon", () => {
     expect(ribbon(noteAddress, { status: "ready", located: read })).not.toContain("Mais citada em");
   });
 
+  it("says an entity cited under no topic is not cited yet, with no place to choose", () => {
+    const loose = located([ref("entity", 5, "Lactobacillus")]);
+    const html = renderToString(
+      <PathRibbonView
+        t={pt}
+        address={`memora://entity/${uuid(5)}`}
+        place="mostCited"
+        onOpen={noop}
+        onChoosePlace={noop}
+        located={{ status: "ready", located: loose }}
+        onRetry={noop}
+      />
+    );
+    expect(html).toContain("Ainda não citada em nenhum tópico");
+    expect(html).not.toContain("Sem lugar");
+    expect(html).not.toContain("Escolher lugar");
+  });
+
+  it("leaves the other places of an entity to the top panel's ribbon", () => {
+    const read = {
+      ...located([
+        ref("topic", 1, ""),
+        ref("topic", 2, "Life sciences"),
+        ref("entity", 5, "Lactobacillus")
+      ]),
+      alsoIn: [ref("topic", 6, "Immunology")],
+      counts: { alsoIn: 2, citedBy: 0, notes: 0, passages: 0, children: 0 }
+    } as ObjectLocateResult;
+    const draw = (compact: boolean) =>
+      renderToString(
+        <PathRibbonView
+          t={pt}
+          address={`memora://entity/${uuid(5)}`}
+          place="mostCited"
+          compact={compact}
+          onOpen={noop}
+          located={{ status: "ready", located: read }}
+          onRetry={noop}
+        />
+      );
+    expect(draw(false)).toContain("também em");
+    expect(draw(true)).not.toContain("também em");
+  });
+
   it("lays the crumbs on the glyph's own line, so a short path never folds under it", () => {
     // Three crumbs that fit two lines of a 208 px compact panel: a box around the crumbs would be
     // one flex item as wide as the whole path and drop under the glyph, folding the middle crumb.

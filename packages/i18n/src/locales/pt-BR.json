@@ -3825,6 +3825,7 @@
       "label": "Lugar na árvore",
       "loading": "Procurando lugar na árvore…",
       "mostCited": "Mais citada em",
+      "mostCitedNone": "Ainda não citada em nenhum tópico",
       "placedByCitations": "colocada pelas citações",
       "retry": "Tentar de novo",
       "tentative": "Lugar provável:",
@@ -3846,10 +3847,12 @@
       "sharedOne": "{count} nota em comum"
     },
     "empty": {
+      "ask": "Perguntar sobre {name}",
       "body": "As notas que citarem este nome aparecem aqui assim que forem escritas.",
       "headline": "Ainda sem menções diretas."
     },
     "error": {
+      "compact": "Não foi possível abrir.",
       "kept": "Suas notas e fontes continuam como estavam.",
       "message": "Não foi possível abrir esta entidade."
     },

@@ -8,6 +8,7 @@ import { ErrorState } from "../../../components/ui/error-state";
 import { LoadingState, Skeleton, SkeletonLines } from "../../../components/ui/skeleton";
 import { cn } from "../../../lib/cn";
 import type { EntityPage } from "../../../../shared/ipc-entities";
+import { formatView } from "../../route";
 import {
   addressOf,
   entityTypeLabel,
@@ -74,12 +75,27 @@ export function EntityPageView(props: EntityPageViewProps) {
         {compact ? null : (
           <div className="mt-6 grid gap-4">
             <Skeleton className="w-1/4" />
-            <Skeleton className="h-10 w-full" />
-            <Skeleton className="h-10 w-full" />
-            <Skeleton className="h-10 w-5/6" />
+            {[0, 1, 2].map((row) => (
+              <div key={row} className="flex items-start gap-2">
+                <Skeleton className="mt-[3px] size-3.5 shrink-0" />
+                <div className="grid min-w-0 flex-1 gap-1.5">
+                  <Skeleton className={row === 2 ? "w-3/5" : "w-4/5"} />
+                  <Skeleton className="h-3 w-2/5" />
+                </div>
+              </div>
+            ))}
           </div>
         )}
       </LoadingState>
+    );
+
+  // One cause shows one failure: the previous panel reads the same page, so it says it quietly and
+  // the retry lives on the top panel.
+  if (load.status === "error" && compact)
+    return (
+      <p role="status" className="m-0 text-xs text-muted-foreground">
+        {t("entityPage.error.compact")}
+      </p>
     );
 
   if (load.status === "error")
@@ -168,7 +184,7 @@ function LoadedPage({
         <p
           className={cn(
             "m-0 max-w-(--measure) font-reading text-secondary-foreground [text-wrap:pretty]",
-            compact ? "line-clamp-3 text-sm leading-6" : "mt-1 text-reading leading-[1.75]"
+            compact ? "line-clamp-2 text-sm leading-6" : "mt-1 text-reading leading-[1.75]"
           )}
         >
           {entity.description}
@@ -233,7 +249,19 @@ function LoadedPage({
       {header}
 
       {empty ? (
-        <EmptyState className="max-w-(--measure)" headline={t("entityPage.empty.headline")}>
+        <EmptyState
+          className="max-w-(--measure)"
+          headline={t("entityPage.empty.headline")}
+          // The next thing to do now: ask the library about the name (design record §6.5).
+          action={
+            <Button
+              variant="secondary"
+              onClick={() => onOpen(formatView({ view: "ask", question: entity.canonicalName }))}
+            >
+              {t("entityPage.empty.ask", { values: { name: entity.canonicalName } })}
+            </Button>
+          }
+        >
           {t("entityPage.empty.body")}
         </EmptyState>
       ) : (
@@ -309,16 +337,16 @@ function LoadedPage({
                   <span className="min-w-0 flex-1 [overflow-wrap:anywhere]">
                     <span className="line-clamp-2">{other.canonicalName}</span>
                     <span className="block text-xs text-muted-foreground">
-                      {entityTypeLabel(t, other.type)}
+                      {entityTypeLabel(t, other.type)} ·{" "}
+                      <span className="tabular-nums">
+                        {plural(
+                          t,
+                          other.sharedNotes,
+                          "entityPage.coMentioned.sharedOne",
+                          "entityPage.coMentioned.sharedMany"
+                        )}
+                      </span>
                     </span>
-                  </span>
-                  <span className="shrink-0 pt-0.5 text-xs text-muted-foreground tabular-nums">
-                    {plural(
-                      t,
-                      other.sharedNotes,
-                      "entityPage.coMentioned.sharedOne",
-                      "entityPage.coMentioned.sharedMany"
-                    )}
                   </span>
                 </button>
               </li>

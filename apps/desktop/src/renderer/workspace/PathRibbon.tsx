@@ -269,8 +269,15 @@ export function PathRibbonView({
         className={shell}
       >
         <ObjectKindGlyph kind="topic" size={14} className="mt-[3px] text-muted-foreground" />
-        <span>{t("panelFrame.ribbon.unsorted")}</span>
-        {onChoosePlace ? (
+        {/* An entity is not placed by anyone: with no note under a topic, it says so, with no task. */}
+        {place === "mostCited" ? (
+          <span className="min-w-0 flex-1 basis-0 text-muted-foreground">
+            {t("panelFrame.ribbon.mostCitedNone")}
+          </span>
+        ) : (
+          <span>{t("panelFrame.ribbon.unsorted")}</span>
+        )}
+        {onChoosePlace && place !== "mostCited" ? (
           <>
             <span aria-hidden="true" className="text-muted-foreground">
               ·
@@ -358,7 +365,8 @@ export function PathRibbonView({
 
   const others = located.status === "ready" ? (located.located?.alsoIn ?? []) : [];
   const otherCount = located.status === "ready" ? (located.located?.counts.alsoIn ?? 0) : 0;
-  const first = others[0];
+  // The previous panel keeps to the place itself: where else an entity is cited is the top panel's.
+  const first = compact && place === "mostCited" ? undefined : others[0];
   const clause =
     place === "tentativeSource"
       ? t("panelFrame.ribbon.tentativeSource")

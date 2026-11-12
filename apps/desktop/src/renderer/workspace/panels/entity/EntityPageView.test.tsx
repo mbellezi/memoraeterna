@@ -134,6 +134,21 @@ describe("the four states", () => {
     expect(html).toContain("Suas notas e fontes continuam como estavam.");
     expect(html.match(/Tentar de novo/g)).toHaveLength(1);
   });
+
+  it("the previous panel says the failure quietly, so one cause shows one retry", () => {
+    const html = view({ load: { status: "error" }, mode: "compact", t: pt });
+    expect(html).toContain("Não foi possível abrir.");
+    expect(html).not.toContain("Tentar de novo");
+    expect(html).not.toContain("<button");
+  });
+
+  it("empty offers to ask the library about the name, and the page with mentions does not", () => {
+    expect(view({ load: ready(entityEmptyPage) })).toContain("Ask about Lactobacillus");
+    expect(view({ load: ready(entityEmptyPage), t: pt })).toContain(
+      "Perguntar sobre Lactobacillus"
+    );
+    expect(view()).not.toContain("Ask about");
+  });
 });
 
 describe("the compact form (the previous panel)", () => {
