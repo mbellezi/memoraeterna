@@ -985,11 +985,11 @@ const wikiProjection = `${base}/obsidian-wiki-projection.ts`;
 export const settingsRegistryV2: readonly SettingEntryV2[] = [
   // --- General: what people change most ------------------------------------------------------
   preference(
-    "themeMode",
+    "language",
     "general",
-    "appearance",
-    "segmented",
-    { value: "system" },
+    "language",
+    "select",
+    { osLocale: true },
     read(rendererApp, "App"),
     {
       scope: "personalization"
@@ -1007,11 +1007,11 @@ export const settingsRegistryV2: readonly SettingEntryV2[] = [
     }
   ),
   preference(
-    "language",
+    "themeMode",
     "general",
-    "language",
-    "select",
-    { osLocale: true },
+    "appearance",
+    "segmented",
+    { value: "system" },
     read(rendererApp, "App"),
     {
       scope: "personalization"
