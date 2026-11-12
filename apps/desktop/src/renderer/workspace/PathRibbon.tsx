@@ -393,15 +393,6 @@ export function PathRibbonView({
   const otherCount = located.status === "ready" ? (located.located?.counts.alsoIn ?? 0) : 0;
   // The previous panel keeps to the place itself: where else an entity is cited is the top panel's.
   const first = compact && place === "mostCited" ? undefined : others[0];
-  const clause =
-    place === "tentativeSource"
-      ? t("panelFrame.ribbon.tentativeSource")
-      : place === "tentativeQuestion"
-        ? t("panelFrame.ribbon.tentativeQuestion")
-        : place === "byCitations"
-          ? t("panelFrame.ribbon.placedByCitations")
-          : null;
-
   return (
     <nav
       aria-label={t("panelFrame.ribbon.label")}
