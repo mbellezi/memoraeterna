@@ -1,10 +1,11 @@
-import type { RefObject } from "react";
+import { Fragment, type ReactNode, type RefObject } from "react";
 import {
   ChevronRight,
   CircleCheck,
   FolderInput,
   FolderPlus,
   ListTree,
+  MoreHorizontal,
   OctagonAlert,
   Pencil,
   Pin,
@@ -19,6 +20,12 @@ import { cn } from "../../lib/cn";
 import { InlineTitleEditor } from "../topics/ops/InlineTitleEditor";
 import { opsErrorText } from "../topics/ops/topic-ops";
 import { Button } from "../ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger
+} from "../ui/dropdown-menu";
 import type { UndoState } from "./topic-page-controller";
 import {
   breadcrumb,
@@ -56,6 +63,8 @@ export interface HeaderOps {
   onCreate: () => void;
   onMove: () => void;
   onTogglePin: () => void;
+  /** "Show only this branch": makes the topic the root of the navigator's tree (panels only). */
+  onHoist?: (() => void) | undefined;
 }
 
 export interface TopicHeaderProps {
@@ -67,6 +76,8 @@ export interface TopicHeaderProps {
   headingRef?: RefObject<HTMLHeadingElement | null> | undefined;
   actions: TopicPageActions;
   ops?: HeaderOps | undefined;
+  /** The panel's path ribbon above the page draws the ancestors: the page draws none of its own. */
+  ribbon?: boolean;
   onUndo: () => void;
 }
 
@@ -79,6 +90,7 @@ export function TopicHeader({
   headingRef,
   actions,
   ops,
+  ribbon = false,
   onUndo
 }: TopicHeaderProps) {
   const { topic } = page;
@@ -89,6 +101,31 @@ export function TopicHeader({
   const lang = topic.nameLanguage ?? undefined;
   const root = isRootPage(page);
   const pinned = topic.management === "pinned";
+  // In a panel the actions are one menu and the pin is the panel header's.
+  const embeddedMenu = ribbon;
+  const metaParts: ReactNode[] = [
+    <span key="notes">{countLabel(t, "notes", page.counts.notes)}</span>,
+    ...(page.counts.sources > 0
+      ? [<span key="sources">{countLabel(t, "sources", page.counts.sources)}</span>]
+      : []),
+    ...(page.counts.subtopics > 0
+      ? [<span key="subtopics">{countLabel(t, "subtopics", page.counts.subtopics)}</span>]
+      : []),
+    <span
+      key="health"
+      className={cn("inline-flex items-center gap-1 whitespace-nowrap", toneClass[health.tone])}
+    >
+      <HealthIcon className="size-3.5" aria-hidden="true" />
+      {t(health.key)}
+    </span>,
+    ...(topic.aliases.length > 0
+      ? [
+          <span key="aliases" lang={lang}>
+            {t("topics.page.aliases", { values: { names: topic.aliases.join(", ") } })}
+          </span>
+        ]
+      : [])
+  ];
   return (
     <header className="flex flex-col gap-3">
       {page.redirectedFrom ? (
@@ -96,7 +133,7 @@ export function TopicHeader({
           {t("topics.page.redirected")}
         </p>
       ) : null}
-      {crumbs.length > 1 ? (
+      {crumbs.length > 1 && !ribbon ? (
         <nav aria-label={t("topics.page.pathLabel")} className="min-w-0">
           <ol className="flex flex-wrap items-center gap-x-1 gap-y-0.5 text-sm">
             {crumbs.map((crumb) => (
@@ -128,28 +165,45 @@ export function TopicHeader({
           </ol>
         </nav>
       ) : null}
-      <h1
-        ref={headingRef}
-        tabIndex={-1}
-        lang={topic.title !== null ? lang : undefined}
-        className="font-reading text-2xl font-semibold text-foreground [overflow-wrap:anywhere] outline-none"
-      >
-        {ops?.renaming ? (
-          <InlineTitleEditor
-            initial={topic.title ?? ""}
-            label={t("topics.ops.rename.label")}
-            invalid={ops.error !== null}
-            busy={ops.busy}
-            lang={lang}
-            className="h-10 text-xl font-semibold"
-            onCommit={ops.onCommitRename}
-            onCancel={ops.onCancelRename}
-          />
-        ) : (
-          title
-        )}
-      </h1>
-      {ops ? (
+      <div className="flex min-w-0 items-start gap-2">
+        <div className="min-w-0 flex-1">
+          <h1
+            ref={headingRef}
+            tabIndex={-1}
+            lang={topic.title !== null ? lang : undefined}
+            className="font-reading text-2xl font-semibold text-foreground [overflow-wrap:anywhere] outline-none"
+          >
+            {ops?.renaming ? (
+              <InlineTitleEditor
+                initial={topic.title ?? ""}
+                label={t("topics.ops.rename.label")}
+                invalid={ops.error !== null}
+                busy={ops.busy}
+                lang={lang}
+                className="h-10 text-xl font-semibold"
+                onCommit={ops.onCommitRename}
+                onCancel={ops.onCancelRename}
+              />
+            ) : (
+              title
+            )}
+          </h1>
+        </div>
+        {ops && embeddedMenu ? <TopicMenu t={t} ops={ops} root={root} /> : null}
+      </div>
+      <p className="m-0 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-secondary-foreground">
+        {metaParts.map((part, index) => (
+          <Fragment key={index}>
+            {index > 0 ? (
+              <span aria-hidden="true" className="text-muted-foreground">
+                ·
+              </span>
+            ) : null}
+            {part}
+          </Fragment>
+        ))}
+      </p>
+      {ops && !embeddedMenu ? (
         <div
           role="group"
           aria-label={t("topics.ops.actions.label")}
@@ -197,29 +251,6 @@ export function TopicHeader({
           {topic.description}
         </p>
       ) : null}
-      <p className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-secondary-foreground">
-        <span>{countLabel(t, "notes", page.counts.notes)}</span>
-        {page.counts.sources > 0 ? (
-          <span>{countLabel(t, "sources", page.counts.sources)}</span>
-        ) : null}
-        {page.counts.subtopics > 0 ? (
-          <span>{countLabel(t, "subtopics", page.counts.subtopics)}</span>
-        ) : null}
-        <span
-          className={cn(
-            "inline-flex items-center gap-1 text-xs font-medium whitespace-nowrap",
-            toneClass[health.tone]
-          )}
-        >
-          <HealthIcon className="size-3.5" aria-hidden="true" />
-          {t(health.key)}
-        </span>
-        {topic.aliases.length > 0 ? (
-          <span lang={lang}>
-            {t("topics.page.aliases", { values: { names: topic.aliases.join(", ") } })}
-          </span>
-        ) : null}
-      </p>
       {page.lastChange ? (
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-md bg-soft px-3 py-2 text-sm text-secondary-foreground">
           <ListTree className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
@@ -248,5 +279,51 @@ export function TopicHeader({
         </div>
       ) : null}
     </header>
+  );
+}
+
+/**
+ * The topic's actions in a panel: one "…" menu beside the title instead of a row of buttons above
+ * the facts (design record 6: ribbon, title, meta, body). The pin is the panel header's.
+ */
+function TopicMenu({ t, ops, root }: { t: Translator; ops: HeaderOps; root: boolean }) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          type="button"
+          variant="ghost"
+          className="size-8 min-h-0 shrink-0 px-0"
+          aria-label={t("topics.ops.actions.label")}
+          title={t("topics.ops.actions.label")}
+        >
+          <MoreHorizontal aria-hidden="true" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        {root ? null : (
+          <DropdownMenuItem
+            icon={<Pencil />}
+            disabled={ops.busy || ops.renaming}
+            onSelect={ops.onStartRename}
+          >
+            {t("topics.ops.actions.rename")}
+          </DropdownMenuItem>
+        )}
+        <DropdownMenuItem icon={<FolderPlus />} disabled={ops.busy} onSelect={ops.onCreate}>
+          {t(root ? "topics.ops.actions.createTop" : "topics.ops.actions.create")}
+        </DropdownMenuItem>
+        {root ? null : (
+          <DropdownMenuItem icon={<FolderInput />} disabled={ops.busy} onSelect={ops.onMove}>
+            {t("topics.ops.actions.move")}
+          </DropdownMenuItem>
+        )}
+        {root || !ops.onHoist ? null : (
+          <DropdownMenuItem icon={<ListTree />} onSelect={ops.onHoist}>
+            {t("workspace.menu.hoistTopic")}
+          </DropdownMenuItem>
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }

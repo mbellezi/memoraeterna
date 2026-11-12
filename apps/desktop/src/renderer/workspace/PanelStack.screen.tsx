@@ -65,6 +65,17 @@ function Stack() {
     initial
   );
   const [focusMode, setFocusMode] = useState(false);
+  // The pin of the top panel, so the capture shows the control the app draws.
+  const [pinned, setPinned] = useState<ReadonlySet<string>>(new Set());
+  const pin = {
+    toggle: (address: string) =>
+      setPinned((current) => {
+        const next = new Set(current);
+        if (!next.delete(address)) next.add(address);
+        return next;
+      }),
+    isPinned: (address: string) => pinned.has(address)
+  };
   const width = useViewportWidth();
   return (
     // The shell writes the layout constants the stack reads; here the screen does.
@@ -79,6 +90,7 @@ function Stack() {
         focusMode={focusMode}
         onToggleFocusMode={() => setFocusMode((value) => !value)}
         registry={[...standInPanels, standInRoot]}
+        pin={pin}
       />
     </div>
   );

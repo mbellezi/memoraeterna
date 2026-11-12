@@ -58,7 +58,7 @@ export interface ActivityControllerDeps {
   now?: () => number;
 }
 
-const blockerMessages = {
+export const blockerMessages = {
   later_change: "changes.blockers.later_change",
   item_deleted: "changes.blockers.item_deleted",
   changed_since: "changes.blockers.changed_since",

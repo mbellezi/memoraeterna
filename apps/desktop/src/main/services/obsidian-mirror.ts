@@ -13,13 +13,13 @@ import { sourceRelationState } from "@app/domain";
 import { translate, type MessageKey } from "@app/i18n";
 import {
   markdownHeading,
-  wikiLink,
   safeWikiLabel,
   sourceOriginalStart,
   sourceOriginalEnd,
   type ObsidianLayoutConfig,
   type ObsidianManagedFrontmatter
 } from "@app/integration-contracts";
+import { projectionLink } from "./obsidian-projection.js";
 import {
   layoutLabels,
   pathIdentity,
@@ -275,7 +275,7 @@ export async function planObsidianMirror(
       .map((f) => f.memoraId)
   );
   const link = (id: string, title: string, kind = "source") =>
-    wikiLink(missing.has(id) ? undefined : paths.get(id), title, id, kind);
+    projectionLink(missing.has(id) ? undefined : paths.get(id), title, id, kind);
   const context: MirrorContext = {
     pool,
     config,

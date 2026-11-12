@@ -985,7 +985,11 @@
     "nodeCount": "{count} nodi",
     "edgeCount": "{count} relazioni",
     "truncated": "Visualizzazione del sottoinsieme più rilevante",
-    "lod": { "overview": "Comunità", "hubs": "Hub principali", "detail": "Dettaglio completo" },
+    "lod": {
+      "overview": "Comunità",
+      "hubs": "Hub principali",
+      "detail": "Dettaglio completo"
+    },
     "community": "Comunità",
     "source": "Fonte",
     "atomicNote": "Nota atomica",
@@ -1152,7 +1156,11 @@
       "title": "Ogni file, un unico flusso continuo",
       "description": "Segui in tempo reale dalla conversione al grafo della conoscenza, con checkpoint, tentativi ed errori riuniti."
     },
-    "summary": { "active": "Attive ora", "completed": "Completate", "attention": "Da controllare" },
+    "summary": {
+      "active": "Attive ora",
+      "completed": "Completate",
+      "attention": "Da controllare"
+    },
     "batch": {
       "label": "Lotto di elaborazione",
       "plan": "Piano: {plan}",
@@ -1508,7 +1516,10 @@
   },
   "import": {
     "unspecifiedLanguage": "Non specificata",
-    "modes": { "manual": "Contenuto manuale", "file": "File locale" },
+    "modes": {
+      "manual": "Contenuto manuale",
+      "file": "File locale"
+    },
     "steps": {
       "type": "Tipo",
       "origin": "Origine",
@@ -1518,8 +1529,15 @@
       "structure": "Struttura"
     },
     "searchTypes": "Cerca tipi di fonte",
-    "groups": { "notes": "Note", "publications": "Pubblicazioni", "media": "Web, video e file" },
-    "badges": { "container": "Contenitore", "child": "Richiede fonte principale" },
+    "groups": {
+      "notes": "Note",
+      "publications": "Pubblicazioni",
+      "media": "Web, video e file"
+    },
+    "badges": {
+      "container": "Contenitore",
+      "child": "Richiede fonte principale"
+    },
     "hierarchyHint": "Questo tipo puo rilevare capitoli, articoli e sezioni prima dell'elaborazione.",
     "fields": {
       "sourceType": "Tipo di fonte",
@@ -1618,12 +1636,19 @@
       "containerHint": "Componi qui i sottoelementi o passa a un documento unico. Potrai verificare la struttura rilevata prima del salvataggio.",
       "editingHierarchyHint": "Questa modifica riguarda il documento della fonte corrente. I sottoelementi esistenti mantengono il proprio contenuto e possono essere modificati singolarmente dalla biblioteca.",
       "modeLabel": "Organizzazione del contenuto",
-      "modes": { "subitems": "Componi sottoelementi", "document": "Documento unico" },
+      "modes": {
+        "subitems": "Componi sottoelementi",
+        "document": "Documento unico"
+      },
       "modeDescriptions": {
         "subitems": "Scrivi separatamente capitoli, articoli o sezioni e organizzane l’ordine.",
         "document": "Scrivi o incolla un documento Markdown e rileva automaticamente i titoli."
       },
-      "labels": { "chapters": "Capitoli", "articles": "Articoli", "sections": "Sezioni" },
+      "labels": {
+        "chapters": "Capitoli",
+        "articles": "Articoli",
+        "sections": "Sezioni"
+      },
       "placeholders": {
         "chapter": "Titolo del capitolo",
         "article": "Titolo dell’articolo",
@@ -1719,7 +1744,10 @@
         "title": "Ricercabile + organizzato",
         "description": "Crea segmenti ed embedding per la ricerca."
       },
-      "summary": { "title": "Riepilogo", "description": "Genera un riepilogo conciso con prove." },
+      "summary": {
+        "title": "Riepilogo",
+        "description": "Genera un riepilogo conciso con prove."
+      },
       "full_knowledge": {
         "title": "Secondo cervello",
         "description": "Genera riassunti, note, grafo e collegamenti."
@@ -1761,7 +1789,11 @@
     "blockingIssues": "Risolvi {count} problemi prima di continuare.",
     "selectAtLeastOne": "Seleziona almeno un elemento da creare come fonte indipendente.",
     "ready": "La struttura e valida e pronta per la conferma.",
-    "confidence": { "high": "Alta", "medium": "Rivedi", "low": "Bassa" },
+    "confidence": {
+      "high": "Alta",
+      "medium": "Rivedi",
+      "low": "Bassa"
+    },
     "kinds": {
       "part": "Parte",
       "chapter": "Capitolo",
@@ -1899,7 +1931,11 @@
       "empty": "Nessuna nota generata dall'IA attende una revisione facoltativa.",
       "optional": "Queste note sono gia in uso. Rivederle e facoltativo.",
       "unknownSource": "Fonte sconosciuta",
-      "fields": { "title": "Titolo", "idea": "Idea principale", "body": "Corpo della nota" },
+      "fields": {
+        "title": "Titolo",
+        "idea": "Idea principale",
+        "body": "Corpo della nota"
+      },
       "actions": {
         "approve": "Approva",
         "edit": "Modifica",
@@ -2392,8 +2428,13 @@
         "embedding": "Embedding",
         "reranking": "Reranking"
       },
-      "privacy": { "allowRemote": "Consenti modelli remoti", "offlineOnly": "Solo modelli locali" },
-      "languages": { "interface": "Come l'interfaccia" },
+      "privacy": {
+        "allowRemote": "Consenti modelli remoti",
+        "offlineOnly": "Solo modelli locali"
+      },
+      "languages": {
+        "interface": "Come l'interfaccia"
+      },
       "oauth": {
         "authentication": "Autenticazione ChatGPT",
         "connect": "Accedi con ChatGPT",
@@ -2771,7 +2812,11 @@
   },
   "markdown": {
     "modeLabel": "Vista dell’editor",
-    "modes": { "write": "Scrivi", "preview": "Anteprima", "split": "Diviso" },
+    "modes": {
+      "write": "Scrivi",
+      "preview": "Anteprima",
+      "split": "Diviso"
+    },
     "previewLabel": "Anteprima Markdown",
     "emptyPreview": "Inizia a scrivere per vedere l’anteprima.",
     "placeholder": "Scrivi in Markdown…",
@@ -3090,12 +3135,12 @@
       "proposal": "Riorganizzazione degli argomenti proposta ({items} elementi)",
       "redirects": "Reindirizzamenti accorciati di {topics} vecchi argomenti",
       "naming": "Nomi degli argomenti aggiornati: {topics}",
-      "humanRename": "Hai rinominato un argomento.",
-      "humanMove": "Hai spostato un argomento.",
-      "humanCreate": "Hai creato un argomento.",
-      "humanPin": "Hai fissato un argomento.",
-      "humanUnpin": "Hai rimosso un argomento dai fissati.",
-      "humanPlace": "Hai messo una nota o una fonte in un argomento.",
+      "humanRename": "Hai rinominato un argomento",
+      "humanMove": "Hai spostato un argomento",
+      "humanCreate": "Hai creato un argomento",
+      "humanPin": "Hai fissato un argomento",
+      "humanUnpin": "Hai rimosso un argomento dai fissati",
+      "humanPlace": "Hai messo una nota o una fonte in un argomento",
       "gate": "{items} collocazioni incerte verificate",
       "areas": "Aree principali raggruppate di nuovo: {areas} aree, {topics} argomenti spostati",
       "undo": "Una modifica precedente degli argomenti è stata annullata"
@@ -3226,7 +3271,7 @@
         "button": "Chiedi su questo argomento"
       },
       "health": {
-        "good": "Stato buono",
+        "good": "dimensione equilibrata",
         "attention": "Richiede attenzione",
         "violation": "Problema di struttura"
       },
@@ -4361,9 +4406,7 @@
     },
     "titleBar": {
       "add": "Aggiungi",
-      "addFile": "Scegli file…",
       "addMore": "Altri modi per aggiungere",
-      "addMoreOptions": "Altre opzioni di importazione…",
       "addSource": "Aggiungi fonte",
       "omniLabel": "Cerca, apri o chiedi",
       "omniPlaceholder": "Cerca, apri o chiedi…",
@@ -4412,6 +4455,39 @@
     "untitled": "Senza titolo"
   },
   "contextPanel": {
+    "ask": {
+      "description": {
+        "entity": "La risposta usa tutta la biblioteca e cita ogni passaggio. Il nome è già nel campo.",
+        "library": "La risposta usa tutta la biblioteca e cita ogni passaggio.",
+        "note": "È l’argomento in cui si trova questa nota. La risposta usa solo ciò che contiene e cita ogni passaggio.",
+        "noteUnplaced": "Questa nota non è ancora in un argomento, quindi la domanda vale per tutta la biblioteca.",
+        "pending": "La domanda ha bisogno dell’argomento in cui si trova questa nota.",
+        "source": "La risposta usa solo i passaggi di questa fonte e cita ciascuno.",
+        "topic": "La risposta usa solo ciò che c’è in questo argomento e cita ogni passaggio."
+      },
+      "earlier": {
+        "heading": "Domande precedenti",
+        "label": "Apri una domanda precedente"
+      },
+      "empty": "Non è ancora stato chiesto nulla su questo. Ogni domanda resta in Biblioteca › Domande, con la sua risposta.",
+      "errors": {
+        "earlier": "Impossibile caricare le domande precedenti.",
+        "earlierKept": "Puoi comunque chiedere.",
+        "scope": "Impossibile vedere dove si trova questa nota, quindi la domanda non ha ancora un ambito."
+      },
+      "indexedOne": "Puoi già chiedere: il passaggio è indicizzato.",
+      "indexedOther": "Puoi già chiedere: i {count} passaggi sono indicizzati.",
+      "indexing": "I passaggi sono ancora in fase di indicizzazione. Una risposta ora potrebbe non trovare nulla da citare.",
+      "notesArriving": "Le note stanno ancora arrivando.",
+      "title": {
+        "entity": "Chiedi di questa entità",
+        "library": "Chiedi alla biblioteca",
+        "note": "Chiedi di {topic}",
+        "pending": "Chiedi di questa nota",
+        "source": "Chiedi a questa fonte",
+        "topic": "Chiedi a questo argomento"
+      }
+    },
     "connections": {
       "actions": {
         "failed": "Non è stato possibile salvare la tua scelta. Riprova.",
@@ -4478,6 +4554,8 @@
       "suggestionsLabel": "Connessioni suggerite"
     },
     "count": {
+      "changesOne": "{count} modifica",
+      "changesOther": "{count} modifiche",
       "connectionsOne": "{count} connessione",
       "connectionsOther": "{count} connessioni",
       "mentionsOne": "{count} menzione",
@@ -4497,6 +4575,7 @@
       "connections": "Impossibile caricare le connessioni.",
       "evidence": "Impossibile caricare le evidenze.",
       "graph": "Impossibile caricare il grafo.",
+      "history": "Impossibile caricare la cronologia.",
       "kept": {
         "entity": "L'entità resta aperta.",
         "note": "La nota resta aperta.",
@@ -4586,10 +4665,35 @@
           "title": "Grafo"
         }
       },
+      "history": {
+        "description": "Tutto ciò che è cambiato in questo oggetto, con Annulla.",
+        "title": "Cronologia"
+      },
       "mentions": {
         "description": "Dove questo oggetto è citato senza una connessione.",
         "title": "Menzioni"
       }
+    },
+    "history": {
+      "by": {
+        "gardener": "Giardiniere",
+        "you": "Tu"
+      },
+      "empty": {
+        "entity": "Un’entità non ha una cronologia propria. Ciò che cambia nelle sue note compare nella Cronologia di ogni nota.",
+        "note": "In questa nota non è ancora cambiato nulla. Quando il Giardiniere la colloca in un argomento o la collega a un’altra, ogni modifica compare qui, con Annulla.",
+        "question": "Una domanda non ha una cronologia propria. Chiedi di nuovo per scrivere una nuova versione della risposta.",
+        "source": "Non è ancora cambiato nulla per questa fonte. Dove viene collocata negli argomenti e come si collega ad altre fonti compare qui, con Annulla.",
+        "topic": "In questo argomento non è ancora cambiato nulla. Cambi di nome, spostamenti e nuovi riassunti compaiono qui, con Annulla."
+      },
+      "label": "Modifiche a questo oggetto",
+      "latest": "Le {count} più recenti.",
+      "state": {
+        "dismissed": "Scartata",
+        "undone": "Annullata",
+        "waiting": "Attende la tua decisione nella Posta in arrivo"
+      },
+      "undoLabel": "Annulla: {title}"
     },
     "loadingMore": "Caricamento…",
     "locate": {
@@ -4630,6 +4734,138 @@
       "graph": "Grafo",
       "history": "Cronologia",
       "mentions": "Menzioni"
+    }
+  },
+  "explore": {
+    "compactError": "Non disponibile",
+    "compactGone": "Non è più qui",
+    "navigator": {
+      "branch": "Ramo",
+      "branchLabel": "Mostrando solo un ramo dell’albero",
+      "errorKept": "Fissati e Recenti sono ancora qui.",
+      "pinHint": "Fissa ciò che apri sempre: ⌘D nel pannello aperto.",
+      "wholeTree": "Albero intero"
+    },
+    "note": {
+      "alsoInInbox": "anche nella Posta in arrivo",
+      "connections": "Connessioni",
+      "error": "Impossibile aprire questa nota.",
+      "errorKept": "Il resto di Esplora resta aperto e le tue note non sono cambiate.",
+      "explainedLocally": "spiegazione scritta dall’IA locale",
+      "gardenerConfidence": "Giardiniere · confidenza {word}",
+      "gardenerSuggestion": "suggerimento del Giardiniere · decidi quando vuoi",
+      "goneBody": "Potrebbe essere stata unita a un’altra nota o rimossa. Nient’altro è cambiato.",
+      "goneHeadline": "Questa nota non è più nella tua libreria.",
+      "moreRelations": "altre {count}",
+      "suggestionsMany": "{count} suggerimenti",
+      "suggestionsOne": "{count} suggerimento",
+      "summaryHint": "Ogni connessione, con la sua evidenza, è nel pannello di contesto."
+    },
+    "root": {
+      "addFirst": "Aggiungi la prima fonte",
+      "areasLead": "Scegli un’area per aprirla accanto. Ciò che apri resta qui, un pannello accanto all’altro.",
+      "areasTitle": "Le tue aree",
+      "emptyBody": "Tutto ciò che apri compare qui, un pannello accanto all’altro. I più vecchi si ripiegano in strisce a sinistra, con tipo e titolo in vista; un clic li riapre. Così il percorso fin qui non si perde mai.",
+      "emptyHeadline": "Ancora nulla di aperto",
+      "error": "Impossibile caricare le tue aree.",
+      "errorKept": "Le tue fonti e le tue note non sono cambiate.",
+      "keyClose": "chiude il pannello attivo",
+      "keyOpen": "apre accanto",
+      "keyPeek": "dà un’occhiata senza aprire",
+      "keySpace": "Spazio",
+      "keysLabel": "Tasti"
+    },
+    "topic": {
+      "error": "Impossibile aprire questo argomento.",
+      "errorKept": "Il resto di Esplora resta aperto e le tue note non sono cambiate.",
+      "goneBody": "Potrebbe essere stato unito a un altro argomento o rimosso. Nient’altro è cambiato.",
+      "goneHeadline": "Questo argomento non è più nell’albero.",
+      "noDirectNotes": "Ancora nessuna nota propria. Le note sono negli argomenti secondari."
+    }
+  },
+  "addFlow": {
+    "busy": {
+      "button": "Lettura…",
+      "reading": "Lettura di {name}…",
+      "readingFile": "Lettura del file…",
+      "waiting": "{count} in attesa"
+    },
+    "drop": {
+      "after": "Dopo aver rilasciato, vai alla prima fonte in Esplora e vedi arrivare le note.",
+      "label": "Rilascia i file per aggiungerli",
+      "modeError": "Non è stato possibile leggere la modalità di importazione, quindi i file entrano come Ricercabile e organizzato.",
+      "modeLabel": "Modalità",
+      "modeNote": "{hint}. Cambiala nel menu Aggiungi.",
+      "noFiles": "Rilascia un file per aggiungerlo",
+      "titleMany": "Rilascia per aggiungere {count} file",
+      "titleOne": "Rilascia per aggiungere 1 file"
+    },
+    "failure": {
+      "close": "Chiudi",
+      "empty": "{name} è vuoto.",
+      "generic": "Non è stato possibile aggiungere il file.",
+      "kept": "Non è stato salvato nulla e il resto è com'era.",
+      "keptSome": "I file leggibili sono stati aggiunti e il resto è com'era.",
+      "more": "Altri non aggiunti: {count}.",
+      "noText": "{name} non contiene testo che Memora possa leggere.",
+      "noTextNoName": "Quel file non contiene testo che Memora possa leggere.",
+      "notAFile": "{name} non è un file.",
+      "shortMany": "File non aggiunti.",
+      "shortOne": "File non aggiunto.",
+      "symlink": "{name} è un collegamento. Rilascia il file originale.",
+      "tooLarge": "{name} è troppo grande per essere importato.",
+      "tooLargeNoName": "Quel file è troppo grande per essere importato.",
+      "unreadable": "Non è stato possibile leggere {name}.",
+      "unsupported": "Memora non legge ancora file come {name}.",
+      "unsupportedNoName": "Memora non legge ancora quel tipo di file."
+    },
+    "importPanel": {
+      "errors": {
+        "kept": "Non è stato modificato nulla.",
+        "open": "Non è stato possibile aprire questa fonte per la modifica."
+      },
+      "gone": {
+        "action": "Apri la Biblioteca",
+        "body": "Potrebbe essere stata rimossa dalla Biblioteca. Nient'altro è cambiato.",
+        "title": "Questa fonte non esiste più."
+      },
+      "leave": {
+        "description": "Hai modificato questa importazione senza salvarla. Continua per completarla oppure scarta quello che hai inserito e vai avanti.",
+        "discard": "Scarta ed esci",
+        "keep": "Continua qui",
+        "title": "Uscire senza salvare?"
+      },
+      "title": "Importazione avanzata"
+    },
+    "menu": {
+      "file": "Scegli un file…",
+      "fileHint": "PDF, EPUB, Word, Markdown e testo",
+      "foot": "Vale per le prossime importazioni; ogni fonte può cambiare dopo. Anche rilasciare file ovunque nella finestra funziona.",
+      "label": "Modi di aggiungere",
+      "link": "Incolla un link",
+      "linkHint": "una pagina web o un video",
+      "modeHeading": "All'importazione",
+      "more": "Altre opzioni di importazione…",
+      "note": "Scrivi una nota",
+      "noteHint": "va in Senza posto finché non ha un argomento"
+    },
+    "modes": {
+      "error": "Non è stato possibile verificare se c'è un modello pronto a scrivere.",
+      "errorKept": "Scegliere un file funziona ancora e importa come Ricercabile e organizzato.",
+      "searchable": {
+        "hint": "passaggi per la ricerca e un posto nell'albero, senza note",
+        "name": "Ricercabile e organizzato"
+      },
+      "secondBrain": {
+        "hint": "note brevi, un posto nell'albero e connessioni",
+        "hintNeedsModel": "note brevi, un posto nell'albero e connessioni · richiede un modello pronto a scrivere",
+        "hintRecommended": "note brevi, un posto nell'albero e connessioni · consigliato: c'è un modello pronto a scrivere",
+        "name": "Secondo cervello"
+      },
+      "storeOnly": {
+        "hint": "il file resta nella Biblioteca, senza IA",
+        "name": "Solo archiviare"
+      }
     }
   },
   "entityPage": {
@@ -4972,6 +5208,146 @@
       "updated": "ultimo aggiornamento: {date}"
     }
   },
+  "settingsGeneral": {
+    "language": {
+      "connectionsNote": "Le descrizioni dei collegamenti già scritte si possono rifare in",
+      "defaultOs": "come macOS, {language}"
+    },
+    "saveFailed": "Impossibile salvare. Non è cambiato nulla.",
+    "theme": {
+      "dark": "Scuro",
+      "light": "Chiaro",
+      "system": "Sistema"
+    }
+  },
+  "settingsLibrary": {
+    "backup": {
+      "action": "Fai il backup ora",
+      "done": "Backup completato.",
+      "failed": "Non è stato possibile fare il backup.",
+      "running": "Backup in corso…",
+      "savedIn": "Salvato in {path}",
+      "verified": "Un ripristino di prova è riuscito."
+    },
+    "plans": {
+      "deleteAction": "Elimina",
+      "deleteAsk": "Eliminare «{name}»?",
+      "deleteConfirm": "Elimina piano",
+      "deleteKept": "Le fonti già importate restano come sono.",
+      "empty": "Nessun piano di importazione salvato. Salvane uno durante l’importazione.",
+      "loadFailed": "Impossibile leggere i piani di importazione salvati.",
+      "loadKept": "Non è cambiato nulla.",
+      "renameAction": "Rinomina",
+      "renameLabel": "Nome del piano",
+      "saveFailed": "Impossibile salvare. Non è cambiato nulla."
+    },
+    "storage": {
+      "database": "Database locale",
+      "files": "File conservati",
+      "filesNote": "gli originali che hai inviato",
+      "sourcesMany": "{count} fonti",
+      "sourcesOne": "{count} fonte",
+      "where": "Entrambi stanno nella cartella dei dati di Memora su questo Mac, e il loro posto è fisso. Per avere gli originali in una cartella tua, attiva la copia qui sotto; per portare tutto su un altro disco, usa il backup."
+    },
+    "uploads": {
+      "change": "Cambia cartella",
+      "choose": "Scegli una cartella",
+      "needsFolder": "Scegli prima la cartella: le copie hanno bisogno di un posto.",
+      "noFolder": "Nessuna cartella scelta",
+      "off": "Disattivato",
+      "on": "Attivato",
+      "pathHint": "Incolla il percorso completo di una cartella di questo Mac.",
+      "pathLabel": "Percorso della cartella",
+      "pathRejected": "Un percorso completo inizia con «/» e indica una cartella che esiste.",
+      "readFailed": "Impossibile leggere la cartella delle copie.",
+      "saveFailed": "Impossibile salvare. Non è cambiato nulla.",
+      "willReceive": "Questa cartella inizierà a ricevere le copie quando attivi l’opzione."
+    }
+  },
+  "settingsPrivacy": {
+    "callLog": {
+      "full": "L’acquisizione completa è attiva: conserva prompt e risposte interi.",
+      "light": "Conserva tempi, modelli e token; prompt e risposte interi solo con l’acquisizione completa.",
+      "none": "Il registro delle chiamate IA è vuoto.",
+      "open": "Vedi ed elimina in Avanzate",
+      "readFailed": "Impossibile leggere il registro delle chiamate.",
+      "summaryMany": "Il registro delle chiamate IA conserva {count} chiamate su questo Mac.",
+      "summaryOne": "Il registro delle chiamate IA conserva {count} chiamata su questo Mac."
+    },
+    "history": {
+      "action": "Cancella…",
+      "confirm": "Cancella i Recenti",
+      "dialogBody": "Cancella l’elenco degli elementi aperti da poco su questo Mac. Gli elementi fissati restano.",
+      "dialogTitle": "Cancellare i Recenti?",
+      "doneMany": "{count} elementi sono usciti dai Recenti.",
+      "doneNone": "I Recenti erano già vuoti.",
+      "doneOne": "{count} elemento è uscito dai Recenti.",
+      "failed": "Impossibile cancellare i Recenti. Non è cambiato nulla."
+    },
+    "leaves": {
+      "books": "Dati di libri e articoli",
+      "booksGoogle": "Google Books",
+      "changeInAi": "Cambia in IA",
+      "cloud": "Nel cloud",
+      "columns": {
+        "job": "Lavoro",
+        "what": "Cosa esce",
+        "where": "Dove gira"
+      },
+      "credentials": "Credenziali conservate su questo Mac (solo i nomi; i valori non compaiono mai): {names}.",
+      "decisions": "OpenAI Decisions",
+      "internet": "Su internet",
+      "local": "Su questo Mac",
+      "lookupAuto": "Open Library, Google Books e Crossref",
+      "lookupGoogle": "Google Books e Crossref",
+      "lookupOpenLibrary": "Open Library e Crossref",
+      "noCredentials": "Nessuna credenziale è conservata su questo Mac.",
+      "noModel": "Nessun modello scelto",
+      "nothing": "Niente",
+      "off": "Disattivato",
+      "readFailed": "Impossibile leggere cosa esce da questo Mac.",
+      "readKept": "Non è cambiato nulla.",
+      "tableLabel": "Cosa esce da questo Mac, per lavoro",
+      "what": {
+        "answer": "La tua domanda e le note citate",
+        "books": "ISBN, DOI, titolo e autori",
+        "decide": "Titoli e idee delle note confrontate",
+        "decisions": "Titolo, idea e inizio del testo delle note confrontate",
+        "embed": "Estratti delle tue fonti e note",
+        "judge": "Note ed estratti confrontati",
+        "writeFast": "Estratti delle fonti e riassunti",
+        "writeQuality": "Estratti delle fonti"
+      }
+    },
+    "questions": {
+      "action": "Elimina le domande…",
+      "confirm": "Elimina le domande",
+      "countMany": "{count} domande salvate",
+      "countMore": "Più di {count} domande salvate",
+      "countNone": "Nessuna domanda salvata.",
+      "countOne": "{count} domanda salvata",
+      "dialogBody": "Elimina tutte le domande salvate e le loro risposte. Le tue fonti e le tue note restano. Non si può annullare.",
+      "dialogTitle": "Eliminare tutte le domande?",
+      "doneMany": "{count} domande eliminate.",
+      "doneNone": "Non c’erano domande da eliminare.",
+      "doneOne": "{count} domanda eliminata.",
+      "failed": "Impossibile eliminare le domande. Non è cambiato nulla.",
+      "readFailed": "Impossibile contare le domande salvate."
+    },
+    "reset": {
+      "action": "Ripristina tutto…",
+      "backupLink": "Fai prima un backup",
+      "confirm": "Ripristina tutto",
+      "dialogBody": "Cancella biblioteca, indici di ricerca, grafi, domande, cronologie, collegamenti, preferenze e file conservati. Restano profili, provider, rotte e modelli installati; i backup e i tuoi file personali non vengono toccati.",
+      "dialogTitle": "Ripristinare tutto?",
+      "dialogWarn": "Non si può annullare.",
+      "failed": "Non è stato possibile completare il ripristino. Controlla i permessi dei file e riprova.",
+      "noUndo": "Non si può annullare.",
+      "running": "Ripristino…",
+      "warnings": "Il ripristino è terminato, ma alcuni file conservati non si sono potuti rimuovere."
+    },
+    "working": "In corso…"
+  },
   "settingsRegistry": {
     "activeMatchingPresetId": {
       "help": "Bilanciata è l’insieme calibrato ed è di sola lettura. Per modificare i valori, crea o duplica una preimpostazione.",
@@ -5221,7 +5597,7 @@
       "label": "Fonti che diventano pagine"
     },
     "privacyCallLog": {
-      "help": "Le ultime chiamate a un modello, locale o nel cloud. Sola lettura; il registro completo è in Avanzate.",
+      "help": "Cosa conserva questo Mac delle chiamate fatte a un modello, locale o nel cloud.",
       "label": "Chiamate IA recenti"
     },
     "privacyClearQuestions": {
@@ -5465,6 +5841,40 @@
     },
     "untitledTopic": "Argomento senza nome"
   },
+  "mapRelationsTable": {
+    "caption": "Le stesse connessioni del grafo, una riga per connessione",
+    "count": "{count} connessioni",
+    "countOne": "1 connessione",
+    "from": "Da",
+    "groupBy": "Raggruppa per",
+    "groupByHelp": "Quale livello di sottoargomenti raggruppa gli argomenti dell’elenco",
+    "groups": {
+      "all": "Mostra tutte e {count}",
+      "and": "e",
+      "body": "Le linee che il grafo disegna da lontano, una per coppia di argomenti.",
+      "capped": "Sono elencati solo i collegamenti più forti.",
+      "fewer": "Mostra meno",
+      "title": "Tra gli argomenti"
+    },
+    "keyMove": "scegliere",
+    "keyOpen": "aprire la prima nota accanto",
+    "keyOpenSecond": "aprire la seconda",
+    "link": "Connessione",
+    "more": "Mostra altre {count}",
+    "notice": {
+      "groupLines": "Da lontano si disegnano solo i collegamenti più forti tra argomenti.",
+      "truncated": "Questo ramo è più grande di quanto il grafo possa contenere: mostra le note e le connessioni più collegate. Scegli un ramo più piccolo per vedere tutto."
+    },
+    "outside": {
+      "action": "Vedi il ramo {title}",
+      "body": "Argomenti esterni collegati a note di questo ramo. Clicca per vedere il loro ramo.",
+      "capped": "I {count} argomenti più collegati.",
+      "title": "Fuori dal ramo"
+    },
+    "suggested": "suggerita",
+    "title": "Stesse connessioni in tabella",
+    "to": "A"
+  },
   "settingsShell": {
     "classic": {
       "open": "Apri le vecchie impostazioni"
@@ -5485,6 +5895,9 @@
       "resetFailed": "Impossibile ripristinare. Non è cambiato nulla.",
       "resetPending": "Manca un passaggio da confermare nell’opzione stessa.",
       "resetting": "Ripristino…",
+      "themeDark": "Scuro",
+      "themeLight": "Chiaro",
+      "themeSystem": "Sistema",
       "valueNone": "Non impostato",
       "valueOff": "Disattivato",
       "valueOn": "Attivato",
@@ -5633,6 +6046,310 @@
       "summaryMinimumWordCount": "minimo parole riassunto elementi brevi saltare riassunti conteggio soglia piccole fonti risparmiare chiamate zero disattivare testo più corto",
       "themeMode": "tema scuro chiaro notte modalità aspetto colori schema sistema visivo",
       "uploadCopies": "copie caricati conservare originali file copia cartella importazioni seconda backup dei caricamenti salvare"
+    }
+  },
+  "settingsAi": {
+    "blocked": {
+      "localRequiresAppleSilicon": "Locale richiede un Mac con Apple silicon.",
+      "modelMissing": "{name} ha bisogno di {model}, che non è installato. Installalo in Modelli su questo Mac e riprova.",
+      "noRemoteProfile": "{name} ha bisogno di un modello di provider. Aggiungi un provider qui sopra e riprova.",
+      "thisJob": "questa attività",
+      "title": "Impossibile applicare {setup}."
+    },
+    "cap": {
+      "change": "Cambia in Conoscenza",
+      "label": "Limite mensile di spesa nel cloud: {amount}",
+      "noSpend": "Il limite vale per il Giardiniere e si trova in Conoscenza.",
+      "spent": "{amount} spesi questo mese. Il limite vale per il Giardiniere e si trova in Conoscenza."
+    },
+    "confirm": {
+      "apply": "Applica e prova",
+      "body": "Questo sostituisce il modello di ogni attività e prova una chiamata per ciascuna. Non si scarica nulla.",
+      "bodyLocal": "Non c’è ancora un modello di scrittura locale validato, quindi la scrittura può restare ferma.",
+      "title": "Passare a {setup}?"
+    },
+    "credential": {
+      "save": "Salva"
+    },
+    "decisions": {
+      "calibrated": "Le relazioni sopra la sua soglia calibrata vengono applicate automaticamente; le altre sono suggerimenti che puoi tenere o rimuovere.",
+      "confirmApply": "Attiva",
+      "confirmBody": "Attivarlo invia il testo delle note a OpenAI come descritto sopra. Puoi disattivarlo in qualsiasi momento; dopo non viene inviato più nulla.",
+      "confirmTitle": "Inviare il testo delle note a OpenAI?",
+      "errorTitle": "Impossibile leggere lo stato di OpenAI Decisions.",
+      "fallback": "Attivo, ma sta decidendo il ranker locale: {reason}.",
+      "key": {
+        "add": "Salva chiave…",
+        "hint": "È conservata cifrata su questo computer, non viene più mostrata e viene inviata solo a OpenAI.",
+        "invalid": "OpenAI ha rifiutato la chiave salvata. Salvane una valida.",
+        "label": "Chiave OpenAI Platform",
+        "none": "Nessuna chiave",
+        "replace": "Sostituisci chiave…",
+        "set": "Chiave salvata, mai più mostrata",
+        "test": "Prova la chiave",
+        "testOk": "OpenAI ha accettato la chiave.",
+        "testing": "Prova in corso…"
+      },
+      "keySaved": "La chiave OpenAI è stata salvata.",
+      "lastFallback": "L'ultima volta ha deciso invece il ranker locale: {reason}.",
+      "noticeBody": "Finché è attivo, il titolo, l'idea e i primi {characters} caratteri del testo di ogni nota confrontata, e delle note con cui viene confrontata (comprese quelle già confrontate prima), vengono inviati a OpenAI (l'API Decisions, modello {model}) con la tua chiave OpenAI Platform. Per impostazione predefinita OpenAI non addestra sui dati dell'API e può conservare le richieste fino a 30 giorni per monitorare gli abusi. Memora non controlla questa conservazione. Non viene inviato nulla se è spento, nella configurazione Locale o senza una chiave.",
+      "noticeCost": "Costa circa {price} per milione di token in ingresso, tipicamente un centesimo o meno per nota. Memora smette di usarlo per la giornata a {cap} e subentra il ranker locale.",
+      "noticeTitle": "Il testo delle tue note viene inviato a OpenAI",
+      "off": "Disattivato: non si invia nulla. Il ranker locale decide le relazioni.",
+      "ready": "Attivo: OpenAI Decisions decide le relazioni.",
+      "reason": {
+        "breaker_open": "OpenAI non risponde in questo momento",
+        "error": "OpenAI ha restituito un errore imprevisto",
+        "invalid_key": "OpenAI ha rifiutato la chiave salvata",
+        "network": "non è stato possibile raggiungere OpenAI",
+        "no_key": "nessuna chiave OpenAI è salvata",
+        "quota": "il tuo account OpenAI non ha più credito",
+        "spend_cap": "il limite di spesa di oggi è stato raggiunto"
+      },
+      "spend": "Speso oggi: {spent} su {cap} ({requests} richieste).",
+      "turnedOff": "OpenAI Decisions è spento.",
+      "turnedOn": "OpenAI Decisions è attivo.",
+      "unavailable": "Non disponibile in Locale o Personalizzata, che non inviano mai il testo delle note all’esterno.",
+      "uncalibrated": "Non è ancora calibrato, quindi ogni relazione che trova è un suggerimento che puoi tenere o rimuovere."
+    },
+    "errors": {
+      "write": "Impossibile salvare. Non è cambiato nulla."
+    },
+    "intro": "Parti dalla configurazione: sceglie in una volta il modello di ogni attività. Ibrida e Cloud richiedono un fornitore, qui sotto. Il resto è messa a punto.",
+    "models": {
+      "action": {
+        "download": "Scarica",
+        "import": "Importa file GGUF…",
+        "remove": "Rimuovi",
+        "resume": "Riprendi",
+        "test": "Prova",
+        "useRecommended": "Usa i valori consigliati"
+      },
+      "compat": {
+        "compatible": "Sta su questo Mac",
+        "insufficient_memory": "Memoria insufficiente",
+        "unsupported_platform": "Richiede macOS con Apple silicon"
+      },
+      "empty": "Nessun modello corrisponde. Togli un filtro per vedere gli altri.",
+      "errorKept": "Non è cambiato nulla: i modelli installati restano dove sono.",
+      "errorTitle": "Impossibile leggere l’elenco dei modelli.",
+      "eta": {
+        "minutes": "{minutes} min rimasti",
+        "seconds": "{seconds} s rimasti"
+      },
+      "filter": {
+        "all": "Tutti",
+        "compatible": "Solo quelli che stanno su questo Mac",
+        "label": "Mostra",
+        "ranking": "Confronto",
+        "search": "Ricerca",
+        "writing": "Scrittura"
+      },
+      "license": "Accetto la licenza:",
+      "parameters": "Parametri",
+      "ranker": {
+        "fallback": "Senza un ranker validato, le note adatte a più argomenti aprono nuovi argomenti. Vengono ricollocate quando un ranker è pronto.",
+        "installing": "Questo ranker colloca le note adatte a più argomenti. Finché non è pronto, quelle note aprono nuovi argomenti e vengono ricollocate dopo.",
+        "pending": "Esegui la prova per validare questo ranker."
+      },
+      "removeAsk": "Rimuovere {model} e i suoi file da questo Mac?",
+      "removeBlocked": "In uso da {profiles}. Cambia prima il profilo.",
+      "saveDefaults": "Salva i valori predefiniti",
+      "status": {
+        "downloading": "Download in corso",
+        "failed": "Non riuscito",
+        "not_downloaded": "Non scaricato",
+        "ready": "Installato",
+        "removing": "Rimozione",
+        "verifying": "Verifica"
+      },
+      "summaryMany": "{count} installati · {size}",
+      "summaryNone": "Nessuno installato",
+      "summaryOne": "1 installato · {size}",
+      "testOk": "Il modello è stato eseguito su questo Mac.",
+      "token": {
+        "add": "Aggiungi token…",
+        "label": "Token",
+        "none": "Nessun token",
+        "replace": "Sostituisci token…",
+        "set": "Token salvato, mai mostrato"
+      }
+    },
+    "preset": {
+      "cloud": {
+        "help": "Quasi tutto sul tuo provider."
+      },
+      "custom": {
+        "help": "Scegli tu il modello di ogni attività, subito sotto."
+      },
+      "estimate": "Circa {amount} al mese con una chiave API.",
+      "hybrid": {
+        "help": "Ricerca e confronto su questo Mac; scrittura e risposte sul tuo provider."
+      },
+      "local": {
+        "help": "Tutto gira su questo Mac e nulla ne esce.",
+        "unavailableMemory": "Questo Mac non ha abbastanza memoria per il modello di scrittura locale.",
+        "unavailableSilicon": "Richiede un Mac con Apple silicon.",
+        "unavailableSystem": "Non esiste un modello di scrittura locale per questo sistema.",
+        "unverified": "Ancora nessun modello di scrittura locale validato."
+      },
+      "name": {
+        "cloud": "Cloud",
+        "custom": "Personalizzata",
+        "hybrid": "Ibrida",
+        "local": "Locale"
+      },
+      "recommended": "consigliata",
+      "unset": "Nessuna configurazione scelta. Scegli dove gira l’IA: imposta il modello di ogni attività."
+    },
+    "profiles": {
+      "close": "Chiudi",
+      "create": "Crea profilo",
+      "customize": "Personalizzato",
+      "duplicate": "Duplica profilo",
+      "edit": "Modifica",
+      "empty": "Ancora nessun profilo. Un profilo collega un modello alle attività che serve.",
+      "model": "Modello",
+      "modelDefaults": "Valori del modello",
+      "name": "Nome del profilo",
+      "new": "Nuovo profilo…",
+      "remove": "Rimuovi profilo",
+      "removeAsk": "Rimuovere questo profilo e le rotte delle sue attività? I modelli scaricati restano.",
+      "resetTask": "Usa i valori del modello",
+      "save": "Salva profilo",
+      "selectModel": "Scegli un modello di provider o locale",
+      "summaryMany": "{count} profili",
+      "summaryNone": "Nessun profilo",
+      "summaryOne": "1 profilo",
+      "task": {
+        "atomic-note-generation": "Note atomiche",
+        "embedding": "Ricerca e somiglianza",
+        "knowledge-graph-generation": "Grafo della conoscenza",
+        "reranking": "Confronto (ranker)",
+        "structured-output": "Risposte strutturate",
+        "summarization": "Riassunti",
+        "text-generation": "Scrittura di testo"
+      }
+    },
+    "providers": {
+      "action": {
+        "addKey": "Aggiungi chiave…",
+        "addModel": "Aggiungi un modello…",
+        "find": "Cerca modelli",
+        "finding": "Ricerca…",
+        "remove": "Rimuovi",
+        "replaceKey": "Sostituisci chiave…",
+        "save": "Salva",
+        "saving": "Salvataggio…",
+        "signIn": "Accedi…",
+        "signInAgain": "Accedi di nuovo",
+        "test": "Prova",
+        "testing": "Prova in corso…"
+      },
+      "form": {
+        "address": "Indirizzo del server",
+        "addressHint": "Per OpenAI stessa, lascia l’indirizzo predefinito.",
+        "key": "Chiave API",
+        "model": "Modello",
+        "modelHint": "Scegline uno dall’elenco del provider o scrivi il nome.",
+        "purpose": "Usato per",
+        "signInHint": "Apre ChatGPT nel browser. La usano solo le attività di scrittura.",
+        "signedIn": "Accesso effettuato. Scegli il modello da usare."
+      },
+      "modelsLabel": "Modelli",
+      "purpose": {
+        "embedding": "Ricerca",
+        "generation": "Scrittura",
+        "reranking": "Confronto"
+      },
+      "removeAsk": "Rimuovere {model}? I profili che lo usano restano senza modello.",
+      "status": {
+        "connected": "Connesso",
+        "keySaved": "Chiave salvata, mai mostrata",
+        "none": "Nessuna chiave",
+        "notConnected": "Accesso non effettuato"
+      },
+      "testOk": "La connessione funziona"
+    },
+    "routes": {
+      "choose": "Scegli un modello",
+      "disclosure": {
+        "body": "Quando questo modello decide o giudica, i titoli e le idee delle note confrontate e brani delle fonti vengono inviati a {provider}. Li conserva secondo i propri termini di conservazione, che Memora non controlla.",
+        "confirm": "Usa questo modello",
+        "title": "{provider} riceve il tuo testo"
+      },
+      "empty": "Scegli una configurazione qui sopra: imposta il modello di ogni attività.",
+      "intro": "La configurazione sceglie questi modelli. Cambiarne uno qui cambia solo quell’attività e la configurazione diventa Personalizzata.",
+      "introCustom": "Ogni attività mantiene il modello scelto. Per ricominciare, scegli una configurazione qui sopra.",
+      "noModel": "Nessun modello scelto",
+      "noModelsAvailable": "Nessun modello tra cui scegliere. Aggiungi un provider o installa un modello locale qui sotto.",
+      "noRanker": "Nessun ranker installato. Le relazioni ne attendono uno, a meno che decida il giudice generativo.",
+      "partial": "Mancano alcune rotte del giudice. Scegli un modello per impostarle tutte.",
+      "where": {
+        "local": "Su questo Mac",
+        "remote": "Provider"
+      }
+    },
+    "states": {
+      "errorKept": "Non è cambiato nulla: Memora continua a usare i modelli che aveva.",
+      "errorTitle": "Impossibile leggere la configurazione dell’IA."
+    },
+    "status": {
+      "applied": "{setup} è applicata. Ogni attività mostra il risultato della prova.",
+      "applying": "Applicazione di {setup}…",
+      "testing": "Prova di {name}…"
+    },
+    "test": {
+      "button": "Prova",
+      "failed": "La prova non è riuscita",
+      "failedWith": "La prova non è riuscita: {reason}",
+      "none": "Nessun ranker",
+      "passed": "Prova superata",
+      "passedMs": "Prova superata in {ms} ms",
+      "passedSeconds": "Prova superata in {seconds} s",
+      "running": "Prova in corso…",
+      "untested": "Non provato"
+    },
+    "thisMac": {
+      "detectedOn": "{date}, {time}",
+      "detectedToday": "oggi, {time}",
+      "error": "Impossibile rilevare questo Mac.",
+      "errorKept": "Non è cambiato nulla: la configurazione qui sopra funziona come prima.",
+      "fact": {
+        "detected": "Rilevato",
+        "disk": "Disco libero",
+        "gpuMemory": "Memoria per la GPU",
+        "graphicsMemory": "Memoria video",
+        "memory": "Memoria",
+        "memoryUnified": "Memoria unificata"
+      },
+      "intro": "Ciò che Memora ha trovato su questo Mac e la configurazione adatta.",
+      "nothingChanges": "Nulla cambia da solo: la configurazione la scegli tu.",
+      "reason": {
+        "local_memory_too_small": "Questo Mac ha poca memoria per il modello di scrittura locale.",
+        "local_quality_unverified": "Locale non ha ancora un modello di scrittura validato per questo Mac.",
+        "local_requires_apple_silicon": "Locale richiede un Mac con Apple silicon.",
+        "local_writer_unavailable": "Non esiste un modello di scrittura locale per questo sistema.",
+        "probe_incomplete": "Non è stato possibile rilevare tutto, quindi alcuni dati possono mancare.",
+        "ranker_slow_on_cpu": "Senza scheda grafica dedicata, il confronto delle note è lento su questo computer.",
+        "running_under_rosetta": "Memora è in esecuzione tradotto (Rosetta). Funziona, ma più lento della versione nativa."
+      },
+      "recommended": "Consigliata per questo Mac: {setup}.",
+      "redetect": "Rileva di nuovo",
+      "redetected": "Rilevato di nuovo.",
+      "redetecting": "Rilevamento…",
+      "tag": "solo informativo",
+      "title": {
+        "intel": "Mac con processore Intel",
+        "other": "Questo computer",
+        "silicon": "Mac con Apple silicon",
+        "windows": "Computer con Windows"
+      },
+      "why": {
+        "cloud": "Quasi tutto usa il tuo provider; questo computer conserva la tua biblioteca.",
+        "hybrid": "Ricerca e confronto girano qui, senza costi; la scrittura usa il tuo provider.",
+        "local": "Tutto gira qui e nulla esce da questo Mac."
+      }
     }
   },
   "settingsAdvanced": {

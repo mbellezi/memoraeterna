@@ -1,4 +1,5 @@
 import {
+  formatObjectAddress,
   overviewTextSegments,
   topicOverviewMessageKeys,
   type OverviewTextSegment,
@@ -323,12 +324,23 @@ export function unmarkedCitations(
   return paragraph.citations.filter((n) => !marked.has(n) && known.has(n));
 }
 
-/** Where "open at the exact passage" leads: the cited note in its source, else the source. */
-export function citationTarget(
-  citation: TopicOverviewCitation
-): { kind: "note"; id: string } | { kind: "source"; id: string } | null {
-  if (citation.noteId) return { kind: "note", id: citation.noteId };
-  if (citation.sourceId) return { kind: "source", id: citation.sourceId };
+/**
+ * Where "open at the exact passage" leads (D15): the cited source with the anchors of the passage
+ * the overview stored (`chunkId` as `passage`, `sourceSpanId` as `span`), so the Source panel opens
+ * it highlighted; a citation that names only a note opens that note; one that names neither is a
+ * citation without a place (null). Anchors the citation lacks (its chunk was replaced) are left out.
+ */
+export function citationAddress(citation: TopicOverviewCitation): string | null {
+  if (citation.sourceId)
+    return formatObjectAddress({
+      kind: "source",
+      id: citation.sourceId,
+      anchor: {
+        ...(citation.chunkId ? { passage: citation.chunkId } : {}),
+        ...(citation.sourceSpanId ? { span: citation.sourceSpanId } : {})
+      }
+    });
+  if (citation.noteId) return formatObjectAddress({ kind: "note", id: citation.noteId });
   return null;
 }
 

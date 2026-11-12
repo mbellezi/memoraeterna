@@ -99,13 +99,22 @@ export function groupsOf(
 export const describeIndexOf = (entries: readonly SettingDescription[]): DescribeIndex =>
   new Map(entries.map((entry) => [entry.id, entry]));
 
+/**
+ * A key, a token or a sign-in. What is saved shows on its own line ("Connected", "Key saved"), so it is
+ * never counted or marked as a changed setting, and "Restore all" never touches one.
+ */
+export const isCredential = (entry: SettingEntryV2): boolean => entry.category === "credential";
+
+const isChanged = (entry: SettingEntryV2, index: DescribeIndex): boolean =>
+  !isCredential(entry) && index.get(entry.id)?.changed === true;
+
 /** The entries of a section that differ from their default, in the registry's order. */
 export function changedIn(
   section: SettingsSectionId,
   index: DescribeIndex,
   registry: readonly SettingEntryV2[] = settingsRegistryV2
 ): SettingEntryV2[] {
-  return entriesOf(section, registry).filter((entry) => index.get(entry.id)?.changed === true);
+  return entriesOf(section, registry).filter((entry) => isChanged(entry, index));
 }
 
 export function changedCounts(
@@ -116,8 +125,7 @@ export function changedCounts(
     SettingsSectionId,
     number
   >;
-  for (const entry of registry)
-    if (index.get(entry.id)?.changed === true) counts[entry.section] += 1;
+  for (const entry of registry) if (isChanged(entry, index)) counts[entry.section] += 1;
   return counts;
 }
 
@@ -206,8 +214,8 @@ export const resetNeedsConfirm = (entry: SettingEntryV2): boolean => entry.reset
 
 /**
  * The words of a stored value for a row that has no control of its own yet: only what can be said
- * without knowing the options (on or off, set or not, a number). A choice's code ("system") is
- * never shown as if it were copy; the section's own control says it in words.
+ * without knowing the options (on or off, set or not, a number, the theme, a language). A choice's
+ * code ("system") is never shown as if it were copy; the section's own control says it in words.
  */
 export function valueText(
   t: Translator,
@@ -226,7 +234,39 @@ export function valueText(
       : null;
   if (typeof value === "number") return String(value);
   if (typeof value === "string" && entry.control === "text") return value;
+  if (typeof value === "string") return nameOfChoice(t, entry, value);
   return null;
+}
+
+const themeWords: Readonly<Record<string, MessageKey>> = {
+  system: "settingsShell.row.themeSystem",
+  light: "settingsShell.row.themeLight",
+  dark: "settingsShell.row.themeDark"
+};
+const languageSettingIds: ReadonlySet<string> = new Set(["language", "contentLanguage"]);
+
+/**
+ * A code the person chose, in words, for the two choices every section shares: the theme, from the
+ * copy, and a language, from the platform's own names in the person's language ("Português
+ * (Brasil)"). Any other choice is named by its section's control, never by its code.
+ */
+function nameOfChoice(t: Translator, entry: SettingEntryV2, value: string): string | null {
+  if (entry.id === "themeMode") {
+    const key = themeWords[value];
+    return key ? t(key) : null;
+  }
+  if (!languageSettingIds.has(entry.id)) return null;
+  try {
+    const name = new Intl.DisplayNames([t.locale], {
+      type: "language",
+      languageDisplay: "standard"
+    }).of(value);
+    return name && name !== value
+      ? name.charAt(0).toLocaleUpperCase(t.locale) + name.slice(1)
+      : null;
+  } catch {
+    return null;
+  }
 }
 
 /** The default of a row that has no control of its own, in the same words, or null when unknown. */

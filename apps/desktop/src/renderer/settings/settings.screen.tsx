@@ -20,7 +20,7 @@ const noop = () => undefined;
  * and Advanced besides General, as the design does.
  */
 const values: Record<string, { value: Json; default: Json | null }> = {
-  themeMode: { value: "system", default: "system" },
+  themeMode: { value: "dark", default: "dark" },
   contentLanguage: { value: "en", default: "pt-BR" },
   language: { value: "pt-BR", default: "pt-BR" },
   "knowledge.controls.v1.monthlyCapUsd": { value: 12, default: 5 },
@@ -36,7 +36,7 @@ const changedIds = new Set(
 
 function describeEntries(): SettingDescription[] {
   return settingsRegistryV2
-    .filter((entry) => entry.store.kind !== "none")
+    .filter((entry) => entry.reset !== "none")
     .map((entry) => {
       const known = values[entry.id];
       const value: Json = known?.value ?? (entry.control === "switch" ? false : null);

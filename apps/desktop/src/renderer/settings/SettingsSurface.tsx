@@ -7,6 +7,7 @@ import {
   useRef,
   useState,
   useSyncExternalStore,
+  type ComponentType,
   type KeyboardEvent
 } from "react";
 import { ChevronDown } from "lucide-react";
@@ -26,12 +27,14 @@ import {
   changedCounts,
   changedIn,
   entryForAddress,
+  groupsOf,
   hitCounts,
   labelOf,
   resetNeedsConfirm,
   sectionMeta,
   settingSelector,
   settingsState,
+  type SettingGroup,
   type SettingsSectionId
 } from "./settings-model";
 import { settingsStoreOf, type SettingsStore } from "./settings-store";
@@ -233,13 +236,14 @@ export function SettingsSurface({
       section,
       describe: (id) => index?.get(id),
       read: read.status,
+      active,
       rowState: (id) => snapshot.rows[id] ?? "idle",
       highlighted,
       reset: (id, confirmed) => store.reset(id, confirmed),
       rowsChanged,
       reportState: setSectionState
     }),
-    [t, section, index, read.status, snapshot.rows, highlighted, store, rowsChanged]
+    [t, section, index, read.status, active, snapshot.rows, highlighted, store, rowsChanged]
   );
 
   if (!visited) return null;
@@ -318,7 +322,12 @@ export function SettingsSurface({
                 {t(sectionMeta[section].name)}
               </h2>
               {read.status === "loading" ? (
-                <SettingsSkeleton t={t} />
+                <SettingsSkeleton
+                  t={t}
+                  groups={groupsOf(section, registry)}
+                  controls={sections[section] !== undefined}
+                  Bars={sections[section]?.Skeleton}
+                />
               ) : read.status === "error" ? (
                 <ErrorState
                   t={t}
@@ -348,29 +357,63 @@ export function SettingsSurface({
   );
 }
 
-/** The bars of a section while its values are read: the title's line, a group and some rows. */
-function SettingsSkeleton({ t }: { t: Translator }) {
-  const row = (key: string, label: string, help: string, control: string) => (
-    <div
-      key={key}
-      className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-6 gap-y-2 border-b border-border py-4"
-    >
-      <Skeleton className={cn("h-3.5", label)} />
-      <Skeleton className={cn("row-span-2 h-8 rounded-md", control)} />
-      <Skeleton className={cn("h-3 max-w-full", help)} />
-    </div>
-  );
+/** The groups cut after `limit` rows in all, a group left with none dropped. */
+function capRows(groups: readonly SettingGroup[], limit: number): SettingGroup[] {
+  let left = limit;
+  const kept: SettingGroup[] = [];
+  for (const { group, entries } of groups) {
+    const rows = entries.slice(0, left);
+    left -= rows.length;
+    if (rows.length > 0) kept.push({ group, entries: rows });
+  }
+  return kept;
+}
+
+/**
+ * The bars of a section while its values are read: the title's line, then the section's own groups
+ * and rows (as many as it has, so nothing jumps when the values arrive), with a control-sized block
+ * only where the section draws a control. A long section stops at a screenful. A section that
+ * registers its own bars (`Skeleton` in the sections registry) draws those instead.
+ */
+function SettingsSkeleton({
+  t,
+  groups,
+  controls,
+  Bars
+}: {
+  t: Translator;
+  groups: readonly SettingGroup[];
+  controls: boolean;
+  Bars?: ComponentType | undefined;
+}) {
+  const labels = ["w-44", "w-32", "w-40", "w-36"];
+  const helps = ["w-80", "w-72", "w-60", "w-64"];
+  const bars = capRows(groups, 8);
   return (
     <LoadingState t={t} className="mt-4 max-w-[45rem]">
       <div>
         <Skeleton className="mt-1 h-3 w-44" />
-        <Skeleton className="mt-8 h-3 w-24" />
-        {row("a", "w-44", "w-80", "w-44")}
-        {row("b", "w-32", "w-72", "w-44")}
-        {row("c", "w-44", "w-60", "w-44")}
-        <Skeleton className="mt-10 h-3 w-28" />
-        {row("d", "w-40", "w-64", "w-28")}
-        {row("e", "w-36", "w-72", "w-28")}
+        {Bars ? (
+          <Bars />
+        ) : (
+          bars.map(({ group, entries: rows }, index) => {
+            return (
+              <div key={group}>
+                <Skeleton className={cn("h-3 w-24", index === 0 ? "mt-8" : "mt-10")} />
+                {rows.map((entry, at) => (
+                  <div
+                    key={entry.id}
+                    className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-6 gap-y-2 border-b border-border py-4"
+                  >
+                    <Skeleton className={cn("h-3.5", labels[at % labels.length])} />
+                    {controls ? <Skeleton className="row-span-2 h-8 w-40 rounded-md" /> : null}
+                    <Skeleton className={cn("h-3 max-w-full", helps[at % helps.length])} />
+                  </div>
+                ))}
+              </div>
+            );
+          })
+        )}
       </div>
     </LoadingState>
   );
@@ -409,6 +452,11 @@ function SectionSummary({
 
   const plural = (n: number, one: MessageKey, many: MessageKey) =>
     t(n === 1 ? one : many, { values: { count: n } });
+  const sentence = `${plural(
+    count,
+    "settingsShell.section.changedOne",
+    "settingsShell.section.changedMany"
+  )} ${t("settingsShell.section.inSection")}`;
   const notes = [
     left.pending > 0
       ? plural(
@@ -465,26 +513,18 @@ function SectionSummary({
         ) : (
           <>
             <InlineAction
+              tone="muted"
               aria-expanded={open}
               aria-controls={listId}
-              aria-label={`${plural(
-                count,
-                "settingsShell.section.changedOne",
-                "settingsShell.section.changedMany"
-              )}. ${t("settingsShell.section.listLabel")}`}
+              aria-label={`${sentence}. ${t("settingsShell.section.listLabel")}`}
               onClick={() => setOpen((value) => !value)}
             >
-              {plural(
-                count,
-                "settingsShell.section.changedOne",
-                "settingsShell.section.changedMany"
-              )}
+              {sentence}
               <ChevronDown
                 aria-hidden="true"
                 className={cn("transition-transform", open && "rotate-180")}
               />
             </InlineAction>
-            <span>{t("settingsShell.section.inSection")}</span>
             {askCount > 0 ? (
               <>
                 <span aria-hidden="true">·</span>

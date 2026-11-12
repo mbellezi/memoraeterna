@@ -17,7 +17,7 @@ import {
   type ShutdownStep
 } from "./services/application-shutdown.js";
 import { registerPromptIpc } from "./services/prompt-ipc.js";
-import { parseObsidianDeepLink, type ObsidianDeepLink } from "../shared/obsidian-deep-link.js";
+import { readDeepLink, type DeepLink } from "../shared/obsidian-deep-link.js";
 import { ConsultationService } from "./services/consultation-service.js";
 import { registerConsultationIpc } from "./services/consultation-ipc.js";
 import { RemoteBudget } from "./services/gardener/remote-budget.js";
@@ -129,6 +129,7 @@ import { promptPinGeneration } from "./services/prompt-runtime.js";
 import { createTopicTreeServices, type TopicTreeServices } from "./services/topic-tree/index.js";
 import { ChangesService } from "./services/gardener/changes-service.js";
 import { registerChangesIpc } from "./services/gardener/changes-ipc.js";
+import { createChangesObjectService, registerChangesObjectIpc } from "./services/changes-ipc.js";
 import { InboxService } from "./services/gardener/inbox-service.js";
 import { registerInboxIpc } from "./services/gardener/inbox-ipc.js";
 import {
@@ -195,6 +196,9 @@ function createMainWindow(): BrowserWindow {
     minWidth: 960,
     minHeight: 640,
     show: false,
+    // The dark theme's canvas (--surface-canvas): dark is the default theme, so a profile with no
+    // stored choice never sees a white frame before the renderer paints.
+    backgroundColor: "#10151d",
     title: createTranslator(app.getLocale())("app.title"),
     webPreferences: {
       preload: join(__dirname, "../preload/index.cjs"),
@@ -315,27 +319,32 @@ let isQuittingAfterShutdown = false;
 
 const primaryInstance = app.requestSingleInstanceLock();
 if (!primaryInstance) app.quit();
-let pendingObsidianOpen: ObsidianDeepLink | null = null;
-function receiveObsidianOpen(raw: string) {
-  const target = parseObsidianDeepLink(raw);
-  if (!target) return;
-  pendingObsidianOpen = target;
+// A `memora://` link from outside (Obsidian, the system) opens one object, or says its wiki page is
+// retired (D10). `normalizeMemoraLink` reads it; a link it refuses is logged by reason alone.
+let pendingDeepLink: DeepLink | null = null;
+function receiveDeepLink(raw: string) {
+  const reading = readDeepLink(raw);
+  if (!reading.ok) {
+    console.warn(`Deep link refused: ${reading.reason}`);
+    return;
+  }
+  pendingDeepLink = reading.link;
   for (const window of BrowserWindow.getAllWindows()) {
     if (!window.webContents.isLoading())
-      window.webContents.send(ipcChannels.obsidianDeepLink, target);
+      window.webContents.send(ipcChannels.deepLinkOpen, reading.link);
   }
 }
 app.on("open-url", (event, url) => {
   event.preventDefault();
-  receiveObsidianOpen(url);
+  receiveDeepLink(url);
 });
 app.on("second-instance", (_event, args) => {
-  for (const arg of args) if (arg.startsWith("memora:")) receiveObsidianOpen(arg);
+  for (const arg of args) if (arg.startsWith("memora:")) receiveDeepLink(arg);
 });
-for (const arg of process.argv) if (arg.startsWith("memora:")) receiveObsidianOpen(arg);
-ipcMain.handle(ipcChannels.obsidianDeepLinkPending, () => {
-  const target = pendingObsidianOpen;
-  pendingObsidianOpen = null;
+for (const arg of process.argv) if (arg.startsWith("memora:")) receiveDeepLink(arg);
+ipcMain.handle(ipcChannels.deepLinkPending, () => {
+  const target = pendingDeepLink;
+  pendingDeepLink = null;
   return target;
 });
 
@@ -709,6 +718,10 @@ void app.whenReady().then(() => {
     ...changeSetEventHooks(events)
   });
   registerChangesIpc(ipcMain, changesService);
+  registerChangesObjectIpc(
+    ipcMain,
+    createChangesObjectService({ getPool: () => databaseService?.getPool() ?? null })
+  );
   registerSourceRelationExplanationIpc(
     ipcMain,
     new SourceRelationExplanationService({

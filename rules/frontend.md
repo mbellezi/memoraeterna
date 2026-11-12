@@ -27,7 +27,7 @@ accessibility, visualizations or user-visible backend messages.
 - Inter (interface) and Source Serif 4 (reading surfaces) are bundled offline; no
   remote font or stylesheet is used. Motion is short and functional; durations
   are tokens, zero under `prefers-reduced-motion`.
-- Themes: System (default, follows the OS live), Light and Dark. Check UI in DEV
+- Themes: Dark (default, owner 2026-11-12), Light and System (follows the OS live). Check UI in DEV
   at the normal opening and minimum window sizes (never full screen), in both themes.
 
 ## Accessibility

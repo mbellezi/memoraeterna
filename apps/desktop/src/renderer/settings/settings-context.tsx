@@ -17,6 +17,12 @@ export interface SettingsContextValue {
   /** The saved value, the default and whether they differ, by registry id; null until read. */
   describe: (id: string) => SettingDescription | undefined;
   read: "loading" | "error" | "ready";
+  /**
+   * Settings is on screen. It stays mounted while another place is shown, so a section that reads
+   * more than `describe` (a count, a status) reads again when this turns true, and listens to
+   * nothing while it is false.
+   */
+  active: boolean;
   rowState: (id: string) => RowReset;
   /** The row highlighted for 2 s after a link or a search result took the person to it. */
   highlighted: string | null;

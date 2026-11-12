@@ -34,7 +34,7 @@ describe("SettingsService publishes settings.changed after a save", () => {
     await service.getApp();
     expect(settingsEvents(events)).toEqual([]);
 
-    await service.updateApp({ themeMode: "dark", navigationCollapsed: true });
+    await service.updateApp({ themeMode: "light", navigationCollapsed: true });
 
     expect(settingsEvents(events)).toEqual([
       { type: "settings.changed", stores: ["app"], keys: ["navigationCollapsed", "themeMode"] }
@@ -44,10 +44,10 @@ describe("SettingsService publishes settings.changed after a save", () => {
 
   it("sends nothing when a save changes no value", async () => {
     const { service, events } = await createService();
-    await service.updateApp({ themeMode: "dark" });
+    await service.updateApp({ themeMode: "light" });
     events.length = 0;
 
-    await service.updateApp({ themeMode: "dark" });
+    await service.updateApp({ themeMode: "light" });
 
     expect(settingsEvents(events)).toEqual([]);
   });

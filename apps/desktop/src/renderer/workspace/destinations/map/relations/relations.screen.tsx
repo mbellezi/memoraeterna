@@ -1,7 +1,7 @@
 import { createGraphPhysics } from "../../../../components/graph/physics";
 import { screenTranslator } from "../../../screen-locale";
 import type { ScreenModule } from "../../../surfaces";
-import { branchTopics, sampleBranch, unconnectedBranch } from "./branch-fixtures";
+import { branchId, branchTopics, sampleBranch, unconnectedBranch } from "./branch-fixtures";
 import type { BranchLayoutFactory } from "./RelationsCanvas";
 import { RelationsLens, surfaceId } from "./RelationsLens";
 
@@ -45,6 +45,11 @@ export function render() {
         onOpenNote={noop}
         onShowTree={noop}
         createLayout={settledLayout}
+        // One relation chosen: the canvas emphasises it and the table marks its row.
+        frame={{
+          surface,
+          selected: { type: "edge", id: branchId("edge:acid-temperature") }
+        }}
       />
     </div>
   );

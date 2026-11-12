@@ -8,8 +8,9 @@
  * Themes
  *   :root                                  light theme, and the base for every token
  *   .dark                                  explicit dark theme (set by the theme setting)
- *   prefers-color-scheme: dark             "System": dark when the OS is dark and the user has not
- *                                          chosen a theme (no .light or .dark on the root)
+ *   prefers-color-scheme: dark             "System": dark when the OS is dark and no class is on the
+ *                                          root. The app always sets one (the default is dark), so
+ *                                          this only covers a root the theme code has not touched.
  *   An explicit .light or .dark always wins over the OS preference.
  *
  * Contrast (WCAG 2.x AA), enforced by `npm run contrast` (scripts/contrast) in both themes

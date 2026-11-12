@@ -985,7 +985,11 @@
     "nodeCount": "{count} nodes",
     "edgeCount": "{count} relations",
     "truncated": "Showing the most relevant subset",
-    "lod": { "overview": "Communities", "hubs": "Main hubs", "detail": "Full detail" },
+    "lod": {
+      "overview": "Communities",
+      "hubs": "Main hubs",
+      "detail": "Full detail"
+    },
     "community": "Community",
     "source": "Source",
     "atomicNote": "Atomic note",
@@ -1061,7 +1065,9 @@
       "invalidOutput": "The AI returned an invalid entity identity decision.",
       "catalogChanged": "The entity catalog changed repeatedly. Retry the operation."
     },
-    "relationLabels": { "invalidOutput": "The AI returned invalid relation descriptions." },
+    "relationLabels": {
+      "invalidOutput": "The AI returned invalid relation descriptions."
+    },
     "common": {
       "unknown": "Something went wrong.",
       "network": "The network request failed.",
@@ -1150,7 +1156,11 @@
       "title": "Every file, one continuous workflow",
       "description": "Follow processing live from conversion to your knowledge graph, with checkpoints, retries and errors kept together."
     },
-    "summary": { "active": "Active now", "completed": "Completed", "attention": "Needs attention" },
+    "summary": {
+      "active": "Active now",
+      "completed": "Completed",
+      "attention": "Needs attention"
+    },
     "batch": {
       "label": "Processing batch",
       "plan": "Plan: {plan}",
@@ -1506,7 +1516,10 @@
   },
   "import": {
     "unspecifiedLanguage": "Unspecified",
-    "modes": { "manual": "Manual content", "file": "Local file" },
+    "modes": {
+      "manual": "Manual content",
+      "file": "Local file"
+    },
     "steps": {
       "type": "Type",
       "origin": "Origin",
@@ -1521,7 +1534,10 @@
       "publications": "Publications",
       "media": "Web, video, and files"
     },
-    "badges": { "container": "Container", "child": "Needs parent" },
+    "badges": {
+      "container": "Container",
+      "child": "Needs parent"
+    },
     "hierarchyHint": "This type can detect chapters, articles, and sections before processing.",
     "fields": {
       "sourceType": "Source type",
@@ -1620,12 +1636,19 @@
       "containerHint": "Compose subitems here or switch to a single document. You will review the detected structure before it is saved.",
       "editingHierarchyHint": "This edits the current source document. Existing subitems keep their own content and can be edited individually from the library.",
       "modeLabel": "Content organization",
-      "modes": { "subitems": "Compose subitems", "document": "Single document" },
+      "modes": {
+        "subitems": "Compose subitems",
+        "document": "Single document"
+      },
       "modeDescriptions": {
         "subitems": "Write chapters, articles, or sections separately and arrange their order.",
         "document": "Write or paste one Markdown document and detect headings automatically."
       },
-      "labels": { "chapters": "Chapters", "articles": "Articles", "sections": "Sections" },
+      "labels": {
+        "chapters": "Chapters",
+        "articles": "Articles",
+        "sections": "Sections"
+      },
       "placeholders": {
         "chapter": "Chapter title",
         "article": "Article title",
@@ -1721,7 +1744,10 @@
         "title": "Searchable + organized",
         "description": "Create chunks and embeddings for retrieval."
       },
-      "summary": { "title": "Summary", "description": "Generate a concise summary with evidence." },
+      "summary": {
+        "title": "Summary",
+        "description": "Generate a concise summary with evidence."
+      },
       "full_knowledge": {
         "title": "Second brain",
         "description": "Generates summaries, notes, graph and connections."
@@ -1763,7 +1789,11 @@
     "blockingIssues": "Resolve {count} structure issues before continuing.",
     "selectAtLeastOne": "Select at least one item to create as an independent source.",
     "ready": "Structure is valid and ready to confirm.",
-    "confidence": { "high": "High", "medium": "Review", "low": "Low" },
+    "confidence": {
+      "high": "High",
+      "medium": "Review",
+      "low": "Low"
+    },
     "kinds": {
       "part": "Part",
       "chapter": "Chapter",
@@ -1901,7 +1931,11 @@
       "empty": "No AI-generated notes are waiting for an optional review.",
       "optional": "These notes are already in use. Reviewing them is optional.",
       "unknownSource": "Unknown source",
-      "fields": { "title": "Title", "idea": "Idea statement", "body": "Note body" },
+      "fields": {
+        "title": "Title",
+        "idea": "Idea statement",
+        "body": "Note body"
+      },
       "actions": {
         "approve": "Approve",
         "edit": "Edit",
@@ -2394,8 +2428,13 @@
         "embedding": "Embedding",
         "reranking": "Reranking"
       },
-      "privacy": { "allowRemote": "Allow remote models", "offlineOnly": "Local models only" },
-      "languages": { "interface": "Same as interface" },
+      "privacy": {
+        "allowRemote": "Allow remote models",
+        "offlineOnly": "Local models only"
+      },
+      "languages": {
+        "interface": "Same as interface"
+      },
       "oauth": {
         "authentication": "ChatGPT authentication",
         "connect": "Sign in with ChatGPT",
@@ -2773,7 +2812,11 @@
   },
   "markdown": {
     "modeLabel": "Editor view",
-    "modes": { "write": "Write", "preview": "Preview", "split": "Split" },
+    "modes": {
+      "write": "Write",
+      "preview": "Preview",
+      "split": "Split"
+    },
     "previewLabel": "Markdown preview",
     "emptyPreview": "Start writing to see the preview.",
     "placeholder": "Write in Markdown…",
@@ -3092,12 +3135,12 @@
       "proposal": "Proposed topic reorganization ({items} items)",
       "redirects": "Shortened the redirects of {topics} old topics",
       "naming": "Topic names updated: {topics}",
-      "humanRename": "You renamed a topic.",
-      "humanMove": "You moved a topic.",
-      "humanCreate": "You created a topic.",
-      "humanPin": "You pinned a topic.",
-      "humanUnpin": "You unpinned a topic.",
-      "humanPlace": "You placed a note or source in a topic.",
+      "humanRename": "You renamed a topic",
+      "humanMove": "You moved a topic",
+      "humanCreate": "You created a topic",
+      "humanPin": "You pinned a topic",
+      "humanUnpin": "You unpinned a topic",
+      "humanPlace": "You placed a note or source in a topic",
       "gate": "Checked {items} uncertain placements",
       "areas": "Regrouped the top areas: {areas} areas, {topics} topics moved",
       "undo": "Undid an earlier change to the topics"
@@ -3228,7 +3271,7 @@
         "button": "Ask about this topic"
       },
       "health": {
-        "good": "Good health",
+        "good": "balanced size",
         "attention": "Needs attention",
         "violation": "Structure problem"
       },
@@ -4363,9 +4406,7 @@
     },
     "titleBar": {
       "add": "Add",
-      "addFile": "Choose file…",
       "addMore": "More ways to add",
-      "addMoreOptions": "More import options…",
       "addSource": "Add source",
       "omniLabel": "Search, open or ask",
       "omniPlaceholder": "Search, open or ask…",
@@ -4414,6 +4455,39 @@
     "untitled": "Untitled"
   },
   "contextPanel": {
+    "ask": {
+      "description": {
+        "entity": "The answer uses the whole library and cites each passage. The name is already in the field.",
+        "library": "The answer uses the whole library and cites each passage.",
+        "note": "That is the topic this note is in. The answer uses only what is in it and cites each passage.",
+        "noteUnplaced": "This note is not in a topic yet, so the question covers the whole library.",
+        "pending": "The question needs the topic this note is in.",
+        "source": "The answer uses only the passages of this source and cites each one.",
+        "topic": "The answer uses only what is in this topic and cites each passage."
+      },
+      "earlier": {
+        "heading": "Earlier questions",
+        "label": "Open an earlier question"
+      },
+      "empty": "Nothing asked about this yet. Each question is kept in Library › Questions, with its answer.",
+      "errors": {
+        "earlier": "Could not load the earlier questions.",
+        "earlierKept": "You can still ask.",
+        "scope": "Could not find where this note is, so the question has no scope yet."
+      },
+      "indexedOne": "You can already ask: the passage is indexed.",
+      "indexedOther": "You can already ask: the {count} passages are indexed.",
+      "indexing": "The passages are still being indexed. An answer now may find nothing to cite.",
+      "notesArriving": "The notes are still arriving.",
+      "title": {
+        "entity": "Ask about this entity",
+        "library": "Ask your library",
+        "note": "Ask about {topic}",
+        "pending": "Ask about this note",
+        "source": "Ask this source",
+        "topic": "Ask this topic"
+      }
+    },
     "connections": {
       "actions": {
         "failed": "Your choice could not be saved. Try again.",
@@ -4480,6 +4554,8 @@
       "suggestionsLabel": "Suggested connections"
     },
     "count": {
+      "changesOne": "{count} change",
+      "changesOther": "{count} changes",
       "connectionsOne": "{count} connection",
       "connectionsOther": "{count} connections",
       "mentionsOne": "{count} mention",
@@ -4499,6 +4575,7 @@
       "connections": "Could not load the connections.",
       "evidence": "Could not load the evidence.",
       "graph": "Could not load the graph.",
+      "history": "Could not load the history.",
       "kept": {
         "entity": "The entity stays open.",
         "note": "The note stays open.",
@@ -4588,10 +4665,35 @@
           "title": "Graph"
         }
       },
+      "history": {
+        "description": "Everything that changed in this object, with Undo.",
+        "title": "History"
+      },
       "mentions": {
         "description": "Where this object is cited without a connection.",
         "title": "Mentions"
       }
+    },
+    "history": {
+      "by": {
+        "gardener": "Gardener",
+        "you": "You"
+      },
+      "empty": {
+        "entity": "An entity keeps no history of its own. What changes its notes shows in their History.",
+        "note": "Nothing changed in this note yet. When the Gardener places it or links it, each change shows here, with Undo.",
+        "question": "A question keeps no history of its own. Ask again to write a new version of its answer.",
+        "source": "Nothing changed because of this source yet. Where it is placed in the topics and how it is linked to other sources shows here, with Undo.",
+        "topic": "Nothing changed in this topic yet. Renames, moves and new overviews show here, with Undo."
+      },
+      "label": "Changes to this object",
+      "latest": "The {count} most recent.",
+      "state": {
+        "dismissed": "Dismissed",
+        "undone": "Undone",
+        "waiting": "Waits for your decision in the Inbox"
+      },
+      "undoLabel": "Undo: {title}"
     },
     "loadingMore": "Loading more…",
     "locate": {
@@ -4632,6 +4734,138 @@
       "graph": "Graph",
       "history": "History",
       "mentions": "Mentions"
+    }
+  },
+  "explore": {
+    "compactError": "Unavailable",
+    "compactGone": "No longer here",
+    "navigator": {
+      "branch": "Branch",
+      "branchLabel": "Showing only one branch of the tree",
+      "errorKept": "Pinned and Recents are still here.",
+      "pinHint": "Pin what you always open: ⌘D in the open panel.",
+      "wholeTree": "Whole tree"
+    },
+    "note": {
+      "alsoInInbox": "also in the Inbox",
+      "connections": "Connections",
+      "error": "Could not open this note.",
+      "errorKept": "The rest of Explore stays open and your notes are untouched.",
+      "explainedLocally": "explanation written by the local AI",
+      "gardenerConfidence": "Gardener · {word} confidence",
+      "gardenerSuggestion": "Gardener suggestion · decide whenever you like",
+      "goneBody": "It may have been merged into another note or removed. Nothing else changed.",
+      "goneHeadline": "This note is no longer in your library.",
+      "moreRelations": "{count} more",
+      "suggestionsMany": "{count} suggestions",
+      "suggestionsOne": "{count} suggestion",
+      "summaryHint": "Each connection, with its evidence, is in the context panel."
+    },
+    "root": {
+      "addFirst": "Add your first source",
+      "areasLead": "Choose an area to open it beside. Whatever you open stays here, side by side.",
+      "areasTitle": "Your areas",
+      "emptyBody": "Whatever you open appears here, one panel beside the other. The oldest ones fold into strips on the left, with their kind and title in view; one click reopens them. That way the path that led here is never lost.",
+      "emptyHeadline": "Nothing open yet",
+      "error": "Could not load your areas.",
+      "errorKept": "Your sources and notes are untouched.",
+      "keyClose": "closes the focused panel",
+      "keyOpen": "opens beside",
+      "keyPeek": "peeks without opening",
+      "keySpace": "Space",
+      "keysLabel": "Keys"
+    },
+    "topic": {
+      "error": "Could not open this topic.",
+      "errorKept": "The rest of Explore stays open and your notes are untouched.",
+      "goneBody": "It may have been merged into another topic or removed. Nothing else changed.",
+      "goneHeadline": "This topic is no longer in the tree.",
+      "noDirectNotes": "No notes of its own yet. The notes are in the subtopics."
+    }
+  },
+  "addFlow": {
+    "busy": {
+      "button": "Reading…",
+      "reading": "Reading {name}…",
+      "readingFile": "Reading the file…",
+      "waiting": "{count} waiting"
+    },
+    "drop": {
+      "after": "After you drop, you go to the first source in Explore and watch the notes arrive.",
+      "label": "Drop files to add them",
+      "modeError": "The import mode could not be read, so the files are saved as Searchable and organized.",
+      "modeLabel": "Mode",
+      "modeNote": "{hint}. Change it in the Add menu.",
+      "noFiles": "Drop a file to add it",
+      "titleMany": "Drop to add {count} files",
+      "titleOne": "Drop to add 1 file"
+    },
+    "failure": {
+      "close": "Close",
+      "empty": "{name} is empty.",
+      "generic": "The file could not be added.",
+      "kept": "Nothing was saved, and everything else is as it was.",
+      "keptSome": "The files that could be read were added, and everything else is as it was.",
+      "more": "Also not added: {count}.",
+      "noText": "{name} has no text Memora can read.",
+      "noTextNoName": "That file has no text Memora can read.",
+      "notAFile": "{name} is not a file.",
+      "shortMany": "Files not added.",
+      "shortOne": "File not added.",
+      "symlink": "{name} is a shortcut. Drop the original file instead.",
+      "tooLarge": "{name} is too large to import.",
+      "tooLargeNoName": "That file is too large to import.",
+      "unreadable": "{name} could not be read.",
+      "unsupported": "Memora does not read files like {name} yet.",
+      "unsupportedNoName": "Memora does not read that kind of file yet."
+    },
+    "importPanel": {
+      "errors": {
+        "kept": "Nothing was changed.",
+        "open": "This source could not be opened for editing."
+      },
+      "gone": {
+        "action": "Open the Library",
+        "body": "It may have been removed from the Library. Nothing else changed.",
+        "title": "This source no longer exists."
+      },
+      "leave": {
+        "description": "You changed this import and did not save it. Keep working to finish it, or discard what you entered and go on.",
+        "discard": "Discard and go on",
+        "keep": "Keep working",
+        "title": "Leave without saving?"
+      },
+      "title": "Advanced import"
+    },
+    "menu": {
+      "file": "Choose a file…",
+      "fileHint": "PDF, EPUB, Word, Markdown and text",
+      "foot": "This applies to the next imports; each source can change later. Dropping files anywhere in the window works too.",
+      "label": "Ways to add",
+      "link": "Paste a link",
+      "linkHint": "a web page or a video",
+      "modeHeading": "When importing",
+      "more": "More import options…",
+      "note": "Write a note",
+      "noteHint": "goes to No place until it gets a topic"
+    },
+    "modes": {
+      "error": "Could not check whether a model is ready to write.",
+      "errorKept": "Choosing a file still works and imports as Searchable and organized.",
+      "searchable": {
+        "hint": "passages for search and a place in the tree, without notes",
+        "name": "Searchable and organized"
+      },
+      "secondBrain": {
+        "hint": "short notes, a place in the tree and connections",
+        "hintNeedsModel": "short notes, a place in the tree and connections · needs a model that is ready to write",
+        "hintRecommended": "short notes, a place in the tree and connections · recommended: a model is ready to write",
+        "name": "Second brain"
+      },
+      "storeOnly": {
+        "hint": "the file stays in the Library, without AI",
+        "name": "Just keep it"
+      }
     }
   },
   "entityPage": {
@@ -4974,6 +5208,146 @@
       "updated": "last updated {date}"
     }
   },
+  "settingsGeneral": {
+    "language": {
+      "connectionsNote": "Connection descriptions already written can be redone in",
+      "defaultOs": "same as macOS, {language}"
+    },
+    "saveFailed": "This could not be saved. Nothing was changed.",
+    "theme": {
+      "dark": "Dark",
+      "light": "Light",
+      "system": "System"
+    }
+  },
+  "settingsLibrary": {
+    "backup": {
+      "action": "Back up now",
+      "done": "Backup finished.",
+      "failed": "The backup could not be made.",
+      "running": "Backing up…",
+      "savedIn": "Saved in {path}",
+      "verified": "A test restore passed."
+    },
+    "plans": {
+      "deleteAction": "Delete",
+      "deleteAsk": "Delete “{name}”?",
+      "deleteConfirm": "Delete plan",
+      "deleteKept": "Sources already imported keep what was made.",
+      "empty": "No saved import plans yet. Save one while importing.",
+      "loadFailed": "Your saved import plans could not be read.",
+      "loadKept": "Nothing was changed.",
+      "renameAction": "Rename",
+      "renameLabel": "Name of the plan",
+      "saveFailed": "This could not be saved. Nothing was changed."
+    },
+    "storage": {
+      "database": "Local database",
+      "files": "Stored files",
+      "filesNote": "the originals you sent",
+      "sourcesMany": "{count} sources",
+      "sourcesOne": "{count} source",
+      "where": "Both live inside Memora’s data folder on this Mac, and their place is fixed. To keep the originals in a folder of yours, turn on the copy below; to move everything to another disk, use Backup."
+    },
+    "uploads": {
+      "change": "Change folder",
+      "choose": "Choose a folder",
+      "needsFolder": "Choose the folder first: the copies need somewhere to go.",
+      "noFolder": "No folder chosen yet",
+      "off": "Off",
+      "on": "On",
+      "pathHint": "Paste the full path of a folder on this Mac.",
+      "pathLabel": "Folder path",
+      "pathRejected": "A full path starts with “/” and names a folder that exists.",
+      "readFailed": "The copy folder could not be read.",
+      "saveFailed": "This could not be saved. Nothing was changed.",
+      "willReceive": "This folder starts receiving the copies once you turn this on."
+    }
+  },
+  "settingsPrivacy": {
+    "callLog": {
+      "full": "Full capture is on: it keeps whole prompts and answers.",
+      "light": "It keeps times, models and tokens; whole prompts and answers only with full capture.",
+      "none": "The AI call log is empty.",
+      "open": "View and delete in Advanced",
+      "readFailed": "The call log could not be read.",
+      "summaryMany": "The AI call log keeps {count} calls on this Mac.",
+      "summaryOne": "The AI call log keeps {count} call on this Mac."
+    },
+    "history": {
+      "action": "Clear…",
+      "confirm": "Clear Recents",
+      "dialogBody": "This erases the list of items opened recently on this Mac. Pinned items stay.",
+      "dialogTitle": "Clear Recents?",
+      "doneMany": "{count} items removed from Recents.",
+      "doneNone": "Recents was already empty.",
+      "doneOne": "{count} item removed from Recents.",
+      "failed": "Recents could not be cleared. Nothing was changed."
+    },
+    "leaves": {
+      "books": "Book and article details",
+      "booksGoogle": "Google Books",
+      "changeInAi": "Change in AI",
+      "cloud": "In the cloud",
+      "columns": {
+        "job": "Job",
+        "what": "What leaves",
+        "where": "Where it runs"
+      },
+      "credentials": "Credentials kept on this Mac (names only; the values never appear): {names}.",
+      "decisions": "OpenAI Decisions",
+      "internet": "On the internet",
+      "local": "On this Mac",
+      "lookupAuto": "Open Library, Google Books and Crossref",
+      "lookupGoogle": "Google Books and Crossref",
+      "lookupOpenLibrary": "Open Library and Crossref",
+      "noCredentials": "No credentials are kept on this Mac.",
+      "noModel": "No model chosen",
+      "nothing": "Nothing",
+      "off": "Off",
+      "readFailed": "What leaves this Mac could not be read.",
+      "readKept": "Nothing was changed.",
+      "tableLabel": "What leaves this Mac, by job",
+      "what": {
+        "answer": "Your question and the notes it cites",
+        "books": "ISBN, DOI, title and authors",
+        "decide": "Titles and ideas of the notes compared",
+        "decisions": "Title, idea and start of the text of the notes compared",
+        "embed": "Excerpts of your sources and notes",
+        "judge": "Notes and excerpts compared",
+        "writeFast": "Excerpts of sources, and summaries",
+        "writeQuality": "Excerpts of sources"
+      }
+    },
+    "questions": {
+      "action": "Delete questions…",
+      "confirm": "Delete questions",
+      "countMany": "{count} saved questions",
+      "countMore": "More than {count} saved questions",
+      "countNone": "No saved questions.",
+      "countOne": "{count} saved question",
+      "dialogBody": "This erases every saved question and its answers. Your sources and notes stay. It cannot be undone.",
+      "dialogTitle": "Delete all questions?",
+      "doneMany": "{count} questions deleted.",
+      "doneNone": "There were no questions to delete.",
+      "doneOne": "{count} question deleted.",
+      "failed": "The questions could not be deleted. Nothing was changed.",
+      "readFailed": "The saved questions could not be counted."
+    },
+    "reset": {
+      "action": "Reset everything…",
+      "backupLink": "Make a backup first",
+      "confirm": "Reset everything",
+      "dialogBody": "This erases your library, search indexes, graphs, questions, histories, connections, preferences and stored files. Profiles, providers, routes and installed models stay; backups and your personal files are not touched.",
+      "dialogTitle": "Reset everything?",
+      "dialogWarn": "This cannot be undone.",
+      "failed": "The reset could not be finished. Check the file permissions and try again.",
+      "noUndo": "This cannot be undone.",
+      "running": "Resetting…",
+      "warnings": "The reset is done, but some stored files could not be removed."
+    },
+    "working": "Working…"
+  },
   "settingsRegistry": {
     "activeMatchingPresetId": {
       "help": "Balanced is the calibrated set and is read only. To edit values, create or duplicate a preset.",
@@ -5223,7 +5597,7 @@
       "label": "Sources that become pages"
     },
     "privacyCallLog": {
-      "help": "The latest calls to a model, local or in the cloud. Read only; the full log is under Advanced.",
+      "help": "What this Mac keeps about the calls made to models, local or in the cloud.",
       "label": "Recent AI calls"
     },
     "privacyClearQuestions": {
@@ -5467,6 +5841,40 @@
     },
     "untitledTopic": "Untitled topic"
   },
+  "mapRelationsTable": {
+    "caption": "The same connections as the graph, one row per connection",
+    "count": "{count} connections",
+    "countOne": "1 connection",
+    "from": "From",
+    "groupBy": "Group by",
+    "groupByHelp": "Which level of subtopics groups the topics in the list",
+    "groups": {
+      "all": "Show all {count}",
+      "and": "and",
+      "body": "The lines the graph draws from far away, one per pair of topics.",
+      "capped": "Only the strongest links are listed.",
+      "fewer": "Show fewer",
+      "title": "Between topics"
+    },
+    "keyMove": "choose",
+    "keyOpen": "open the first note beside",
+    "keyOpenSecond": "open the second",
+    "link": "Link",
+    "more": "Show {count} more",
+    "notice": {
+      "groupLines": "From far away, only the strongest links between topics are drawn.",
+      "truncated": "This branch is larger than the graph holds, so it shows the most connected notes and connections. Pick a smaller branch to see everything."
+    },
+    "outside": {
+      "action": "See the branch {title}",
+      "body": "Topics outside this branch that connect to its notes. Click to see their branch.",
+      "capped": "The {count} most connected topics.",
+      "title": "Outside the branch"
+    },
+    "suggested": "suggested",
+    "title": "Same connections as a table",
+    "to": "To"
+  },
   "settingsShell": {
     "classic": {
       "open": "Open the old settings"
@@ -5487,6 +5895,9 @@
       "resetFailed": "Could not restore it. Nothing was changed.",
       "resetPending": "One step is left for you to confirm in the option itself.",
       "resetting": "Restoring…",
+      "themeDark": "Dark",
+      "themeLight": "Light",
+      "themeSystem": "System",
       "valueNone": "Not set",
       "valueOff": "Off",
       "valueOn": "On",
@@ -5635,6 +6046,310 @@
       "summaryMinimumWordCount": "minimum words summary short items skip summaries word count threshold tiny sources save calls zero off",
       "themeMode": "theme dark light night mode appearance colors color scheme system",
       "uploadCopies": "upload copies keep original files copy folder store imports originals backup of uploads second"
+    }
+  },
+  "settingsAi": {
+    "blocked": {
+      "localRequiresAppleSilicon": "Local needs a Mac with Apple silicon.",
+      "modelMissing": "{name} needs {model}, which is not installed. Install it in Models on this Mac, then try again.",
+      "noRemoteProfile": "{name} needs a provider model. Add a provider above, then try again.",
+      "thisJob": "this job",
+      "title": "Could not apply {setup}."
+    },
+    "cap": {
+      "change": "Change in Knowledge",
+      "label": "Monthly cloud spending limit: {amount}",
+      "noSpend": "The limit applies to the Gardener and lives in Knowledge.",
+      "spent": "{amount} spent this month. The limit applies to the Gardener and lives in Knowledge."
+    },
+    "confirm": {
+      "apply": "Apply and test",
+      "body": "This replaces the model of every job and tests one call of each. Nothing is downloaded.",
+      "bodyLocal": "There is no validated local writing model yet, so writing may stay on hold.",
+      "title": "Switch to {setup}?"
+    },
+    "credential": {
+      "save": "Save"
+    },
+    "decisions": {
+      "calibrated": "Relations above its calibrated threshold are applied automatically; the others are suggestions you can keep or remove.",
+      "confirmApply": "Turn on",
+      "confirmBody": "Turning this on sends note text to OpenAI as described above. You can turn it off at any time; nothing is sent after that.",
+      "confirmTitle": "Send note text to OpenAI?",
+      "errorTitle": "Could not read the OpenAI Decisions status.",
+      "fallback": "On, but the local ranker is deciding: {reason}.",
+      "key": {
+        "add": "Save key…",
+        "hint": "It is stored encrypted on this computer, never shown again and sent only to OpenAI.",
+        "invalid": "OpenAI refused the saved key. Save a valid one.",
+        "label": "OpenAI Platform key",
+        "none": "No key",
+        "replace": "Replace key…",
+        "set": "Key saved, never shown again",
+        "test": "Test key",
+        "testOk": "OpenAI accepted the key.",
+        "testing": "Testing…"
+      },
+      "keySaved": "The OpenAI key was saved.",
+      "lastFallback": "The last time, the local ranker decided instead: {reason}.",
+      "noticeBody": "While this is on, the title, the idea statement and the first {characters} characters of the text of each note being compared, and of the notes it is compared with (including those it was compared with before), are sent to OpenAI (the Decisions API, model {model}) with your own OpenAI Platform key. By default OpenAI does not train on API data, and it may keep requests for up to 30 days to monitor abuse. Memora does not control that retention. Nothing is sent while this is off, in the Local setup, or without a key.",
+      "noticeCost": "It costs about {price} per million input tokens, typically a cent or less per note. Memora stops using it for the day at {cap}, and the local ranker takes over.",
+      "noticeTitle": "Your note text is sent to OpenAI",
+      "off": "Off: nothing is sent. The local ranker decides the relations.",
+      "ready": "On: OpenAI Decisions decides the relations.",
+      "reason": {
+        "breaker_open": "OpenAI is not responding right now",
+        "error": "OpenAI returned an unexpected error",
+        "invalid_key": "OpenAI refused the saved key",
+        "network": "OpenAI could not be reached",
+        "no_key": "no OpenAI key is saved",
+        "quota": "your OpenAI account has no credit left",
+        "spend_cap": "today's spending limit was reached"
+      },
+      "spend": "Spent today: {spent} of {cap} ({requests} requests).",
+      "turnedOff": "OpenAI Decisions is off.",
+      "turnedOn": "OpenAI Decisions is on.",
+      "unavailable": "Not available in Local or Custom, which never send note text out.",
+      "uncalibrated": "It is not calibrated yet, so every relation it finds is a suggestion you can keep or remove."
+    },
+    "errors": {
+      "write": "Could not save. Nothing was changed."
+    },
+    "intro": "Start with the setup: it picks the model for every job at once. Hybrid and Cloud need a provider, just below. Everything else is fine-tuning.",
+    "models": {
+      "action": {
+        "download": "Download",
+        "import": "Import GGUF file…",
+        "remove": "Remove",
+        "resume": "Resume",
+        "test": "Test",
+        "useRecommended": "Use the recommended values"
+      },
+      "compat": {
+        "compatible": "Fits this Mac",
+        "insufficient_memory": "Not enough memory",
+        "unsupported_platform": "Needs macOS on Apple silicon"
+      },
+      "empty": "No model matches. Clear a filter to see the others.",
+      "errorKept": "Nothing was changed: installed models stay where they are.",
+      "errorTitle": "Could not read the model list.",
+      "eta": {
+        "minutes": "{minutes} min left",
+        "seconds": "{seconds} s left"
+      },
+      "filter": {
+        "all": "All",
+        "compatible": "Only models that fit this Mac",
+        "label": "Show",
+        "ranking": "Comparison",
+        "search": "Search",
+        "writing": "Writing"
+      },
+      "license": "I accept the license:",
+      "parameters": "Parameters",
+      "ranker": {
+        "fallback": "Without a validated ranker, notes that fit more than one topic start new topics. They are placed again once a ranker is ready.",
+        "installing": "This ranker places notes that fit more than one topic. Until it is ready, those notes start new topics and are placed again afterwards.",
+        "pending": "Run the test to validate this ranker."
+      },
+      "removeAsk": "Remove {model} and its files from this Mac?",
+      "removeBlocked": "In use by {profiles}. Change the profile first.",
+      "saveDefaults": "Save defaults",
+      "status": {
+        "downloading": "Downloading",
+        "failed": "Failed",
+        "not_downloaded": "Not downloaded",
+        "ready": "Installed",
+        "removing": "Removing",
+        "verifying": "Verifying"
+      },
+      "summaryMany": "{count} installed · {size}",
+      "summaryNone": "None installed",
+      "summaryOne": "1 installed · {size}",
+      "testOk": "The model ran on this Mac.",
+      "token": {
+        "add": "Add token…",
+        "label": "Token",
+        "none": "No token",
+        "replace": "Replace token…",
+        "set": "Token saved, never shown"
+      }
+    },
+    "preset": {
+      "cloud": {
+        "help": "Almost everything on your provider."
+      },
+      "custom": {
+        "help": "You choose the model of each job, right below."
+      },
+      "estimate": "About {amount} a month with an API key.",
+      "hybrid": {
+        "help": "Search and comparison on this Mac; writing and answers on your provider."
+      },
+      "local": {
+        "help": "Everything runs on this Mac and nothing leaves it.",
+        "unavailableMemory": "This Mac does not have enough memory for the local writing model.",
+        "unavailableSilicon": "Needs a Mac with Apple silicon.",
+        "unavailableSystem": "No local writing model exists for this system.",
+        "unverified": "No validated local writing model yet."
+      },
+      "name": {
+        "cloud": "Cloud",
+        "custom": "Custom",
+        "hybrid": "Hybrid",
+        "local": "Local"
+      },
+      "recommended": "recommended",
+      "unset": "No setup chosen yet. Choose where the AI runs: it picks the model of every job."
+    },
+    "profiles": {
+      "close": "Close",
+      "create": "Create profile",
+      "customize": "Customized",
+      "duplicate": "Duplicate profile",
+      "edit": "Edit",
+      "empty": "No profiles yet. A profile ties a model to the jobs it serves.",
+      "model": "Model",
+      "modelDefaults": "Model defaults",
+      "name": "Profile name",
+      "new": "New profile…",
+      "remove": "Remove profile",
+      "removeAsk": "Remove this profile and its job routes? Downloaded models are kept.",
+      "resetTask": "Use model defaults",
+      "save": "Save profile",
+      "selectModel": "Choose a provider or local model",
+      "summaryMany": "{count} profiles",
+      "summaryNone": "No profiles",
+      "summaryOne": "1 profile",
+      "task": {
+        "atomic-note-generation": "Atomic notes",
+        "embedding": "Search and similarity",
+        "knowledge-graph-generation": "Knowledge graph",
+        "reranking": "Comparison (ranker)",
+        "structured-output": "Structured answers",
+        "summarization": "Summaries",
+        "text-generation": "Text writing"
+      }
+    },
+    "providers": {
+      "action": {
+        "addKey": "Add key…",
+        "addModel": "Add a model…",
+        "find": "Find models",
+        "finding": "Finding…",
+        "remove": "Remove",
+        "replaceKey": "Replace key…",
+        "save": "Save",
+        "saving": "Saving…",
+        "signIn": "Sign in…",
+        "signInAgain": "Sign in again",
+        "test": "Test",
+        "testing": "Testing…"
+      },
+      "form": {
+        "address": "Server address",
+        "addressHint": "For OpenAI itself, leave the default address.",
+        "key": "API key",
+        "model": "Model",
+        "modelHint": "Pick one the provider lists, or type its name.",
+        "purpose": "Used for",
+        "signInHint": "Opens ChatGPT in your browser. Only the writing jobs use it.",
+        "signedIn": "Signed in. Choose the model to use."
+      },
+      "modelsLabel": "Models",
+      "purpose": {
+        "embedding": "Search",
+        "generation": "Writing",
+        "reranking": "Comparison"
+      },
+      "removeAsk": "Remove {model}? Profiles that use it lose their model.",
+      "status": {
+        "connected": "Connected",
+        "keySaved": "Key saved, never shown",
+        "none": "No key",
+        "notConnected": "Not signed in"
+      },
+      "testOk": "Connection works"
+    },
+    "routes": {
+      "choose": "Choose a model",
+      "disclosure": {
+        "body": "When this model decides or judges, the titles and ideas of the notes being compared, and excerpts of the sources, are sent to {provider}. It keeps them under its own retention terms, which Memora does not control.",
+        "confirm": "Use this model",
+        "title": "{provider} receives your text"
+      },
+      "empty": "Choose a setup above: it picks the model of each job.",
+      "intro": "The setup chooses these models. Changing one here changes only that job, and the setup becomes Custom.",
+      "introCustom": "Each job keeps the model you chose. To start over, pick a setup above.",
+      "noModel": "No model chosen",
+      "noModelsAvailable": "No models to choose from. Add a provider or install a local model below.",
+      "noRanker": "No ranker installed yet. Relations wait for one unless the generative judge decides.",
+      "partial": "Some routes of the judge are missing. Choose a model to set them all.",
+      "where": {
+        "local": "On this Mac",
+        "remote": "Provider"
+      }
+    },
+    "states": {
+      "errorKept": "Nothing was changed: Memora keeps using the models it already had.",
+      "errorTitle": "Could not read the AI setup."
+    },
+    "status": {
+      "applied": "{setup} is applied. Each job shows its test result.",
+      "applying": "Applying {setup}…",
+      "testing": "Testing {name}…"
+    },
+    "test": {
+      "button": "Test",
+      "failed": "Test failed",
+      "failedWith": "Test failed: {reason}",
+      "none": "No ranker",
+      "passed": "Test passed",
+      "passedMs": "Test passed in {ms} ms",
+      "passedSeconds": "Test passed in {seconds} s",
+      "running": "Testing…",
+      "untested": "Not tested"
+    },
+    "thisMac": {
+      "detectedOn": "{date}, {time}",
+      "detectedToday": "today, {time}",
+      "error": "Could not detect this Mac.",
+      "errorKept": "Nothing was changed: the setup above works as before.",
+      "fact": {
+        "detected": "Detected",
+        "disk": "Free disk",
+        "gpuMemory": "Memory for the GPU",
+        "graphicsMemory": "Graphics memory",
+        "memory": "Memory",
+        "memoryUnified": "Unified memory"
+      },
+      "intro": "What Memora found on this Mac, and the setup that fits it.",
+      "nothingChanges": "Nothing changes by itself: you choose the setup.",
+      "reason": {
+        "local_memory_too_small": "This Mac has little memory for the local writing model.",
+        "local_quality_unverified": "Local does not have a validated writing model for this Mac yet.",
+        "local_requires_apple_silicon": "Local needs a Mac with Apple silicon.",
+        "local_writer_unavailable": "No local writing model exists for this system.",
+        "probe_incomplete": "Not everything could be detected, so some figures may be missing.",
+        "ranker_slow_on_cpu": "Without a dedicated graphics card, comparing notes is slow on this computer.",
+        "running_under_rosetta": "Memora is running translated (Rosetta). It works, but slower than the native version."
+      },
+      "recommended": "Recommended for this Mac: {setup}.",
+      "redetect": "Detect again",
+      "redetected": "Detected again.",
+      "redetecting": "Detecting…",
+      "tag": "information only",
+      "title": {
+        "intel": "Mac with an Intel processor",
+        "other": "This computer",
+        "silicon": "Mac with Apple silicon",
+        "windows": "Windows computer"
+      },
+      "why": {
+        "cloud": "Almost everything uses your provider; this computer keeps your library.",
+        "hybrid": "Search and comparison run here at no cost; writing uses your provider.",
+        "local": "Everything runs here and nothing leaves this Mac."
+      }
     }
   },
   "settingsAdvanced": {
