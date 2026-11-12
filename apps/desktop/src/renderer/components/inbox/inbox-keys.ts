@@ -124,6 +124,8 @@ export function keyHint(
 export interface InboxKeyRow {
   keys: readonly string[];
   label: MessageKey;
+  /** The one-word form the key bar uses ("navegar", "remover"). */
+  short: MessageKey;
 }
 
 /**
@@ -137,15 +139,23 @@ export function keyRows(
   const offered = (key: InboxVerbCommand): boolean =>
     item === null ? key !== "edit" : keyOffered(item, key);
   const rows: InboxKeyRow[] = [
-    { keys: ["J", "K"], label: "inbox.keys.move" },
-    { keys: ["Enter"], label: "inbox.keys.open" }
+    { keys: ["J", "K"], label: "inbox.keys.move", short: "inbox.keys.short.move" },
+    { keys: ["Enter"], label: "inbox.keys.open", short: "inbox.keys.short.open" }
   ];
-  if (offered("apply")) rows.push({ keys: ["A"], label: "inbox.keys.apply" });
-  if (offered("remove")) rows.push({ keys: ["⌫"], label: "inbox.keys.remove" });
-  if (offered("dismiss")) rows.push({ keys: ["X"], label: "inbox.keys.dismiss" });
-  if (offered("edit")) rows.push({ keys: ["E"], label: "inbox.keys.edit" });
-  if (offered("retry")) rows.push({ keys: ["R"], label: "inbox.keys.retry" });
-  rows.push({ keys: ["U"], label: "inbox.keys.undo" }, { keys: ["?"], label: "inbox.keys.help" });
+  if (offered("apply"))
+    rows.push({ keys: ["A"], label: "inbox.keys.apply", short: "inbox.keys.short.apply" });
+  if (offered("remove"))
+    rows.push({ keys: ["⌫"], label: "inbox.keys.remove", short: "inbox.keys.short.remove" });
+  if (offered("dismiss"))
+    rows.push({ keys: ["X"], label: "inbox.keys.dismiss", short: "inbox.keys.short.dismiss" });
+  if (offered("edit"))
+    rows.push({ keys: ["E"], label: "inbox.keys.edit", short: "inbox.keys.short.edit" });
+  if (offered("retry"))
+    rows.push({ keys: ["R"], label: "inbox.keys.retry", short: "inbox.keys.short.retry" });
+  rows.push(
+    { keys: ["U"], label: "inbox.keys.undo", short: "inbox.keys.short.undo" },
+    { keys: ["?"], label: "inbox.keys.help", short: "inbox.keys.short.help" }
+  );
   return rows;
 }
 

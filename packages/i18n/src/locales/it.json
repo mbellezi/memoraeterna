@@ -317,6 +317,13 @@
     }
   },
   "inbox": {
+    "consequence": {
+      "keep": "Il collegamento resta e conta come tua decisione.",
+      "remove": "Il collegamento esce e il Giardiniere non lo suggerisce più.",
+      "restore": "Il collegamento torna e conta come tua decisione."
+    },
+    "summary": "{count} decisioni · la più rischiosa per prima",
+    "summaryOne": "1 decisione ti aspetta",
     "title": "Posta in arrivo",
     "description": "Ciò che richiede il tuo giudizio, il più importante per primo.",
     "badge": "{count} in attesa",
@@ -325,7 +332,7 @@
       "error": "Impossibile caricare la posta in arrivo.",
       "empty": {
         "title": "Niente richiede la tua attenzione",
-        "body": "La tua libreria si organizza da sola. Quando qualcosa richiede il tuo giudizio, comparirà qui."
+        "body": "Il Giardiniere chiede qui quando un cambio è rischioso."
       },
       "emptyFiltered": "Nessun elemento corrisponde a questo filtro.",
       "loadMore": "Carica altri",
@@ -334,6 +341,7 @@
       "errorKept": "Non è stato deciso né modificato nulla."
     },
     "filters": {
+      "kind": "Tipo",
       "label": "Filtra la posta in arrivo",
       "all": "Tutto",
       "chip": "{kind}: {count}",
@@ -482,6 +490,18 @@
       "hide": "Nascondi"
     },
     "keys": {
+      "barNote": "Le scorciatoie a un solo tasto non funzionano nei campi di testo.",
+      "short": {
+        "apply": "accetta",
+        "dismiss": "scarta",
+        "edit": "modifica",
+        "help": "scorciatoie",
+        "move": "naviga",
+        "open": "apri",
+        "remove": "rimuovi",
+        "retry": "riprova",
+        "undo": "annulla"
+      },
       "toggle": "Scorciatoie da tastiera",
       "title": "Scorciatoie da tastiera",
       "move": "Elemento successivo o precedente",
@@ -4098,6 +4118,11 @@
       "label": "Visualizzazione",
       "table": "Solo tabella"
     },
+    "health": {
+      "attention": "troppo grande",
+      "good": "equilibrato",
+      "violation": "oltre il limite"
+    },
     "inspector": {
       "next": "Prossimo passo",
       "nextInbox": "Vedi la proposta nella Posta in arrivo",
@@ -4115,8 +4140,8 @@
       "headline": "Il grafo delle connessioni arriverà presto"
     },
     "selected": {
-      "growth": "{growth} note in {days} giorni",
-      "growthOne": "{growth} nota in {days} giorni",
+      "growth": "{growth} note in {days} giorni",
+      "growthOne": "{growth} nota in {days} giorni",
       "subtopics": "{count} sottoargomenti diretti",
       "subtopicsOne": "1 sottoargomento diretto"
     },
@@ -4126,6 +4151,7 @@
     },
     "states": {
       "empty": "La mappa compare quando ci sono argomenti.",
+      "emptyAdd": "Aggiungi una fonte",
       "emptyBody": "Quando la tua prima fonte diventa note, gli argomenti nascono da soli e la mappa li mostra qui.",
       "error": "Non è stato possibile caricare la mappa.",
       "errorKept": "Le tue fonti e le tue note sono intatte."
@@ -4133,10 +4159,13 @@
     "table": {
       "caption": "Gli stessi numeri del grafico, una riga per argomento",
       "growth": "7 giorni",
-      "health": "Salute",
+      "health": "Dimensione",
       "notes": "Note",
       "topic": "Argomento"
     },
-    "title": "Mappa"
+    "title": "Mappa",
+    "warnings": {
+      "dismiss": "Scarta"
+    }
   }
 }

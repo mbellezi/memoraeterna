@@ -317,6 +317,13 @@
     }
   },
   "inbox": {
+    "consequence": {
+      "keep": "La connexion reste et compte comme votre décision.",
+      "remove": "La connexion disparaît et le Jardinier ne la suggère plus.",
+      "restore": "La connexion revient et compte comme votre décision."
+    },
+    "summary": "{count} décisions · la plus risquée d’abord",
+    "summaryOne": "1 décision vous attend",
     "title": "Boîte de réception",
     "description": "Ce qui demande votre jugement, le plus important d'abord.",
     "badge": "{count} en attente",
@@ -325,7 +332,7 @@
       "error": "Impossible de charger votre boîte de réception.",
       "empty": {
         "title": "Rien ne vous attend",
-        "body": "Votre bibliothèque s'organise toute seule. Quand quelque chose demandera votre jugement, cela apparaîtra ici."
+        "body": "Le Jardinier demande ici quand un changement est risqué."
       },
       "emptyFiltered": "Aucun élément ne correspond à ce filtre.",
       "loadMore": "Charger plus",
@@ -334,6 +341,7 @@
       "errorKept": "Rien n’a été décidé ni modifié."
     },
     "filters": {
+      "kind": "Catégorie",
       "label": "Filtrer la boîte de réception",
       "all": "Tout",
       "chip": "{kind} : {count}",
@@ -482,6 +490,18 @@
       "hide": "Masquer"
     },
     "keys": {
+      "barNote": "Les raccourcis à une touche ne fonctionnent pas dans les champs de texte.",
+      "short": {
+        "apply": "accepter",
+        "dismiss": "écarter",
+        "edit": "modifier",
+        "help": "raccourcis",
+        "move": "naviguer",
+        "open": "ouvrir",
+        "remove": "retirer",
+        "retry": "réessayer",
+        "undo": "annuler"
+      },
       "toggle": "Raccourcis clavier",
       "title": "Raccourcis clavier",
       "move": "Élément suivant ou précédent",
@@ -4105,6 +4125,11 @@
       "label": "Affichage",
       "table": "Tableau seul"
     },
+    "health": {
+      "attention": "trop grand",
+      "good": "équilibré",
+      "violation": "hors limite"
+    },
     "inspector": {
       "next": "Prochaine étape",
       "nextInbox": "Voir la proposition dans la Boîte de réception",
@@ -4122,8 +4147,8 @@
       "headline": "Le graphe des connexions arrive bientôt"
     },
     "selected": {
-      "growth": "{growth} notes en {days} jours",
-      "growthOne": "{growth} note en {days} jours",
+      "growth": "{growth} notes en {days} jours",
+      "growthOne": "{growth} note en {days} jours",
       "subtopics": "{count} sous-sujets directs",
       "subtopicsOne": "1 sous-sujet direct"
     },
@@ -4133,6 +4158,7 @@
     },
     "states": {
       "empty": "La carte apparaît quand il y a des sujets.",
+      "emptyAdd": "Ajouter une source",
       "emptyBody": "Quand votre première source devient des notes, les sujets naissent d’eux-mêmes et la carte les montre ici.",
       "error": "La carte n’a pas pu être chargée.",
       "errorKept": "Vos sources et vos notes sont intactes."
@@ -4140,10 +4166,13 @@
     "table": {
       "caption": "Les mêmes chiffres que le graphique, une ligne par sujet",
       "growth": "7 jours",
-      "health": "Santé",
+      "health": "Taille",
       "notes": "Notes",
       "topic": "Sujet"
     },
-    "title": "Carte"
+    "title": "Carte",
+    "warnings": {
+      "dismiss": "Écarter"
+    }
   }
 }

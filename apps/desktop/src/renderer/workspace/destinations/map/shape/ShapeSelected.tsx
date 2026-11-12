@@ -67,7 +67,7 @@ export function ShapeSelected({
       <p className="m-0 text-sm text-foreground">{selectedLine(t, model)}</p>
       {model.health || model.mark ? (
         <p className="m-0 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-secondary-foreground">
-          {model.health ? <HealthMark t={t} health={model.health} /> : null}
+          {model.health ? <HealthMark t={t} health={model.health} short capitalized /> : null}
           {model.mark}
         </p>
       ) : null}

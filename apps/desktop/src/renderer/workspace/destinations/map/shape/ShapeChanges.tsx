@@ -49,10 +49,11 @@ export function ShapeChanges({
                 />
                 <div className="flex min-w-0 flex-1 flex-col gap-1.5">
                   <p className="text-sm text-foreground">
-                    {changeText(t, change)}
+                    {changeText(t, change).replace(/[.。]\s*$/u, "")}
                     <span className="text-muted-foreground">{` · ${timeText(t, change.at)}`}</span>
                   </p>
-                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                  {/* The link buttons carry their own padding: pulled back, their text meets the sentence's. */}
+                  <div className="-ml-3 flex flex-wrap items-center gap-x-1 gap-y-1">
                     <CompareToggle
                       t={t}
                       changeSetId={change.id}

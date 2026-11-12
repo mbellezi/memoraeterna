@@ -27,8 +27,8 @@ const head = "px-2 py-1.5 text-xs font-semibold text-secondary-foreground whites
 
 /**
  * "Mesmos números em tabela": the chart's numbers beside it, always visible and in step with it
- * (the selected row is the selected block). Columns: Tópico, Notas (52 px), Saúde (124 px) and
- * 7 dias (64 px); a name that does not fit ends in a tail ellipsis and shows whole on hover.
+ * (the selected row is the selected block). Columns: Tópico, Notas (44 px), Tamanho (112 px) and
+ * 7 dias (52 px), so a name keeps as much of the narrow column as it can; a name that does not fit ends in a tail ellipsis and shows whole on hover.
  */
 export function MapTable({
   t,
@@ -43,20 +43,21 @@ export function MapTable({
   const shown = rows.slice(0, limit);
   const number = new Intl.NumberFormat(t.locale);
   return (
-    <div className="flex min-w-0 flex-col gap-2">
+    <div className={cn("flex min-w-0 flex-col gap-2", compact && "min-h-0 flex-1")}>
+      {/* The previous panel's table takes the panel's height and scrolls inside it. */}
       <div
         className={cn(
           "overflow-y-auto rounded-lg border border-border",
-          compact ? "max-h-[28rem]" : "max-h-80"
+          compact ? "min-h-0 flex-1 content-start" : "max-h-80"
         )}
       >
         <table className="w-full table-fixed border-collapse text-xs">
           <caption className="sr-only">{t("map.table.caption")}</caption>
           <colgroup>
             <col />
-            <col style={{ width: 52 }} />
-            {compact ? null : <col className="max-[1179px]:hidden" style={{ width: 124 }} />}
-            {compact ? null : <col style={{ width: 64 }} />}
+            <col style={{ width: 44 }} />
+            {compact ? null : <col className="max-[1179px]:hidden" style={{ width: 112 }} />}
+            {compact ? null : <col style={{ width: 52 }} />}
           </colgroup>
           <thead className="sticky top-0 bg-soft">
             <tr>
@@ -116,7 +117,7 @@ export function MapTable({
                   </td>
                   {compact ? null : (
                     <td className="px-2 py-1 whitespace-nowrap max-[1179px]:hidden">
-                      {row.health ? <HealthMark t={t} health={row.health} /> : "—"}
+                      {row.health ? <HealthMark t={t} health={row.health} short /> : "—"}
                     </td>
                   )}
                   {compact ? null : (

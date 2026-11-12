@@ -12,7 +12,7 @@ import type { Translator } from "@app/i18n";
 import { countLabel } from "../../../../components/topic-page/topic-page-model";
 import { cn } from "../../../../lib/cn";
 import { toneClass, toneIcon } from "./health-marks";
-import { fitMapLabel, type MeasureText } from "./icicle-fit";
+import { fitMapLabel, mapLabelMinHeight, type MeasureText } from "./icicle-fit";
 import { fillShares, moveFocus, type FocusMove, type IcicleLayout } from "./icicle-layout";
 import { mapBoxes, mapColumnShares, mapGap, type MapBox } from "./map-icicle";
 import { cellLabel, cellName, shapeHealth } from "./shape-model";
@@ -47,21 +47,33 @@ const ringColour: Record<TopicHealth, string | null> = {
   violation: "var(--state-danger)"
 };
 
-/** The selection's 2 px accent outline, with the health ring inside it: both show at once. */
-function ringOf(
+/**
+ * The block's rings: the selection's 2 px accent outline with the health ring inside it (both show
+ * at once), and the 3 px bar of the ancestor that holds where the person was. `outlinePx` is how
+ * thick the outline is all round, so the label can keep clear of it.
+ */
+export function ringsOf(
   selected: boolean,
   health: TopicHealth,
   here: boolean,
-  short: boolean
-): string | undefined {
+  heightPx: number
+): { shadow: string | undefined; outlinePx: number } {
   const rings: string[] = [];
-  if (selected) rings.push("inset 0 0 0 2px var(--accent)");
+  let outlinePx = 0;
+  if (selected) {
+    rings.push("inset 0 0 0 2px var(--accent)");
+    outlinePx = 2;
+  }
   const mark = ringColour[health];
   // A block too short for two rings keeps the selection's: its glyph and word carry the health.
-  if (mark && !(short && selected)) rings.push(`inset 0 0 0 ${selected ? 4 : 2}px ${mark}`);
+  const room = heightPx >= mapLabelMinHeight(4);
+  if (mark && (!selected || room)) {
+    outlinePx = selected ? 4 : 2;
+    rings.push(`inset 0 0 0 ${outlinePx}px ${mark}`);
+  }
   // The ancestor that holds where the person was: a 3 px bar on its left edge.
   if (here) rings.push("inset 3px 0 0 0 var(--accent)");
-  return rings.length === 0 ? undefined : rings.join(", ");
+  return { shadow: rings.length === 0 ? undefined : rings.join(", "), outlinePx };
 }
 
 export interface MapChartProps {
@@ -307,9 +319,11 @@ function Block({
   const health = node?.health ?? "good";
   const name = cellName(t, cell, wholeTree);
   const count = countLabel(t, "notes", cell.value);
+  const rings = ringsOf(selected, health, here, box.h - mapGap);
   const form = fitMapLabel({
     widthPx: box.w - mapGap,
     heightPx: box.h - mapGap,
+    outlinePx: rings.outlinePx,
     name,
     count,
     measure
@@ -330,14 +344,15 @@ function Block({
       style={{
         ...rect(box),
         background: fillOf(cell.row, selected),
-        boxShadow: ringOf(selected, health, here, box.h < 24)
+        boxShadow: rings.shadow
       }}
       className={cn(
         "absolute flex min-w-0 overflow-hidden rounded-md border-0 px-2 text-left text-xs text-foreground",
         form === "stacked"
           ? "flex-col justify-center gap-0.5 leading-4"
           : "items-center gap-1.5 leading-none",
-        "focus-visible:-outline-offset-2 focus-visible:outline-foreground"
+        // The focus is a second, outer accent ring: the selection's own ring stays visible.
+        "focus-visible:z-10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
       )}
     >
       {form === "none" ? null : (

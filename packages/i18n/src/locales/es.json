@@ -317,6 +317,13 @@
     }
   },
   "inbox": {
+    "consequence": {
+      "keep": "La conexión se queda y cuenta como decisión tuya.",
+      "remove": "La conexión se va y el Jardinero no vuelve a sugerirla.",
+      "restore": "La conexión vuelve y cuenta como decisión tuya."
+    },
+    "summary": "{count} decisiones · la más arriesgada primero",
+    "summaryOne": "1 decisión te espera",
     "title": "Bandeja de entrada",
     "description": "Lo que necesita tu criterio, lo más importante primero.",
     "badge": "{count} en espera",
@@ -325,7 +332,7 @@
       "error": "No se pudo cargar tu bandeja de entrada.",
       "empty": {
         "title": "Nada te necesita",
-        "body": "Tu biblioteca se organiza sola. Cuando algo necesite tu criterio, aparecerá aquí."
+        "body": "El Jardinero pregunta aquí cuando un cambio es arriesgado."
       },
       "emptyFiltered": "Nada coincide con este filtro.",
       "loadMore": "Cargar más",
@@ -334,6 +341,7 @@
       "errorKept": "No se decidió ni cambió nada."
     },
     "filters": {
+      "kind": "Tipo",
       "label": "Filtrar la bandeja de entrada",
       "all": "Todo",
       "chip": "{kind}: {count}",
@@ -482,6 +490,18 @@
       "hide": "Ocultar"
     },
     "keys": {
+      "barNote": "Los atajos de una tecla no funcionan dentro de campos de texto.",
+      "short": {
+        "apply": "aceptar",
+        "dismiss": "descartar",
+        "edit": "editar",
+        "help": "atajos",
+        "move": "navegar",
+        "open": "abrir",
+        "remove": "quitar",
+        "retry": "reintentar",
+        "undo": "deshacer"
+      },
       "toggle": "Atajos de teclado",
       "title": "Atajos de teclado",
       "move": "Elemento siguiente o anterior",
@@ -4107,6 +4127,11 @@
       "label": "Visualización",
       "table": "Solo tabla"
     },
+    "health": {
+      "attention": "muy grande",
+      "good": "equilibrado",
+      "violation": "sobre el límite"
+    },
     "inspector": {
       "next": "Siguiente paso",
       "nextInbox": "Ver la propuesta en la Bandeja de entrada",
@@ -4124,8 +4149,8 @@
       "headline": "El grafo de conexiones llegará pronto"
     },
     "selected": {
-      "growth": "{growth} notas en {days} días",
-      "growthOne": "{growth} nota en {days} días",
+      "growth": "{growth} notas en {days} días",
+      "growthOne": "{growth} nota en {days} días",
       "subtopics": "{count} subtemas directos",
       "subtopicsOne": "1 subtema directo"
     },
@@ -4135,6 +4160,7 @@
     },
     "states": {
       "empty": "El mapa aparece cuando haya temas.",
+      "emptyAdd": "Añadir una fuente",
       "emptyBody": "Cuando tu primera fuente se convierta en notas, los temas nacen solos y el mapa los muestra aquí.",
       "error": "No se pudo cargar el mapa.",
       "errorKept": "Tus fuentes y notas siguen intactas."
@@ -4142,10 +4168,13 @@
     "table": {
       "caption": "Los mismos números del gráfico, una fila por tema",
       "growth": "7 días",
-      "health": "Salud",
+      "health": "Tamaño",
       "notes": "Notas",
       "topic": "Tema"
     },
-    "title": "Mapa"
+    "title": "Mapa",
+    "warnings": {
+      "dismiss": "Descartar"
+    }
   }
 }

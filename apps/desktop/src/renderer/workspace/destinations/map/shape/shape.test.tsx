@@ -14,6 +14,8 @@ import {
   shapeId
 } from "./shape-fixtures";
 import { tableRows } from "./shape-model";
+import { mapLabelMinHeight } from "./icicle-fit";
+import { ringsOf } from "./MapChart";
 import { escapeStep, ShapeView, type ShapeViewProps } from "./ShapeView";
 
 const noop = () => undefined;
@@ -162,8 +164,9 @@ describe("the Shape view", () => {
     const html = view(snapshot({ selectedKey: topicCellKey(shapeId(sample.forgetting)) }));
     expect(html).toMatch(/<h2[^>]*>Forgetting curve<\/h2>/);
     expect(html).toContain("Topics › Memory and learning");
-    expect(html).toContain("26 notes · 2 direct subtopics · +8 notes in 7 days");
-    expect(html).toContain("Good");
+    expect(html).toContain("26 notes · 2 direct subtopics · +8 notes in\u00a07\u00a0days");
+    // The size words of the Map, short enough for its table: "Balanced" here, "balanced" in a cell.
+    expect(html).toContain("Balanced");
     expect(html).toContain("Open topic");
     expect(html).toContain("Zoom into this branch");
   });
@@ -212,9 +215,10 @@ describe("the zoom-out band and Esc", () => {
     expect(html).toContain("goes back to Forgetting curve, where you were.");
     expect(html).toContain(">Back<");
     expect(html).toContain("here = holds where you were");
-    // The ancestors in the chart and the rows of the table carry the marker, the root does not.
+    // Only the block that holds the origin carries the marker, not the ancestors above it or the root.
     expect(html).toContain("Forgetting curve, 26 items, level 2, health: good, here");
-    expect(html).toContain("Memory and learning, 90 items, level 1, health: good, here");
+    expect(html).not.toContain("Memory and learning, 90 items, level 1, health: good, here");
+    expect(html.match(/, here"/gu)).toHaveLength(1);
     expect(html).toContain("inset 3px 0 0 0 var(--accent)");
   });
 
@@ -257,11 +261,11 @@ describe("the table", () => {
     expect(html).toContain(">—<");
   });
 
-  it("is beside the chart with Notes, Health and 7 days, the selected row marked", () => {
+  it("is beside the chart with Notes, Size and 7 days, the selected row marked", () => {
     const html = view(snapshot({ selectedKey: topicCellKey(shapeId(sample.memory)) }));
+    expect(html).toContain('<col style="width:44px"/>');
+    expect(html).toContain('<col class="max-[1179px]:hidden" style="width:112px"/>');
     expect(html).toContain('<col style="width:52px"/>');
-    expect(html).toContain('<col class="max-[1179px]:hidden" style="width:124px"/>');
-    expect(html).toContain('<col style="width:64px"/>');
     expect(html).toContain("bg-surface-selected");
   });
 
@@ -372,7 +376,9 @@ describe("warnings and proposals", () => {
 describe("what changed today", () => {
   it("lists a change with its time, its before and after and an Undo", () => {
     const html = view(snapshot());
-    expect(html).toContain("The structure was rebalanced. Items moved: 8.");
+    // The sentence's own full stop gives way to the dot before the time.
+    expect(html).toContain("The structure was rebalanced. Items moved: 8");
+    expect(html).not.toContain("Items moved: 8.");
     expect(html).toMatch(/· \d{1,2}:\d{2}/);
     expect(html).toContain(">Undo<");
   });
@@ -414,7 +420,9 @@ describe("loading, empty and error states", () => {
     expect(html).toContain('aria-busy="true"');
     expect(html).toContain("Loading");
     expect(html).not.toContain("data-cell");
-    expect(html).not.toContain('aria-label="Display"');
+    // The header keeps its shape: the view toggle is there, and disabled.
+    expect(html).toContain('aria-label="Display"');
+    expect(html).toContain("data-disabled");
   });
 
   it("says in one sentence what failed, what is kept, and offers one retry", () => {
@@ -517,5 +525,37 @@ describe("every language", () => {
         messages[language].map.chart.legend.height
       );
     }
+  });
+});
+
+describe("a block's outline and its label (T142 UX round 1)", () => {
+  it("reports the thickness of the outline all round, so the label can keep clear of it", () => {
+    expect(ringsOf(false, "good", false, 40).outlinePx).toBe(0);
+    expect(ringsOf(true, "good", false, 40).outlinePx).toBe(2);
+    expect(ringsOf(false, "attention", false, 40).outlinePx).toBe(2);
+    // Both rings need room for both: 4 px all round.
+    expect(ringsOf(true, "attention", false, mapLabelMinHeight(4)).outlinePx).toBe(4);
+    // A block too short for two rings keeps the selection's alone.
+    expect(ringsOf(true, "attention", false, mapLabelMinHeight(4) - 1).outlinePx).toBe(2);
+  });
+
+  it("marks only the block that holds where the person was in the table too", () => {
+    const origin = { topicId: shapeId(sample.forgetting), title: "Forgetting curve" };
+    const html = view(snapshot(), { origin, onBack: noop });
+    expect(html.match(/· here ↳/gu)).toHaveLength(1);
+  });
+
+  it("offers the app's Add in the empty Map and names the next step", () => {
+    const html = view(snapshot({ load: { status: "missing" } }));
+    expect(html).toContain("border-dashed");
+    expect(html).toContain("Add a source");
+  });
+
+  it("words the size of a topic in the table's short words, under the column's new name", () => {
+    const html = view(snapshot());
+    expect(html).toContain(">Size<");
+    expect(html).toContain("balanced");
+    expect(html).toContain("too large");
+    expect(html).not.toContain("Needs attention</span>");
   });
 });

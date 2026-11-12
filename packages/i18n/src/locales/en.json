@@ -317,6 +317,13 @@
     }
   },
   "inbox": {
+    "consequence": {
+      "keep": "The connection stays and counts as your decision.",
+      "remove": "The connection goes, and the Gardener does not suggest it again.",
+      "restore": "The connection comes back and counts as your decision."
+    },
+    "summary": "{count} decisions · riskiest first",
+    "summaryOne": "1 decision waits for you",
     "title": "Inbox",
     "description": "What needs your judgment, the most important first.",
     "badge": "{count} waiting",
@@ -325,7 +332,7 @@
       "error": "Your Inbox could not be loaded.",
       "empty": {
         "title": "Nothing needs you",
-        "body": "Your library organizes itself. When something needs your judgment, it appears here."
+        "body": "The Gardener asks here when a change is risky."
       },
       "emptyFiltered": "Nothing matches this filter.",
       "loadMore": "Load more",
@@ -334,6 +341,7 @@
       "errorKept": "Nothing was decided or changed."
     },
     "filters": {
+      "kind": "Type",
       "label": "Filter the Inbox",
       "all": "All",
       "chip": "{kind}: {count}",
@@ -482,6 +490,18 @@
       "hide": "Hide"
     },
     "keys": {
+      "barNote": "Single-key shortcuts do not work inside text fields.",
+      "short": {
+        "apply": "accept",
+        "dismiss": "dismiss",
+        "edit": "edit",
+        "help": "shortcuts",
+        "move": "navigate",
+        "open": "open",
+        "remove": "remove",
+        "retry": "retry",
+        "undo": "undo"
+      },
       "toggle": "Keyboard shortcuts",
       "title": "Keyboard shortcuts",
       "move": "Next or previous item",
@@ -4100,6 +4120,11 @@
       "label": "Display",
       "table": "Table only"
     },
+    "health": {
+      "attention": "too large",
+      "good": "balanced",
+      "violation": "over the limit"
+    },
     "inspector": {
       "next": "Next step",
       "nextInbox": "See the proposal in the Inbox",
@@ -4117,8 +4142,8 @@
       "headline": "The graph of connections is on its way"
     },
     "selected": {
-      "growth": "{growth} notes in {days} days",
-      "growthOne": "{growth} note in {days} days",
+      "growth": "{growth} notes in {days} days",
+      "growthOne": "{growth} note in {days} days",
       "subtopics": "{count} direct subtopics",
       "subtopicsOne": "1 direct subtopic"
     },
@@ -4128,6 +4153,7 @@
     },
     "states": {
       "empty": "The map appears when there are topics.",
+      "emptyAdd": "Add a source",
       "emptyBody": "When your first source becomes notes, topics are born on their own and the map shows them here.",
       "error": "The map could not be loaded.",
       "errorKept": "Your sources and notes are untouched."
@@ -4135,10 +4161,13 @@
     "table": {
       "caption": "The same numbers as the chart, one row per topic",
       "growth": "7 days",
-      "health": "Health",
+      "health": "Size",
       "notes": "Notes",
       "topic": "Topic"
     },
-    "title": "Map"
+    "title": "Map",
+    "warnings": {
+      "dismiss": "Dismiss"
+    }
   }
 }

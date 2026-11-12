@@ -114,7 +114,7 @@ export function MapRoot({ t, address, mode, active, onState, onOpen, current }: 
               id: panelDomId(prefix, lens),
               "aria-labelledby": tabDomId(prefix, lens)
             })}
-        className="min-h-0 min-w-0"
+        className={compact ? "flex min-h-0 min-w-0 flex-1 flex-col" : "min-h-0 min-w-0"}
       >
         {lens === "shape" ? (
           <ShapeScreen

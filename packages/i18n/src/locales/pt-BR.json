@@ -317,6 +317,13 @@
     }
   },
   "inbox": {
+    "consequence": {
+      "keep": "A conexão fica e conta como decisão sua.",
+      "remove": "A conexão sai, e o Jardineiro não volta a sugeri-la.",
+      "restore": "A conexão volta e conta como decisão sua."
+    },
+    "summary": "{count} decisões · a mais arriscada primeiro",
+    "summaryOne": "1 decisão aguardando você",
     "title": "Caixa de entrada",
     "description": "O que precisa do seu julgamento, o mais importante primeiro.",
     "badge": "{count} aguardando",
@@ -325,7 +332,7 @@
       "error": "Não foi possível carregar sua caixa de entrada.",
       "empty": {
         "title": "Nada precisa de você",
-        "body": "Sua biblioteca se organiza sozinha. Quando algo precisar do seu julgamento, aparecerá aqui."
+        "body": "O Jardineiro pergunta aqui quando uma mudança é arriscada."
       },
       "emptyFiltered": "Nada corresponde a este filtro.",
       "loadMore": "Carregar mais",
@@ -334,6 +341,7 @@
       "errorKept": "Nada foi decidido nem alterado."
     },
     "filters": {
+      "kind": "Tipo",
       "label": "Filtrar a caixa de entrada",
       "all": "Tudo",
       "chip": "{kind}: {count}",
@@ -468,7 +476,7 @@
     },
     "verbs": {
       "apply": "Aplicar",
-      "dismiss": "Descartar",
+      "dismiss": "Dispensar",
       "keep": "Manter",
       "remove": "Remover",
       "retry": "Tentar de novo",
@@ -482,6 +490,18 @@
       "hide": "Ocultar"
     },
     "keys": {
+      "barNote": "Atalhos de uma tecla não funcionam dentro de campos de texto.",
+      "short": {
+        "apply": "aceitar",
+        "dismiss": "dispensar",
+        "edit": "editar",
+        "help": "atalhos",
+        "move": "navegar",
+        "open": "abrir",
+        "remove": "remover",
+        "retry": "repetir",
+        "undo": "desfazer"
+      },
       "toggle": "Atalhos de teclado",
       "title": "Atalhos de teclado",
       "move": "Próximo item ou anterior",
@@ -498,7 +518,7 @@
     },
     "result": {
       "applied": "Aplicado.",
-      "dismissed": "Descartado.",
+      "dismissed": "Dispensado.",
       "kept": "Mantido.",
       "removed": "Removido.",
       "retried": "Na fila para rodar de novo.",
@@ -3010,7 +3030,7 @@
         "dismiss": "Descartar",
         "working": "Aguarde...",
         "applied": "Mudança aplicada.",
-        "dismissed": "Proposta descartada.",
+        "dismissed": "Proposta dispensada.",
         "failed": "Não deu certo. Tente novamente."
       },
       "changed": {
@@ -4103,6 +4123,11 @@
       "label": "Exibição",
       "table": "Só tabela"
     },
+    "health": {
+      "attention": "grande demais",
+      "good": "equilibrado",
+      "violation": "acima do limite"
+    },
     "inspector": {
       "next": "Próximo passo",
       "nextInbox": "Ver a proposta na Caixa de entrada",
@@ -4120,8 +4145,8 @@
       "headline": "O grafo das conexões chega em breve"
     },
     "selected": {
-      "growth": "{growth} notas em {days} dias",
-      "growthOne": "{growth} nota em {days} dias",
+      "growth": "{growth} notas em {days} dias",
+      "growthOne": "{growth} nota em {days} dias",
       "subtopics": "{count} subtópicos diretos",
       "subtopicsOne": "1 subtópico direto"
     },
@@ -4131,6 +4156,7 @@
     },
     "states": {
       "empty": "O mapa aparece quando houver tópicos.",
+      "emptyAdd": "Adicionar fonte",
       "emptyBody": "Quando a primeira fonte virar notas, os tópicos nascem sozinhos e o mapa os mostra aqui.",
       "error": "Não foi possível carregar o mapa.",
       "errorKept": "Suas fontes e notas continuam intactas."
@@ -4138,10 +4164,13 @@
     "table": {
       "caption": "Os mesmos números do gráfico, uma linha por tópico",
       "growth": "7 dias",
-      "health": "Saúde",
+      "health": "Tamanho",
       "notes": "Notas",
       "topic": "Tópico"
     },
-    "title": "Mapa"
+    "title": "Mapa",
+    "warnings": {
+      "dismiss": "Dispensar"
+    }
   }
 }

@@ -180,7 +180,7 @@ describe("the table alternative", () => {
           new Map([[shapeId(sample.forgetting), 1]])
         )!
       )
-    ).toContain("+1 note in 7 days");
+    ).toContain("+1 note in\u00a07\u00a0days");
   });
 
   it("opens the topic of a row beside the previous-panel table, and nothing for the unsorted row", () => {

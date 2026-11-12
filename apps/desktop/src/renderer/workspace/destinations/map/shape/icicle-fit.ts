@@ -4,8 +4,8 @@
  * block never shows a bare number and a label is never cut inside a word. Pure over a `measure`
  * function (text in, pixels out), so the rules are tested without a browser.
  *
- * - The Map chart: a block shorter than 14 px has no label (its name is in the tooltip and is
- *   announced on focus); a taller one says its name and its count, or only its name when both do
+ * - The Map chart: a block shorter than 14 px has no label, nor one too short for its outline (its
+ *   name is in the tooltip and is announced on focus); a taller one says its name and its count, or only its name when both do
  *   not fit. The person's own text (a topic name) may end in a tail ellipsis, the count never does.
  * - The Inbox diff: name and count, then name alone, then a letter key whose legend names the
  *   block and gives its count, then nothing for a sliver the table still lists.
@@ -20,6 +20,10 @@ export const mapNoLabelBelow = 14;
 export const mapMergeBelow = 18;
 /** A merged block is at least this tall. */
 export const mapMergedMinHeight = 16;
+/** A one-line label is drawn at this height (12 px type, leading-4). */
+export const mapLineHeight = 16;
+/** Air kept between a block's outline and its text, in all. */
+export const mapOutlineAir = 2;
 /** A block at least this tall can put its count under its name. */
 export const mapTwoLinesFrom = 34;
 
@@ -29,19 +33,30 @@ export type MapLabelForm = "none" | "name" | "nameCount" | "stacked";
 /** Horizontal padding inside a block, both sides together. */
 export const labelPadding = 16;
 
+/**
+ * The shortest block that can carry a label: 14 px, and when it is outlined (the selection's ring,
+ * the health ring) a line, the outline on both sides and a little air, so the outline never runs
+ * through the text.
+ */
+export const mapLabelMinHeight = (outlinePx: number): number =>
+  outlinePx > 0 ? mapLineHeight + 2 * outlinePx + mapOutlineAir : mapNoLabelBelow;
+
 export function fitMapLabel(input: {
   widthPx: number;
   heightPx: number;
+  /** The thickness of the outline drawn inside the block, 0 for none. */
+  outlinePx?: number;
   name: string;
   count: string;
   measure: MeasureText;
 }): MapLabelForm {
-  const { widthPx, heightPx, name, count, measure } = input;
-  if (heightPx < mapNoLabelBelow) return "none";
+  const { widthPx, heightPx, name, count, measure, outlinePx = 0 } = input;
+  if (heightPx < mapLabelMinHeight(outlinePx)) return "none";
   const room = widthPx - labelPadding;
   if (room <= 0) return "none";
   // Tall enough for two lines: the count sits under the name and only has to fit by itself.
-  if (heightPx >= mapTwoLinesFrom) return measure(count) <= room ? "stacked" : "name";
+  if (heightPx >= mapTwoLinesFrom + 2 * outlinePx)
+    return measure(count) <= room ? "stacked" : "name";
   return measure(`${name} ${count}`) <= room ? "nameCount" : "name";
 }
 

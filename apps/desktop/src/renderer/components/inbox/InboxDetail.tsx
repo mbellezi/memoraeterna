@@ -1,8 +1,10 @@
 import type { Ref } from "react";
 import { Undo2, X } from "lucide-react";
 import type { InboxItem, InboxObject, InboxVerb } from "@app/domain";
-import type { Translator } from "@app/i18n";
+import type { MessageKey, Translator } from "@app/i18n";
 
+import { ObjectKindGlyph } from "../glyphs";
+import { cn } from "../../lib/cn";
 import { Button } from "../ui/button";
 import { InboxDiff } from "./InboxDiff";
 import { kindIcon, RiskMark } from "./inbox-marks";
@@ -15,9 +17,16 @@ import {
   objectName,
   verbLabel
 } from "./inbox-model";
-import { keyHint } from "./inbox-keys";
+import { isConnection, keyHint } from "./inbox-keys";
 import { type InboxDiffLoad, type InboxItemAction, type InboxUndo } from "./inbox-state";
 import { relationTypeView } from "../../lib/relation-stance";
+
+/** An object the item names, as a small card that opens it. */
+const objectCardClass = cn(
+  "flex w-full min-w-0 items-start gap-2 rounded-lg border border-border bg-surface px-3 py-2",
+  "text-left text-sm font-medium text-foreground hover:bg-soft",
+  "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+);
 
 export interface InboxDetailProps {
   t: Translator;
@@ -69,6 +78,16 @@ export function InboxDetail({
     item.kind !== "suggestion" && typeof item.params.relationType === "string"
       ? item.params.relationType
       : null;
+  // A verdict on a connection offers keep and remove: neither is filled, because a verdict has no
+  // safe default, and each says in a line what it stores (design record §7.4).
+  const verdicts =
+    isConnection(item) && item.actions.includes("apply") && item.actions.includes("dismiss");
+  const consequence: Partial<Record<InboxVerb, MessageKey>> = verdicts
+    ? {
+        apply: item.kind === "withdrawn" ? "inbox.consequence.restore" : "inbox.consequence.keep",
+        dismiss: "inbox.consequence.remove"
+      }
+    : {};
   return (
     <section
       ref={regionRef}
@@ -85,13 +104,13 @@ export function InboxDetail({
           </span>
           <span className="text-xs text-muted-foreground">{ageText(t, item.at, now)}</span>
         </div>
-        <h2 className="text-lg font-semibold text-foreground [overflow-wrap:anywhere]">
+        <h2 className="m-0 mt-1 font-reading text-2xl font-semibold text-foreground [overflow-wrap:anywhere]">
           {itemTitle(t, item)}
         </h2>
-        <p className="text-sm text-secondary-foreground [overflow-wrap:anywhere]">
+        <p className="m-0 mt-1 max-w-(--measure) font-reading text-base text-secondary-foreground [overflow-wrap:anywhere] [text-wrap:pretty]">
           {itemBody(t, item)}
         </p>
-        {hint ? <p className="text-xs text-muted-foreground">{hint}</p> : null}
+        {hint && !verdicts ? <p className="text-xs text-muted-foreground">{hint}</p> : null}
         {relationType ? (
           <p className="text-xs text-muted-foreground">
             {t("inbox.detail.connection", {
@@ -106,19 +125,23 @@ export function InboxDetail({
           <h3 className="text-xs font-semibold text-secondary-foreground">
             {t("inbox.detail.involves")}
           </h3>
-          <ul className="flex flex-wrap gap-2">
+          <ul className="m-0 grid list-none gap-2 p-0 sm:grid-cols-2">
             {item.objects.map((object) => {
               const name = objectName(t, object);
               return (
-                <li key={`${object.kind}:${object.id}`}>
-                  <Button
+                <li key={`${object.kind}:${object.id}`} className="min-w-0">
+                  <button
                     type="button"
-                    variant="link"
                     aria-label={t("inbox.detail.open", { values: { name } })}
                     onClick={() => onOpenObject(object)}
+                    className={objectCardClass}
                   >
-                    {name}
-                  </Button>
+                    <ObjectKindGlyph
+                      kind={object.kind}
+                      className="mt-0.5 shrink-0 text-muted-foreground"
+                    />
+                    <span className="min-w-0 [overflow-wrap:anywhere]">{name}</span>
+                  </button>
                 </li>
               );
             })}
@@ -126,30 +149,47 @@ export function InboxDetail({
         </section>
       ) : null}
 
-      <div className="flex flex-wrap items-center gap-2">
+      <div
+        className={cn(
+          "flex flex-wrap gap-2",
+          verdicts ? "items-start gap-x-6 gap-y-3" : "items-center"
+        )}
+      >
         {item.actions.map((verb) => {
           const hint = keyHint(item, verb);
+          const lineId = `${item.kind}-${item.id}-${verb}`.replace(/[^a-zA-Z0-9-]/gu, "");
+          const line = consequence[verb];
           return (
-            <Button
-              key={verb}
-              type="button"
-              variant={verb === "apply" || verb === "retry" ? "primary" : "secondary"}
-              disabled={pending}
-              aria-keyshortcuts={hint?.shortcut}
-              onClick={() => onVerb(verb)}
-            >
-              {pending && action.verb === verb
-                ? t("inbox.detail.working")
-                : verbLabel(t, item.kind, verb, item.variant)}
-              {hint ? (
-                <kbd
-                  aria-hidden="true"
-                  className="ml-1 rounded-sm border border-border-strong px-1 font-sans text-xs font-medium"
-                >
-                  {hint.label}
-                </kbd>
+            <div key={verb} className={cn("flex min-w-0 flex-col gap-1.5", line && "max-w-64")}>
+              <Button
+                type="button"
+                variant={
+                  !verdicts && (verb === "apply" || verb === "retry") ? "primary" : "secondary"
+                }
+                disabled={pending}
+                aria-keyshortcuts={hint?.shortcut}
+                aria-describedby={line ? lineId : undefined}
+                className="self-start"
+                onClick={() => onVerb(verb)}
+              >
+                {pending && action.verb === verb
+                  ? t("inbox.detail.working")
+                  : verbLabel(t, item.kind, verb, item.variant)}
+                {hint ? (
+                  <kbd
+                    aria-hidden="true"
+                    className="ml-1 rounded-sm border border-border-strong px-1 font-sans text-xs font-medium"
+                  >
+                    {hint.label}
+                  </kbd>
+                ) : null}
+              </Button>
+              {line ? (
+                <p id={lineId} className="m-0 text-xs text-muted-foreground [text-wrap:pretty]">
+                  {t(line)}
+                </p>
               ) : null}
-            </Button>
+            </div>
           );
         })}
         {item.kind === "obsidian_conflict" ? (

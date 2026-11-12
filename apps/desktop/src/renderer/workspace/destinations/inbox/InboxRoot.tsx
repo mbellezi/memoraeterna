@@ -43,6 +43,7 @@ export function InboxRoot({ t, mode, active, onState, onOpen }: PanelProps) {
           t={t}
           active={active}
           compact={compact}
+          keyBar={!compact}
           listWidth={columnWidth("inboxList", width)}
           onState={reportState}
           onNavigate={() => undefined}
