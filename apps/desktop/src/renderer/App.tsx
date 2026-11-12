@@ -63,6 +63,7 @@ import { AddSourceContext } from "./workspace/workspace-bridge";
 import { QuickLookHost } from "./workspace/QuickLook";
 import { toggleQuickLook } from "./workspace/QuickLookModel";
 import { SettingsSurface } from "./settings/SettingsSurface";
+import { newSettingsShown, useClassicSettings } from "./settings/settings-place";
 import { Shell } from "./workspace/Shell";
 import { hasNavigator, hostedViewIds, legacyHostFor } from "./workspace/shell-model";
 import type { WorkspaceState } from "./workspace/state";
@@ -186,7 +187,7 @@ export function App({
   );
   const [activeSettingsScope, setActiveSettingsScope] = useState<SettingsScope>("overview");
   // The old Settings, reachable from the new one until T166 removes it (F5 T161).
-  const [classicSettings, setClassicSettings] = useState(false);
+  const [classicSettings, setClassicSettings] = useClassicSettings();
   const [databaseStatus, setDatabaseStatus] = useState<DatabaseStatus>(
     initialDatabaseStatus ?? createInitialDatabaseStatus()
   );
@@ -727,8 +728,11 @@ export function App({
   // The stack is on screen unless Settings or an old screen of the rail's menu covers it.
   const stackShown = legacyView === null && workspace.destination !== "settings";
   // Settings v2 is shown at Settings, unless the person chose the old Settings from it (T161).
-  const newSettingsShown =
-    legacyView === null && workspace.destination === "settings" && !classicSettings;
+  const settingsShown = newSettingsShown({
+    destination: workspace.destination,
+    legacyView,
+    classic: classicSettings
+  });
   const navigatorOn =
     workspace.destination !== "settings" && workspace.navigator[workspace.destination];
   // The old Wiki hosts its own navigator (the host appears with Explore's root, T141); focus mode
@@ -806,13 +810,13 @@ export function App({
               registry={stackRegistry}
             />
           </AddSourceContext.Provider>
-          {stackShown || newSettingsShown ? null : (
+          {stackShown || settingsShown ? null : (
             <LegacyScreen
               view={activeView === "settings" ? "settings" : (legacyView ?? "settings")}
             />
           )}
         </LegacyViewsContext.Provider>
-        <SettingsSurface t={t} active={newSettingsShown} onOpenClassic={openClassicSettings} />
+        <SettingsSurface t={t} active={settingsShown} onOpenClassic={openClassicSettings} />
       </Shell>
       <QuickLookHost t={t} />
       <ToastViewport
