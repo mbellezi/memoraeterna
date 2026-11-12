@@ -274,12 +274,21 @@ function branchRows(
   });
 }
 
-/** The Topics tree: the root's children as the top level, open topics showing their branch. */
+/**
+ * The Topics tree: the root's children as the top level, open topics showing their branch. A
+ * hoisted tree (`hoistId`, "Show only this branch") starts at that topic: its subtopics and its
+ * own leaves are the top level.
+ */
 export function topicRows(
   branches: ReadonlyMap<string, Branch>,
-  expanded: ReadonlySet<string>
+  expanded: ReadonlySet<string>,
+  hoistId: string | null = null
 ): NavRow[] {
   const out: NavRow[] = [];
+  if (hoistId !== null) {
+    branchRows(branches, expanded, hoistId, null, 1, out, { leaves: true, waiting: true });
+    return out;
+  }
   if (!branches.get(rootBranchKey)?.data) return out;
   branchRows(branches, expanded, null, null, 1, out, { leaves: false, waiting: false });
   return out;
@@ -359,10 +368,16 @@ export function placeRows(places: readonly PlaceEntry[], group: "pinned" | "rece
 /** What the Topics section shows, from the root branch alone. */
 export type RootState = "loading" | "error" | "preparing" | "empty" | "tree";
 
-export function rootState(root: Branch | undefined): RootState {
+/**
+ * `emptyLibrary`: the engine says the library holds nothing and is not building a tree, so a missing
+ * tree is "empty" (nothing is running), not "preparing" (something is).
+ */
+export function rootState(root: Branch | undefined, emptyLibrary = false): RootState {
   if (!root) return "loading";
   if (!root.data) {
-    return root.phase === "error" ? "error" : root.phase === "loading" ? "loading" : "preparing";
+    if (root.phase === "error") return "error";
+    if (root.phase === "loading") return "loading";
+    return emptyLibrary ? "empty" : "preparing";
   }
   return root.data.parent.items === 0 && root.data.nodes.length === 0 ? "empty" : "tree";
 }
@@ -439,6 +454,61 @@ export function viewportRows(top: number, height: number, count: number): RowVie
   const first = Math.min(count, Math.max(0, Math.floor(top / navRowHeight)));
   const end = Math.min(count, Math.max(first, Math.ceil((top + height) / navRowHeight)));
   return { first, end };
+}
+
+/** A line of a row's name that wraps (the open row and its ancestors). */
+export const navLineHeight = 20;
+/** Rows drawn beyond the ones in view, so a fast scroll does not show blanks. */
+export const navOverscan = 10;
+/** The most rows that can wrap at once: the open row and its ancestors (the tree is 7 deep). */
+export const navMaxWrapped = 9;
+
+/**
+ * The rows that must show their whole name: the open topic and every ancestor of it in the list
+ * (the nearest earlier row of each lower level), never cut by a width (design record 5.3). A row
+ * that is not a topic cannot be open, so a list without the open topic has none.
+ */
+export function openPathKeys(
+  rows: readonly NavRow[],
+  selectedTopicId: string | null
+): ReadonlySet<string> {
+  const keys = new Set<string>();
+  if (selectedTopicId === null) return keys;
+  rows.forEach((row, index) => {
+    const open =
+      (row.type === "topic" && row.node.id === selectedTopicId) ||
+      (row.type === "place" && row.place.kind === "topic" && row.place.id === selectedTopicId);
+    if (!open) return;
+    keys.add(row.key);
+    let level = row.level;
+    for (let at = index - 1; at >= 0 && level > 1; at -= 1) {
+      const earlier = rows[at]!;
+      if (earlier.level < level) {
+        keys.add(earlier.key);
+        level = earlier.level;
+      }
+    }
+  });
+  return keys;
+}
+
+/**
+ * Where each row of a windowed list sits, and the list's height: a row is `navRowHeight` tall plus
+ * one `navLineHeight` for every extra line its name wraps to (`lines` is the line count of the rows
+ * that wrap; any other row has one). The window still counts rows by `navRowHeight`, which puts a
+ * row at most `navMaxWrapped * navLineHeight` px early, and the overscan covers that.
+ */
+export function rowTops(
+  rows: readonly NavRow[],
+  lines: (row: NavRow) => number
+): { tops: number[]; height: number } {
+  const tops: number[] = [];
+  let top = 0;
+  for (const row of rows) {
+    tops.push(top);
+    top += navRowHeight + (Math.max(1, lines(row)) - 1) * navLineHeight;
+  }
+  return { tops, height: top };
 }
 
 /**

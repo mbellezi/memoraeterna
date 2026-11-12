@@ -2,6 +2,7 @@ import type { ComponentPropsWithoutRef, ReactNode } from "react";
 import { DropdownMenu as MenuPrimitive } from "radix-ui";
 import { Check, Circle } from "lucide-react";
 import { cn } from "../../lib/cn";
+import { Kbd } from "./kbd";
 import { popSurface } from "./popover";
 
 /*
@@ -31,7 +32,7 @@ export function MenuItemBody({
   icon?: ReactNode;
   /** A second, quieter line under the label. */
   description?: ReactNode;
-  /** The shortcut as text ("⌘N"); it is drawn as plain keycap text, not a variable message part. */
+  /** The shortcut as text ("⌘N"); it is drawn as a keycap (`Kbd`), not a variable message part. */
   shortcut?: string;
   children?: ReactNode;
 }) {
@@ -46,9 +47,7 @@ export function MenuItemBody({
           </span>
         ) : null}
       </span>
-      {shortcut ? (
-        <span className="shrink-0 text-xs tabular-nums text-secondary-foreground">{shortcut}</span>
-      ) : null}
+      {shortcut ? <Kbd className="shrink-0">{shortcut}</Kbd> : null}
     </>
   );
 }
@@ -130,19 +129,45 @@ export function DropdownMenuCheckboxItem({
   );
 }
 
+/**
+ * A choice among several: a ring that fills with the accent when chosen (the choice is never the
+ * colour alone: the dot is a shape), the label, and an optional quieter second line. A chosen row
+ * takes the selected tint, so the current choice reads at a glance.
+ */
 export function DropdownMenuRadioItem({
   className,
   children,
+  description,
   ...props
-}: ComponentPropsWithoutRef<typeof MenuPrimitive.RadioItem>) {
+}: ComponentPropsWithoutRef<typeof MenuPrimitive.RadioItem> & {
+  /** A second, quieter line under the label. */
+  description?: ReactNode;
+}) {
   return (
-    <MenuPrimitive.RadioItem className={cn(menuItemClass, className)} {...props}>
-      <span aria-hidden="true" className="inline-flex size-4 items-center justify-center">
-        <MenuPrimitive.ItemIndicator>
-          <Circle className="size-2 fill-current" />
+    <MenuPrimitive.RadioItem
+      className={cn(
+        menuItemClass,
+        "items-start data-[state=checked]:bg-surface-selected data-[state=checked]:data-[highlighted]:not-focus-visible:bg-surface-selected",
+        className
+      )}
+      {...props}
+    >
+      <span
+        aria-hidden="true"
+        className="relative mt-0.5 inline-flex size-4 shrink-0 rounded-full border border-border-strong"
+      >
+        <MenuPrimitive.ItemIndicator className="absolute -inset-px flex items-center justify-center rounded-full border border-accent">
+          <Circle className="size-2 fill-accent text-accent" />
         </MenuPrimitive.ItemIndicator>
       </span>
-      <span className="min-w-0 flex-1">{children}</span>
+      <span className="grid min-w-0 flex-1">
+        <span className="min-w-0 [overflow-wrap:anywhere]">{children}</span>
+        {description ? (
+          <span className="min-w-0 text-xs text-muted-foreground [text-wrap:pretty]">
+            {description}
+          </span>
+        ) : null}
+      </span>
     </MenuPrimitive.RadioItem>
   );
 }

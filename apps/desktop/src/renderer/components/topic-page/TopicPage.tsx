@@ -2,6 +2,7 @@ import { useEffect, useEffectEvent, useRef, useState, useSyncExternalStore } fro
 import { formatObjectAddress } from "@app/domain";
 import type { Translator } from "@app/i18n";
 
+import { useAppEvent } from "../../lib/app-events";
 import { closePanelPriority, subscribeClosePanel } from "../../lib/close-panel";
 import { recordView } from "../../lib/view-history";
 import { TopicOpsOverlay, useTopicOps } from "../topics/ops/use-topic-ops";
@@ -21,6 +22,17 @@ export interface TopicPageProps {
   onNavigate(navigation: OpenableNavigation): void;
   /** When the host can close the page, the strip offers it and Cmd-W does the same. */
   onClose?: (() => void) | undefined;
+  /** Opens an object address, anchors included (a cited passage opens highlighted in its source). */
+  onOpenAddress?: ((address: string) => void) | undefined;
+  /** The page is a panel of the workspace: the frame draws the kind, the close and the ribbon. */
+  embedded?: boolean;
+  /** The previous panel's compact form, and the address opened from it. */
+  compact?: boolean;
+  current?: string | undefined;
+  /** "Show only this branch" of the actions menu; absent where there is no tree to hoist. */
+  onHoist?: ((topicId: string) => void) | undefined;
+  /** Where the page's own load stands, for the frame's `data-state`. */
+  onLoadState?: ((status: "loading" | "error" | "missing" | "ready") => void) | undefined;
 }
 
 /**
@@ -28,7 +40,19 @@ export interface TopicPageProps {
  * the page once and records the open; the state lives in a controller so the rules are tested
  * without a renderer. The host mounts it where the topic shows and keeps it mounted while hidden.
  */
-export function TopicPage({ topicId, active, t, onNavigate, onClose }: TopicPageProps) {
+export function TopicPage({
+  topicId,
+  active,
+  t,
+  onNavigate,
+  onClose,
+  onOpenAddress,
+  embedded = false,
+  compact = false,
+  current,
+  onHoist,
+  onLoadState
+}: TopicPageProps) {
   const [controller] = useState(
     () =>
       new TopicPageController({
@@ -61,6 +85,15 @@ export function TopicPage({ topicId, active, t, onNavigate, onClose }: TopicPage
 
   useEffect(() => () => controller.dispose(), [controller]);
 
+  // An undone or applied overview publishes `overview.changed` and nothing else.
+  useAppEvent(
+    "overview.changed",
+    (event) => {
+      if (event.topicId === topicId) controller.reread();
+    },
+    active
+  );
+
   // Cmd-W closes the page when the host can close it; otherwise it is left to the host.
   const close = useEffectEvent(() => onClose?.());
   const closable = onClose !== undefined;
@@ -74,6 +107,10 @@ export function TopicPage({ topicId, active, t, onNavigate, onClose }: TopicPage
 
   // The heading takes focus when a page first shows, unless focus rests somewhere that stays (the
   // host's tree): a link followed inside the page removes the control that had focus.
+  const loadStatus = snapshot.load.status;
+  useEffect(() => {
+    onLoadState?.(loadStatus);
+  }, [loadStatus, onLoadState]);
   const shownTopic = snapshot.load.status === "ready" ? snapshot.load.page.topic.id : null;
   useEffect(() => {
     if (!active || shownTopic === null || focusedTopic.current === shownTopic) return;
@@ -88,7 +125,9 @@ export function TopicPage({ topicId, active, t, onNavigate, onClose }: TopicPage
     openNote: (id) =>
       opener.open({ type: "resolve", address: formatObjectAddress({ kind: "note", id }) }),
     openSource: (id) =>
-      opener.open({ type: "resolve", address: formatObjectAddress({ kind: "source", id }) })
+      opener.open({ type: "resolve", address: formatObjectAddress({ kind: "source", id }) }),
+    openAddress: (address) =>
+      onOpenAddress ? onOpenAddress(address) : opener.open({ type: "resolve", address })
   };
 
   const { controller: ops } = topicOps;
@@ -120,7 +159,8 @@ export function TopicPage({ topicId, active, t, onNavigate, onClose }: TopicPage
             top: shown.parentId === null
           }),
         onMove: () => topicOps.openDialog({ kind: "move", topic: shown }),
-        onTogglePin: () => void ops.pin(shown, shown.management !== "pinned")
+        onTogglePin: () => void ops.pin(shown, shown.management !== "pinned"),
+        onHoist: onHoist ? () => onHoist(shown.id) : undefined
       }
     : undefined;
 
@@ -140,6 +180,10 @@ export function TopicPage({ topicId, active, t, onNavigate, onClose }: TopicPage
       onShowAllNotes={() => controller.showAllNotes()}
       onLoadMoreNotes={() => controller.loadMoreNotes()}
       onRetryNotes={() => controller.retryNotes()}
+      embedded={embedded}
+      compact={compact}
+      current={current}
+      onOpenNoteAddress={actions.openAddress}
     />
   );
 }

@@ -175,6 +175,7 @@ routing found by the amendment's review (Q37). The owner may change any of them,
 | Q36 | The "changed from default" marker (Settings v2 mockup) | A grey dot; the 2 px bar of a changed row uses the accent (D18) |
 | Q37 | A suggested relation with no probability (an uncalibrated or threshold-only decider) | Not "high": it routes to the Inbox, worded "confiança desconhecida" with no number (D33); while a decider is uncalibrated every suggestion it makes routes, and the Inbox read stays bounded |
 | Q38 | The Inbox count with thousands of routed suggestions (D33 as amended, T176) | Accept the linear count for F5 (the page is bounded; the recount is spaced out after a slow count); revisit with a capped count ("500+") or a stored flag if the owner's library shows the volume. Related: keeping a relation match pass leaves each of its below-high relations as its own suggestion item (D33 read literally); the owner may prefer that a kept pass closes them |
+| Q39 | The default theme | **Dark** (owner, 2026-11-12: "Pode deixar escuro por padrão. Se a pessoa quiser ela muda depois"). System and Light stay as choices; a stored choice is kept; the first frame is drawn dark when nothing is remembered. Dark is also the primary theme for design and gate U review, since it is the one the owner uses |
 
 ## Gates
 

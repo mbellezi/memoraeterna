@@ -1,7 +1,21 @@
 import { useEffect, useId, useRef } from "react";
-import type { Translator } from "@app/i18n";
+import type { MessageKey, Translator } from "@app/i18n";
 
 import { Button } from "../ui/button";
+
+export interface LeaveCopy {
+  title: MessageKey;
+  description: MessageKey;
+  keep: MessageKey;
+  discard: MessageKey;
+}
+
+const defaultCopy: LeaveCopy = {
+  title: "notePage.leave.title",
+  description: "notePage.leave.description",
+  keep: "notePage.leave.keepEditing",
+  discard: "notePage.leave.discard"
+};
 
 /**
  * Asked before a move would drop an unsaved edit of the note: keep editing (the default, also
@@ -11,11 +25,14 @@ import { Button } from "../ui/button";
 export function NoteLeaveDialog({
   t,
   onKeepEditing,
-  onDiscard
+  onDiscard,
+  copy = defaultCopy
 }: {
   t: Translator;
   onKeepEditing: () => void;
   onDiscard: () => void;
+  /** Another form that holds unsaved work (the import panel) says its own words in the same dialog. */
+  copy?: LeaveCopy;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   const keepRef = useRef<HTMLButtonElement>(null);
@@ -48,17 +65,17 @@ export function NoteLeaveDialog({
       className="fixed inset-0 m-auto w-[calc(100%-2rem)] max-w-md rounded-lg border border-border bg-surface p-5 text-foreground shadow-lg backdrop:bg-background/70"
     >
       <h2 id={titleId} className="text-lg font-semibold">
-        {t("notePage.leave.title")}
+        {t(copy.title)}
       </h2>
       <p id={textId} className="mt-2 text-sm text-secondary-foreground">
-        {t("notePage.leave.description")}
+        {t(copy.description)}
       </p>
       <div className="mt-5 flex flex-wrap justify-end gap-2">
         <Button type="button" onClick={onDiscard}>
-          {t("notePage.leave.discard")}
+          {t(copy.discard)}
         </Button>
         <Button ref={keepRef} type="button" variant="primary" onClick={onKeepEditing}>
-          {t("notePage.leave.keepEditing")}
+          {t(copy.keep)}
         </Button>
       </div>
     </dialog>

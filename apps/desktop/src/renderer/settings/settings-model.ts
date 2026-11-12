@@ -214,8 +214,8 @@ export const resetNeedsConfirm = (entry: SettingEntryV2): boolean => entry.reset
 
 /**
  * The words of a stored value for a row that has no control of its own yet: only what can be said
- * without knowing the options (on or off, set or not, a number). A choice's code ("system") is
- * never shown as if it were copy; the section's own control says it in words.
+ * without knowing the options (on or off, set or not, a number, the theme, a language). A choice's
+ * code ("system") is never shown as if it were copy; the section's own control says it in words.
  */
 export function valueText(
   t: Translator,
@@ -234,7 +234,39 @@ export function valueText(
       : null;
   if (typeof value === "number") return String(value);
   if (typeof value === "string" && entry.control === "text") return value;
+  if (typeof value === "string") return nameOfChoice(t, entry, value);
   return null;
+}
+
+const themeWords: Readonly<Record<string, MessageKey>> = {
+  system: "settingsShell.row.themeSystem",
+  light: "settingsShell.row.themeLight",
+  dark: "settingsShell.row.themeDark"
+};
+const languageSettingIds: ReadonlySet<string> = new Set(["language", "contentLanguage"]);
+
+/**
+ * A code the person chose, in words, for the two choices every section shares: the theme, from the
+ * copy, and a language, from the platform's own names in the person's language ("Português
+ * (Brasil)"). Any other choice is named by its section's control, never by its code.
+ */
+function nameOfChoice(t: Translator, entry: SettingEntryV2, value: string): string | null {
+  if (entry.id === "themeMode") {
+    const key = themeWords[value];
+    return key ? t(key) : null;
+  }
+  if (!languageSettingIds.has(entry.id)) return null;
+  try {
+    const name = new Intl.DisplayNames([t.locale], {
+      type: "language",
+      languageDisplay: "standard"
+    }).of(value);
+    return name && name !== value
+      ? name.charAt(0).toLocaleUpperCase(t.locale) + name.slice(1)
+      : null;
+  } catch {
+    return null;
+  }
 }
 
 /** The default of a row that has no control of its own, in the same words, or null when unknown. */

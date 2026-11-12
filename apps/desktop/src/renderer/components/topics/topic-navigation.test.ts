@@ -7,12 +7,17 @@ import {
   isExpandableRow,
   mergeChange,
   navigationAction,
+  navLineHeight,
+  navMaxWrapped,
+  navOverscan,
   navRowHeight,
   noChange,
+  openPathKeys,
   placeRows,
   rootBranchKey,
   rootState,
   rovingKey,
+  rowTops,
   topicRows,
   touchedBranches,
   unreadOpenTopics,
@@ -312,6 +317,37 @@ describe("windowing", () => {
   it("draws a bounded number of rows for a very long list", () => {
     const view = viewportRows(14_000, 700, 5_000);
     expect(windowIndexes(5_000, view, 10, [0]).length).toBeLessThanOrEqual(26 + 20 + 1);
+  });
+});
+
+describe("the open row and its ancestors", () => {
+  const open = branches([
+    [rootBranchKey, branch(root, [areaA, areaB])],
+    [areaA.id, branch(areaA, [sub, leafless], { items: [noteLeaf(1)] })]
+  ]);
+  const rows = topicRows(open, new Set([areaA.id]));
+
+  it("are the rows that show their whole name: the open topic and each ancestor above it", () => {
+    expect([...openPathKeys(rows, sub.id)]).toEqual([`t:${sub.id}`, `t:${areaA.id}`]);
+    expect([...openPathKeys(rows, areaB.id)]).toEqual([`t:${areaB.id}`]);
+    expect(openPathKeys(rows, null).size).toBe(0);
+    expect(openPathKeys(rows, id(99)).size).toBe(0);
+  });
+
+  it("make their rows taller by a line each, and the rows below follow", () => {
+    const wrapped = new Set([`t:${areaA.id}`]);
+    const plain = rowTops(rows, () => 1);
+    expect(plain.tops).toEqual(rows.map((_, index) => index * navRowHeight));
+    const placed = rowTops(rows, (row) => (wrapped.has(row.key) ? 2 : 1));
+    expect(placed.tops[0]).toBe(0);
+    expect(placed.tops[1]).toBe(navRowHeight + navLineHeight);
+    expect(placed.height).toBe(plain.height + navLineHeight);
+    // A row never has fewer than one line.
+    expect(rowTops(rows, () => 0).height).toBe(plain.height);
+  });
+
+  it("are taller by less than the overscan, so the window still draws every row in view", () => {
+    expect(navMaxWrapped * navLineHeight).toBeLessThanOrEqual(navOverscan * navRowHeight);
   });
 });
 

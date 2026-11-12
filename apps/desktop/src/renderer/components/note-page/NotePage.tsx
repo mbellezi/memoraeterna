@@ -69,6 +69,18 @@ export interface NotePageProps {
   onChanged?(): void;
   /** Receives the page's guard for moves the host makes itself (an object opened elsewhere). */
   onLeaveGuard?(guard: NoteLeaveGuard | null): void;
+  /**
+   * The page is a panel of the workspace (F5): the frame draws the kind, the close control and the
+   * path ribbon, the workspace closes the panel on Cmd-W (the page only keeps an unsaved edit from
+   * being closed), and the states use the shared primitives.
+   */
+  embedded?: boolean;
+  /** How the relations show: the full list, or the stance summary beside a docked context panel. */
+  relationsView?: "full" | "summary";
+  /** The previous panel's compact form. */
+  compact?: boolean;
+  /** Where the page's own load stands, for the frame's `data-state`. */
+  onLoadState?(status: NotePageLoad["status"]): void;
 }
 
 /**
@@ -159,7 +171,11 @@ export function NotePage({
   onOpenPassage,
   onNavigate,
   onChanged,
-  onLeaveGuard
+  onLeaveGuard,
+  embedded = false,
+  relationsView = "full",
+  compact = false,
+  onLoadState
 }: NotePageProps) {
   const [load, setLoad] = useState<NotePageLoad>({ status: "loading" });
   const [attempt, setAttempt] = useState(0);
@@ -206,6 +222,11 @@ export function NotePage({
   useEffect(() => {
     shown.current = load.status === "ready" ? load.page : null;
   }, [load]);
+
+  const reportLoadState = useEffectEvent((status: NotePageLoad["status"]) => onLoadState?.(status));
+  useEffect(() => {
+    reportLoadState(load.status);
+  }, [load.status]);
 
   useEffect(() => {
     editingNow.current = editing;
@@ -446,11 +467,13 @@ export function NotePage({
   useEffect(() => {
     if (!active) return;
     if (isEditing) return subscribeClosePanel(() => true, closePanelPriority.editing);
+    // In a panel the workspace closes the focused panel itself.
+    if (embedded) return;
     return subscribeClosePanel(() => {
       close();
       return true;
     }, closePanelPriority.panel);
-  }, [active, isEditing]);
+  }, [active, isEditing, embedded]);
 
   // Back, Forward and their shortcuts and mouse buttons ask before an unsaved edit is dropped.
   useEffect(() => {
@@ -669,6 +692,9 @@ export function NotePage({
         t={t}
         backLabel={backLabel}
         load={load}
+        embedded={embedded}
+        relationsView={relationsView}
+        compact={compact}
         headingRef={headingRef}
         editRef={editRef}
         editing={editing}

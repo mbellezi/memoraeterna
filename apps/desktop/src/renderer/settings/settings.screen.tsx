@@ -20,7 +20,7 @@ const noop = () => undefined;
  * and Advanced besides General, as the design does.
  */
 const values: Record<string, { value: Json; default: Json | null }> = {
-  themeMode: { value: "system", default: "system" },
+  themeMode: { value: "dark", default: "dark" },
   contentLanguage: { value: "en", default: "pt-BR" },
   language: { value: "pt-BR", default: "pt-BR" },
   "knowledge.controls.v1.monthlyCapUsd": { value: 12, default: 5 },

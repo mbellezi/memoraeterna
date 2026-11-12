@@ -1,8 +1,13 @@
 import { useEffect, useSyncExternalStore } from "react";
 
+import { defaultAppSettings } from "../../shared/ipc";
+
 /** "system" follows the OS; "light" and "dark" are explicit choices that always win. */
 export type ThemePreference = "system" | "light" | "dark";
 export type ResolvedTheme = "light" | "dark";
+
+/** The theme a profile with no stored choice opens in: dark (owner, 2026-11-12), changeable in Settings. */
+export const defaultThemePreference: ThemePreference = defaultAppSettings.themeMode;
 
 const darkSchemeQuery = "(prefers-color-scheme: dark)";
 
@@ -112,15 +117,16 @@ export function rememberTheme(
 
 /**
  * Applies the remembered preference to the root before the first render, so the window is drawn in
- * its theme from the first frame. Without a remembered preference the stylesheet follows the OS.
+ * its theme from the first frame. Without a remembered preference the root is drawn in the default
+ * theme (dark), never in the OS one, so a first launch on a light macOS does not flash light.
  */
 export function applyRememberedTheme(
   root: ThemeRoot = document.documentElement,
   storage: ThemeStorage | null = browserStorage(),
   matchMedia: MatchMedia | null = browserMatchMedia()
 ): void {
-  const preference = readRememberedTheme(storage);
-  if (preference) applyTheme(root, resolveTheme(preference, readSystemPrefersDark(matchMedia)));
+  const preference = readRememberedTheme(storage) ?? defaultThemePreference;
+  applyTheme(root, resolveTheme(preference, readSystemPrefersDark(matchMedia)));
 }
 
 const subscribeToSystemTheme = (notify: () => void) => subscribeSystemTheme(notify);

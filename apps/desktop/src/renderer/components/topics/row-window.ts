@@ -52,8 +52,11 @@ export class RowWindow {
     return Array.from(rows ?? []).find((row) => row.dataset.navKey === key) ?? null;
   }
 
-  /** Scrolls so the row is in view, with some context around it; nothing moves if it already is. */
-  scrollToRow(index: number) {
+  /**
+   * Scrolls so the row is in view, with some context around it; nothing moves if it already is.
+   * `offset` is the row's top in the list when rows differ in height.
+   */
+  scrollToRow(index: number, offset = index * navRowHeight) {
     const element = this.element;
     const scroller = element ? scrollParent(element) : null;
     if (!element || !scroller) return;
@@ -61,7 +64,7 @@ export class RowWindow {
       element.getBoundingClientRect().top -
       scroller.getBoundingClientRect().top +
       scroller.scrollTop;
-    const rowTop = listTop + index * navRowHeight;
+    const rowTop = listTop + offset;
     const margin = navRowHeight * 2;
     if (rowTop < scroller.scrollTop + margin) scroller.scrollTop = Math.max(0, rowTop - margin);
     else if (rowTop + navRowHeight > scroller.scrollTop + scroller.clientHeight - margin) {

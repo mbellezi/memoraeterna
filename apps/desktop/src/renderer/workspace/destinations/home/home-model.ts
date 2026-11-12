@@ -120,6 +120,18 @@ export function dayDistance(at: Date, now: Date): number {
   return Math.round((start(now).getTime() - start(at).getTime()) / 86_400_000);
 }
 
+/**
+ * The day and month as the person's language says them without filler words or points: "3 nov" for
+ * pt-BR, "Nov 3" for English. The one short date of the app (Home, Histórico, Perguntar).
+ */
+export function shortDate(locale: string, at: Date): string {
+  return new Intl.DateTimeFormat(locale, { day: "numeric", month: "short" })
+    .formatToParts(at)
+    .filter((part) => part.type === "day" || part.type === "month")
+    .map((part) => part.value.replace(/\.$/u, ""))
+    .join("\u00a0");
+}
+
 export interface WhenParts {
   /** Null for today: the time stands alone ("09:12"). */
   day: string | null;
@@ -137,7 +149,7 @@ export function whenParts(locale: string, at: Date, now: Date): WhenParts {
   const day =
     distance <= 2
       ? new Intl.RelativeTimeFormat(locale, { numeric: "auto" }).format(-distance, "day")
-      : new Intl.DateTimeFormat(locale, { day: "numeric", month: "short" }).format(at);
+      : shortDate(locale, at);
   return { day, time };
 }
 

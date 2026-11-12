@@ -33,9 +33,10 @@ export interface SectionNavProps {
 
 /**
  * The seven sections (design record §7.6), each with an icon, a name and a one-line description.
- * A section with changed settings shows a grey dot and its count; while a search is typed the count
- * is the number of hits and a section with none is quiet. The current section is marked by the accent
- * bar and the selected fill; the word "current" is `aria-current`.
+ * A section with changed settings shows an accent dot and its count; while a search is typed the
+ * count is the number of hits, a section with none is quiet and none is current (the results are not
+ * a section's). The current section is marked by the accent bar and the selected fill; the word
+ * "current" is `aria-current`.
  */
 export function SectionNav({ t, current, onSelect, changed, hits }: SectionNavProps) {
   return (
@@ -46,7 +47,8 @@ export function SectionNav({ t, current, onSelect, changed, hits }: SectionNavPr
           const Icon = icons[meta.icon];
           const hitCount = hits?.[id] ?? 0;
           const changedCount = changed?.[id] ?? 0;
-          const selected = id === current;
+          // While a search is typed the results replace the section, so no section is the current one.
+          const selected = id === current && hits === null;
           const quiet = hits !== null && hitCount === 0;
           return (
             <li key={id}>
@@ -112,7 +114,7 @@ export function SectionNav({ t, current, onSelect, changed, hits }: SectionNavPr
                       { values: { count: changedCount } }
                     )}
                   >
-                    <ChangedDot />
+                    <ChangedDot tone="accent" />
                     {changedCount}
                   </span>
                 ) : null}

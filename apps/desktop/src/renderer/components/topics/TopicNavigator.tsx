@@ -1,8 +1,14 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
-import { ChevronsDownUp, FolderPlus, LoaderCircle, MessageCircle, RefreshCw } from "lucide-react";
+import { ChevronsDownUp, FolderPlus, MessageCircle } from "lucide-react";
 import { formatObjectAddress } from "@app/domain";
 import type { MessageKey, Translator } from "@app/i18n";
+import { ChevronLeft } from "lucide-react";
+import { WrappedLabel } from "../../workspace/destinations/explore/FittedLabel";
+import { ObjectKindGlyph, objectKindTextClass } from "../glyphs";
 import { Button } from "../ui/button";
+import { EmptyState } from "../ui/empty-state";
+import { ErrorState } from "../ui/error-state";
+import { LoadingState, Skeleton } from "../ui/skeleton";
 import { FloatingMenu, type MenuAnchor } from "./ops/FloatingMenu";
 import {
   actionsLabelKey,
@@ -65,7 +71,7 @@ export interface TopicNavigatorViewProps {
   selectedTopicId: string | null;
   /** A note or source the owner asked for could not be opened. */
   openFailed: boolean;
-  onAsk: () => void;
+  onAsk?: (() => void) | undefined;
   onCollapseAll: () => void;
   onToggle: (row: NavRow) => void;
   onActivate: (row: NavRow) => void;
@@ -75,6 +81,31 @@ export interface TopicNavigatorViewProps {
   onConfirmReembed: () => void;
   onCancelReembed: () => void;
   ops?: NavigatorOps | undefined;
+  /** The tree shows only this branch ("Show only this branch"); the whole tree comes back with `onExit`. */
+  hoist?: { id: string; onExit: () => void } | undefined;
+  /** Compact windows (960-1179 px): a row's count shows on hover, focus and the open row only. */
+  quietCounts?: boolean | undefined;
+  /**
+   * The reading surface beside the tree already offers "Try again" for the same failed read: the
+   * navigator then says it in one quiet line and draws no second retry (one cause, one retry).
+   */
+  retryBeside?: boolean | undefined;
+}
+
+/** Eight rows at staggered widths, in the size of the real ones, so the column does not jump. */
+const skeletonWidths = ["w-3/5", "w-2/5", "w-1/2", "w-2/3", "w-1/3", "w-1/2", "w-3/5", "w-2/5"];
+
+function TreeSkeleton({ t }: { t: Translator }) {
+  return (
+    <LoadingState t={t} className="gap-px">
+      {skeletonWidths.map((width, index) => (
+        <div key={index} className="flex h-7 items-center gap-2 px-2">
+          <Skeleton className="size-4 shrink-0" />
+          <Skeleton className={width} />
+        </div>
+      ))}
+    </LoadingState>
+  );
 }
 
 function Section({
@@ -92,13 +123,15 @@ function Section({
 }) {
   return (
     <section className="mt-3 grid gap-0.5">
-      <div className="flex items-center gap-1">
+      <div className="group/section flex items-center gap-1">
         <h3
           id={id}
-          className="flex min-w-0 flex-1 justify-between px-2 pb-1 text-xs font-semibold text-muted-foreground"
+          className="flex min-w-0 flex-1 items-baseline justify-between gap-2 px-2 pb-1 text-xs font-semibold text-muted-foreground"
         >
-          <span>{title}</span>
-          {count === undefined ? null : <span className="font-normal tabular-nums">{count}</span>}
+          <span className="min-w-0 truncate">{title}</span>
+          {count === undefined ? null : (
+            <span className="shrink-0 font-normal tabular-nums">{count}</span>
+          )}
         </h3>
         {action}
       </div>
@@ -127,40 +160,75 @@ export function TopicNavigatorView({
   onAskReembed,
   onConfirmReembed,
   onCancelReembed,
-  ops
+  ops,
+  hoist,
+  quietCounts = false,
+  retryBeside = false
 }: TopicNavigatorViewProps) {
   const { branches, expanded, places } = snapshot;
-  const topics = useMemo(() => topicRows(branches, expanded), [branches, expanded]);
-  const unsorted = useMemo(() => unsortedRows(branches, expanded), [branches, expanded]);
+  const hoistId = hoist?.id ?? null;
+  const topics = useMemo(
+    () => topicRows(branches, expanded, hoistId),
+    [branches, expanded, hoistId]
+  );
+  const unsorted = useMemo(
+    () => (hoistId === null ? unsortedRows(branches, expanded) : []),
+    [branches, expanded, hoistId]
+  );
   const pinned = useMemo(() => placeRows(places.pinned, "pinned"), [places.pinned]);
   const recents = useMemo(() => placeRows(places.recents, "recents"), [places.recents]);
   const lines = useMemo(() => statusLines(snapshot.status), [snapshot.status]);
-  const root = branches.get(rootBranchKey);
-  const state = rootState(root);
+  const root = branches.get(hoistId === null ? rootBranchKey : hoistId);
+  // A library that holds nothing and builds nothing has no tree to prepare: it is empty.
+  const emptyLibrary =
+    snapshot.status !== null &&
+    snapshot.status.phase !== "building" &&
+    snapshot.status.counts.items === 0;
+  const state =
+    hoistId === null ? rootState(root, emptyLibrary) : root?.data ? "tree" : rootState(root);
   const total = root?.data?.parent.items;
   const format = (value: number) => new Intl.NumberFormat(t.locale).format(value);
-  const place = { t, selectedTopicId, onToggle, onActivate, ops: ops?.rows };
+  // Pinned and Recents are short lists that are not windowed: their rows show the whole name on up
+  // to two lines, so "…ferment" never stands for a note.
+  const place = { t, selectedTopicId, onToggle, onActivate, ops: ops?.rows, quietCounts };
+  const places2 = { ...place, wrapPlaces: true };
+  // The tree failed and Pinned and Recents are still here: one failure is said once.
+  const treeFailed = state === "error";
+  const collapse =
+    expanded.size > 0 ? (
+      <Button
+        variant="ghost"
+        className="size-6 min-h-0 px-0"
+        aria-label={t("topics.navigator.collapseAll")}
+        title={t("topics.navigator.collapseAll")}
+        onClick={onCollapseAll}
+      >
+        <ChevronsDownUp aria-hidden="true" />
+      </Button>
+    ) : null;
   return (
     <div className="flex min-h-full flex-col px-1 pb-4">
-      <header className="flex h-9 items-center gap-1 pl-2">
-        <h2 className="min-w-0 flex-1 truncate text-base font-semibold text-foreground">
-          {t("topics.navigator.title")}
-        </h2>
-        <Button variant="ghost" aria-haspopup="dialog" className="min-h-8 px-2" onClick={onAsk}>
-          <MessageCircle aria-hidden="true" />
-          {t("consultation.ask")}
-        </Button>
-        <Button
-          variant="ghost"
-          className="size-8 min-h-0 px-0"
-          aria-label={t("topics.navigator.collapseAll")}
-          title={t("topics.navigator.collapseAll")}
-          disabled={expanded.size === 0}
-          onClick={onCollapseAll}
-        >
-          <ChevronsDownUp aria-hidden="true" />
-        </Button>
-      </header>
+      {onAsk ? (
+        <header className="flex h-9 items-center gap-1 pl-2">
+          <h2 className="min-w-0 flex-1 truncate text-base font-semibold text-foreground">
+            {t("topics.navigator.title")}
+          </h2>
+          <Button variant="ghost" aria-haspopup="dialog" className="min-h-8 px-2" onClick={onAsk}>
+            <MessageCircle aria-hidden="true" />
+            {t("consultation.ask")}
+          </Button>
+          <Button
+            variant="ghost"
+            className="size-8 min-h-0 px-0"
+            aria-label={t("topics.navigator.collapseAll")}
+            title={t("topics.navigator.collapseAll")}
+            disabled={expanded.size === 0}
+            onClick={onCollapseAll}
+          >
+            <ChevronsDownUp aria-hidden="true" />
+          </Button>
+        </header>
+      ) : null}
       <TopicStatusLine
         t={t}
         lines={lines}
@@ -179,75 +247,112 @@ export function TopicNavigatorView({
           {opsErrorText(t, ops.error)}
         </p>
       ) : null}
-      {places.phase === "error" ? (
-        <div className="mt-3 flex items-center gap-2 px-2">
-          <p role="alert" className="min-w-0 flex-1 text-xs leading-5 text-muted-foreground">
+      {places.phase === "error" && !treeFailed ? (
+        <div className="mt-3 grid justify-items-start gap-0.5 px-2">
+          <p role="alert" className="m-0 text-xs leading-5 text-muted-foreground">
             {t("topics.navigator.placesError")}
           </p>
-          <Button type="button" variant="ghost" onClick={onRetryPlaces}>
-            <RefreshCw aria-hidden="true" />
+          <Button type="button" variant="link" className="-ml-3 min-h-7" onClick={onRetryPlaces}>
             {t("shell.actions.retry")}
           </Button>
         </div>
       ) : null}
       {pinned.length > 0 ? (
         <Section id={ids.pinned} title={t("topics.navigator.pinned")}>
-          <TopicNavTree {...place} rows={pinned} labelledBy={ids.pinned} />
+          <TopicNavTree {...places2} rows={pinned} labelledBy={ids.pinned} />
+        </Section>
+      ) : state === "empty" && hoistId === null && onAsk === undefined ? (
+        <Section id={ids.pinned} title={t("topics.navigator.pinned")}>
+          <p className="m-0 px-2 text-xs leading-5 text-muted-foreground [text-wrap:pretty]">
+            {t("explore.navigator.pinHint")}
+          </p>
         </Section>
       ) : null}
       {recents.length > 0 ? (
         <Section id={ids.recents} title={t("topics.navigator.recents")}>
-          <TopicNavTree {...place} rows={recents} labelledBy={ids.recents} />
+          <TopicNavTree {...places2} rows={recents} labelledBy={ids.recents} />
         </Section>
+      ) : null}
+      {hoist ? (
+        <nav
+          aria-label={t("explore.navigator.branchLabel")}
+          className="sticky top-0 z-[1] -mx-1 mt-2 flex items-center gap-1 bg-background px-1 pb-1"
+        >
+          <Button
+            variant="ghost"
+            className="min-h-7 max-w-full gap-1 px-2 text-xs"
+            onClick={hoist.onExit}
+          >
+            <ChevronLeft aria-hidden="true" className="size-3.5" />
+            {t("explore.navigator.wholeTree")}
+          </Button>
+          <span
+            title={root?.data?.parent.title ?? t("topics.navigator.unnamed")}
+            className="flex min-w-0 flex-1 text-xs font-semibold text-foreground"
+          >
+            <WrappedLabel text={root?.data?.parent.title ?? t("topics.navigator.unnamed")} />
+          </span>
+        </nav>
       ) : null}
       <Section
         id={ids.topics}
-        title={t("topics.navigator.topics")}
-        count={total === undefined ? undefined : format(total)}
+        title={hoist ? t("explore.navigator.branch") : t("workspace.navigator.title")}
+        count={
+          total === undefined
+            ? undefined
+            : t("workspace.navigator.total", { values: { count: format(total) } })
+        }
         action={
-          ops?.onCreateTop ? (
-            <Button
-              variant="ghost"
-              className="size-6 min-h-0 px-0"
-              aria-label={t("topics.ops.actions.createTop")}
-              title={t("topics.ops.actions.createTop")}
-              aria-haspopup="dialog"
-              onClick={ops.onCreateTop}
-            >
-              <FolderPlus aria-hidden="true" />
-            </Button>
-          ) : undefined
+          <>
+            {collapse}
+            {ops?.onCreateTop ? (
+              // A new top-level topic is rare (topics are born on their own), so its button shows
+              // when the title is hovered or focused.
+              <Button
+                variant="ghost"
+                className="size-6 min-h-0 px-0 opacity-0 group-focus-within/section:opacity-100 group-hover/section:opacity-100 focus-visible:opacity-100"
+                aria-label={t("topics.ops.actions.createTop")}
+                title={t("topics.ops.actions.createTop")}
+                aria-haspopup="dialog"
+                onClick={ops.onCreateTop}
+              >
+                <FolderPlus aria-hidden="true" />
+              </Button>
+            ) : null}
+          </>
         }
       >
         {state === "loading" ? (
-          <p
-            role="status"
-            className="flex items-center gap-2 px-2 py-2 text-sm text-muted-foreground"
-          >
-            <LoaderCircle
-              aria-hidden="true"
-              className="size-4 animate-spin motion-reduce:animate-none"
-            />
-            {t("topics.navigator.loading")}
-          </p>
+          <TreeSkeleton t={t} />
         ) : state === "error" ? (
-          <div className="grid justify-items-start gap-2 px-2 py-2">
-            <p role="alert" className="text-sm text-muted-foreground">
-              {t("topics.navigator.error")}
+          retryBeside ? (
+            // The root says what failed and offers the retry; here only what is kept.
+            <p role="status" className="m-0 px-2 py-1 text-xs leading-5 text-muted-foreground">
+              {t("explore.navigator.errorKept")}
             </p>
-            <Button type="button" onClick={onRetryRoot}>
-              <RefreshCw aria-hidden="true" />
-              {t("shell.actions.retry")}
-            </Button>
-          </div>
+          ) : (
+            <ErrorState
+              t={t}
+              className="px-2 py-1"
+              message={t("workspace.navigator.error")}
+              kept={t("explore.navigator.errorKept")}
+              retryLabel={t("shell.actions.retry")}
+              onRetry={onRetryRoot}
+            />
+          )
         ) : state === "preparing" ? (
           <p role="status" className="px-2 py-2 text-sm leading-5 text-muted-foreground">
             {t("topics.navigator.preparing")}
           </p>
         ) : state === "empty" ? (
-          <p className="px-2 py-2 text-sm leading-5 text-muted-foreground">
-            {t("topics.navigator.empty")}
-          </p>
+          <EmptyState
+            variant="compact"
+            className="mx-2"
+            icon={<ObjectKindGlyph kind="topic" size={16} className={objectKindTextClass.topic} />}
+            headline={t("workspace.navigator.emptyHeadline")}
+          >
+            {t("workspace.navigator.emptyBody")}
+          </EmptyState>
         ) : (
           <TopicNavTree
             {...place}
@@ -280,7 +385,15 @@ export interface TopicNavigatorProps {
   onOpenTopic: (id: string) => void;
   /** Opens a source in the Library; with a note ID, on that note. */
   onOpenSource: (sourceItemId: string, atomicNoteId?: string) => void;
-  onAsk: () => void;
+  /** Ask from the navigator's header; absent (Explore), the button is not drawn: Ask is Cmd-K. */
+  onAsk?: (() => void) | undefined;
+  /** The tree starts at this topic ("Show only this branch"), and `onExitHoist` shows it all again. */
+  hoistId?: string | null | undefined;
+  onExitHoist?: (() => void) | undefined;
+  /** Compact windows: a row's count shows on hover, focus and the open row only. */
+  quietCounts?: boolean | undefined;
+  /** The reading surface beside the tree offers the retry of a failed tree read (see the view). */
+  retryBeside?: boolean | undefined;
 }
 
 /** The reads and actions of the navigator, bound to the preload API when they run. */
@@ -310,7 +423,11 @@ export function TopicNavigator({
   selectedTopicId,
   onOpenTopic,
   onOpenSource,
-  onAsk
+  onAsk,
+  hoistId = null,
+  onExitHoist,
+  quietCounts = false,
+  retryBeside = false
 }: TopicNavigatorProps) {
   const [store] = useState(() => new TopicNavigatorStore(desktopApi()));
   const snapshot = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);
@@ -338,6 +455,11 @@ export function TopicNavigator({
   useEffect(() => {
     return followNavigatorEvents(() => window.app, store);
   }, [store]);
+
+  // A hoisted branch is read like an open one: its rows are the top level.
+  useEffect(() => {
+    if (active && hoistId) store.expand(hoistId);
+  }, [store, active, hoistId]);
 
   // An open topic (a link, a pin, a recent entry) is made visible in the tree.
   useEffect(() => {
@@ -499,6 +621,9 @@ export function TopicNavigator({
                 })
       }}
       onAsk={onAsk}
+      quietCounts={quietCounts}
+      retryBeside={retryBeside}
+      hoist={hoistId ? { id: hoistId, onExit: () => onExitHoist?.() } : undefined}
       onCollapseAll={() => store.collapseAll()}
       onToggle={(row) => toggleRow(row, deps)}
       onActivate={(row) => activateRow(row, deps)}
