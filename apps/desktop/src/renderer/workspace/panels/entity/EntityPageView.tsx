@@ -89,14 +89,10 @@ export function EntityPageView(props: EntityPageViewProps) {
       </LoadingState>
     );
 
-  // One cause shows one failure: the previous panel reads the same page, so it says it quietly and
-  // the retry lives on the top panel.
+  // One cause shows one failure: the previous panel reads the same page, so it says one neutral
+  // word (as the Note and the Topic do) and the sentence and the retry live on the top panel.
   if (load.status === "error" && compact)
-    return (
-      <p role="status" className="m-0 text-xs text-muted-foreground">
-        {t("entityPage.error.compact")}
-      </p>
-    );
+    return <p className="m-0 text-sm text-muted-foreground">{t("explore.compactError")}</p>;
 
   if (load.status === "error")
     return (
@@ -110,10 +106,15 @@ export function EntityPageView(props: EntityPageViewProps) {
       />
     );
 
+  // A gone entity says the same neutral word in the previous panel; the top panel's box says what
+  // happened, once.
+  if (load.status === "missing" && compact)
+    return <p className="m-0 text-sm text-muted-foreground">{t("explore.compactGone")}</p>;
+
   if (load.status === "missing")
     return (
       <EmptyState
-        variant={compact ? "compact" : "inline"}
+        variant="inline"
         className="max-w-(--measure)"
         headline={t("entityPage.missing.headline")}
       >
@@ -213,6 +214,7 @@ function LoadedPage({
                   <button
                     type="button"
                     aria-current={isCurrent ? "true" : undefined}
+                    data-quick-look={address}
                     title={mention.title}
                     onClick={open("note", mention.noteId)}
                     className={cn(rowClass, isCurrent && currentRowClass)}
@@ -240,6 +242,7 @@ function LoadedPage({
   const together = page.coMentioned ?? [];
   const sources = sourcesOf(page.mentions.items);
   const remaining = remainingMentions(page);
+  const sourcesPartial = sourcesArePartial(page);
 
   return (
     <article
@@ -256,7 +259,7 @@ function LoadedPage({
           action={
             <Button
               variant="secondary"
-              onClick={() => onOpen(formatView({ view: "ask", question: entity.canonicalName }))}
+              onClick={() => onOpen(formatView({ view: "ask", draft: entity.canonicalName }))}
             >
               {t("entityPage.empty.ask", { values: { name: entity.canonicalName } })}
             </Button>
@@ -326,6 +329,7 @@ function LoadedPage({
                 <button
                   type="button"
                   onClick={open("entity", other.id)}
+                  data-quick-look={addressOf("entity", other.id)}
                   title={other.canonicalName}
                   className={rowClass}
                 >
@@ -401,7 +405,13 @@ function LoadedPage({
         <section aria-labelledby={sourcesId} className="grid min-w-0 gap-1">
           <h2 id={sourcesId} className={sectionHeading}>
             {t("entityPage.sources.heading")}
-            <span className={sectionNote}>{page.counts.sources}</span>
+            <span className={sectionNote}>
+              {sourcesPartial
+                ? t("entityPage.sources.countPartial", {
+                    values: { shown: sources.length, total: page.counts.sources }
+                  })
+                : page.counts.sources}
+            </span>
           </h2>
           <ul className="m-0 -mx-2 grid list-none p-0">
             {sources.map((source) => (
@@ -409,6 +419,7 @@ function LoadedPage({
                 <button
                   type="button"
                   title={source.title}
+                  data-quick-look={addressOf("source", source.id)}
                   onClick={open("source", source.id)}
                   className={rowClass}
                 >
@@ -424,10 +435,33 @@ function LoadedPage({
               </li>
             ))}
           </ul>
-          {sourcesArePartial(page) ? (
-            <p className="m-0 text-xs text-muted-foreground [text-wrap:pretty]">
-              {t("entityPage.sources.partial")}
-            </p>
+          {sourcesPartial ? (
+            // The list is built from the notes shown so far: a sentence says so, and a quiet button
+            // says what it brings, the sources of more notes (it loads the same notes as the mentions').
+            <div className="mt-1 grid min-w-0 gap-0.5">
+              <p className="m-0 text-xs leading-5 text-muted-foreground [text-wrap:pretty]">
+                {t("entityPage.sources.partial")}
+              </p>
+              {remaining > 0 && page.mentions.next !== undefined ? (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="-ml-2.5 justify-self-start text-left"
+                  disabled={more === "loading"}
+                  aria-busy={more === "loading"}
+                  onClick={onLoadMore}
+                >
+                  {more === "loading"
+                    ? t("entityPage.sources.moreLoading")
+                    : plural(
+                        t,
+                        remaining,
+                        "entityPage.sources.moreOne",
+                        "entityPage.sources.moreMany"
+                      )}
+                </Button>
+              ) : null}
+            </div>
           ) : null}
         </section>
       ) : null}
@@ -492,6 +526,7 @@ function MentionGroupView({
             <button
               type="button"
               title={mention.title}
+              data-quick-look={addressOf("note", mention.noteId)}
               onClick={open("note", mention.noteId)}
               className={rowClass}
             >

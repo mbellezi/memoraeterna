@@ -9,7 +9,7 @@ import { TopicOpsOverlay, useTopicOps } from "../topics/ops/use-topic-ops";
 import { useObjectOpener, type OpenableNavigation } from "../WhereIsThis";
 import type { HeaderOps } from "./TopicHeader";
 import { TopicPageController } from "./topic-page-controller";
-import type { TopicPageActions } from "./topic-page-model";
+import { redirectTarget, type TopicPageActions } from "./topic-page-model";
 import { TopicPageView } from "./TopicPageView";
 
 export interface TopicPageProps {
@@ -31,6 +31,11 @@ export interface TopicPageProps {
   current?: string | undefined;
   /** "Show only this branch" of the actions menu; absent where there is no tree to hoist. */
   onHoist?: ((topicId: string) => void) | undefined;
+  /**
+   * A page that was asked for under a retired (merged) topic id found its successor: the host
+   * opens the successor's address in place of the retired one. The page keeps its banner.
+   */
+  onRedirect?: ((topicId: string) => void) | undefined;
   /** Where the page's own load stands, for the frame's `data-state`. */
   onLoadState?: ((status: "loading" | "error" | "missing" | "ready") => void) | undefined;
 }
@@ -51,6 +56,7 @@ export function TopicPage({
   compact = false,
   current,
   onHoist,
+  onRedirect,
   onLoadState
 }: TopicPageProps) {
   const [controller] = useState(
@@ -112,6 +118,36 @@ export function TopicPage({
     onLoadState?.(loadStatus);
   }, [loadStatus, onLoadState]);
   const shownTopic = snapshot.load.status === "ready" ? snapshot.load.page.topic.id : null;
+  // A merged topic: the host opens the successor in place of the retired id, once, and the banner
+  // that says so stays on the page that replaces it.
+  const [notice, setNotice] = useState<{ to: string; from: string } | null>(null);
+  const redirectTo =
+    snapshot.load.status === "ready"
+      ? redirectTarget({
+          page: snapshot.load.page,
+          requestedId: topicId,
+          done: notice?.from ?? null
+        })
+      : null;
+  if (redirectTo !== null) setNotice({ to: redirectTo, from: topicId });
+  const redirecting = notice !== null && notice.from === topicId ? notice.to : null;
+  const redirect = useEffectEvent((to: string) => onRedirect?.(to));
+  useEffect(() => {
+    if (redirecting !== null) redirect(redirecting);
+  }, [redirecting]);
+  const shownSnapshot =
+    notice !== null &&
+    snapshot.load.status === "ready" &&
+    snapshot.load.page.topic.id === notice.to &&
+    snapshot.load.page.redirectedFrom === null
+      ? {
+          ...snapshot,
+          load: {
+            ...snapshot.load,
+            page: { ...snapshot.load.page, redirectedFrom: notice.from }
+          }
+        }
+      : snapshot;
   useEffect(() => {
     if (!active || shownTopic === null || focusedTopic.current === shownTopic) return;
     focusedTopic.current = shownTopic;
@@ -167,7 +203,7 @@ export function TopicPage({
   return (
     <TopicPageView
       t={t}
-      snapshot={snapshot}
+      snapshot={shownSnapshot}
       active={active}
       headingRef={headingRef}
       actions={actions}

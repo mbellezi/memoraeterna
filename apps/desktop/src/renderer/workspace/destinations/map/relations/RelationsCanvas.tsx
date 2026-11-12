@@ -147,6 +147,8 @@ export function RelationsCanvas({
   const [retry, setRetry] = useState(0);
   const [card, setCard] = useState<CardTarget | null>(null);
   const [cursor, setCursor] = useState<number | null>(null);
+  // Focus is on the canvas: with no cursor yet it shows where the keys start.
+  const [focused, setFocused] = useState(false);
   const [announcement, setAnnouncement] = useState("");
   const openNote = useStableCallback(onOpenNote);
   const unavailable = useStableCallback(onUnavailable);
@@ -649,13 +651,25 @@ export function RelationsCanvas({
         })}
         aria-describedby={hintId}
         tabIndex={0}
+        onFocus={() => setFocused(true)}
         onBlur={() => {
+          setFocused(false);
           if (cursor !== null) stand(null);
         }}
       />
       <p id={hintId} className="sr-only">
         {t("mapRelations.canvas.hint")}
       </p>
+      {focused && cursor === null ? (
+        // The same words the keyboard user hears, as a quiet line where the card would stand.
+        <p
+          data-canvas-hint=""
+          aria-hidden="true"
+          className="pointer-events-none absolute bottom-2 left-2 m-0 max-w-[calc(100%-4rem)] rounded-md bg-surface px-2 py-1 text-xs text-muted-foreground [text-wrap:pretty]"
+        >
+          {t("mapRelations.canvas.hint")}
+        </p>
+      ) : null}
       <p className="sr-only" role="status" aria-live="polite">
         {announcement}
       </p>

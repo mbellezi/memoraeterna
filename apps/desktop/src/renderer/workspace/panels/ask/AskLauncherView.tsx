@@ -173,6 +173,8 @@ export function AskLauncherView(props: AskLauncherViewProps) {
             onChange={onChange}
             onSend={onSend}
             busy={sending}
+            // After a failed send "Tentar de novo" is the one loud action, so the send steps down.
+            submitVariant={snapshot.send.status === "error" ? "secondary" : "primary"}
             label={t("askPanel.launcher.draftLabel")}
             placeholder={t("askPanel.launcher.placeholder")}
             sendLabel={t("askPanel.launcher.submit")}

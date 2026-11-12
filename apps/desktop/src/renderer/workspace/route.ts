@@ -19,7 +19,7 @@ import {
  *   memora://map/relations|shape[?scope=<object address>]
  *   memora://settings[/<section>[#<setting>]]
  *   memora://search?q=…[&kinds=<kind>,<kind>]
- *   memora://ask[?q=…][&scope=<object address>]
+ *   memora://ask[?q=…|draft=…][&scope=<object address>]
  *   memora://import[?source=<uuid>]
  *
  * Query values are percent-encoded. The parser is strict (unknown views, keys or values, repeated
@@ -71,7 +71,11 @@ export type ViewAddress =
   | { view: "map"; lens: MapLens; scope?: ObjectAddress }
   | { view: "settings"; section?: SettingsSectionId; setting?: string }
   | { view: "search"; query: string; kinds?: ObjectKind[] }
-  | { view: "ask"; question?: string; scope?: AskScope }
+  /**
+   * `question` is asked at once; `draft` only fills the field (the person reads and sends it), and
+   * the two never come together.
+   */
+  | { view: "ask"; question?: string; draft?: string; scope?: AskScope }
   | { view: "import"; sourceId?: string };
 export type ViewName = ViewAddress["view"];
 
@@ -218,13 +222,21 @@ function readView(
       return kinds ? { view: "search", query: q, kinds } : null;
     }
     case "ask": {
-      const fields = readQuery(query, ["q", "scope"]);
+      const fields = readQuery(query, ["q", "draft", "scope"]);
       if (!fields) return null;
-      const view: { view: "ask"; question?: string; scope?: AskScope } = { view: "ask" };
+      if (fields.has("q") && fields.has("draft")) return null;
+      const view: { view: "ask"; question?: string; draft?: string; scope?: AskScope } = {
+        view: "ask"
+      };
       const q = fields.get("q");
       if (q !== undefined) {
         if (!isText(q)) return null;
         view.question = q;
+      }
+      const draft = fields.get("draft");
+      if (draft !== undefined) {
+        if (!isText(draft)) return null;
+        view.draft = draft;
       }
       if (fields.has("scope")) {
         const scope = readScope(fields.get("scope"));
@@ -320,6 +332,7 @@ function writeView(view: ViewAddress): string {
     case "ask":
       return `${prefix}ask${writeQuery([
         ["q", view.question],
+        ["draft", view.draft],
         ["scope", scopeText(view.scope)]
       ])}`;
     case "import":

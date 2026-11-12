@@ -1,5 +1,5 @@
 import { useCallback } from "react";
-import { parseObjectAddress, type ObjectSummary } from "@app/domain";
+import { formatObjectAddress, parseObjectAddress, type ObjectSummary } from "@app/domain";
 
 import { TopicPage } from "../../components/topic-page/TopicPage";
 import type { OpenableNavigation } from "../../components/WhereIsThis";
@@ -27,7 +27,16 @@ export function title(summary: ObjectSummary | null): string {
   return summary?.title ?? "";
 }
 
-export function Component({ t, address, mode, active, onState, onOpen, current }: PanelProps) {
+export function Component({
+  t,
+  address,
+  mode,
+  active,
+  onState,
+  onOpen,
+  onRedirect,
+  current
+}: PanelProps) {
   const id = parseObjectAddress(address)?.id ?? null;
   const bridge = useWorkspaceBridge();
   const report = useCallback(
@@ -41,6 +50,16 @@ export function Component({ t, address, mode, active, onState, onOpen, current }
     },
     [onOpen]
   );
+  // A merged topic's page found its successor: the stack holds the current id, not the retired one,
+  // and the history entry is swapped, so Back does not return to the retired id.
+  const redirect = useCallback(
+    (topicId: string) => {
+      const to = formatObjectAddress({ kind: "topic", id: topicId });
+      if (onRedirect) onRedirect(to);
+      else onOpen(to, { replace: true });
+    },
+    [onOpen, onRedirect]
+  );
   if (id === null) return null;
   return (
     <TopicPage
@@ -52,6 +71,7 @@ export function Component({ t, address, mode, active, onState, onOpen, current }
       current={current}
       onHoist={bridge ? (topicId) => bridge.dispatch({ type: "hoist", topicId }) : undefined}
       onLoadState={report}
+      onRedirect={redirect}
       onNavigate={openNavigation}
       onOpenAddress={(next) => onOpen(next)}
     />

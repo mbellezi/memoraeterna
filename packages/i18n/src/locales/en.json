@@ -503,7 +503,7 @@
     "keys": {
       "barNote": "Single-key shortcuts do not work inside text fields.",
       "short": {
-        "apply": "accept",
+        "apply": "apply",
         "dismiss": "dismiss",
         "edit": "edit",
         "help": "shortcuts",
@@ -4176,34 +4176,37 @@
       "earlierHint": "Relations to a note that a newer version replaced, or whose source is gone. They stay out of the graph and the counts."
     },
     "graph": {
-      "tabs": "Relations view",
+      "tabs": "Connections view",
       "list": "List",
       "graph": "Graph",
-      "unavailable": "The graph cannot be drawn on this computer, so the relations are listed instead.",
-      "loading": "Loading the relation graph…",
-      "error": "The relation graph could not be loaded.",
-      "rereadError": "The graph could not be updated, so it still shows the last relations it read.",
+      "unavailable": "The graph cannot be drawn on this computer, so the connections are listed instead.",
+      "loading": "Loading the connection graph…",
+      "error": "The connection graph could not be loaded.",
+      "rereadError": "The graph could not be updated, so it still shows the last connections it read.",
       "contextLost": "The graph stopped drawing.",
-      "empty": "This note has no relations to draw yet. They appear here when other notes are linked to it.",
-      "depthTwo": "Include the relations of related notes",
-      "counts": "{notes} notes · {relations} relations",
-      "showList": "Show as list",
-      "label": "Relation graph: {notes} notes and {relations} relations. Drag the background to pan; the List shows this note's relations as text.",
-      "keyboardHint": "Keyboard: Tab to the graph, then the arrow keys move between notes and relations, Enter opens a note and Escape closes the card.",
+      "empty": "This note has no connections to draw yet. They appear here when other notes are linked to it.",
+      "depthTwo": "Include the connections of linked notes",
+      "showList": "See as a list",
+      "label": "Connection graph: {notes} notes and {relations} connections. Drag the background to pan; the List shows this note's connections as text.",
+      "keyboardHint": "Keyboard: Tab to the graph, then the arrow keys move between notes and connections, Enter opens a note and Escape closes the card.",
       "legend": "Legend",
-      "legendKept": "Solid line: a relation you kept or that was applied",
+      "legendKept": "Solid line: a connection you kept or that was applied",
       "legendSuggested": "Dashed line: a suggestion nobody has kept yet",
-      "legendArrow": "Arrow: the relation reads from one note to the other",
+      "legendArrow": "Arrow: the connection reads from one note to the other",
       "legendFocus": "Larger node: this note",
-      "truncated": "Showing {shown} of {total} related notes. The List has all of them.",
-      "omitted": "Relations between these notes that are not drawn: {count}.",
+      "truncated": "Showing {shown} of {total} linked notes. The List has all of them.",
+      "omitted": "Connections between these notes that are not drawn: {count}.",
       "thisNote": "This note: {title}",
       "noteCard": "Note: {title}",
       "thisNoteHint": "You are on this note.",
       "openHint": "Click, or press Enter, to open this note.",
-      "stateSuggested": "Suggestion: nobody has kept this relation yet.",
-      "stateKept": "You kept this relation.",
-      "stateApplied": "This relation is applied."
+      "stateSuggested": "Suggestion: nobody has kept this connection yet.",
+      "stateKept": "You kept this connection.",
+      "stateApplied": "This connection is applied.",
+      "notesOne": "{count} note",
+      "notesMany": "{count} notes",
+      "connectionsOne": "{count} connection",
+      "connectionsMany": "{count} connections"
     },
     "linkedStance": "linked: {type}",
     "stance": {
@@ -4469,7 +4472,11 @@
         "heading": "Earlier questions",
         "label": "Open an earlier question"
       },
-      "empty": "Nothing asked about this yet. Each question is kept in Library › Questions, with its answer.",
+      "empty": {
+        "library": "No question about the library yet. Write one above; each question is kept in Library › Questions, with its answer.",
+        "source": "No question about this source yet. Write one above; each question is kept in Library › Questions, with its answer.",
+        "topic": "No question about this topic yet. Write one above; each question is kept in Library › Questions, with its answer."
+      },
       "errors": {
         "earlier": "Could not load the earlier questions.",
         "earlierKept": "You can still ask.",
@@ -4538,7 +4545,7 @@
         "confidenceHigh": "high confidence",
         "confidenceLow": "low confidence",
         "confidenceMedium": "medium confidence",
-        "confidenceUnknown": "confidence unknown",
+        "confidenceUnknown": "unknown confidence",
         "decideWhenever": "decide whenever you like",
         "gardener": "Gardener",
         "gardenerSuggested": "suggested by the Gardener",
@@ -4752,7 +4759,6 @@
       "error": "Could not open this note.",
       "errorKept": "The rest of Explore stays open and your notes are untouched.",
       "explainedLocally": "explanation written by the local AI",
-      "gardenerConfidence": "Gardener · {word} confidence",
       "gardenerSuggestion": "Gardener suggestion · decide whenever you like",
       "goneBody": "It may have been merged into another note or removed. Nothing else changed.",
       "goneHeadline": "This note is no longer in your library.",
@@ -4882,7 +4888,6 @@
       "headline": "No direct mentions yet."
     },
     "error": {
-      "compact": "Could not open.",
       "kept": "Your notes and sources are as they were.",
       "message": "This entity could not be opened."
     },
@@ -4909,8 +4914,12 @@
       "headline": "This entity is no longer in the library."
     },
     "sources": {
+      "countPartial": "{shown} of {total}",
       "heading": "Sources",
-      "partial": "Sources of the mentions loaded so far. Show more mentions to see the rest."
+      "moreLoading": "Loading more sources",
+      "moreMany": "Show the sources of {count} more notes",
+      "moreOne": "Show the sources of {count} more note",
+      "partial": "These are the sources of the notes shown so far."
     },
     "topics": {
       "heading": "Topics",
@@ -4931,6 +4940,7 @@
     },
     "foot": {
       "all": "all results",
+      "ask": "ask",
       "beside": "open beside",
       "choose": "choose",
       "here": "open in this panel",
@@ -4977,6 +4987,10 @@
       "none": "no prefix: everything",
       "topics": "topics",
       "topicsLabel": "Topics only"
+    },
+    "preview": {
+      "ask": "A question opens a panel that answers with your sources.",
+      "none": "Pick a result to see it here."
     },
     "results": {
       "compactLabel": "Results for “{query}”",
@@ -5036,9 +5050,6 @@
     },
     "chip": {
       "labelPlain": "Citation {number}"
-    },
-    "compact": {
-      "error": "Could not open."
     },
     "empty": {
       "add": "Add a source",
@@ -5123,7 +5134,7 @@
       "readFromOne": "from {count} source",
       "readNotCited": "Read, not cited",
       "readNotCitedReason": "not used in the answer",
-      "readNotCitedSibling": "Another passage of source {number}",
+      "readNotCitedSibling": "Another passage of the source of citation {number}",
       "readPassagesMany": "{count} passages read",
       "readPassagesOne": "{count} passage read",
       "reading": "reading…",
@@ -5144,7 +5155,7 @@
   },
   "preview": {
     "card": {
-      "empty": "No summary yet. Open it to read it all.",
+      "empty": "No summary yet. Open it beside to read it all.",
       "error": "Could not read the preview.",
       "errorKept": "The link still works; nothing was changed.",
       "goTo": "Go to",
@@ -5723,7 +5734,7 @@
     "health": {
       "attention": "needs attention",
       "good": "balanced",
-      "violation": "over the limit"
+      "violation": "structure problem"
     },
     "inspector": {
       "next": "Next step",
@@ -5782,8 +5793,8 @@
       "zoomOut": "Zoom out"
     },
     "depth": {
-      "help": "Which level of subtopics gives the dots their colour",
-      "label": "Colour by subtopic at",
+      "help": "Which level of subtopics groups the dots and colours each group",
+      "label": "Group by",
       "one": "level 1",
       "three": "level 3",
       "two": "level 2"
@@ -5844,6 +5855,7 @@
     "caption": "The same connections as the graph, one row per connection",
     "count": "{count} connections",
     "countOne": "1 connection",
+    "errorMessage": "The connections of this branch could not be loaded.",
     "from": "From",
     "groupBy": "Group by",
     "groupByHelp": "Which level of subtopics groups the topics in the list",

@@ -11,12 +11,13 @@ const t = screenTranslator();
 const noop = () => undefined;
 
 /**
- * The page is by risk, oldest first, so the capture opens on a suggestion: the 64% one is the
- * riskiest and the oldest; another, whose decider wrote no probability (D33: "unknown confidence",
- * no number), is a medium one; then one item of every other kind.
+ * The page is by risk, oldest first. A suggestion is always a medium risk, as the read model files it
+ * (`inboxRepository`): the 64% one is the oldest of them; another, whose decider wrote no probability
+ * (D33: "unknown confidence", no number), follows; then one item of every other kind, so the
+ * capture opens on the first high-risk item.
  */
 const items: InboxItem[] = [
-  item("suggestion", { risk: "high", at: "2026-10-23T05:00:00.000000Z" }),
+  item("suggestion", { risk: "medium", at: "2026-10-23T05:00:00.000000Z" }),
   item("suggestion", {
     id: uuid(83),
     params: { relationType: "extends", probability: null },

@@ -503,7 +503,7 @@
     "keys": {
       "barNote": "Los atajos de una tecla no funcionan dentro de campos de texto.",
       "short": {
-        "apply": "aceptar",
+        "apply": "aplicar",
         "dismiss": "descartar",
         "edit": "editar",
         "help": "atajos",
@@ -4176,34 +4176,37 @@
       "earlierHint": "Relaciones con una nota que una versión más nueva reemplazó, o cuya fuente ya no existe. Quedan fuera del grafo y de los recuentos."
     },
     "graph": {
-      "tabs": "Vista de las relaciones",
+      "tabs": "Vista de las conexiones",
       "list": "Lista",
       "graph": "Grafo",
-      "unavailable": "El grafo no se puede dibujar en este equipo, así que las relaciones se muestran en una lista.",
-      "loading": "Cargando el grafo de relaciones…",
-      "error": "No se pudo cargar el grafo de relaciones.",
-      "rereadError": "No se pudo actualizar el grafo, así que sigue mostrando las últimas relaciones que leyó.",
+      "unavailable": "El grafo no se puede dibujar en este equipo, así que las conexiones se muestran en una lista.",
+      "loading": "Cargando el grafo de conexiones…",
+      "error": "No se pudo cargar el grafo de conexiones.",
+      "rereadError": "No se pudo actualizar el grafo, así que sigue mostrando las últimas conexiones que leyó.",
       "contextLost": "El grafo dejó de dibujarse.",
-      "empty": "Esta nota aún no tiene relaciones que dibujar. Aparecen aquí cuando otras notas se vinculan a ella.",
-      "depthTwo": "Incluir las relaciones de las notas relacionadas",
-      "counts": "{notes} notas · {relations} relaciones",
-      "showList": "Mostrar como lista",
-      "label": "Grafo de relaciones: {notes} notas y {relations} relaciones. Arrastra el fondo para moverte; la lista muestra en texto las relaciones de esta nota.",
-      "keyboardHint": "Teclado: usa Tab hasta el grafo; las flechas pasan entre notas y relaciones, Intro abre una nota y Esc cierra la ficha.",
+      "empty": "Esta nota aún no tiene conexiones que dibujar. Aparecen aquí cuando otras notas se vinculan a ella.",
+      "depthTwo": "Incluir las conexiones de las notas vinculadas",
+      "showList": "Ver como lista",
+      "label": "Grafo de conexiones: {notes} notas y {relations} conexiones. Arrastra el fondo para moverte; la lista muestra en texto las conexiones de esta nota.",
+      "keyboardHint": "Teclado: usa Tab hasta el grafo; las flechas pasan entre notas y conexiones, Intro abre una nota y Esc cierra la ficha.",
       "legend": "Leyenda",
-      "legendKept": "Línea continua: una relación que mantuviste o que se aplicó",
+      "legendKept": "Línea continua: una conexión que mantuviste o que se aplicó",
       "legendSuggested": "Línea discontinua: una sugerencia que nadie ha mantenido todavía",
-      "legendArrow": "Flecha: la relación va de una nota a la otra",
+      "legendArrow": "Flecha: la conexión va de una nota a la otra",
       "legendFocus": "Nodo más grande: esta nota",
-      "truncated": "Se muestran {shown} de {total} notas relacionadas. La lista las tiene todas.",
-      "omitted": "Relaciones entre estas notas que no se dibujan: {count}.",
+      "truncated": "Se muestran {shown} de {total} notas vinculadas. La lista las tiene todas.",
+      "omitted": "Conexiones entre estas notas que no se dibujan: {count}.",
       "thisNote": "Esta nota: {title}",
       "noteCard": "Nota: {title}",
       "thisNoteHint": "Estás en esta nota.",
       "openHint": "Haz clic, o pulsa Intro, para abrir esta nota.",
-      "stateSuggested": "Sugerencia: nadie ha mantenido todavía esta relación.",
-      "stateKept": "Mantuviste esta relación.",
-      "stateApplied": "Esta relación está aplicada."
+      "stateSuggested": "Sugerencia: nadie ha mantenido todavía esta conexión.",
+      "stateKept": "Mantuviste esta conexión.",
+      "stateApplied": "Esta conexión está aplicada.",
+      "notesOne": "{count} nota",
+      "notesMany": "{count} notas",
+      "connectionsOne": "{count} conexión",
+      "connectionsMany": "{count} conexiones"
     },
     "linkedStance": "relacionadas: {type}",
     "stance": {
@@ -4469,7 +4472,11 @@
         "heading": "Preguntas anteriores",
         "label": "Abrir una pregunta anterior"
       },
-      "empty": "Aún no se ha preguntado nada sobre esto. Cada pregunta queda en Biblioteca › Preguntas, con su respuesta.",
+      "empty": {
+        "library": "Aún no hay preguntas sobre la biblioteca. Escribe una arriba; cada pregunta queda en Biblioteca › Preguntas, con su respuesta.",
+        "source": "Aún no hay preguntas sobre esta fuente. Escribe una arriba; cada pregunta queda en Biblioteca › Preguntas, con su respuesta.",
+        "topic": "Aún no hay preguntas sobre este tema. Escribe una arriba; cada pregunta queda en Biblioteca › Preguntas, con su respuesta."
+      },
       "errors": {
         "earlier": "No se pudieron cargar las preguntas anteriores.",
         "earlierKept": "Aún puedes preguntar.",
@@ -4752,7 +4759,6 @@
       "error": "No se pudo abrir esta nota.",
       "errorKept": "El resto de Explorar sigue abierto y tus notas no han cambiado.",
       "explainedLocally": "explicación escrita por la IA local",
-      "gardenerConfidence": "Jardinero · confianza {word}",
       "gardenerSuggestion": "sugerencia del Jardinero · decide cuando quieras",
       "goneBody": "Puede que se haya unido a otra nota o que se haya eliminado. Nada más ha cambiado.",
       "goneHeadline": "Esta nota ya no está en tu biblioteca.",
@@ -4882,7 +4888,6 @@
       "headline": "Aún sin menciones directas."
     },
     "error": {
-      "compact": "No se pudo abrir.",
       "kept": "Tus notas y fuentes siguen como estaban.",
       "message": "No se pudo abrir esta entidad."
     },
@@ -4909,8 +4914,12 @@
       "headline": "Esta entidad ya no está en la biblioteca."
     },
     "sources": {
+      "countPartial": "{shown} de {total}",
       "heading": "Fuentes",
-      "partial": "Fuentes de las menciones cargadas hasta ahora. Muestra más menciones para ver el resto."
+      "moreLoading": "Cargando más fuentes",
+      "moreMany": "Mostrar las fuentes de {count} notas más",
+      "moreOne": "Mostrar las fuentes de {count} nota más",
+      "partial": "Estas son las fuentes de las notas mostradas hasta ahora."
     },
     "topics": {
       "heading": "Temas",
@@ -4931,6 +4940,7 @@
     },
     "foot": {
       "all": "todos los resultados",
+      "ask": "preguntar",
       "beside": "abrir al lado",
       "choose": "elegir",
       "here": "abrir en este panel",
@@ -4977,6 +4987,10 @@
       "none": "sin prefijo: todo",
       "topics": "temas",
       "topicsLabel": "Solo temas"
+    },
+    "preview": {
+      "ask": "Una pregunta abre un panel que responde con tus fuentes.",
+      "none": "Elige un resultado para verlo aquí."
     },
     "results": {
       "compactLabel": "Resultados para “{query}”",
@@ -5036,9 +5050,6 @@
     },
     "chip": {
       "labelPlain": "Cita {number}"
-    },
-    "compact": {
-      "error": "No se pudo abrir."
     },
     "empty": {
       "add": "Añadir una fuente",
@@ -5123,7 +5134,7 @@
       "readFromOne": "de {count} fuente",
       "readNotCited": "Leídos, no citados",
       "readNotCitedReason": "no usado en la respuesta",
-      "readNotCitedSibling": "Otro fragmento de la fuente {number}",
+      "readNotCitedSibling": "Otro fragmento de la misma fuente de la cita {number}",
       "readPassagesMany": "{count} pasajes leídos",
       "readPassagesOne": "{count} pasaje leído",
       "reading": "leyendo…",
@@ -5144,7 +5155,7 @@
   },
   "preview": {
     "card": {
-      "empty": "Aún sin resumen. Ábrelo para leerlo completo.",
+      "empty": "Aún sin resumen. Ábrelo al lado para leerlo completo.",
       "error": "No se pudo leer la vista previa.",
       "errorKept": "El enlace sigue funcionando; no se cambió nada.",
       "goTo": "Ir a",
@@ -5723,7 +5734,7 @@
     "health": {
       "attention": "necesita atención",
       "good": "equilibrado",
-      "violation": "sobre el límite"
+      "violation": "problema de estructura"
     },
     "inspector": {
       "next": "Siguiente paso",
@@ -5782,8 +5793,8 @@
       "zoomOut": "Alejar"
     },
     "depth": {
-      "help": "Qué nivel de subtemas da el color a los puntos",
-      "label": "Color por subtema de",
+      "help": "Qué nivel de subtemas agrupa los puntos y da color a cada grupo",
+      "label": "Agrupar por",
       "one": "1.er nivel",
       "three": "3.er nivel",
       "two": "2.º nivel"
@@ -5844,6 +5855,7 @@
     "caption": "Las mismas conexiones del grafo, una fila por conexión",
     "count": "{count} conexiones",
     "countOne": "1 conexión",
+    "errorMessage": "No se pudieron cargar las conexiones de esta rama.",
     "from": "De",
     "groupBy": "Agrupar por",
     "groupByHelp": "Qué nivel de subtemas agrupa los temas de la lista",

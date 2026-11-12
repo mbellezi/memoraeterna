@@ -477,6 +477,30 @@ describe("loading, empty and error states", () => {
     expect(html.match(/aria-current="true"/g)).toHaveLength(1);
   });
 
+  it("rings the whole row of the previous panel's table, and draws the Unsorted row as text", () => {
+    const rowButtons = (html: string) =>
+      [...html.slice(html.indexOf("<table")).matchAll(/<button type="button" data-row[^>]*>/g)].map(
+        (match) => match[0]
+      );
+    const compact = view(snapshot(), { compact: true, currentTopicId: shapeId(sample.memory) });
+    const table = compact.slice(compact.indexOf("<table"));
+    const buttons = rowButtons(compact);
+    // The row button draws no ring of its own: the row does, inset, with the selected bar kept.
+    for (const button of buttons) expect(button).toContain("focus-visible:outline-none");
+    expect(table).toContain("has-[:focus-visible]:[box-shadow:inset_0_0_0_2px_var(--accent)]");
+    expect(table).toContain(
+      "has-[:focus-visible]:[box-shadow:inset_2px_0_0_0_var(--accent),inset_0_0_0_2px_var(--accent)]"
+    );
+    // Unsorted holds no topic: its row is text, so it is not a button and not a tab stop.
+    expect(buttons.some((button) => button.includes('title="Unsorted"'))).toBe(false);
+    expect(table).toContain('title="Unsorted"');
+    expect(buttons.filter((button) => button.includes('tabindex="0"'))).toHaveLength(1);
+    // In the full table Unsorted selects its block (the inspector explains it): it stays a button.
+    expect(rowButtons(view(snapshot())).some((button) => button.includes('title="Unsorted"'))).toBe(
+      true
+    );
+  });
+
   it("marks the row of the topic the person came from without ever cutting the marker", () => {
     const html = view(snapshot(), {
       origin: { topicId: shapeId(sample.forgetting), title: "Forgetting curve" }

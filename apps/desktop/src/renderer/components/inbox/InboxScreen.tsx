@@ -6,7 +6,7 @@ import {
   useSyncExternalStore,
   type KeyboardEvent
 } from "react";
-import { formatObjectAddress, inboxItemKey, type InboxObject } from "@app/domain";
+import { formatObjectAddress, inboxItemKey, type InboxKind, type InboxObject } from "@app/domain";
 import type { Translator } from "@app/i18n";
 
 import { closePanelPriority, subscribeClosePanel } from "../../lib/close-panel";
@@ -39,6 +39,11 @@ export interface InboxScreenProps {
   listWidth?: number;
   /** Shows the destination's key bar at the foot (design record §7.4). */
   keyBar?: boolean;
+  /**
+   * The kind an address asked for (`memora://inbox?kind=suggestion`, a Home "needs you" row): the
+   * list is narrowed to it each time it changes. Absent, the person's own filter is left alone.
+   */
+  kind?: InboxKind | undefined;
 }
 
 /** The state the Inbox is in, as the frame names it: nothing waiting is empty, not an error. */
@@ -64,7 +69,8 @@ export function InboxScreen({
   onState,
   compact = false,
   listWidth,
-  keyBar = false
+  keyBar = false,
+  kind
 }: InboxScreenProps) {
   const [controller] = useState(() => new InboxController({ api: () => window.app }));
   const state = useSyncExternalStore(
@@ -84,6 +90,11 @@ export function InboxScreen({
   useEffect(() => {
     onState?.(panelState);
   }, [onState, panelState]);
+
+  // Declared before `show`, so a first mount narrows the list before its first read.
+  useEffect(() => {
+    if (kind !== undefined) controller.setFilter({ kind });
+  }, [controller, kind]);
 
   useEffect(() => {
     controller.show(active);

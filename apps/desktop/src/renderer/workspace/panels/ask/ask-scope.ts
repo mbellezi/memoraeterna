@@ -39,16 +39,20 @@ export function objectOfScope(scope: StoredAskScope): string | null {
   return null;
 }
 
-/** An Ask as an address says it: the words and the scope. */
+/**
+ * An Ask as an address says it: the words that are asked at once (`text`), the words that only
+ * fill the field (`draft`), and the scope.
+ */
 export interface AskRequest {
   text: string;
+  draft: string;
   scope: ScopeRead;
 }
 
 export function readAskAddress(address: string): AskRequest | null {
   const view = parseViewAddress(address);
   if (!view || view.view !== "ask") return null;
-  return { text: view.question ?? "", scope: scopeOfView(view.scope) };
+  return { text: view.question ?? "", draft: view.draft ?? "", scope: scopeOfView(view.scope) };
 }
 
 /** Whether the words can be sent: 3 to 1000 characters once trimmed (`questions.ask`'s own bound). */

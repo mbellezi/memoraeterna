@@ -76,6 +76,9 @@ describe("Cmd-K", () => {
     expect(text).toContain("abrir neste painel");
     expect(text).toContain("todos os resultados");
     expect(text).toContain("espiar");
+    expect(dom.document.querySelector("[aria-label=Atalhos]")?.textContent).toContain(
+      "abrir ao lado"
+    );
     expect(text).not.toContain("primeiro");
     expect(dom.document.querySelector("[data-surface=palette]")?.getAttribute("data-state")).toBe(
       "success"
@@ -160,6 +163,12 @@ describe("Cmd-K", () => {
       "empty"
     );
     expect(dom.document.body.textContent).toContain("Nada com “zzz”.");
+    // Only the ask row is there: the foot says Enter asks, and offers no keys that do nothing.
+    const foot = dom.document.querySelector("[aria-label=Atalhos]")?.textContent ?? "";
+    expect(foot).toContain("perguntar");
+    expect(foot).not.toContain("todos os resultados");
+    expect(foot).not.toContain("espiar");
+    expect(foot).not.toContain("abrir ao lado");
     await dom.dispose();
     dom = createTestDom();
     (dom.window as unknown as { app: unknown }).app = {
@@ -173,6 +182,27 @@ describe("Cmd-K", () => {
       group.getAttribute("data-palette-group")
     );
     expect(groups).toEqual(["recent", "pinned", "do"]);
+  });
+
+  it("never leaves the preview column blank: it says what to do, and what an ask row does", async () => {
+    const pane = () => dom.document.querySelector("[data-palette-preview]")?.textContent ?? "";
+    (dom.window as unknown as { app: { search: { omni: unknown } } }).app.search.omni = (
+      input: never
+    ) => Promise.resolve(omniFixture(true)(input));
+    await open("zzz");
+    // Nothing found: the ask row is the one highlighted, and the column says what asking does.
+    expect(pane().trim()).not.toBe("");
+    expect(pane()).toContain("Uma pergunta abre um painel que responde com as suas fontes.");
+    await dom.dispose();
+    dom = createTestDom();
+    (dom.window as unknown as { app: unknown }).app = {
+      search: { omni: () => Promise.reject(new Error("no")) },
+      objects: { resolveMany: (input: never) => Promise.resolve(resolveManyFixture()(input)) },
+      viewHistory: { list: () => Promise.resolve([]) },
+      onAppEvent: () => () => undefined
+    };
+    await open("ferment");
+    expect(pane().trim()).not.toBe("");
   });
 
   it("says a search failed in place and keeps the actions", async () => {

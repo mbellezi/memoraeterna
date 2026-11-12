@@ -78,6 +78,11 @@ export interface PanelProps {
   onPlace: (place: PanelPlace) => void;
   /** Opens an address beside this panel, or in it ("abrir neste painel", Option-click). */
   onOpen: (address: PanelAddress, options?: { replace?: boolean }) => void;
+  /**
+   * A panel's object turned out to live at another address (a merged topic): the panel's own entry
+   * in its history is swapped for it, so Back never returns to the retired one. Absent for a root.
+   */
+  onRedirect?: (address: PanelAddress) => void;
   /** For a root in its compact form: the address of the panel it opened (`aria-current`). */
   current?: PanelAddress;
   /**
@@ -715,6 +720,7 @@ export function PanelStack({
               onState={(state) => report(key, state)}
               onPlace={(place) => reportPlace(key, place)}
               onOpen={openFrom(index)}
+              onRedirect={(to) => dispatch({ type: "redirect", panel: index, to })}
               onLeaveGuard={guardSetterFor(key)}
               {...(mode === "compact" && stack.panels[index + 1]
                 ? { current: addressOf(stack.panels[index + 1] as Panel) }
