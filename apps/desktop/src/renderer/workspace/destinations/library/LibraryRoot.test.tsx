@@ -353,6 +353,20 @@ describe("loading, empty and error", () => {
     expect(html).toContain("inert");
   });
 
+  it("marks the dimmed filter field as inactive as a whole, so its glyph and key hint are exempt from contrast", () => {
+    const failed = render({
+      sources: data({
+        ...(initialPagedState as PagedState<LibraryRow, LibraryFacets>),
+        status: "error"
+      })
+    });
+    expect(failed).toContain('data-disabled=""');
+    const working = render({
+      sources: data(ready<LibraryRow, LibraryFacets>([row(1)], { total: 1, facets }))
+    });
+    expect(working).not.toContain("data-disabled");
+  });
+
   it("says a filter matched nothing and offers to clear it", () => {
     const html = render({
       query: { text: "zzz" },
