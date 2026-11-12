@@ -22,9 +22,7 @@ const stat =
   });
 
 describe("validateDroppedPath (the table)", () => {
-  const cases: Array<
-    [string, string, Parameters<typeof stat>[0], string | "ok"]
-  > = [
+  const cases: Array<[string, string, Parameters<typeof stat>[0], string | "ok"]> = [
     ["a PDF", "/Users/a/aula-05.pdf", {}, "ok"],
     ["an upper-case extension", "/Users/a/Notas.MD", {}, "ok"],
     ["a folder", "/Users/a/Pasta", { file: false }, "notAFile"],
@@ -104,7 +102,12 @@ describe("prepareDroppedFiles", () => {
     fileToken: "8f2f9a3e-6a64-4c24-9b4a-0c2f5b6f3b11",
     fileName: name,
     mimeType: "application/pdf",
-    draft: { sourceType: "GenericDocument", values: { title: "Aula 05" }, provenance: {}, warnings: [] }
+    draft: {
+      sourceType: "GenericDocument",
+      values: { title: "Aula 05" },
+      provenance: {},
+      warnings: []
+    }
   });
 
   it("answers one result per path, in order, and keeps going after a refusal", async () => {

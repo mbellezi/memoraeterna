@@ -28,7 +28,7 @@ export type PathOfFile = (file: File) => string;
 export function createDropApi(ipc: DropInvoker, pathOfFile: PathOfFile): PrepareDroppedFiles {
   return async (files: readonly DroppedFileHandle[]): Promise<DroppedFile[]> => {
     const slots = files.slice(0, droppedFilesMax).map((file) => {
-      let path = "";
+      let path: string;
       try {
         path = pathOfFile(file as File);
       } catch {
@@ -41,7 +41,9 @@ export function createDropApi(ipc: DropInvoker, pathOfFile: PathOfFile): Prepare
       name: slot.name,
       reason: "notAFile"
     }));
-    const withPath = slots.flatMap((slot, index) => (slot.path ? [{ index, path: slot.path }] : []));
+    const withPath = slots.flatMap((slot, index) =>
+      slot.path ? [{ index, path: slot.path }] : []
+    );
     if (withPath.length === 0) return results;
     const prepared = DroppedFilesSchema.parse(
       await ipc.invoke(

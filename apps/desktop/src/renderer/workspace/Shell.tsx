@@ -12,6 +12,9 @@ import type { LegacyViewId } from "../../shared/app-menu";
 import { ActivityHost } from "../components/activity/ActivityHost";
 import type { ActivityNavigation } from "../components/activity/activity-model";
 import { cn } from "../lib/cn";
+import { AddMenu } from "./add/AddMenu";
+import type { AddFlow } from "./add/add-flow";
+import { DropHost } from "./add/DropOverlay";
 import type { WorkspacePlace } from "./destinations";
 import { keymap } from "./keymap";
 import { NavigatorHost, navigatorIsEmpty } from "./NavigatorHost";
@@ -48,12 +51,8 @@ export interface ShellProps {
   onOpenLegacy: (view: LegacyViewId) => void;
   /** Cmd-K and the omni trigger. */
   onOpenPalette: () => void;
-  /** Cmd-N and Adicionar's main part. */
-  onAdd: () => void;
-  /** "More import options…". */
-  onAddMore: () => void;
-  /** Adicionar's own slot (T150's split button with its menu); absent, the default stands. */
-  add?: ReactNode;
+  /** Adicionar and the window's drop: the flow behind Cmd-N, the split button and the drop overlay. */
+  addFlow: AddFlow;
   /** What an action of the Activity drawer leads to (a place in Settings). */
   onNavigateActivity: (to: ActivityNavigation) => void;
   onOpenInbox: () => void;
@@ -126,9 +125,7 @@ export function Shell({
   onGo,
   onOpenLegacy,
   onOpenPalette,
-  onAdd,
-  onAddMore,
-  add,
+  addFlow,
   onNavigateActivity,
   onOpenInbox,
   onOpenTopic,
@@ -195,9 +192,7 @@ export function Shell({
         t={t}
         title={title}
         onOpenPalette={onOpenPalette}
-        onAdd={onAdd}
-        onAddMore={onAddMore}
-        {...(add ? { add } : {})}
+        add={<AddMenu t={t} flow={addFlow} />}
         status={
           <ActivityHost
             t={t}
@@ -228,6 +223,7 @@ export function Shell({
           {children}
         </main>
       </div>
+      <DropHost t={t} flow={addFlow} />
     </div>
   );
 }

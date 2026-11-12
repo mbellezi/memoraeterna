@@ -58,6 +58,8 @@ import { ExploreActionsContext } from "./workspace/destinations/explore/explore-
 import { ExploreNavigator, hoistAction } from "./workspace/destinations/explore/ExploreNavigator";
 import { ContextDockContext } from "./workspace/context-dock";
 import { PanelStack, panelRegistry } from "./workspace/PanelStack";
+import { useAddFlow } from "./workspace/add/use-add-flow";
+import { formatView } from "./workspace/route";
 import { AddSourceContext } from "./workspace/workspace-bridge";
 import { QuickLookHost } from "./workspace/QuickLook";
 import { toggleQuickLook } from "./workspace/QuickLookModel";
@@ -549,6 +551,28 @@ export function App({
   });
   const openInbox = useStableCallback(() => goToView("inbox"));
 
+  // Adicionar (D32): the picker, the window's drop and the menu share one flow. The new Source is pushed
+  // onto Explore's stack at once, with no toast; the import panel opens beside the focused panel.
+  const addFlow = useAddFlow({
+    openSource: (sourceItemId) => {
+      setLegacyView(null);
+      dispatch({
+        type: "firstSource",
+        address: formatObjectAddress({ kind: "source", id: sourceItemId })
+      });
+    },
+    openImportPanel: () => {
+      setLegacyView(null);
+      dispatch({ type: "go", destination: "explore" });
+      dispatch({
+        type: "open",
+        address: formatView({ view: "import" }),
+        from: workspace.stacks.explore.focus,
+        mode: "push"
+      });
+    }
+  });
+
   // What a shortcut of the workspace does. Until the palette (T145), Adicionar's picker (T150) and
   // the panel stack (T136) land, Cmd-K and Cmd-N open the old Search and Add content views, and the
   // commands of a stack that is not there yet do nothing.
@@ -557,7 +581,8 @@ export function App({
       case "openPalette":
         return goToView("search");
       case "newImport":
-        return goToView("import");
+        // Cmd-N and Adicionar: the file picker, then the new Source on Explore's stack (D32, A7).
+        return void addFlow.pickFile();
       case "toggleFocusMode":
         return toggleFocusMode();
       case "quickLook":
@@ -746,8 +771,7 @@ export function App({
         onGo={goToPlace}
         onOpenLegacy={setActiveView}
         onOpenPalette={() => handleWorkspaceResult({ type: "openPalette" })}
-        onAdd={() => handleWorkspaceResult({ type: "newImport" })}
-        onAddMore={() => handleWorkspaceResult({ type: "newImport" })}
+        addFlow={addFlow}
         onNavigateActivity={openFromActivity}
         onOpenInbox={openInbox}
         onOpenTopic={openTopic}

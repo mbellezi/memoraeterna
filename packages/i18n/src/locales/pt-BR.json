@@ -4403,5 +4403,76 @@
       "goneHeadline": "Este tópico não está mais na árvore.",
       "noDirectNotes": "Ainda sem notas diretas. As notas estão nos subtópicos."
     }
+  },
+  "addFlow": {
+    "busy": {
+      "button": "Lendo…",
+      "reading": "Lendo {name}…",
+      "readingFile": "Lendo o arquivo…",
+      "waiting": "{count} na fila"
+    },
+    "drop": {
+      "after": "Depois de soltar, você vai para a primeira fonte em Explorar e vê as notas chegando.",
+      "label": "Solte arquivos para adicioná-los",
+      "modeError": "Não deu para ver o modo de importação, então os arquivos entram como Pesquisável e organizado.",
+      "modeLabel": "Modo",
+      "modeNote": "{hint}. Mude no menu de Adicionar.",
+      "noFiles": "Solte um arquivo para adicioná-lo",
+      "titleMany": "Solte para adicionar {count} arquivos",
+      "titleOne": "Solte para adicionar 1 arquivo"
+    },
+    "failure": {
+      "close": "Fechar",
+      "empty": "{name} está vazio.",
+      "generic": "Não foi possível adicionar o arquivo.",
+      "kept": "Nada foi guardado e o resto continua como estava.",
+      "notAFile": "{name} não é um arquivo.",
+      "symlink": "{name} é um atalho. Solte o arquivo original.",
+      "tooLarge": "{name} é grande demais para importar.",
+      "unreadable": "Não foi possível ler {name}.",
+      "unsupported": "O Memora ainda não lê arquivos como {name}."
+    },
+    "importPanel": {
+      "errors": {
+        "kept": "Nada foi alterado.",
+        "open": "Não foi possível abrir esta fonte para edição."
+      },
+      "gone": {
+        "action": "Abrir a Biblioteca",
+        "body": "Ela pode ter sido removida da Biblioteca. Nada mais mudou.",
+        "title": "Esta fonte não existe mais."
+      },
+      "title": "Importação avançada"
+    },
+    "menu": {
+      "file": "Escolher arquivo…",
+      "fileHint": "PDF, EPUB, Word, Markdown e texto",
+      "foot": "Vale para as próximas importações; cada fonte pode mudar depois. Soltar arquivos em qualquer lugar da janela também funciona.",
+      "label": "Formas de adicionar",
+      "link": "Colar link",
+      "linkHint": "uma página da web ou um vídeo",
+      "modeHeading": "Ao importar",
+      "more": "Mais opções de importação…",
+      "note": "Escrever uma nota",
+      "noteHint": "vai para Sem lugar até ganhar um tópico"
+    },
+    "modes": {
+      "error": "Não deu para ver se há um modelo pronto para escrever.",
+      "errorKept": "Escolher arquivo continua funcionando e importa como Pesquisável e organizado.",
+      "searchable": {
+        "hint": "trechos para busca e lugar na árvore, sem notas",
+        "name": "Pesquisável e organizado"
+      },
+      "secondBrain": {
+        "hint": "notas curtas, lugar na árvore e conexões",
+        "hintNeedsModel": "notas curtas, lugar na árvore e conexões · precisa de um modelo pronto para escrever",
+        "hintRecommended": "notas curtas, lugar na árvore e conexões · recomendado: há um modelo pronto para escrever",
+        "name": "Segundo cérebro"
+      },
+      "storeOnly": {
+        "hint": "o arquivo fica na Biblioteca, sem IA",
+        "name": "Só guardar"
+      }
+    }
   }
 }
