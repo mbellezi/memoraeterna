@@ -38,7 +38,7 @@ const progress = {
     notes: { state: "running", soFar: 7, estimate: 18 },
     placed: { state: "running", count: 6 },
     summary: { state: "pending" },
-    relations: { state: "pending" }
+    relations: { state: "pending", count: 0 }
   },
   sections: []
 };

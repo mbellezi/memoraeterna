@@ -150,7 +150,7 @@ describe("the milestone line of a source", () => {
       notes: { ...notes, soFar: 0, estimate: null },
       placed: { state: "pending", count: 0 },
       summary: { state: "pending" },
-      relations: { state: "pending" }
+      relations: { state: "pending", count: 0 }
     },
     sections: []
   });
