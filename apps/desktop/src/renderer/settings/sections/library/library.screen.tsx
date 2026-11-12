@@ -36,7 +36,7 @@ export const fixtures: ScreenModule["fixtures"] = {
     "settings.getApp": {
       language: here,
       contentLanguage: here,
-      themeMode: "system",
+      themeMode: "dark",
       processingPresets: [
         plan("0b2a4a7e-5f6e-4c8b-9a3b-1c2d3e4f5a61", "Short articles (example)", [
           "parse",

@@ -30,7 +30,7 @@ describe("General, drawn from the registry", () => {
       .filter((entry) => entry.section === "general")
       .map((entry) => entry.id);
     expect(ids(h)).toEqual(expected);
-    expect(expected).toEqual(["themeMode", "contentLanguage", "language"]);
+    expect(expected).toEqual(["language", "contentLanguage", "themeMode"]);
   });
 
   it("has no density, open-in or reduced-motion row (S13)", async () => {
@@ -46,7 +46,7 @@ describe("General, drawn from the registry", () => {
       locale: "pt-BR",
       answers: {
         "settings.describe": describeFixture({
-          themeMode: { value: "dark", default: "system", changed: true }
+          themeMode: { value: "light", default: "dark", changed: true }
         })
       }
     });
@@ -55,10 +55,10 @@ describe("General, drawn from the registry", () => {
     expect(items.map((item) => item.textContent)).toEqual(["Sistema", "Claro", "Escuro"]);
     expect(items.map((item) => item.getAttribute("aria-pressed"))).toEqual([
       "false",
-      "false",
-      "true"
+      "true",
+      "false"
     ]);
-    expect(h.row("themeMode")!.textContent).toContain("Padrão:");
+    expect(h.row("themeMode")!.textContent).toContain("Padrão:Escuro");
   });
 
   it("saves a theme through main and keeps it on screen at once", async () => {
@@ -66,11 +66,11 @@ describe("General, drawn from the registry", () => {
       section: "general",
       answers: { "settings.updateApp": (update: unknown) => Promise.resolve(update) }
     });
-    await h.click(h.button("Dark", h.row("themeMode")!));
+    await h.click(h.button("Light", h.row("themeMode")!));
     expect(
       h.calls.filter((call) => call.path === "settings.updateApp").map((call) => call.args[0])
-    ).toEqual([{ themeMode: "dark" }]);
-    expect(h.button("Dark", h.row("themeMode")!)?.getAttribute("aria-pressed")).toBe("true");
+    ).toEqual([{ themeMode: "light" }]);
+    expect(h.button("Light", h.row("themeMode")!)?.getAttribute("aria-pressed")).toBe("true");
   });
 
   it("puts the saved value back and says so in one line when a save fails", async () => {
@@ -80,7 +80,7 @@ describe("General, drawn from the registry", () => {
     });
     await h.click(h.button("Light", h.row("themeMode")!));
     await h.settle();
-    expect(h.button("System", h.row("themeMode")!)?.getAttribute("aria-pressed")).toBe("true");
+    expect(h.button("Dark", h.row("themeMode")!)?.getAttribute("aria-pressed")).toBe("true");
     expect(h.row("themeMode")!.textContent).toContain(
       "This could not be saved. Nothing was changed."
     );

@@ -16,7 +16,7 @@ const notes = here === "en" ? "pt-BR" : "en";
 export const fixtures: ScreenModule["fixtures"] = {
   success: {
     "settings.describe": describeFixture({
-      themeMode: { value: "system", default: "system" },
+      themeMode: { value: "dark", default: "dark" },
       contentLanguage: { value: notes, default: here, changed: true },
       language: { value: here, default: here }
     })

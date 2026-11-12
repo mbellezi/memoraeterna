@@ -37,12 +37,14 @@ function ThemeRow({ entry }: { entry: SettingEntryV2 }) {
   const { t, describe } = useSettings();
   const choice = useSavedChoice<ThemeMode>("themeMode", (themeMode) => saveApp({ themeMode }));
   const label = (mode: ThemeMode) => t(`settingsGeneral.theme.${mode}`);
-  const value = isThemeMode(choice.value) ? choice.value : "system";
-  const fallback = describe(entry.id)?.default;
+  const described = describe(entry.id)?.default;
+  // The default comes from the registry's description; dark is the app's default theme.
+  const fallback: ThemeMode = isThemeMode(described) ? described : "dark";
+  const value = isThemeMode(choice.value) ? choice.value : fallback;
   return (
     <RegistryRow
       entry={entry}
-      defaultLabel={label(isThemeMode(fallback) ? fallback : "system")}
+      defaultLabel={label(fallback)}
       note={<SaveFailedNote failed={choice.state === "failed"} />}
       control={
         <ToggleGroup label={labelOf(t, entry)} value={value} onValueChange={choice.save}>
