@@ -683,7 +683,7 @@
   },
   "app": {
     "title": "Memora Eterna",
-    "tagline": "Memoria local-first para fontes, notas e evidencias.",
+    "tagline": "Memória local-first para fontes, notas e evidências.",
     "tray": {
       "open": "Abrir Memora Eterna",
       "quit": "Fechar Memora Eterna"
@@ -752,7 +752,7 @@
       "review": "Revisar notas",
       "jobs": "Tarefas",
       "knowledgeGraph": "Grafo do Conhecimento",
-      "settings": "Configuracoes"
+      "settings": "Configurações"
     },
     "actions": {
       "expandNavigation": "Expandir menu principal",
@@ -772,9 +772,9 @@
       "saved": "Salvo."
     },
     "toasts": {
-      "settingsSaved": "Configuracoes salvas.",
-      "settingsError": "Nao foi possivel salvar as configuracoes.",
-      "dismiss": "Dispensar notificacao"
+      "settingsSaved": "Configurações salvas.",
+      "settingsError": "Não foi possível salvar as configurações.",
+      "dismiss": "Dispensar notificação"
     }
   },
   "libraryTable": {
@@ -1020,13 +1020,13 @@
     },
     "startup": {
       "title": "Iniciando o Memora Eterna",
-      "failedTitle": "O banco local nao iniciou"
+      "failedTitle": "O banco local não iniciou"
     },
     "status": {
       "starting": "Iniciando o banco local...",
       "migrating": "Preparando o banco local...",
       "ready": "Banco local pronto.",
-      "failed": "Nao foi possivel iniciar o banco local.",
+      "failed": "Não foi possível iniciar o banco local.",
       "stopping": "Parando o banco local...",
       "stopped": "Banco local parado."
     }
@@ -1070,32 +1070,32 @@
     },
     "common": {
       "unknown": "Algo deu errado.",
-      "network": "A requisicao de rede falhou.",
-      "offline": "Esta acao precisa de conexao.",
-      "permissionDenied": "Permissao negada.",
-      "notFound": "O item solicitado nao foi encontrado.",
-      "validationFailed": "Algumas informacoes sao invalidas.",
-      "unauthorized": "Autorizacao obrigatoria.",
+      "network": "A requisição de rede falhou.",
+      "offline": "Esta ação precisa de conexão.",
+      "permissionDenied": "Permissão negada.",
+      "notFound": "O item solicitado não foi encontrado.",
+      "validationFailed": "Algumas informações são inválidas.",
+      "unauthorized": "Autorização obrigatória.",
       "timeout": "A operacao excedeu o tempo limite.",
       "conflict": "O item foi alterado em outro lugar.",
-      "fileTooLarge": "O arquivo e grande demais.",
-      "unsupportedFile": "Este tipo de arquivo nao e suportado.",
-      "missingConfiguration": "Uma configuracao obrigatoria esta ausente."
+      "fileTooLarge": "O arquivo é grande demais.",
+      "unsupportedFile": "Este tipo de arquivo não é suportado.",
+      "missingConfiguration": "Uma configuração obrigatória está ausente."
     },
     "database": {
-      "notReady": "O banco local ainda nao esta pronto."
+      "notReady": "O banco local ainda não está pronto."
     },
     "backup": {
       "verificationFailed": "Não foi possível verificar o backup, então não confie nele. Os arquivos continuam na pasta escolhida, marcados como não verificados. Tente novamente.",
       "insufficientDisk": "Não há espaço livre em disco suficiente para verificar o backup. Libere espaço e tente novamente; os arquivos não verificados continuam na pasta escolhida."
     },
     "conversion": {
-      "emptyResult": "O conversor nao retornou texto utilizavel.",
-      "doclingUnavailable": "O conversor local de documentos nao esta instalado.",
+      "emptyResult": "O conversor não retornou texto utilizável.",
+      "doclingUnavailable": "O conversor local de documentos não está instalado.",
       "doclingFailed": "O conversor local de documentos falhou."
     },
     "ingestion": {
-      "aggregateSummaryUnavailable": "Nao foi possivel gerar o resumo consolidado.",
+      "aggregateSummaryUnavailable": "Não foi possível gerar o resumo consolidado.",
       "aggregateSummaryMissingSubparts": "O resumo consolidado aguarda os resumos de todas as subpartes.",
       "urlInvalid": "Informe um endereço HTTPS válido.",
       "urlUnsafe": "Este endereço não pode ser carregado com segurança.",
@@ -1108,41 +1108,41 @@
       "urlFetchFailed": "Não foi possível carregar a página. Confira o endereço ou cole o conteúdo manualmente."
     },
     "ai": {
-      "noCompatibleModel": "Nenhum modelo compativel esta configurado.",
-      "unsupportedTask": "O modelo selecionado nao executa esta tarefa.",
-      "providerUnavailable": "O provedor de IA nao esta respondendo. A tarefa sera tentada de novo em breve.",
-      "secureStorageUnavailable": "O armazenamento seguro de credenciais nao esta disponivel.",
-      "missingCredential": "A credencial do provedor esta ausente.",
-      "connectionFailed": "O teste de conexao com o modelo falhou.",
-      "oauthLoginFailed": "A autenticacao com o ChatGPT falhou.",
-      "oauthStateMismatch": "Nao foi possivel verificar o retorno do OAuth.",
-      "oauthCallbackUnavailable": "Nao foi possivel iniciar o retorno OAuth local.",
-      "oauthTimedOut": "A autenticacao com o ChatGPT expirou.",
+      "noCompatibleModel": "Nenhum modelo compatível está configurado.",
+      "unsupportedTask": "O modelo selecionado não executa esta tarefa.",
+      "providerUnavailable": "O provedor de IA não está respondendo. A tarefa será tentada de novo em breve.",
+      "secureStorageUnavailable": "O armazenamento seguro de credenciais não está disponível.",
+      "missingCredential": "A credencial do provedor está ausente.",
+      "connectionFailed": "O teste de conexão com o modelo falhou.",
+      "oauthLoginFailed": "A autenticação com o ChatGPT falhou.",
+      "oauthStateMismatch": "Não foi possível verificar o retorno do OAuth.",
+      "oauthCallbackUnavailable": "Não foi possível iniciar o retorno OAuth local.",
+      "oauthTimedOut": "A autenticação com o ChatGPT expirou.",
       "oauthNotConnected": "Entre com o ChatGPT antes de salvar este modelo.",
       "contextWindowLimit": "O contexto configurado excede o limite descoberto do modelo.",
-      "oauthRefreshFailed": "A sessao do ChatGPT expirou. Entre novamente.",
-      "oauthCredentialInvalid": "A credencial salva do ChatGPT e invalida.",
-      "oauthTokenResponseInvalid": "O ChatGPT retornou uma resposta de autenticacao invalida.",
-      "oauthTokenExchangeFailed": "O ChatGPT nao conseguiu concluir a troca de token."
+      "oauthRefreshFailed": "A sessão do ChatGPT expirou. Entre novamente.",
+      "oauthCredentialInvalid": "A credencial salva do ChatGPT é inválida.",
+      "oauthTokenResponseInvalid": "O ChatGPT retornou uma resposta de autenticação inválida.",
+      "oauthTokenExchangeFailed": "O ChatGPT não conseguiu concluir a troca de token."
     },
     "localModels": {
-      "notFound": "O modelo local nao foi encontrado.",
-      "notReady": "O modelo local nao esta instalado e pronto.",
-      "licenseRequired": "Aceite a licenca do modelo antes do download.",
+      "notFound": "O modelo local não foi encontrado.",
+      "notReady": "O modelo local não está instalado e pronto.",
+      "licenseRequired": "Aceite a licença do modelo antes do download.",
       "unsupported_platform": "MLX exige um Mac com Apple Silicon.",
-      "insufficient_memory": "Esta maquina nao tem memoria suficiente para o modelo.",
-      "insufficientDisk": "Nao ha espaco livre suficiente para o modelo.",
+      "insufficient_memory": "Esta máquina não tem memória suficiente para o modelo.",
+      "insufficientDisk": "Não há espaço livre suficiente para o modelo.",
       "downloadHttp": "O download do modelo falhou.",
       "sizeMismatch": "Um arquivo do modelo baixado tem tamanho incorreto.",
-      "checksumMismatch": "Um arquivo do modelo falhou na verificacao de checksum.",
-      "unsafePath": "O modelo contem um caminho de arquivo inseguro.",
-      "invalidRuntimeResponse": "O runtime local retornou uma resposta invalida.",
+      "checksumMismatch": "Um arquivo do modelo falhou na verificação de checksum.",
+      "unsafePath": "O modelo contém um caminho de arquivo inseguro.",
+      "invalidRuntimeResponse": "O runtime local retornou uma resposta inválida.",
       "runtimeFailed": "O runtime do modelo local falhou.",
-      "runtimeUnavailable": "O runtime do modelo local nao esta instalado.",
+      "runtimeUnavailable": "O runtime do modelo local não está instalado.",
       "modelBusy": "O modelo esta em uso.",
-      "profileInUse": "Substitua este modelo nos perfis afetados antes de remove-lo.",
+      "profileInUse": "Substitua este modelo nos perfis afetados antes de removê-lo.",
       "canceled": "O download do modelo foi cancelado.",
-      "invalidGguf": "Escolha um arquivo de modelo GGUF valido.",
+      "invalidGguf": "Escolha um arquivo de modelo GGUF válido.",
       "rankerInvalid": "Este modelo não é um reranker compatível.",
       "rankerSmokeFailed": "O reranker falhou no teste de validação.",
       "rankerNotValidated": "Execute o teste de validação deste reranker antes de usá-lo.",
@@ -1726,14 +1726,14 @@
   },
   "processing": {
     "invalidPlan": "Confira as opções de processamento antes de continuar.",
-    "title": "Escolha ate onde processar",
-    "aiOptional": "IA e opcional",
-    "description": "Importe primeiro e gere apenas os artefatos de que precisa. As dependencias sao incluidas automaticamente.",
+    "title": "Escolha até onde processar",
+    "aiOptional": "IA é opcional",
+    "description": "Importe primeiro e gere apenas os artefatos de que precisa. As dependências são incluídas automaticamente.",
     "customize": "Personalizar etapas",
-    "includedDependency": "Incluida porque outra etapa precisa dela",
+    "includedDependency": "Incluída porque outra etapa precisa dela",
     "stageCount": "{count} etapas neste plano",
     "profileNotice": "Usa seu perfil de IA configurado",
-    "noAiNotice": "Nenhuma chamada de IA e necessaria",
+    "noAiNotice": "Nenhuma chamada de IA é necessária",
     "writerRouteMissing": "Nenhum modelo de IA está pronto para escrever, então o processamento padrão torna as fontes pesquisáveis. Configure um modelo em Configurações para construir seu segundo cérebro.",
     "presets": {
       "import_only": {
@@ -1742,11 +1742,11 @@
       },
       "search_ready": {
         "title": "Pesquisável + organizado",
-        "description": "Cria segmentos e embeddings para recuperacao."
+        "description": "Cria segmentos e embeddings para recuperação."
       },
       "summary": {
         "title": "Resumo",
-        "description": "Gera um resumo conciso com evidencias."
+        "description": "Gera um resumo conciso com evidências."
       },
       "full_knowledge": {
         "title": "Segundo cérebro",
@@ -1824,7 +1824,7 @@
     "empty": "Nenhuma evidencia correspondente.",
     "scope": "Buscar dentro de",
     "scopeAll": "Biblioteca inteira",
-    "page": "Pagina",
+    "page": "Página",
     "markdownEvidence": "Evidencia no Markdown",
     "kinds": {
       "source": "Fonte",
@@ -1844,7 +1844,7 @@
     "error": "Nao foi possivel carregar a biblioteca.",
     "empty": "Ainda nao ha fontes na biblioteca.",
     "container": "Container",
-    "containerHint": "Este container somente com metadados esta pronto para receber fontes-filhas.",
+    "containerHint": "Esta coleção somente com metadados está pronta para receber fontes-filhas.",
     "selectionCount": "{count} fontes selecionadas",
     "childCount": "{count} itens diretos",
     "parentSource": "Pertence a {title}",
@@ -2614,9 +2614,9 @@
     "title": "Backup",
     "description": "Crie um dump do PostgreSQL, comprove que ele pode ser restaurado com uma restauração de teste e copie os arquivos gerenciados configurados para uma pasta datada.",
     "action": "Criar backup",
-    "completed": "Backup concluido:",
+    "completed": "Backup concluído:",
     "verified": "Verificado por uma restauração de teste",
-    "failed": "Nao foi possivel criar o backup."
+    "failed": "Não foi possível criar o backup."
   },
   "obsidianSync": {
     "title": "Sincronizacao com Obsidian",
