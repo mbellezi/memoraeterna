@@ -1,7 +1,7 @@
 import { useLayoutEffect, useRef, useState, useSyncExternalStore, type RefObject } from "react";
 
 import { cn } from "../../../lib/cn";
-import { fitLabel, fitLines, type Measure } from "./label-fit";
+import { fitBesideCount, fitLabel, fitLines, type Measure } from "./label-fit";
 
 /**
  * A list label that never ends inside a word (design record 5.3): it is cut at word boundaries,
@@ -120,6 +120,17 @@ export function fitInto(text: string, font: string, size: number, width: number)
   return fitLabel(text, measureFor(font, size), width);
 }
 
+/** The label fitted into `width` beside a count that is dropped before any word is cut. */
+export function fitBeside(
+  text: string,
+  font: string,
+  size: number,
+  width: number,
+  countRoom: number
+) {
+  return fitBesideCount(text, measureFor(font, size), width, countRoom);
+}
+
 /** The label wrapped into at most `maxLines` lines of `width` for a font. */
 export function wrapInto(
   text: string,
@@ -151,22 +162,36 @@ function useBoxWidth(box: RefObject<HTMLElement | null>): number {
 export interface FittedLabelProps {
   text: string;
   className?: string;
+  /**
+   * The row's count sits beside the label and takes this many px; when the label does not fit beside
+   * it, the count is dropped first (told through `onDropCount`) before any word is cut.
+   */
+  countRoom?: number;
+  onDropCount?: ((dropped: boolean) => void) | undefined;
 }
 
-export function FittedLabel({ text, className }: FittedLabelProps) {
+export function FittedLabel({ text, className, countRoom = 0, onDropCount }: FittedLabelProps) {
   const box = useRef<HTMLSpanElement>(null);
   const stamp = useSyncExternalStore(subscribe, snapshot, snapshot);
   const [shown, setShown] = useState(text);
+  const [dropped, setDropped] = useState(false);
   const width = useBoxWidth(box);
 
   useLayoutEffect(() => {
     const node = box.current;
     if (!node) return;
     const { font, size } = fontOf(node);
-    const fitted = fitInto(text, font, size, width);
+    // The width beside the count, whether or not the count is in the flow just now.
+    const beside = dropped ? width - countRoom : width;
+    const fitted = fitBeside(text, font, size, beside, countRoom);
     setShown((current) => (current === fitted.text ? current : fitted.text));
+    setDropped(fitted.countDropped);
     // The epoch is read so a change of fonts or theme fits the label again.
-  }, [text, width, stamp]);
+  }, [text, width, stamp, countRoom, dropped]);
+
+  useLayoutEffect(() => {
+    onDropCount?.(dropped);
+  }, [dropped, onDropCount]);
 
   return (
     <span

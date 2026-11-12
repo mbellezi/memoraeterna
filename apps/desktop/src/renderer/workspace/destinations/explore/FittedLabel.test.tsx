@@ -2,6 +2,7 @@ import { renderToString } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { createTranslator } from "@app/i18n";
 
+import type { NavRowOps } from "../../../components/topics/ops/nav-ops";
 import { TopicNavTree } from "../../../components/topics/TopicNavTree";
 import { id, nodeSummary } from "../../../components/topics/topic-fixtures";
 import {
@@ -154,10 +155,42 @@ describe("the open row and its ancestors", () => {
         />
       );
     const onDemand = (html: string) =>
-      html.match(/pointer-events-none absolute inset-y-0 right-2/gu)?.length ?? 0;
+      html.match(/pointer-events-none absolute inset-y-\[3px\]/gu)?.length ?? 0;
     // Three rows, one open: the open row keeps its count in the row, the two others show theirs on demand.
     expect(onDemand(draw(true))).toBe(2);
     expect(onDemand(draw(false))).toBe(0);
+    // The overlay stays inside the 2 px focus ring: it never starts at the row's top or bottom edge.
+    expect(draw(true)).not.toContain("absolute inset-y-0 ");
+  });
+
+  it("keep the on-demand count clear of the row's actions button", () => {
+    const rows = topicRows(tree(3), new Set());
+    const ops: NavRowOps = {
+      renamingKey: null,
+      invalid: false,
+      busy: false,
+      pinnedItems: new Set(),
+      onStartRename: () => undefined,
+      onCommitRename: () => undefined,
+      onCancelRename: () => undefined,
+      onOpenMenu: () => undefined
+    };
+    const draw = (withOps: boolean) =>
+      renderToString(
+        <TopicNavTree
+          t={createTranslator("pt-BR")}
+          rows={rows}
+          labelledBy="x"
+          selectedTopicId={id(11)}
+          quietCounts
+          ops={withOps ? ops : undefined}
+          onToggle={() => undefined}
+          onActivate={() => undefined}
+        />
+      );
+    expect(draw(true)).toContain("right-8");
+    expect(draw(true)).not.toContain("right-2 ");
+    expect(draw(false)).not.toContain("right-8");
   });
 
   it("wrap whole words: the rendered label keeps the full text", () => {

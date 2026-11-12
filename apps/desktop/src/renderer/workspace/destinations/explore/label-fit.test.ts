@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { ellipsis, fitLabel, fitLines, type Measure } from "./label-fit";
+import { ellipsis, fitBesideCount, fitLabel, fitLines, type Measure } from "./label-fit";
 
 /** One px per character: the rules do not depend on the font, only on the widths. */
 const chars: Measure = (text) => [...text].length;
@@ -113,5 +113,30 @@ describe("wrapping a label that must show its name", () => {
   it("keeps a word longer than a line whole, on its own line", () => {
     const { lines } = fitLines("Anticonstitucionalissimamente rápido", chars, 10, 2);
     expect(lines[0]).toBe("Anticonstitucionalissimamente");
+  });
+});
+
+describe("fitting a label beside its count", () => {
+  const long = "History of science and of the scientific method in Europe, from the Renaissance on";
+
+  it("drops the count before it cuts a word, so a long topic keeps its head and its tail", () => {
+    // Beside the count the label would end on its tail alone ("…Renaissance on", the finding of gate U1).
+    expect(fitLabel(long, chars, 15).text).toBe(`${ellipsis}Renaissance on`);
+    // The count goes to hover and focus, and its room goes back to the name.
+    expect(fitBesideCount(long, chars, 15, 7)).toEqual({
+      text: `History${ellipsis}Renaissance on`,
+      cut: true,
+      countDropped: true
+    });
+  });
+
+  it("keeps the count whenever the whole name fits beside it", () => {
+    expect(fitBesideCount("Imunologia", chars, 10, 7)).toEqual({
+      text: "Imunologia",
+      cut: false,
+      countDropped: false
+    });
+    // A row without a count has nothing to drop.
+    expect(fitBesideCount(long, chars, 15, 0).countDropped).toBe(false);
   });
 });
