@@ -23,12 +23,19 @@ type SheetContentProps = Omit<
   title: string;
   /** Render in place instead of in a portal (tests and screens render the content inline). */
   portal?: boolean;
+  /**
+   * The lifted variant for a sheet laid over a dense list: the same sheet with
+   * the lift shadow (`tokens.css`), which in dark is a lighter plate with a lit edge, so it stands
+   * off the rows behind it. Light is the same as the plain sheet.
+   */
+  lift?: boolean;
   children?: ReactNode;
 };
 
 export function SheetContent({
   title,
   portal = true,
+  lift = false,
   className,
   children,
   onOpenAutoFocus,
@@ -59,6 +66,8 @@ export function SheetContent({
       className={cn(
         "fixed left-1/2 top-24 w-160 max-w-[calc(100%-var(--space-16))] -translate-x-1/2 overflow-hidden",
         popSurface,
+        // The lift replaces the pop's shadow: a later utility would not win, so it is marked.
+        lift && "[box-shadow:var(--shadow-lift)]!",
         className
       )}
       {...props}

@@ -540,8 +540,8 @@ export function visibleAutomationSettings(
 // Registry v2 (F5 T159, D17, spec 3.8). One entry per control of Settings v2: the persisted
 // settings, the six workload routes, the provider credentials and the pages, in the order of the
 // Settings v2 mockup. Persisted state with no control is `persistedStateRegistry`. The copy
-// (`labelKey`, `helpKey`, the group names) lives in `@app/i18n` under `settingsRegistry` (T175,
-// which also writes the English keywords: `keywords` stays empty here). `settingsRegistryV2` takes
+// (`labelKey`, `helpKey`, the group names) lives in `@app/i18n` under `settingsRegistry`; the English
+// keywords are `settingKeywords` below (T175). `settingsRegistryV2` takes
 // the name `settingsRegistry` when T166 deletes the v1 rows above.
 // =================================================================================================
 
@@ -689,6 +689,160 @@ const matchingDefault = (id: MatchingValueControlId): Json => {
   return value ?? null;
 };
 
+/**
+ * The English synonyms and task words of each entry (F5 T175): what a person types when they know
+ * what they want and not what Settings calls it. The search matches them in every language, by the
+ * start of each word, so an entry lists single words and the words of a phrase. A control that
+ * stores a number lists the quantity it limits; a switch lists what turning it off does.
+ */
+const settingKeywords: Readonly<Record<string, string>> = {
+  themeMode:
+    "theme dark light night mode appearance colors color scheme system dark mode light mode",
+  contentLanguage:
+    "content language notes language writing summaries translation generated text output language answers topic names",
+  language:
+    "app language interface language ui menus buttons messages locale translate display language",
+  "ai.preset.v1":
+    "setup preset mode local hybrid cloud custom offline no internet run on this mac private where ai runs on device",
+  "ai.provider.openai-codex":
+    "chatgpt codex subscription oauth sign in login connect account provider plus pro openai",
+  "ai.provider.openai-compatible":
+    "openai compatible api key base url endpoint custom server openrouter lm studio ollama proxy provider",
+  "ai.provider.google": "google gemini api key provider cloud model gemini key ai studio",
+  "ai.thisMac":
+    "this mac hardware chip memory ram apple silicon recommended setup tier specs which models fit",
+  "ai.route.embed":
+    "embeddings embedding vectors search model semantic similarity topics matching index",
+  "ai.route.decide":
+    "ranking ranker rerank decide relations related notes scoring judge matching model decider",
+  "ai.route.write-fast":
+    "quick writing fast model summaries topic names short explanations cheap small model writer",
+  "ai.route.write-quality":
+    "careful writing quality model notes entities knowledge graph best writer large model",
+  "ai.route.answer": "answers ask questions model chat answer model responses question answering",
+  "ai.route.judge":
+    "generative judge decide relations when no ranker writing model judge sources relate decider fallback",
+  "ai.models":
+    "local models download install gguf import mlx catalog hugging face test default models on this mac",
+  "local-models.repository-token-ref":
+    "hugging face token hf access token private repository gated models download credentials",
+  "ai.profiles":
+    "profiles model parameters temperature max tokens reasoning effort settings per profile advanced model options",
+  "relations.decisions":
+    "openai decisions remote decider cloud ranker cheaper accurate connections relations paid opt in",
+  "ai:decisions-openai-platform":
+    "openai platform api key decisions credential secret token key for decisions",
+  "knowledge.controls.v1.autonomy":
+    "autonomy gardener automation off suggest automatic how much auto ask first confirm approve automatic manual hands off",
+  "knowledge.controls.v1.paused":
+    "pause gardener stop background work automation resume halt freeze disable",
+  "knowledge.controls.v1.monthlyCapUsd":
+    "monthly cap budget spending limit cost money dollars usd cloud spend maximum price",
+  "knowledge.controls.v1.treeShape":
+    "tree shape topics balanced broad deep shallow organization structure hierarchy depth broad flat narrow",
+  "knowledge.controls.v1.onlyIdle":
+    "idle only when idle mac not in use background wait inactive away battery cpu schedule quiet",
+  "knowledge.controls.v1.onlyOnAc":
+    "plugged in power adapter ac charger battery only on power laptop schedule save battery",
+  relationLabels:
+    "relation descriptions labels connection text regenerate rewrite missing descriptions language explanation connections",
+  "library.storage":
+    "storage database where data lives files folder location disk size space library location path",
+  uploadCopies:
+    "upload copies keep original files copy folder store imports originals backup copy of uploads second copy",
+  "library.backup":
+    "backup restore export copy database safety archive save library verify recover dated folder",
+  processingPresets:
+    "import plans processing presets saved plans import settings rename delete templates import options",
+  obsidianVaultPath:
+    "obsidian vault folder path directory pick choose notes sync location markdown vault location",
+  obsidianSync:
+    "obsidian sync two way on off pause markdown notes export vault write library back edits synchronize",
+  "obsidian.wiki.scope":
+    "obsidian wiki pages sources scope which sources become pages choose sources limit 100 publish export subset",
+  "obsidian.wiki.includeDescendants":
+    "chapters parts descendants include children sub sources obsidian wiki nested sections",
+  "obsidian.layout.attachments":
+    "attachments copy original files pdf images obsidian vault attach files text only binary files",
+  bookLookup:
+    "book lookup metadata internet isbn doi crossref google books cover authors title online fetch details lookup",
+  "metadata:google-books":
+    "google books api key metadata credential lookup quota rate limit book key",
+  "integrations.gateway":
+    "paired apps pairing chrome extension obsidian plugin connect local gateway mcp token browser extension clipper pair devices",
+  "privacy.summary":
+    "privacy what leaves this mac data sent remote cloud providers external network offline local only sharing",
+  "privacy.clearViewHistory":
+    "clear recents history recently opened list erase view history delete recent items",
+  "privacy.clearQuestions":
+    "delete questions erase answers ask history clear conversations saved questions remove chats",
+  "privacy.callLog":
+    "ai calls log recent calls what was sent models requests providers tokens history audit transparency",
+  "privacy.reset":
+    "reset everything wipe erase all data factory reset start over delete library clean slate danger zone",
+  activeMatchingPresetId:
+    "matching preset calibrated balanced recommended duplicate custom matching profile correspondence thresholds defaults",
+  relationTypeSimilarityThreshold:
+    "relation type similarity threshold cutoff merge types duplicates candidates strictness embedding score",
+  entityIdentitySimilarityThreshold:
+    "entity identity similarity threshold cutoff merge entities duplicates same person place candidates strictness",
+  "canonicalMatchingSettings.relationTypeCandidateLimit":
+    "candidates per relation type limit how many candidates relation types compare top k maximum",
+  "canonicalMatchingSettings.entityCandidateLimit":
+    "candidates per entity limit how many candidates entities compare top k maximum",
+  "canonicalMatchingSettings.confirmationBatchSize":
+    "identities per confirmation batch size request group items per call confirm batch count",
+  "canonicalMatchingSettings.confirmationMaxCharacters":
+    "confirmation batch characters size limit max characters text length per request prompt size",
+  "atomicNoteMatchingSettings.maxRerankOutputTokens":
+    "output token limit per note rerank max tokens ai output atomic notes answer length cap cost",
+  "sourceRelationSettings.evidenceChunksPerSource":
+    "evidence passages per source pair chunks excerpts quotes how many passages source relations context",
+  "sourceRelationSettings.evidenceMaxCharacters":
+    "characters per evidence passage excerpt length max characters passage size text limit",
+  "sourceRelationSettings.summaryMaxCharacters":
+    "summary characters per source summary length max characters source summary size",
+  "sourceRelationSettings.maxOutputTokens":
+    "output token limit per source pair max tokens ai output answer length cap cost source relations",
+  "sourceRelationSettings.maxRelationsPerPair":
+    "relations per source pair maximum connections between two sources limit how many relations cap",
+  "sourceRelationSettings.maxInputTokens":
+    "input token budget max input tokens limit cost cap per run source relations spending ceiling context size",
+  "sourceRelationSettings.minImportance":
+    "minimum importance conceptual importance threshold score filter relations quality cutoff weak relations",
+  "sourceRelationSettings.minConfidence":
+    "minimum confidence evidence confidence threshold score filter relations certainty cutoff",
+  "sourceRelationSettings.includeWeakTypes":
+    "weak relation types mentions related generic allow include vague connections loose links noise",
+  summaryMinimumWordCount:
+    "minimum words summary short items skip summaries word count threshold tiny sources save calls zero off",
+  keepLocalEmbeddingModelsLoaded:
+    "keep model loaded memory ram local embedding model preload unload faster search free memory resident",
+  "relations.deciderMode":
+    "decider mode who decides relations ranker judge automatic ranker only judge only matching connections decision",
+  graphWheelZoomSensitivity:
+    "graph zoom sensitivity speed mouse wheel scroll trackpad map zoom faster slower scale pinch",
+  managedRoot:
+    "managed folder root obsidian vault subfolder memora folder where files written directory name inside vault",
+  "obsidian.layout.language":
+    "vault folder language folder names obsidian layout language override rename folders translate folders",
+  "advanced.prompts":
+    "prompts instructions system prompts edit templates revisions catalog prompt text customize wording",
+  debugMode:
+    "debug diagnostics logging verbose trace troubleshoot problem investigate bug log operations similarity canonicalization",
+  debugFullCapture:
+    "full capture prompts responses complete text store raw record everything debug capture sensitive",
+  "advanced.callLog":
+    "ai call log history requests model calls tokens time latency cost audit prune read only log of calls",
+  "advanced.taskHistory":
+    "task history jobs finished failed cancelled runs past jobs activity log completed jobs history of jobs",
+  "advanced.similarityRuns":
+    "similarity debug runs clear delete comparisons recorded diagnostics erase similarity logs cleanup"
+};
+const keywordsOf = (id: string): string[] => [
+  ...new Set((settingKeywords[id] ?? "").split(" ").filter(Boolean))
+];
+
 type Spec = Omit<SettingEntryV2, "labelKey" | "helpKey" | "keywords" | "category"> & {
   category?: EntryCategory;
 };
@@ -696,7 +850,7 @@ const entry = (spec: Spec): SettingEntryV2 => ({
   ...spec,
   labelKey: `settingsRegistry.${settingSlug(spec.id)}.label`,
   helpKey: `settingsRegistry.${settingSlug(spec.id)}.help`,
-  keywords: [],
+  keywords: keywordsOf(spec.id),
   category: spec.category ?? "tool"
 });
 const at = (kind: StoreKind, ...keys: string[]): StoreRef => ({ kind, keys });

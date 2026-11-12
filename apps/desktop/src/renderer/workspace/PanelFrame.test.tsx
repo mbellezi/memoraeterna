@@ -9,7 +9,9 @@ import {
   isUnsorted,
   PathRibbon,
   PathRibbonView,
+  clauseWrapped,
   ribbonSegments,
+  settleClause,
   type Located
 } from "./PathRibbon";
 import { defaultWorkspace } from "./state";
@@ -67,10 +69,10 @@ describe("the panel frame", () => {
     ).not.toContain("data-path-ribbon");
   });
 
-  it("says a failed object once: no ribbon failure line above the body's error", () => {
+  it("says a failed object once, and shows no place for one that is gone", () => {
     expect(frame({ state: "error" })).not.toContain("data-path-ribbon");
     expect(frame({ state: "loading" })).toContain("data-path-ribbon");
-    expect(frame({ state: "empty" })).toContain("data-path-ribbon");
+    expect(frame({ state: "empty" })).not.toContain("data-path-ribbon");
   });
 
   it("gives the top panel Foco and close, and the arrows only where history exists", () => {
@@ -110,7 +112,11 @@ describe("the panel frame", () => {
 });
 
 describe("the path ribbon", () => {
-  const ref = (kind: "topic" | "source" | "note" | "entity", n: number, title: string) => ({
+  const ref = (
+    kind: "topic" | "source" | "note" | "entity" | "question",
+    n: number,
+    title: string
+  ) => ({
     kind,
     id: uuid(n),
     title
@@ -243,6 +249,24 @@ describe("the path ribbon", () => {
     expect(html).not.toContain("Escolher lugar");
   });
 
+  it("says a question that is being answered has no place yet, and offers none to choose", () => {
+    const loose = located([ref("question", 5, "Why do fermented foods keep?")]);
+    const html = renderToString(
+      <PathRibbonView
+        t={pt}
+        address={`memora://question/${uuid(5)}`}
+        place="tentativeQuestion"
+        onOpen={noop}
+        onChoosePlace={noop}
+        located={{ status: "ready", located: loose }}
+        onRetry={noop}
+      />
+    );
+    expect(html).toContain("Lugar: sai das citações quando a resposta terminar");
+    expect(html).not.toContain("Sem lugar");
+    expect(html).not.toContain("Escolher lugar");
+  });
+
   it("leaves the other places of an entity to the top panel's ribbon", () => {
     const read = {
       ...located([
@@ -291,10 +315,14 @@ describe("the path ribbon", () => {
     );
     const line = html.match(/<nav[^>]*><span class="([^"]*)">(.*)<\/span><\/nav>/u);
     expect(line?.[1]).toContain("flex-wrap");
-    // The line's children are the glyph, then each crumb and separator: no wrapper in between.
+    // The line's children are the glyph, then each crumb with the separator that follows it; the
+    // last crumb stands alone. No wrapper holds the whole path, so it never drops under the glyph.
     const children = (line?.[2] ?? "").replace(/<svg.*?<\/svg>/u, "");
-    expect(children.startsWith("<a ")).toBe(true);
+    expect(children.startsWith('<span class="inline-flex max-w-full')).toBe(true);
     expect(children.match(/data-segment=/gu)).toHaveLength(3);
+    // A separator is never the first thing of the line: it comes after the crumb it belongs to.
+    expect(children.match(/<span[^>]*aria-hidden="true"[^>]*>›<\/span>/gu)).toHaveLength(2);
+    expect(children).toMatch(/<\/a><span[^>]*aria-hidden="true"[^>]*>›<\/span><\/span>/u);
     expect(html).not.toContain("Mostrar o caminho inteiro");
   });
 
@@ -316,7 +344,7 @@ describe("the path ribbon", () => {
     expect(html).not.toContain("<button");
   });
 
-  it("ends the last crumb's line with the separator of a trailing clause, never starts one", () => {
+  it("keeps the separator of a trailing clause inside the clause, never on the last crumb", () => {
     const read = located([
       ref("topic", 1, ""),
       ref("topic", 2, "Life sciences"),
@@ -327,11 +355,40 @@ describe("the path ribbon", () => {
       { status: "ready", located: read },
       { place: "tentativeSource" }
     );
-    // The dot sits inside the group that holds the last crumb; the clause itself has none.
-    expect(html).toMatch(/Life sciences<\/a><span[^>]*aria-hidden="true"[^>]*>·<\/span><\/span>/u);
-    expect(html).toContain("definido quando as notas terminarem");
-    expect(html).not.toContain("· definido");
-    expect(html).not.toContain('<span aria-hidden="true">· </span>');
+    // The dot is the first child of the clause, hidden once the clause wraps to its own line; the
+    // crumb before it carries none, so a wrap can leave no dot at the end of a line.
+    expect(html).toMatch(
+      /<span[^>]*data-ribbon-clause=""[^>]*><span[^>]*aria-hidden="true"[^>]*>·\u00a0<\/span>definido quando as notas terminarem<\/span>/u
+    );
+    expect(html).toContain("group-data-[wrapped]/clause:hidden");
+    expect(html).not.toMatch(/Life sciences<\/a><span[^>]*>\s*·/u);
+    expect(html.match(/·/gu)).toHaveLength(1);
+  });
+
+  it("calls a clause wrapped when it sits lower than the crumb before it, and marks it", () => {
+    expect(clauseWrapped(0, 0)).toBe(false);
+    expect(clauseWrapped(40, 40.4)).toBe(false);
+    expect(clauseWrapped(0, 20)).toBe(true);
+    const box = (before: number | null, top: number) => {
+      const marks = new Set<string>(["data-wrapped"]);
+      return {
+        marks,
+        node: {
+          offsetTop: top,
+          previousElementSibling: before === null ? null : { offsetTop: before },
+          removeAttribute: (name: string) => marks.delete(name),
+          setAttribute: (name: string) => marks.add(name)
+        }
+      };
+    };
+    // Beside the path: any old mark is taken off. On a line of its own: marked.
+    const beside = box(0, 0);
+    settleClause(beside.node);
+    expect([...beside.marks]).toEqual([]);
+    const lower = box(0, 20);
+    settleClause(lower.node);
+    expect([...lower.marks]).toEqual(["data-wrapped"]);
+    expect(() => settleClause(null)).not.toThrow();
   });
 
   it("shows a busy skeleton while it reads the place", () => {

@@ -1,3 +1,4 @@
+import { messages as realMessages, type LanguageCode } from "@app/i18n";
 import { describe, expect, it } from "vitest";
 
 import { foldText, searchSettings, type SettingsMessages } from "./settings-search";
@@ -158,5 +159,22 @@ describe("searchSettings", () => {
   it("runs over the real registry and catalog without throwing", () => {
     expect(Array.isArray(searchSettings("tema", "pt-BR"))).toBe(true);
     expect(Array.isArray(searchSettings("budget", "en"))).toBe(true);
+  });
+
+  it("finds every entry in the top five for its own label, in each locale (X9, label part)", () => {
+    const labelOf = (locale: LanguageCode, key: string) =>
+      key
+        .split(".")
+        .reduce<unknown>(
+          (node, part) => (node as Record<string, unknown>)?.[part],
+          realMessages[locale]
+        ) as string;
+    for (const locale of ["en", "pt-BR", "es", "fr", "it"] as const)
+      for (const entry of settingsRegistryV2) {
+        const label = labelOf(locale, entry.labelKey);
+        const rank = searchSettings(label, locale).findIndex((hit) => hit.id === entry.id);
+        expect(rank, `${locale} ${entry.id} "${label}"`).toBeGreaterThanOrEqual(0);
+        expect(rank, `${locale} ${entry.id} "${label}"`).toBeLessThan(5);
+      }
   });
 });

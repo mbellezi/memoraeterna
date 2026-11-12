@@ -30,6 +30,8 @@ describe("parseAddress", () => {
       ["memora://explore", { view: "explore" }],
       ["memora://library", { view: "library" }],
       ["memora://library?tab=questions", { view: "library", tab: "questions" }],
+      ["memora://library?status=needsYou", { view: "library", query: { status: "needsYou" } }],
+      ["memora://library?status=storedOnly", { view: "library", query: { status: "storedOnly" } }],
       [
         `memora://library?q=caf%C3%A9%20au%20lait&sort=added&dir=desc&status=ready&topic=${topic.toUpperCase()}`,
         {
@@ -51,6 +53,11 @@ describe("parseAddress", () => {
         { view: "settings", section: "ai", setting: "ai.route.embed" }
       ],
       ["memora://search?q=a%26b%3Dc%23d", { view: "search", query: "a&b=c#d" }],
+      // The kinds come back in the domain order, whatever order they were written in.
+      [
+        "memora://search?kinds=entity%2Csource&q=pH",
+        { view: "search", query: "pH", kinds: ["source", "entity"] }
+      ],
       ["memora://ask", { view: "ask" }],
       [
         `memora://ask?scope=${encodeURIComponent(`memora://source/${id}`)}&q=Why%3F`,
@@ -97,6 +104,9 @@ describe("parseAddress", () => {
       "memora://settings/ai?x=1",
       "memora://search",
       "memora://search?q=",
+      "memora://search?q=a&kinds=",
+      "memora://search?q=a&kinds=topic%2Ctopic",
+      "memora://search?q=a&kinds=relation",
       `memora://search?q=${"a".repeat(routeLimits.maxTextLength + 1)}`,
       "memora://ask?q=a&q=b",
       "memora://ask?scope=memora%3A%2F%2Fsource%2Fnope",
@@ -136,6 +146,7 @@ describe("formatView", () => {
     ...settingsSectionIds.map((section) => ({ view: "settings", section }) as ViewAddress),
     { view: "settings", section: "advanced", setting: "graphWheelZoomSensitivity" },
     { view: "search", query: "naïve #tags & ?marks" },
+    { view: "search", query: "pH", kinds: ["note", "topic"] },
     { view: "ask" },
     { view: "ask", question: "What changed?\nAnd why?" },
     { view: "ask", question: "Scoped", scope: { kind: "topic", id: topic } },

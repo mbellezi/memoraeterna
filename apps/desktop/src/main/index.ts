@@ -39,6 +39,8 @@ import { registerHardwareIpc } from "./services/hardware/ipc.js";
 import { registerOnboardingIpc } from "./services/onboarding/onboarding-ipc.js";
 import { OnboardingService, pgOnboardingStore } from "./services/onboarding/onboarding-service.js";
 import { registerKnowledgeControlsIpc } from "./services/gardener/knowledge-controls-ipc.js";
+import { registerSettingsDescribeIpc } from "./services/settings-describe-ipc.js";
+import { SettingsReset } from "./services/settings-reset.js";
 import { WikiService } from "./services/wiki-service.js";
 import { registerWikiIpc } from "./services/wiki-ipc.js";
 import { registerObjectsIpc } from "./services/objects-ipc.js";
@@ -911,10 +913,11 @@ void app.whenReady().then(() => {
   registerInboxIpc(ipcMain, inboxService);
   // The hardware profile and the setup recommended for it (F4 D32, T97): probed on the first read,
   // cached under userData/hardware, informative only (decision 26).
-  registerHardwareIpc(
-    ipcMain,
-    new HardwareService({ userDataPath: app.getPath("userData"), logger: console })
-  );
+  const hardwareService = new HardwareService({
+    userDataPath: app.getPath("userData"),
+    logger: console
+  });
+  registerHardwareIpc(ipcMain, hardwareService);
   // F4 D31: whether the first-run view is due (an empty library and no record), and how it ended.
   registerOnboardingIpc(
     ipcMain,
@@ -926,6 +929,23 @@ void app.whenReady().then(() => {
   registerKnowledgeControlsIpc(ipcMain, () => backgroundPolicy?.controls ?? null, {
     treeShapeChanged: () => void topicTreeServices?.shapeChanged()
   });
+  // `settings.describe` and `settings.reset` (F5 T160): each reset goes through its setting's writer.
+  registerSettingsDescribeIpc(
+    ipcMain,
+    new SettingsReset({
+      settings: settingsService,
+      ai: () => aiService,
+      // The one hardware service: its memo and its in-flight probe serve every caller.
+      recommendedPreset: async () => (await hardwareService.profile()).recommendation.recommended,
+      knowledgeControls: () => backgroundPolicy?.controls ?? null,
+      treeShapeChanged: () => void topicTreeServices?.shapeChanged(),
+      obsidian: () => obsidianSyncService,
+      googleBooks: () => metadataEnrichmentService,
+      pool: () => databaseService?.getPool() ?? null,
+      credentials: new CredentialService(app.getPath("userData")),
+      logger: console
+    })
+  );
   const gatewayPort = readGatewayPort(process.env.MEMORA_INTEGRATION_GATEWAY_PORT);
   integrationGateway = new IntegrationGateway({
     getPool: () => databaseService?.getPool() ?? null,

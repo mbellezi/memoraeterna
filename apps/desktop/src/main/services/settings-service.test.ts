@@ -799,3 +799,12 @@ describe("storage settings after the cut (F4 T98)", () => {
     ).not.toHaveProperty("deletionPolicy");
   });
 });
+
+describe("osLanguage", () => {
+  it("names the language of the macOS locale, as a new library starts with it (F5 D18)", () => {
+    expect(new SettingsService(tmpdir(), { desktopLocale: "pt-BR" }).osLanguage()).toBe("pt-BR");
+    expect(new SettingsService(tmpdir(), { desktopLocale: "fr-CA" }).osLanguage()).toBe("fr");
+    expect(new SettingsService(tmpdir(), { desktopLocale: "ja-JP" }).osLanguage()).toBe("en");
+    expect(new SettingsService(tmpdir()).osLanguage()).toBe("en");
+  });
+});

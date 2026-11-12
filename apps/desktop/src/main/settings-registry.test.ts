@@ -565,6 +565,14 @@ describe("the registry's shape", () => {
     }
   });
 
+  it("gives every entry English keywords: at least six lower-case ASCII words, none twice", () => {
+    for (const entry of settingsRegistryV2) {
+      expect(entry.keywords.length, entry.id).toBeGreaterThanOrEqual(6);
+      expect(new Set(entry.keywords).size, entry.id).toBe(entry.keywords.length);
+      for (const word of entry.keywords) expect(word, entry.id).toMatch(/^[a-z0-9]+$/u);
+    }
+  });
+
   it("has no entry for what the owner removed or no code reads, and none for the two dead columns", () => {
     const ids = new Set([
       ...settingsRegistryV2.map((entry) => entry.id),

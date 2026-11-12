@@ -118,6 +118,7 @@ import { createHomeApi } from "./home-api.js";
 import { createLibraryApi } from "./library-api.js";
 import { createRelationsBranchApi } from "./relations-branch-api.js";
 import { createSearchApi } from "./search-api.js";
+import { createSettingsDescribeApi } from "./settings-describe-api.js";
 import { createTopicsHistoryApi } from "./topics-history-api.js";
 import type {
   AiProfileCreate,
@@ -573,6 +574,7 @@ const api: DesktopApi = {
     }
   },
   settings: {
+    ...createSettingsDescribeApi((channel, ...args) => ipcRenderer.invoke(channel, ...args)),
     async getGoogleBooksKeyStatus() {
       return googleBooksKeyStatusSchema.parse(
         await ipcRenderer.invoke(ipcChannels.googleBooksKeyStatus)

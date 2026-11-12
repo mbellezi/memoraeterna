@@ -23,6 +23,9 @@ const plan = JSON.parse(readFileSync(process.argv[process.argv.length - 1], "utf
 const temporary = mkdtempSync(join(tmpdir(), "memora-screens-"));
 app.setPath("userData", join(temporary, "profile"));
 app.disableHardwareAcceleration();
+// WebGL surfaces (the Map › Grafo canvas, the ego graph) draw on the software rasterizer: with the
+// GPU off, Chromium gives WebGL only through SwiftShader, and only when it is allowed explicitly.
+app.commandLine.appendSwitch("enable-unsafe-swiftshader");
 
 const jobTimeoutMs = 20000;
 

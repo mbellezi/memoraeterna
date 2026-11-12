@@ -317,7 +317,8 @@ describe("the overview section", () => {
     const html = render({ kind: "ready", overview: ready(), noticeKey: null });
     expect(html).toContain(">Overview</h2>");
     expect(html).toContain("written by AI from 5 of 23 notes");
-    expect(html).toContain("Retention falls fast after study ");
+    // A numeral sits tight to its word: no space is left before it.
+    expect(html).toContain("Retention falls fast after study</span><sup");
     expect(html).toContain('aria-label="Citation 1: Forgetting curve"');
     expect(html).toContain('aria-label="Citation 3: Sleep handbook"');
     expect(html).toContain('lang="en"');

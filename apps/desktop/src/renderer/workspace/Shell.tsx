@@ -59,6 +59,8 @@ export interface ShellProps {
   onOpenInbox: () => void;
   /** Opens a topic of the navigator host's default list beside the focused panel. */
   onOpenTopic?: (topicId: string) => void;
+  /** The context panel (T143), docked or a strip, right of the content; absent while it is hidden. */
+  context?: ReactNode;
   /** The destination's content: the panel stack (T136), or the old view until then. */
   children: ReactNode;
 }
@@ -130,6 +132,7 @@ export function Shell({
   onNavigateActivity,
   onOpenInbox,
   onOpenTopic,
+  context,
   children
 }: ShellProps) {
   const root = useRef<HTMLDivElement>(null);
@@ -225,6 +228,7 @@ export function Shell({
         >
           {children}
         </main>
+        {context}
       </div>
       <DropHost t={t} flow={addFlow} />
     </div>

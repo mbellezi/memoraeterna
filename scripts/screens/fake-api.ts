@@ -2,7 +2,9 @@
  * A fake `window.app` for the screens tool, one per mode. It runs inside the fixture bundle (a
  * browser), so it imports nothing.
  *
- * - loading: every call stays pending, so a surface shows what it shows while it waits;
+ * - loading: every call stays pending, so a surface shows what it shows while it waits; a screen
+ *   module whose loading is part of the surface (a sheet that reads after its page is there) lists
+ *   the calls that answer in `fixtures.loading` (the fourth argument) and only the others wait;
  * - error: every call rejects, so a surface shows its failure and its way back; a screen module that
  *   needs part of the surface to load first lists those calls in `fixtures.error` (the third
  *   argument) and only the others reject;
@@ -36,21 +38,24 @@ const never = (): Promise<never> => new Promise<never>(() => undefined);
 export function createFakeApi(
   mode: FakeMode,
   fixtures: Readonly<Record<string, unknown>> = {},
-  errorFixtures: Readonly<Record<string, unknown>> = {}
+  errorFixtures: Readonly<Record<string, unknown>> = {},
+  loadingFixtures: Readonly<Record<string, unknown>> = {}
 ): FakeApi {
   const calls: FakeCall[] = [];
   const missing = new Set<string>();
 
   const answer = (path: string, args: unknown[]): unknown => {
     calls.push({ path, args });
-    if (mode === "loading") return never();
+    if (mode === "loading" && !Object.hasOwn(loadingFixtures, path)) return never();
     if (mode === "error" && !Object.hasOwn(errorFixtures, path))
       return Promise.reject(new Error(`fake window.app: ${path} fails`));
-    if (mode !== "error" && !Object.hasOwn(fixtures, path)) {
+    if (mode !== "error" && mode !== "loading" && !Object.hasOwn(fixtures, path)) {
       missing.add(path);
       return Promise.reject(new Error(`fake window.app: no fixture for ${path}`));
     }
-    const fixture = (mode === "error" ? errorFixtures : fixtures)[path];
+    const fixture = (
+      mode === "error" ? errorFixtures : mode === "loading" ? loadingFixtures : fixtures
+    )[path];
     try {
       return Promise.resolve(typeof fixture === "function" ? fixture(...args) : fixture);
     } catch (error) {

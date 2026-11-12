@@ -1,0 +1,192 @@
+import type { GraphPalette } from "./graph-tokens";
+import { graphTypography } from "./view-model";
+
+/**
+ * Node labels of a graph that reads the theme (design record 4.1 and 7.5): horizontal, at most two
+ * lines, centred under the dot, in the label colour on a plate and a 3 px halo of the canvas colour,
+ * so a label stays legible over the lines it crosses in either theme: the halo alone covers only
+ * the glyphs, while the plate also hides a line between words and inside letters. Only the person's own text is drawn
+ * here (a note's title), so a title too long for two lines ends in an ellipsis; the full title is
+ * in the hover card, the keyboard description and the table.
+ */
+
+export const graphLabelLayout = {
+  /** The widest a line may be, in CSS pixels. */
+  maxWidth: 148,
+  maxLines: 2,
+  lineHeight: 14,
+  /** The halo's width on each side of a glyph, and the plate's margin on each side of a line. */
+  halo: 3,
+  /** The plate behind each line: nearly opaque, so a crossing line still hints where it runs. */
+  plateOpacity: 0.9,
+  plateRadius: 3,
+  /** Space between the dot's edge and the first line. */
+  gap: 5
+} as const;
+
+const ellipsis = "…";
+
+/**
+ * Breaks `text` into at most `maxLines` lines no wider than `maxWidth`, at spaces. A word wider than
+ * a line is cut only on the last line, where the text ends in an ellipsis; nothing is ever cut
+ * inside a word on a line that has more after it.
+ */
+export function wrapLabel(
+  text: string,
+  maxWidth: number,
+  measure: (value: string) => number,
+  maxLines: number = graphLabelLayout.maxLines
+): string[] {
+  const words = text.trim().split(/\s+/u).filter(Boolean);
+  if (words.length === 0) return [];
+  const lines: string[] = [];
+  let index = 0;
+  while (index < words.length && lines.length < maxLines) {
+    const last = lines.length === maxLines - 1;
+    let line = words[index]!;
+    index += 1;
+    while (index < words.length && measure(`${line} ${words[index]}`) <= maxWidth) {
+      line = `${line} ${words[index]}`;
+      index += 1;
+    }
+    if (last && (index < words.length || measure(line) > maxWidth)) {
+      const rest = index < words.length ? `${line} ${words.slice(index).join(" ")}` : line;
+      lines.push(fitWithEllipsis(rest, maxWidth, measure));
+      index = words.length;
+    } else lines.push(line);
+  }
+  return lines;
+}
+
+/** The longest start of `text` that, with an ellipsis, fits `maxWidth` (at a space when one is near). */
+function fitWithEllipsis(text: string, maxWidth: number, measure: (value: string) => number) {
+  if (measure(text) <= maxWidth) return text;
+  let low = 0;
+  let high = text.length;
+  while (low < high) {
+    const middle = Math.ceil((low + high) / 2);
+    if (measure(`${text.slice(0, middle).trimEnd()}${ellipsis}`) <= maxWidth) low = middle;
+    else high = middle - 1;
+  }
+  const cut = text.slice(0, low);
+  const space = cut.lastIndexOf(" ");
+  const start = space > cut.length * 0.6 ? cut.slice(0, space) : cut;
+  return `${start.trimEnd()}${ellipsis}`;
+}
+
+/** What a label drawer needs of a node this frame (Sigma's display data). */
+export interface LabelNode {
+  x: number;
+  y: number;
+  size: number;
+  label?: string | null;
+  labelColor?: string;
+  /** Drawn in semibold: the node in focus, or the one under the pointer. */
+  emphasised?: boolean;
+}
+
+export interface LabelContext {
+  font: string;
+  globalAlpha: number;
+  fillStyle: string | CanvasGradient | CanvasPattern;
+  strokeStyle: string | CanvasGradient | CanvasPattern;
+  lineWidth: number;
+  lineJoin: CanvasLineJoin;
+  textAlign: CanvasTextAlign;
+  textBaseline: CanvasTextBaseline;
+  measureText(text: string): { width: number };
+  strokeText(text: string, x: number, y: number): void;
+  fillText(text: string, x: number, y: number): void;
+  beginPath(): void;
+  roundRect(x: number, y: number, width: number, height: number, radius: number): void;
+  fill(): void;
+}
+
+/** A topic's pill on a zoomed-out graph: the topic colour as its ring, the name inside. */
+export const graphPillLayout = { maxWidth: 200, height: 26, paddingX: 12, ring: 2 } as const;
+
+export interface PillContext extends LabelContext {
+  stroke(): void;
+}
+
+/**
+ * Draws a topic group as a pill centred on its node: the canvas colour inside, a ring in the
+ * topic's colour (`ringColour`), the name in the label colour on one line (an ellipsis when it is
+ * longer than the pill may be). Returns the text it drew.
+ */
+export function drawPillLabel(
+  context: PillContext,
+  node: LabelNode & { ringColour: string },
+  palette: Pick<GraphPalette, "canvas" | "label">
+): string {
+  if (!node.label) return "";
+  const weight = node.emphasised ? "650" : "600";
+  context.font = `${weight} ${graphTypography.labelSize}px ${graphTypography.labelFont}`;
+  const text =
+    wrapLabel(
+      node.label,
+      graphPillLayout.maxWidth - graphPillLayout.paddingX * 2,
+      (value) => context.measureText(value).width,
+      1
+    )[0] ?? "";
+  const width = context.measureText(text).width + graphPillLayout.paddingX * 2;
+  const height = graphPillLayout.height;
+  context.beginPath();
+  context.roundRect(node.x - width / 2, node.y - height / 2, width, height, height / 2);
+  context.fillStyle = palette.canvas;
+  context.fill();
+  context.lineWidth = node.emphasised ? graphPillLayout.ring + 1 : graphPillLayout.ring;
+  context.strokeStyle = node.ringColour;
+  context.stroke();
+  context.textAlign = "center";
+  context.textBaseline = "middle";
+  context.fillStyle = node.labelColor ?? palette.label;
+  context.fillText(text, node.x, node.y);
+  return text;
+}
+
+/** Draws a node's label under it on a plate and a halo; returns the lines it drew (for tests). */
+export function drawHaloLabel(
+  context: LabelContext,
+  node: LabelNode,
+  palette: Pick<GraphPalette, "canvas" | "label">,
+  size: number = graphTypography.labelSize
+): string[] {
+  if (!node.label) return [];
+  const weight = node.emphasised ? "600" : graphTypography.labelWeight;
+  context.font = `${weight} ${size}px ${graphTypography.labelFont}`;
+  const lines = wrapLabel(
+    node.label,
+    graphLabelLayout.maxWidth,
+    (value) => context.measureText(value).width
+  );
+  const { halo, lineHeight, plateOpacity, plateRadius } = graphLabelLayout;
+  const top = node.y + node.size + graphLabelLayout.gap;
+  // One path for every line's plate, so where two plates meet the canvas colour is not doubled.
+  context.beginPath();
+  lines.forEach((line, index) => {
+    const width = context.measureText(line).width + halo * 2;
+    const y = top + index * lineHeight - 1;
+    context.roundRect(node.x - width / 2, y, width, lineHeight + 2, plateRadius);
+  });
+  const alpha = context.globalAlpha;
+  context.globalAlpha = alpha * plateOpacity;
+  context.fillStyle = palette.canvas;
+  context.fill();
+  context.globalAlpha = alpha;
+  context.textAlign = "center";
+  context.textBaseline = "top";
+  context.lineJoin = "round";
+  context.lineWidth = halo * 2;
+  context.strokeStyle = palette.canvas;
+  context.fillStyle = node.labelColor ?? palette.label;
+  lines.forEach((line, index) => {
+    const y = top + index * graphLabelLayout.lineHeight;
+    context.strokeText(line, node.x, y);
+  });
+  lines.forEach((line, index) => {
+    const y = top + index * graphLabelLayout.lineHeight;
+    context.fillText(line, node.x, y);
+  });
+  return lines;
+}

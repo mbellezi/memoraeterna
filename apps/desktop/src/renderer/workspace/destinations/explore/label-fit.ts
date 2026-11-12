@@ -72,6 +72,23 @@ export function fitLabel(label: string, measure: Measure, width: number): Fitted
 }
 
 /**
+ * A label beside a count (design record 5.3, "Fitting a name", steps 2 and 4): the label whole when
+ * it fits beside its count; otherwise the count is dropped first (it moves to hover and focus, and
+ * `countRoom` px come back to the label), and only then are words cut. So a long topic keeps its
+ * head words and its tail, not only its tail.
+ */
+export function fitBesideCount(
+  label: string,
+  measure: Measure,
+  width: number,
+  countRoom: number
+): FittedLabel & { countDropped: boolean } {
+  const beside = fitLabel(label, measure, width);
+  if (!beside.cut || countRoom <= 0) return { ...beside, countDropped: false };
+  return { ...fitLabel(label, measure, width + countRoom), countDropped: true };
+}
+
+/**
  * The label in at most `maxLines` lines of `width` px, broken greedily at spaces. When it needs
  * more lines, the last line ends after its last whole word that fits beside an ellipsis. A word
  * longer than a line sits on its own line and is left to the caller's overflow rule.

@@ -32,12 +32,11 @@ function page(id: string): NotePage {
       bodyMarkdown: first
         ? [
             "When lactic acid bacteria consume the sugars of a food, the lactic acid they produce brings the pH down to about 4. ",
-            "At that acidity most of the bacteria that spoil food or cause disease cannot multiply.\n\n",
-            "That is why sauerkraut, yoghurt and pickled vegetables keep for weeks outside the fridge: the fermentation itself builds the barrier that protects the food.\n\n",
-            "The barrier is not absolute. Acid-resistant spores survive, which is why badly sealed preserves can still spoil."
+            "At that acidity most of the bacteria that spoil food cannot multiply[1].\n\n",
+            "That is why sauerkraut and pickled vegetables keep for weeks outside the fridge: the fermentation itself builds the barrier that protects the food[2]."
           ].join("")
         : "A cooler ferment ends less acid and more aromatic.",
-      generationModel: "Local AI"
+      generationModel: "Qwen3 14B"
     },
     evidence: {
       total: 2,
@@ -67,6 +66,9 @@ function page(id: string): NotePage {
           type: "supports",
           band: "apply",
           probability: 0.92,
+          decidedBy: { model: "Qwen3 14B", kind: "local" },
+          explainedBy: { model: "Qwen3 14B", kind: "local" },
+          explanation: { text: "Both describe food kept without ice.", writtenBy: "Qwen3 14B" },
           other: {
             ...relationItem().other,
             title: "Salt and acidity preserved food before ice",
@@ -77,6 +79,9 @@ function page(id: string): NotePage {
         relationItem({
           id: fixtureId(64),
           type: "extends",
+          band: "apply",
+          probability: 0.9,
+          decidedBy: { model: "Qwen3 14B", kind: "local" },
           other: {
             ...relationItem().other,
             id: fixtureId(65),
@@ -88,6 +93,7 @@ function page(id: string): NotePage {
         relationItem({
           id: fixtureId(66),
           type: "depends_on",
+          decidedBy: { model: "Qwen3 14B", kind: "local" },
           other: {
             ...relationItem().other,
             id: fixtureId(67),
@@ -102,6 +108,7 @@ function page(id: string): NotePage {
           state: "suggested",
           band: "suggest",
           probability: 0.7,
+          decidedBy: { model: "Qwen3 14B", kind: "local" },
           other: {
             ...relationItem().other,
             id: fixtureId(69),

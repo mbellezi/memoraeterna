@@ -6,13 +6,15 @@ import {
   topicPage
 } from "../../components/topic-page/topic-page-fixtures";
 import type { ScreenModule } from "../surfaces";
-import { located, PanelStackScreen } from "./panel-screen-parts";
+import { located, PanelStackScreen, placePath } from "./panel-screen-parts";
 import { Component } from "./topic.panel";
 
 export const surface = "topic";
 
-const topId = topicFixtureId(3);
-const previousId = topicFixtureId(2);
+// Ids as `placePath` has them: Fermentation (5) sits under Microbiology; Lactic fermentation (6) is
+// one of its subtopics, so the previous panel lists the row that opened the top one.
+const topId = topicFixtureId(6);
+const previousId = topicFixtureId(5);
 const topAddress = `memora://topic/${topId}`;
 const previousAddress = `memora://topic/${previousId}`;
 
@@ -39,12 +41,25 @@ function page(id: string): TopicPage {
       items: top ? 18 : 32
     },
     path: [
-      { id: topicFixtureId(1), title: null },
-      { id: previousId, title: "Fermentation" },
+      ...placePath.map(({ id: pathId, title: pathTitle }) => ({
+        id: pathId,
+        title: pathTitle === "" ? null : pathTitle
+      })),
       ...(top ? [{ id: topId, title }] : [])
-    ].slice(0, top ? 3 : 2),
+    ],
     counts: { notes: top ? 18 : 32, sources: top ? 2 : 3, subtopics: top ? 0 : 2 },
-    subtopics: top ? [] : base.subtopics,
+    subtopics: top
+      ? []
+      : [
+          { id: topId, title: "Lactic fermentation", items: 18, description: null, health: "good" },
+          {
+            id: topicFixtureId(7),
+            title: "Alcoholic fermentation",
+            items: 9,
+            description: null,
+            health: "good"
+          }
+        ],
     centralNotes: notes.map((text, index) =>
       centralNote({
         id: topicFixtureId(100 + index),
@@ -55,6 +70,24 @@ function page(id: string): TopicPage {
       })
     ),
     moreNotes: top ? 14 : 28,
+    sources: [
+      {
+        id: topicFixtureId(200),
+        title: "Food microbiology, ch. 3",
+        subtitle: "Textbook, English",
+        noteCount: top ? 12 : 20
+      },
+      {
+        id: topicFixtureId(201),
+        title: "Preserves and salting in the 19th century",
+        subtitle: "Book, English",
+        noteCount: top ? 6 : 12
+      }
+    ],
+    relatedTopics: [
+      { id: topicFixtureId(20), title: "Salting and curing", relationCount: 8 },
+      { id: topicFixtureId(21), title: "Food safety", relationCount: 3 }
+    ],
     lastChange: null,
     overview: {
       status: "ready",
@@ -81,7 +114,7 @@ function page(id: string): TopicPage {
       })),
       evidence: { used: 6, total: 18 },
       writtenAt: "2026-11-11T23:50:00.000Z",
-      model: "Local AI",
+      model: "Qwen3 14B",
       language: "en",
       support: { status: "verified", unsupported: [], sentences: { checked: 3, supported: 3 } }
     }
@@ -93,11 +126,11 @@ export const fixtures: ScreenModule["fixtures"] = {
     "topics.page": ({ id }: { id: string }) => page(id),
     "topics.notes": { items: [], nextCursor: null },
     "objects.locate": ({ address }: { address: string }) =>
-      located(
-        "topic",
-        address.slice(-36),
-        address.endsWith(topId) ? "Lactic fermentation" : "Fermentation"
-      ),
+      address.endsWith(topId)
+        ? located("topic", topId, "Lactic fermentation", {
+            path: [...placePath, { kind: "topic", id: topId, title: "Lactic fermentation" }]
+          })
+        : located("topic", previousId, "Fermentation"),
     "viewHistory.record": null,
     "topics.overview": { status: "absent", canWrite: false },
     "topics.cancelOverview": false

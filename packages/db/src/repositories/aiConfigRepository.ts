@@ -278,6 +278,7 @@ function aiConfigMethods(db: Queryable) {
       name: string;
       description?: string | null;
       isDefault?: boolean;
+      /** @deprecated Ignored: `privacy_mode` is no longer written (F5 T172); the column default applies. */
       privacyMode?: string;
       outputLanguage?: string;
     }): Promise<AiProfileRecord> {
@@ -286,14 +287,13 @@ function aiConfigMethods(db: Queryable) {
            update ai_profile_sets set is_default = false, updated_at = now() where $3::boolean = true
            returning id
          )
-         insert into ai_profile_sets (name, description, is_default, privacy_mode, output_language)
-         select $1, $2, $3, $4, $5 where (select count(*) from unset_default) >= 0
+         insert into ai_profile_sets (name, description, is_default, output_language)
+         select $1, $2, $3, $4 where (select count(*) from unset_default) >= 0
          returning ${profileReturning}`,
         [
           input.name,
           input.description ?? null,
           input.isDefault ?? false,
-          input.privacyMode ?? "allow_remote",
           input.outputLanguage ?? "ui"
         ]
       );
@@ -306,17 +306,17 @@ function aiConfigMethods(db: Queryable) {
       const result = await db.query<ProfileRow>(
         `with profile as (
            insert into ai_profile_sets (
-             name, description, is_default, privacy_mode, output_language, provider_config_id,
+             name, description, is_default, output_language, provider_config_id,
              local_model_id, model_id, runtime, capabilities, status
            )
-           select $2, source.description, false, source.privacy_mode, source.output_language,
+           select $2, source.description, false, source.output_language,
                   source.provider_config_id, source.local_model_id, source.model_id, source.runtime,
                   source.capabilities, source.status
            from ai_profile_sets as source where source.id = $1
            returning *
          ), copied_tasks as (
-           insert into ai_profile_tasks (profile_id, task, parameters, fallback_policy, status)
-           select profile.id, source_task.task, source_task.parameters, source_task.fallback_policy, source_task.status
+           insert into ai_profile_tasks (profile_id, task, parameters, status)
+           select profile.id, source_task.task, source_task.parameters, source_task.status
            from ai_profile_tasks as source_task
            cross join profile
            where source_task.profile_id = $1
@@ -344,6 +344,7 @@ function aiConfigMethods(db: Queryable) {
     async updateProfile(input: {
       id: string;
       name?: string;
+      /** @deprecated Ignored: `privacy_mode` is no longer written (F5 T172). */
       privacyMode?: string;
       outputLanguage?: string;
       providerConfigId?: string | null;
@@ -354,19 +355,18 @@ function aiConfigMethods(db: Queryable) {
     }): Promise<AiProfileRecord> {
       const result = await db.query<ProfileRow>(
         `update ai_profile_sets set
-           name = coalesce($2, name), privacy_mode = coalesce($3, privacy_mode),
-           output_language = coalesce($4, output_language),
-           provider_config_id = case when $5::boolean then $6::uuid else provider_config_id end,
-           local_model_id = case when $5::boolean then $7::uuid else local_model_id end,
-           model_id = case when $5::boolean then $8 else model_id end,
-           runtime = case when $5::boolean then $9 else runtime end,
-           capabilities = case when $5::boolean then $10::jsonb else capabilities end,
+           name = coalesce($2, name),
+           output_language = coalesce($3, output_language),
+           provider_config_id = case when $4::boolean then $5::uuid else provider_config_id end,
+           local_model_id = case when $4::boolean then $6::uuid else local_model_id end,
+           model_id = case when $4::boolean then $7 else model_id end,
+           runtime = case when $4::boolean then $8 else runtime end,
+           capabilities = case when $4::boolean then $9::jsonb else capabilities end,
            updated_at = now()
          where id = $1 returning ${profileReturning}`,
         [
           input.id,
           input.name ?? null,
-          input.privacyMode ?? null,
           input.outputLanguage ?? null,
           input.modelId !== undefined,
           input.providerConfigId ?? null,
@@ -430,8 +430,8 @@ function aiConfigMethods(db: Queryable) {
     async seedTaskRoute(task: string, profileId: string): Promise<boolean> {
       const result = await db.query<QueryResultRow & { count: string }>(
         `with ensured_task as (
-           insert into ai_profile_tasks (profile_id, task, parameters, fallback_policy)
-           values ($2, $1, '{}'::jsonb, 'block')
+           insert into ai_profile_tasks (profile_id, task, parameters)
+           values ($2, $1, '{}'::jsonb)
            on conflict (profile_id, task) do nothing
            returning id
          ), seeded_route as (
@@ -569,15 +569,13 @@ function aiConfigMethods(db: Queryable) {
       profileId: string;
       task: string;
       parameters?: JsonObject;
-      fallbackPolicy?: string;
     }): Promise<void> {
       await db.query(
-        `insert into ai_profile_tasks (profile_id, task, parameters, fallback_policy)
-         values ($1, $2, $3, $4)
+        `insert into ai_profile_tasks (profile_id, task, parameters)
+         values ($1, $2, $3)
          on conflict (profile_id, task) do update set
-           parameters = excluded.parameters, fallback_policy = excluded.fallback_policy,
-           updated_at = now()`,
-        [input.profileId, input.task, input.parameters ?? {}, input.fallbackPolicy ?? "block"]
+           parameters = excluded.parameters, updated_at = now()`,
+        [input.profileId, input.task, input.parameters ?? {}]
       );
     },
 
