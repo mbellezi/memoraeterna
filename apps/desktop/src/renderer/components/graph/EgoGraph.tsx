@@ -45,6 +45,7 @@ import {
   type EgoTarget
 } from "./ego-graph-sigma";
 import { readGraphPalette, watchGraphPalette } from "./graph-tokens";
+import { drawHaloLabel } from "./labels";
 import { GraphHoverIntent, type GraphHoverTarget } from "./interaction";
 import { KnowledgeGraphLayout } from "./layout";
 import { defaultGraphForceSettings, graphLayoutRadius } from "./layout-contract";
@@ -397,10 +398,9 @@ function EgoGraphCanvas({
     };
 
     async function initialize() {
-      const [{ default: SigmaConstructor }, programs, { drawDiscNodeHover }] = await Promise.all([
+      const [{ default: SigmaConstructor }, programs] = await Promise.all([
         import("sigma"),
-        import("./programs"),
-        import("sigma/rendering")
+        import("./programs")
       ]);
       if (disposer.disposed || !container) return;
       let palette = readGraphPalette(container);
@@ -428,12 +428,13 @@ function EgoGraphCanvas({
             enableEdgeEvents: true,
             zIndex: true,
             labelColor: { attribute: "labelColor", color: palette.label },
-            // Sigma's hover background is white: its label is the canvas's darkest token.
-            defaultDrawNodeHover: (context, node, settings) =>
-              drawDiscNodeHover(context, node, {
-                ...settings,
-                labelColor: { color: palette.canvasEdge }
-              }),
+            // Labels sit on a halo of the canvas, in the theme's colours; the hovered one is bolder.
+            defaultDrawNodeLabel: (context, node) => {
+              drawHaloLabel(context, node, palette);
+            },
+            defaultDrawNodeHover: (context, node) => {
+              drawHaloLabel(context, { ...node, emphasised: true }, palette);
+            },
             ...graphTypography,
             labelRenderedSizeThreshold: 0,
             stagePadding: 36,
@@ -660,7 +661,7 @@ function EgoGraphCanvas({
 
   return (
     <div
-      className="graph-surface relative h-88 overflow-hidden rounded-lg border border-border-strong"
+      className="relative h-88 overflow-hidden rounded-lg border border-border bg-surface"
       onKeyDown={(event) => {
         // The buttons keep their own keys; the cursor is the canvas's.
         if (event.target !== containerRef.current) return;
@@ -687,7 +688,7 @@ function EgoGraphCanvas({
     >
       <div
         ref={containerRef}
-        className="absolute inset-0 outline-offset-[-3px] focus-visible:outline-2 focus-visible:outline-graph-label"
+        className="absolute inset-0 outline-offset-[-3px] focus-visible:outline-2 focus-visible:outline-accent"
         role="application"
         aria-label={t("notePage.graph.label", {
           values: { notes: model.nodes.length, relations: model.edges.length }

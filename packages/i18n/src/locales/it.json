@@ -5261,5 +5261,76 @@
     "warnings": {
       "dismiss": "Scarta"
     }
+  },
+  "mapRelations": {
+    "canvas": {
+      "hint": "Le frecce scorrono le note e poi le connessioni; Invio apre la nota; Esc azzera.",
+      "label": "Grafo di {scope}: {notes} note e {relations} connessioni.",
+      "openHint": "Fai clic per aprire la nota accanto alla Mappa."
+    },
+    "controls": {
+      "fit": "Inquadra",
+      "zoomIn": "Avvicina",
+      "zoomOut": "Allontana"
+    },
+    "depth": {
+      "help": "Quale livello di sottoargomenti dà il colore ai punti",
+      "label": "Colore per sottoargomento di",
+      "one": "1º livello",
+      "three": "3º livello",
+      "two": "2º livello"
+    },
+    "description": "Connessioni tra le note di un ramo",
+    "edge": {
+      "description": "«{first}» {verb} «{second}».",
+      "suggested": "Suggerita: non ancora confermata."
+    },
+    "empty": {
+      "body": "Le connessioni compaiono qui quando le note di questo ramo si collegano tra loro. Scegli un altro ramo o guarda l’Albero.",
+      "headline": "Ancora nessuna connessione in questo ramo",
+      "missing": "Questo ramo non è più nell’albero.",
+      "missingBody": "Potrebbe essere stato unito a un altro argomento. Scegli un altro ramo o guarda l’Albero.",
+      "noTopics": "Il grafo compare quando ci sono argomenti.",
+      "noTopicsBody": "Quando la prima fonte diventa note, gli argomenti nascono da soli e il grafo mostra come si collegano le loro note.",
+      "tree": "Vedi l’Albero"
+    },
+    "error": {
+      "kept": "Le tue note e connessioni sono intatte.",
+      "message": "Impossibile caricare il grafo."
+    },
+    "failure": {
+      "context": "Il grafo non viene più disegnato.",
+      "layout": "Impossibile disporre il grafo.",
+      "unavailable": "Questa finestra non può disegnare il grafo.",
+      "unavailableBody": "La tabella riporta le stesse connessioni.",
+      "unavailableTree": "L’Albero mostra gli argomenti e le note di questo ramo; ogni nota elenca le sue connessioni."
+    },
+    "group": {
+      "description": "{topic}. Note nel grafo: {notes}. Connessioni con altri argomenti: {count}."
+    },
+    "legend": {
+      "direct": "{topic} (note dirette)",
+      "label": "Legenda",
+      "lines": "Linea = connessione:",
+      "suggested": "tratteggiata = suggerita",
+      "thickness": "Da lontano, ogni argomento diventa un’etichetta e lo spessore della linea conta le connessioni.",
+      "topics": "Colore del punto = argomento:",
+      "unplaced": "senza posto nell’albero"
+    },
+    "node": {
+      "description": "{title}. Argomento: {topic}. Connessioni: {count}.",
+      "meta": "Argomento: {topic} · Connessioni: {count}"
+    },
+    "scope": {
+      "above": "Sopra",
+      "areas": "Aree",
+      "beside": "Accanto",
+      "inside": "Dentro",
+      "label": "Ramo: {title}",
+      "menu": "Scegli il ramo",
+      "source": "Fonte: {title}",
+      "sourceUnnamed": "questa fonte"
+    },
+    "untitledTopic": "Argomento senza nome"
   }
 }

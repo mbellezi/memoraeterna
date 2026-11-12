@@ -66,15 +66,16 @@ describe("a root reports its own surface and state", () => {
     expect(html).toContain("<h1");
   });
 
-  it("draws the Map root with its two views, Árvore first, and the placeholder for the graph", () => {
+  it("draws the Map root with its two views, Árvore first, and the graph of one branch", () => {
     const html = renderToString(<MapRoot {...props} address={destinationRoots.map} />);
     expect(html).toContain('data-surface="destination-map"');
     expect(html).toContain('role="tablist"');
     expect(html).toContain(">Tree<");
     expect(html).toContain(">Graph<");
-    // The default address names the relations view, which is a placeholder until T151.
-    expect(html).toContain("The graph of connections is on its way");
-    expect(html).toContain('data-state="empty"');
+    // The default address names the relations view: the Grafo lens, which loads once shown.
+    expect(html).toContain('data-surface="map-relations"');
+    expect(html).toContain("Connections between the notes of a branch");
+    expect(html).toContain('data-state="loading"');
   });
 
   it("opens the tree view from an address that names it", () => {
@@ -82,7 +83,7 @@ describe("a root reports its own surface and state", () => {
       <MapRoot {...props} address={formatView({ view: "map", lens: "shape" })} />
     );
     expect(html).toContain('data-state="loading"');
-    expect(html).not.toContain("The graph of connections is on its way");
+    expect(html).not.toContain('data-surface="map-relations"');
   });
 
   it("shows only the heading as the previous panel, with no views to switch", () => {

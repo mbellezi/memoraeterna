@@ -5263,5 +5263,76 @@
     "warnings": {
       "dismiss": "Dismiss"
     }
+  },
+  "mapRelations": {
+    "canvas": {
+      "hint": "Arrows move through the notes, then the connections; Enter opens a note; Esc clears.",
+      "label": "Graph of {scope}: {notes} notes and {relations} connections.",
+      "openHint": "Click to open the note beside the Map."
+    },
+    "controls": {
+      "fit": "Fit to view",
+      "zoomIn": "Zoom in",
+      "zoomOut": "Zoom out"
+    },
+    "depth": {
+      "help": "Which level of subtopics gives the dots their colour",
+      "label": "Colour by subtopic at",
+      "one": "level 1",
+      "three": "level 3",
+      "two": "level 2"
+    },
+    "description": "Connections between the notes of a branch",
+    "edge": {
+      "description": "“{first}” {verb} “{second}”.",
+      "suggested": "Suggested: not yet confirmed."
+    },
+    "empty": {
+      "body": "Connections appear here when notes of this branch are linked to each other. Pick another branch, or see the Tree.",
+      "headline": "No connections in this branch yet",
+      "missing": "This branch is no longer in the tree.",
+      "missingBody": "It may have been merged into another topic. Pick another branch, or see the Tree.",
+      "noTopics": "The graph appears when there are topics.",
+      "noTopicsBody": "When the first source becomes notes, topics are born on their own and the graph shows how their notes connect.",
+      "tree": "See the Tree"
+    },
+    "error": {
+      "kept": "Your notes and connections are as they were.",
+      "message": "The graph could not be loaded."
+    },
+    "failure": {
+      "context": "The graph stopped drawing.",
+      "layout": "The graph could not be arranged.",
+      "unavailable": "This window cannot draw the graph.",
+      "unavailableBody": "The table lists the same connections.",
+      "unavailableTree": "The Tree shows this branch’s topics and notes; each note lists its connections."
+    },
+    "group": {
+      "description": "{topic}. Notes drawn: {notes}. Connections to other topics: {count}."
+    },
+    "legend": {
+      "direct": "{topic} (direct notes)",
+      "label": "Legend",
+      "lines": "Line = connection:",
+      "suggested": "dashed = suggested",
+      "thickness": "Zoomed out, each topic becomes a label and a line's thickness counts the connections.",
+      "topics": "Dot colour = topic:",
+      "unplaced": "no place in the tree"
+    },
+    "node": {
+      "description": "{title}. Topic: {topic}. Connections: {count}.",
+      "meta": "Topic: {topic} · Connections: {count}"
+    },
+    "scope": {
+      "above": "Above",
+      "areas": "Areas",
+      "beside": "Beside",
+      "inside": "Inside",
+      "label": "Branch: {title}",
+      "menu": "Choose the branch",
+      "source": "Source: {title}",
+      "sourceUnnamed": "this source"
+    },
+    "untitledTopic": "Untitled topic"
   }
 }

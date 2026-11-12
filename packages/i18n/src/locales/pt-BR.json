@@ -5266,5 +5266,76 @@
     "warnings": {
       "dismiss": "Dispensar"
     }
+  },
+  "mapRelations": {
+    "canvas": {
+      "hint": "As setas percorrem as notas e depois as conexões; Enter abre a nota; Esc limpa.",
+      "label": "Grafo de {scope}: {notes} notas e {relations} conexões.",
+      "openHint": "Clique para abrir a nota ao lado do Mapa."
+    },
+    "controls": {
+      "fit": "Enquadrar",
+      "zoomIn": "Aproximar",
+      "zoomOut": "Afastar"
+    },
+    "depth": {
+      "help": "Qual nível de subtópicos dá a cor aos pontos",
+      "label": "Cor por subtópico de",
+      "one": "1º nível",
+      "three": "3º nível",
+      "two": "2º nível"
+    },
+    "description": "Conexões entre as notas de um ramo",
+    "edge": {
+      "description": "“{first}” {verb} “{second}”.",
+      "suggested": "Sugerida: ainda não confirmada."
+    },
+    "empty": {
+      "body": "As conexões aparecem aqui quando notas deste ramo se ligam umas às outras. Escolha outro ramo ou veja a Árvore.",
+      "headline": "Ainda não há conexões neste ramo",
+      "missing": "Este ramo não está mais na árvore.",
+      "missingBody": "Ele pode ter sido unido a outro tópico. Escolha outro ramo ou veja a Árvore.",
+      "noTopics": "O grafo aparece quando houver tópicos.",
+      "noTopicsBody": "Quando a primeira fonte virar notas, os tópicos nascem sozinhos e o grafo mostra como as notas deles se ligam.",
+      "tree": "Ver a Árvore"
+    },
+    "error": {
+      "kept": "Suas notas e conexões continuam intactas.",
+      "message": "Não foi possível carregar o grafo."
+    },
+    "failure": {
+      "context": "O grafo parou de ser desenhado.",
+      "layout": "Não foi possível organizar o grafo.",
+      "unavailable": "Esta janela não consegue desenhar o grafo.",
+      "unavailableBody": "A tabela traz as mesmas conexões.",
+      "unavailableTree": "A Árvore mostra os tópicos e as notas deste ramo; cada nota lista suas conexões."
+    },
+    "group": {
+      "description": "{topic}. Notas no grafo: {notes}. Conexões com outros tópicos: {count}."
+    },
+    "legend": {
+      "direct": "{topic} (notas diretas)",
+      "label": "Legenda",
+      "lines": "Linha = conexão:",
+      "suggested": "tracejada = sugerida",
+      "thickness": "De longe, cada tópico vira uma etiqueta e a espessura da linha conta as conexões.",
+      "topics": "Cor do ponto = tópico:",
+      "unplaced": "sem lugar na árvore"
+    },
+    "node": {
+      "description": "{title}. Tópico: {topic}. Conexões: {count}.",
+      "meta": "Tópico: {topic} · Conexões: {count}"
+    },
+    "scope": {
+      "above": "Acima",
+      "areas": "Áreas",
+      "beside": "Ao lado",
+      "inside": "Dentro",
+      "label": "Ramo: {title}",
+      "menu": "Escolher o ramo",
+      "source": "Fonte: {title}",
+      "sourceUnnamed": "esta fonte"
+    },
+    "untitledTopic": "Tópico sem nome"
   }
 }
