@@ -279,8 +279,8 @@ const heldOutRows = Object.entries(heldOutQueries).flatMap(([id, byLocale]) => {
 });
 
 describe("the held-out queries (X9, held-out part)", () => {
-  it("has 5 locales and 2 queries for each of the 85 ids, and every id is an entry, mapped or marked", () => {
-    expect(Object.keys(heldOutQueries)).toHaveLength(85);
+  it("has 5 locales and 2 queries for each of the 97 ids, and every id is an entry, mapped or marked", () => {
+    expect(Object.keys(heldOutQueries)).toHaveLength(97);
     for (const [id, byLocale] of Object.entries(heldOutQueries)) {
       expect(Object.keys(byLocale).sort(), id).toEqual([...localesOfX9].sort());
       for (const locale of localesOfX9) expect(byLocale[locale], `${id} ${locale}`).toHaveLength(2);
@@ -312,32 +312,16 @@ describe("the held-out queries (X9, held-out part)", () => {
           .join("; ")}`
       ).toBeGreaterThanOrEqual(0.9);
     }
-  });
+    // 970 searches over the real registry: about 5 s alone, more on a loaded machine.
+  }, 60_000);
 
-  it("names the registry entries that have no held-out query, so the bar is not met by leaving them out", () => {
-    // The bar is at least one held-out hit per entry and locale. These entries were not among T109's
-    // 85 ids (they came with the registry's final shape), so nothing holds them to it yet: the
-    // orchestrator has to ask for blind queries for them (T174's X10 meets the same gap). A new entry
-    // without a query, or a listed one that gets its queries, fails this test until the list is
-    // updated: the gap can only shrink.
+  it("has held-out queries for every registry entry, so the bar is not met by leaving one out", () => {
+    // The bar is at least one held-out hit per entry and locale. T109 wrote 85 ids blind; the 12 that
+    // came with the registry's final shape got their blind queries on 2026-11-12. A new entry without
+    // a query fails this test until someone who has not read its keywords writes them.
     const covered = new Set(heldOutRows.map((row) => row.entry));
     const uncovered = settingsRegistryV2.map((entry) => entry.id).filter((id) => !covered.has(id));
-    expect(uncovered.sort()).toEqual(
-      [
-        "advanced.similarityRuns",
-        "advanced.taskHistory",
-        "ai.profiles",
-        "ai.route.judge",
-        "library.storage",
-        "obsidian.layout.attachments",
-        "obsidian.wiki.includeDescendants",
-        "privacy.callLog",
-        "privacy.clearQuestions",
-        "privacy.clearViewHistory",
-        "privacy.summary",
-        "relationLabels"
-      ].sort()
-    );
+    expect(uncovered).toEqual([]);
   });
 
   it("finds every entry that has held-out queries by at least one of them, in every locale", () => {

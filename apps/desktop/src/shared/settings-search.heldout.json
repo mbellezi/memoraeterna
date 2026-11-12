@@ -794,5 +794,101 @@
     "es": ["ver todas las solicitudes de IA que hizo la app", "reigstro de llamadas de IA"],
     "fr": ["voir toutes les requetes IA faites par l'appli", "journ des appels IA"],
     "it": ["vedere tutte le richieste IA fatte dall'app", "reigstro delle chiamate IA"]
+  },
+  "ai.route.judge": {
+    "en": ["which model decides if two sources are related", "judge modle for relations"],
+    "pt-BR": ["qual modelo decide se duas fontes se relacionam", "modelo jiuz das relacoes"],
+    "es": ["que modelo decide si dos fuentes estan relacionadas", "modelo jeuz de relaciones"],
+    "fr": ["quel modele juge si deux sources sont liees", "modele juge de relatiosn"],
+    "it": ["quale modello giudica se due fonti sono collegate", "modello giduice delle relazioni"]
+  },
+  "ai.profiles": {
+    "en": ["edit my AI model setups and their parameters", "AI porfiles"],
+    "pt-BR": ["editar os perfis de modelos de IA e seus parametros", "perifs de IA"],
+    "es": ["editar los perfiles de modelos de IA y sus parametros", "prefiles de IA"],
+    "fr": ["modifier les profils de modeles IA et leurs parametres", "porfils IA"],
+    "it": ["modificare i profili dei modelli IA e i loro parametri", "prfoili IA"]
+  },
+  "relationLabels": {
+    "en": ["write the explanations of connections in my language", "relation lables"],
+    "pt-BR": ["reescrever as explicacoes das conexoes no meu idioma", "rotuols de relacao"],
+    "es": ["reescribir las explicaciones de las conexiones en mi idioma", "etiqeutas de relacion"],
+    "fr": ["reecrire les explications des liens dans ma langue", "etiquettes de rleation"],
+    "it": [
+      "riscrivere le spiegazioni dei collegamenti nella mia lingua",
+      "etichtete delle relazioni"
+    ]
+  },
+  "library.storage": {
+    "en": ["where is my library stored on disk", "library stroage"],
+    "pt-BR": ["onde a biblioteca fica guardada no disco", "armazenamneto da biblioteca"],
+    "es": ["donde se guarda mi biblioteca en el disco", "almacenamineto de la biblioteca"],
+    "fr": ["ou est stockee ma bibliotheque sur le disque", "stockgae de la bibliotheque"],
+    "it": ["dove viene salvata la mia libreria sul disco", "archiviazoine della libreria"]
+  },
+  "obsidian.wiki.includeDescendants": {
+    "en": ["include everything nested under the chosen sources in Obsidian", "include decsendants"],
+    "pt-BR": [
+      "incluir tudo que esta dentro das fontes escolhidas no Obsidian",
+      "incluir descendnetes"
+    ],
+    "es": [
+      "incluir todo lo que esta dentro de las fuentes elegidas en Obsidian",
+      "incluir descendeintes"
+    ],
+    "fr": [
+      "inclure tout ce qui est sous les sources choisies dans Obsidian",
+      "inclure les descendnats"
+    ],
+    "it": ["includere tutto cio che sta dentro le fonti scelte in Obsidian", "includi discendneti"]
+  },
+  "obsidian.layout.attachments": {
+    "en": ["copy images and files into my Obsidian vault", "obsidian attachemnts"],
+    "pt-BR": ["levar imagens e arquivos para o cofre do Obsidian", "anexso do Obsidian"],
+    "es": ["llevar imagenes y archivos a la boveda de Obsidian", "adjutnos en Obsidian"],
+    "fr": ["envoyer les images et fichiers dans le coffre Obsidian", "pieces joitnes"],
+    "it": ["portare immagini e file nel vault di Obsidian", "allegati Obsidain"]
+  },
+  "privacy.summary": {
+    "en": ["what data leaves my computer", "privcay summary"],
+    "pt-BR": ["o que sai do meu computador", "resumo da privacdiade"],
+    "es": ["que informacion sale de mi ordenador", "resumen de privacdiad"],
+    "fr": ["quelles donnees quittent mon ordinateur", "resume de confidentia"],
+    "it": ["quali dati escono dal mio computer", "riepiloog privacy"]
+  },
+  "privacy.clearViewHistory": {
+    "en": ["delete what I have looked at before", "clear view hisotry"],
+    "pt-BR": ["apagar o historico do que eu ja vi", "limpar hsitorico de visualizacao"],
+    "es": ["borrar lo que he visto antes", "limpiar hsitorial de vistas"],
+    "fr": ["effacer ce que j'ai consulte avant", "effacer l'hisotrique de consultation"],
+    "it": ["cancellare cio che ho guardato prima", "cancella cronolgoia visite"]
+  },
+  "privacy.clearQuestions": {
+    "en": ["delete the questions I asked the AI", "clear quesitons"],
+    "pt-BR": ["apagar as perguntas que fiz para a IA", "limpar pergutnas"],
+    "es": ["borrar las preguntas que hice a la IA", "borrar preguntsa"],
+    "fr": ["supprimer les questions posees a l'IA", "effacer les quesitons"],
+    "it": ["eliminare le domande fatte all'IA", "cancella domadne"]
+  },
+  "privacy.callLog": {
+    "en": ["what was sent to the AI providers lately", "call lgo"],
+    "pt-BR": ["o que foi enviado aos provedores de IA recentemente", "registro de cahmadas"],
+    "es": ["que se envio a los proveedores de IA hace poco", "regsitro de llamadas"],
+    "fr": ["ce qui a ete envoye aux fournisseurs d'IA recemment", "journla des appels"],
+    "it": ["cosa e stato inviato ai fornitori di IA di recente", "registro dlele chiamate"]
+  },
+  "advanced.taskHistory": {
+    "en": ["see what background jobs ran before", "task hisotry"],
+    "pt-BR": ["ver as tarefas em segundo plano que ja rodaram", "historico de tarfeas"],
+    "es": ["ver las tareas en segundo plano que ya se ejecutaron", "historial de tare"],
+    "fr": ["voir les taches de fond deja executees", "historique des tahces"],
+    "it": ["vedere le attivita in background gia eseguite", "cronologia attiv"]
+  },
+  "advanced.similarityRuns": {
+    "en": ["delete the similarity debug captures", "simialrity runs"],
+    "pt-BR": ["apagar as execucoes de depuracao de similaridade", "limpar simialridade"],
+    "es": ["borrar las ejecuciones de depuracion de similitud", "limpiar similtiud"],
+    "fr": ["supprimer les executions de debogage de similarite", "effacer simialrite"],
+    "it": ["eliminare le esecuzioni di debug della somiglianza", "cancella somgilianza"]
   }
 }
