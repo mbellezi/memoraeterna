@@ -80,6 +80,14 @@ describe("the fake window.app", () => {
     expect(fake.missing()).toEqual([]);
   });
 
+  it("answers the calls a loading fixture set names and keeps the others pending", async () => {
+    const fake = createFakeApi("loading", {}, {}, { "inbox.list": { items: [] } });
+    const app = fake.app as App & { inbox: { count(): Promise<unknown> } };
+    expect(await app.inbox.list({})).toEqual({ items: [] });
+    expect(await settled(app.inbox.count())).toBe(pending);
+    expect(fake.missing()).toEqual([]);
+  });
+
   it("makes subscriptions no-ops in every mode, at any depth", () => {
     for (const mode of ["loading", "empty", "error", "success"] as const) {
       const { app, missing } = createFakeApi(mode);

@@ -12,8 +12,9 @@ import {
   SheetHeader
 } from "../../../components/ui/sheet";
 import { SkeletonLines } from "../../../components/ui/skeleton";
-import { useObject } from "../../../lib/object-events";
-import { PathRibbon } from "../../PathRibbon";
+import type { ObjectState } from "../../../lib/object-events";
+import type { PanelLoadState } from "../../PanelFrame";
+import { PathRibbon, type RibbonPlace } from "../../PathRibbon";
 
 /**
  * Quick-look in the Library (D15, A4; design record §10.2): Space or Cmd-Y on a row opens a
@@ -30,10 +31,14 @@ export interface LibraryPeekProps {
   t: Translator;
   /** The object being looked at; null closes the sheet. */
   address: string | null;
+  /** What `objects.get` says of it (read by the Library, which follows the object's changes). */
+  object: ObjectState;
   /** The row's own title, shown at once while the object is read. */
   title: string;
   /** The kind and what the row knows of it ("Livro · A. Autor"). */
   meta: string;
+  /** How the object is placed: a source still being made reads tentative, never as placed. */
+  place?: RibbonPlace;
   onClose: () => void;
   /** A crumb of the ribbon: its topic opens beside the table. */
   onOpen: (address: string) => void;
@@ -59,14 +64,28 @@ export function peekCounts(t: Translator, counts: ObjectSummary["counts"]): stri
     .join(" · ");
 }
 
+/**
+ * What the frame of the screens tool reports for the sheet: loading while the object is read,
+ * error when it could not be, empty for an object that has no summary and no counts yet.
+ */
+export function peekFrameState(object: ObjectState): PanelLoadState {
+  if (object.status === "loading") return "loading";
+  if (object.status !== "ready") return "error";
+  const counts = Object.values(object.object.counts ?? {}).some((value) => (value ?? 0) > 0);
+  return object.object.preview || counts ? "success" : "empty";
+}
+
 function PeekBody({
   t,
   address,
+  object,
   title,
   meta,
+  place,
   onOpen
-}: Pick<LibraryPeekProps, "t" | "title" | "meta" | "onOpen"> & { address: string }) {
-  const object = useObject(address);
+}: Pick<LibraryPeekProps, "t" | "object" | "title" | "meta" | "place" | "onOpen"> & {
+  address: string;
+}) {
   const kind = parseObjectAddress(address)?.kind ?? "source";
   const summary = object.status === "ready" ? object.object : null;
   const counts = summary ? peekCounts(t, summary.counts) : "";
@@ -76,7 +95,7 @@ function PeekBody({
         <ObjectKindGlyph kind={kind} size={16} className={objectKindTextClass[kind]} />
         <span className="min-w-0 [text-wrap:pretty]">{meta}</span>
       </p>
-      <PathRibbon t={t} address={address} onOpen={onOpen} />
+      <PathRibbon t={t} address={address} onOpen={onOpen} {...(place ? { place } : {})} />
       <h3 className="m-0 min-w-0 font-reading text-xl font-semibold [text-wrap:balance] [overflow-wrap:anywhere]">
         {summary?.title || title}
       </h3>
@@ -92,7 +111,7 @@ function PeekBody({
           {counts ? <p className="m-0 text-xs text-muted-foreground">{counts}</p> : null}
         </>
       ) : (
-        <p className="m-0 text-sm text-secondary-foreground">
+        <p role="alert" className="m-0 text-sm text-secondary-foreground">
           {t("libraryTable.peek.unavailable")}
         </p>
       )}
@@ -103,8 +122,10 @@ function PeekBody({
 export function LibraryPeek({
   t,
   address,
+  object,
   title,
   meta,
+  place,
   onClose,
   onOpen,
   portal
@@ -131,7 +152,15 @@ export function LibraryPeek({
               <Kbd>↑↓</Kbd> {t("libraryTable.peek.next")}
             </span>
           </SheetHeader>
-          <PeekBody t={t} address={address} title={title} meta={meta} onOpen={onOpen} />
+          <PeekBody
+            t={t}
+            address={address}
+            object={object}
+            title={title}
+            meta={meta}
+            onOpen={onOpen}
+            {...(place ? { place } : {})}
+          />
           <SheetFooter>
             <span>
               <Kbd>Esc</Kbd> {t("libraryTable.peek.close")}

@@ -167,7 +167,8 @@ export function FilterField({
   onChange,
   label,
   placeholder,
-  inputRef
+  inputRef,
+  disabled = false
 }: {
   t: Translator;
   value: string;
@@ -175,12 +176,15 @@ export function FilterField({
   label: string;
   placeholder: string;
   inputRef?: Ref<HTMLInputElement>;
+  /** Nothing to filter (the list could not be read): the field stays, dimmed and inert. */
+  disabled?: boolean;
 }) {
   return (
     <div
       className={cn(
         "flex h-8 w-72 max-w-full items-center gap-2 rounded-lg border border-border-strong bg-surface px-2.5",
-        "focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-accent"
+        "focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-accent",
+        disabled && "opacity-60"
       )}
     >
       <Search aria-hidden="true" className="size-3.5 shrink-0 text-muted-foreground" />
@@ -188,6 +192,7 @@ export function FilterField({
         ref={inputRef}
         type="text"
         role="searchbox"
+        disabled={disabled}
         aria-label={label}
         value={value}
         placeholder={placeholder}

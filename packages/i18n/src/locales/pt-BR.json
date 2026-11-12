@@ -567,6 +567,7 @@
   },
   "libraryTable": {
     "actions": {
+      "chooseFile": "Escolher arquivo",
       "generate": "Gerar notas",
       "generateFor": "Gerar notas de {title}"
     },
@@ -686,7 +687,8 @@
       "questionsKept": "Elas continuam guardadas neste Mac.",
       "sourcesEmpty": "Nenhuma fonte ainda.",
       "sourcesEmptyBody": "Adicione um PDF, um link ou uma nota. O Memora lê, escreve as notas e coloca tudo na árvore para você.",
-      "sourcesEmptyHint": "Use Adicionar, no topo, solte arquivos na janela ou aperte",
+      "sourcesEmptyDrop": "Solte arquivos aqui, ou escolha como começar",
+      "sourcesEmptyHint": "De qualquer tela, o atalho é",
       "sourcesError": "Não deu para ler a Biblioteca.",
       "sourcesFiltered": "Nenhuma fonte com esse filtro.",
       "sourcesKept": "Suas fontes e notas estão guardadas."

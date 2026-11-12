@@ -8,7 +8,7 @@ import {
   type KeyboardEvent,
   type Ref
 } from "react";
-import { formatObjectAddress, parseObjectAddress } from "@app/domain";
+import { parseObjectAddress } from "@app/domain";
 import type { Translator } from "@app/i18n";
 
 import { Button } from "../../../components/ui/button";
@@ -36,16 +36,12 @@ import {
   sourcesCount
 } from "./LibraryBars";
 import { LibraryGrid, RowSkeleton, type GridColumn } from "./LibraryGrid";
-import { LibraryPeek, libraryPeekSurface } from "./LibraryPeek";
-import {
-  DateCell,
-  NotesCell,
-  PlaceCell,
-  QuestionStateCell,
-  QuestionTitleCell,
-  SourceTitleCell,
-  StateCell
-} from "./library-cells";
+import { LibraryList, questionAddress, sourceAddress } from "./LibraryList";
+import { LibraryPeek, libraryPeekSurface, peekFrameState } from "./LibraryPeek";
+import { useObject } from "../../../lib/object-events";
+import type { RibbonPlace } from "../../PathRibbon";
+import { QuestionsTable } from "./LibraryQuestions";
+import { DateCell, NotesCell, PlaceCell, SourceTitleCell, StateCell } from "./library-cells";
 import {
   isFilterKey,
   isFiltered,
@@ -90,10 +86,11 @@ export interface LibraryRootProps extends PanelProps {
   /** The Library header's density, kept per device in `memora.workspace.v1`. */
   density?: Density;
   onDensity?: (density: Density) => void;
+  /** The shell's Add command (Cmd-N): the empty Library offers it as its one action. */
+  onAdd?: () => void;
+  /** Screens only: what the frame reports as `data-surface` (the Library's other captures). */
+  surfaceId?: string;
 }
-
-const sourceAddress = (id: string) => formatObjectAddress({ kind: "source", id });
-const questionAddress = (id: string) => formatObjectAddress({ kind: "question", id });
 
 /** The column set of the Fontes table: Notas and Adicionada drop in the compact tier. */
 export function sourceColumns(t: Translator, compact: boolean): GridColumn[] {
@@ -101,7 +98,7 @@ export function sourceColumns(t: Translator, compact: boolean): GridColumn[] {
     {
       id: "title",
       label: t("libraryTable.columns.source"),
-      track: compact ? "minmax(0,1.4fr)" : "minmax(0,1.5fr)",
+      track: compact ? "minmax(0,1.05fr)" : "minmax(0,1.5fr)",
       sortable: true
     },
     {
@@ -128,7 +125,7 @@ export function sourceColumns(t: Translator, compact: boolean): GridColumn[] {
     columns.push({
       id: "added",
       label: t("libraryTable.columns.added"),
-      track: "136px",
+      track: "168px",
       sortable: true
     });
   return columns;
@@ -147,7 +144,7 @@ export function questionColumns(t: Translator, compact: boolean): GridColumn[] {
     });
   columns.push({ id: "status", label: t("libraryTable.columns.state"), track: "172px" });
   if (!compact)
-    columns.push({ id: "asked", label: t("libraryTable.columns.asked"), track: "136px" });
+    columns.push({ id: "asked", label: t("libraryTable.columns.asked"), track: "168px" });
   return columns;
 }
 
@@ -248,6 +245,8 @@ export interface LibraryViewProps {
   onExpand: (expanded: boolean) => void;
   onOpen: (address: string) => void;
   onKeyDown?: (event: KeyboardEvent<HTMLElement>) => void;
+  /** The shell's Add command; the empty Library offers it. */
+  onAdd?: () => void;
   /** What the frame reports as `data-surface`. */
   surfaceId?: string;
   /** Draw the sheet in place instead of in a portal (the screens tool). */
@@ -283,6 +282,7 @@ export function LibraryView(props: LibraryViewProps) {
     onExpand,
     onOpen,
     onKeyDown,
+    onAdd,
     surfaceId = librarySurface,
     peekPortal
   } = props;
@@ -293,6 +293,8 @@ export function LibraryView(props: LibraryViewProps) {
   const filtered = onSources ? isFiltered(query) : questionText.trim() !== "";
   const total = data.state.total;
   const count = total === null ? "" : onSources ? sourcesCount(t, total) : questionsCount(t, total);
+  // Nothing to count, filter or sort: the empty Library is the sentence and its action.
+  const bare = state === "empty" && !filtered;
   const addressOf = (id: string) => (onSources ? sourceAddress(id) : questionAddress(id));
   const openRow = (row: Row) => onOpen(addressOf(row.id));
   const retry = data.retry;
@@ -303,16 +305,32 @@ export function LibraryView(props: LibraryViewProps) {
     ? (data.state.items as readonly Row[]).find((row) => row.id === selected)
     : undefined;
 
-  const peekInfo = (row: Row | undefined): { title: string; meta: string } => {
-    if (!row) return { title: "", meta: "" };
+  // What the sheet shows of the row it looks at, and how that row is placed: a source whose place
+  // is only likely, or a question still being answered, is never drawn as placed (design record §9).
+  const peekInfo = (row: Row | undefined): { title: string; meta: string; place: RibbonPlace } => {
+    if (!row) return { title: "", meta: "", place: "placed" };
     return "text" in row
       ? {
           title: row.text,
-          meta: [t("objects.kinds.question"), scopeLabel(t, row.scope, titles)].join(" · ")
+          meta: [t("objects.kinds.question"), scopeLabel(t, row.scope, titles)].join(" · "),
+          place: row.status === "running" ? "tentativeQuestion" : "placed"
         }
-      : { title: row.title, meta: [t("objects.kinds.source"), sourceMeta(t, row)].join(" · ") };
+      : {
+          title: row.title,
+          meta: [t("objects.kinds.source"), sourceMeta(t, row)].join(" · "),
+          place: row.place?.tentative ? "tentativeSource" : "placed"
+        };
   };
   const peek = peekInfo(peekRow);
+  const peekAddress = peekRow ? addressOf(peekRow.id) : null;
+  const peekObject = useObject(peekAddress ?? "", peekAddress !== null);
+  // The screens tool's capture of the sheet reports the sheet's own read, once the rows are there.
+  const frameState =
+    surfaceId === libraryPeekSurface && state !== "error"
+      ? peekRow
+        ? peekFrameState(peekObject)
+        : undefined
+      : state;
 
   const gridCommon = {
     t,
@@ -325,61 +343,24 @@ export function LibraryView(props: LibraryViewProps) {
 
   // --- The compact form: the title list of the previous panel -----------------------------------
   if (mode === "compact") {
-    const list = onSources ? (
-      <LibraryGrid<LibraryRow>
-        {...gridCommon}
-        label={t("libraryTable.compact.label")}
-        variant="list"
-        columns={[{ id: "title", label: t("libraryTable.columns.source"), track: "minmax(0,1fr)" }]}
-        items={sources.state.items}
-        itemKey={(row) => row.id}
-        renderCell={(_column, row) => (
-          <span className="flex min-w-0 items-center gap-2 text-sm leading-5 text-foreground">
-            <ObjectKindGlyph kind="source" size={14} className={objectKindTextClass.source} />
-            <span className="min-w-0 truncate" title={row.title}>
-              {row.title.trim() === "" ? t("panelFrame.untitled") : row.title}
-            </span>
-          </span>
-        )}
+    const list = (
+      <LibraryList
+        t={t}
+        tab={tab}
+        sources={sources}
+        questions={questions}
+        density={density}
+        selected={selected}
         currentKey={currentKey}
-        hasMore={sources.state.hasMore}
-        loadingMore={sources.state.loadingMore}
-        moreFailed={sources.state.moreFailed}
-        onMore={sources.more}
-        onRetryMore={sources.retry}
-        stale={sources.state.stale}
-      />
-    ) : (
-      <LibraryGrid<QuestionListItemView>
-        {...gridCommon}
-        label={t("libraryTable.compact.questionsLabel")}
-        variant="list"
-        columns={[
-          { id: "text", label: t("libraryTable.columns.question"), track: "minmax(0,1fr)" }
-        ]}
-        items={questions.state.items}
-        itemKey={(question) => question.id}
-        renderCell={(_column, question) => (
-          <span className="flex min-w-0 items-center gap-2 text-sm leading-5 text-foreground">
-            <ObjectKindGlyph kind="question" size={14} className={objectKindTextClass.question} />
-            <span className="min-w-0 truncate" title={question.text}>
-              {question.text}
-            </span>
-          </span>
-        )}
-        currentKey={currentKey}
-        hasMore={questions.state.hasMore}
-        loadingMore={questions.state.loadingMore}
-        moreFailed={questions.state.moreFailed}
-        onMore={questions.more}
-        onRetryMore={questions.retry}
-        stale={questions.state.stale}
+        onSelect={onSelect}
+        onPeek={onPeek}
+        onOpen={onOpen}
       />
     );
     return (
       <section
         data-surface={surfaceId}
-        data-state={state}
+        data-state={frameState}
         data-mode="compact"
         aria-label={t("libraryTable.title")}
         {...(onKeyDown ? { onKeyDown } : {})}
@@ -416,9 +397,11 @@ export function LibraryView(props: LibraryViewProps) {
         )}
         <LibraryPeek
           t={t}
-          address={peekRow ? addressOf(peekRow.id) : null}
+          address={peekAddress}
+          object={peekObject}
           title={peek.title}
           meta={peek.meta}
+          place={peek.place}
           onClose={onClosePeek}
           onOpen={onOpen}
           {...(peekPortal === undefined ? {} : { portal: peekPortal })}
@@ -453,13 +436,25 @@ export function LibraryView(props: LibraryViewProps) {
   ) : onSources ? (
     <EmptyState
       variant="page"
-      className="max-w-xl"
+      className="max-w-xl bg-surface"
       icon={<ObjectKindGlyph kind="source" size={20} className={objectKindTextClass.source} />}
       headline={t("libraryTable.states.sourcesEmpty")}
+      action={
+        <>
+          {onAdd ? (
+            <Button variant="primary" onClick={onAdd}>
+              {t("libraryTable.actions.chooseFile")}
+            </Button>
+          ) : null}
+          <span className="inline-flex flex-wrap items-center gap-1.5 text-sm text-secondary-foreground">
+            {t("libraryTable.states.sourcesEmptyHint")} <Kbd>⌘N</Kbd>
+          </span>
+        </>
+      }
     >
       <p className="m-0">{t("libraryTable.states.sourcesEmptyBody")}</p>
-      <p className="m-0 mt-2 flex flex-wrap items-center gap-1.5">
-        {t("libraryTable.states.sourcesEmptyHint")} <Kbd>⌘N</Kbd>
+      <p className="m-0 mt-3 font-semibold text-foreground">
+        {t("libraryTable.states.sourcesEmptyDrop")}
       </p>
     </EmptyState>
   ) : (
@@ -478,7 +473,7 @@ export function LibraryView(props: LibraryViewProps) {
   return (
     <section
       data-surface={surfaceId}
-      data-state={state}
+      data-state={frameState}
       data-mode="full"
       aria-label={t("libraryTable.title")}
       {...(onKeyDown ? { onKeyDown } : {})}
@@ -489,42 +484,52 @@ export function LibraryView(props: LibraryViewProps) {
         tab={tab}
         onTab={onTab}
         panelId={panelId}
-        count={count}
+        count={bare ? "" : count}
         density={density}
         onDensity={onDensity}
       />
       <div id={panelId} role="tabpanel" className="flex min-h-0 flex-1 flex-col">
-        <div className="flex flex-none flex-wrap items-center gap-x-3 gap-y-2 px-8 pb-3">
-          <FilterField
-            t={t}
-            value={onSources ? (query.text ?? "") : questionText}
-            onChange={(text) =>
-              onSources
-                ? onQuery((now_) => (text ? { ...now_, text } : withoutField(now_, "text")))
-                : onQuestionText(text)
-            }
-            label={t(
-              onSources ? "libraryTable.filter.sourcesLabel" : "libraryTable.filter.questionsLabel"
-            )}
-            placeholder={t(
-              onSources
-                ? "libraryTable.filter.sourcesPlaceholder"
-                : "libraryTable.filter.questionsPlaceholder"
-            )}
-            {...(inputRef ? { inputRef } : {})}
-          />
-          {onSources ? (
-            <StateChips
+        {bare ? null : (
+          <div className="flex flex-none flex-wrap items-center gap-x-3 gap-y-2 px-8 pb-3">
+            <FilterField
               t={t}
-              facets={sources.state.facets}
-              status={query.status}
-              onStatus={(status) =>
-                onQuery((now_) => (status ? { ...now_, status } : withoutField(now_, "status")))
+              value={onSources ? (query.text ?? "") : questionText}
+              onChange={(text) =>
+                onSources
+                  ? onQuery((now_) => (text ? { ...now_, text } : withoutField(now_, "text")))
+                  : onQuestionText(text)
               }
+              label={t(
+                onSources
+                  ? "libraryTable.filter.sourcesLabel"
+                  : "libraryTable.filter.questionsLabel"
+              )}
+              placeholder={t(
+                onSources
+                  ? "libraryTable.filter.sourcesPlaceholder"
+                  : "libraryTable.filter.questionsPlaceholder"
+              )}
+              disabled={state === "error"}
+              {...(inputRef ? { inputRef } : {})}
             />
-          ) : null}
-        </div>
-        {onSources ? (
+            {onSources ? (
+              <div
+                inert={state === "error"}
+                className={cn("max-w-full", state === "error" && "opacity-60")}
+              >
+                <StateChips
+                  t={t}
+                  facets={sources.state.facets}
+                  status={query.status}
+                  onStatus={(status) =>
+                    onQuery((now_) => (status ? { ...now_, status } : withoutField(now_, "status")))
+                  }
+                />
+              </div>
+            ) : null}
+          </div>
+        )}
+        {onSources && !bare ? (
           <TerritoryBar
             t={t}
             facets={sources.state.facets}
@@ -587,34 +592,17 @@ export function LibraryView(props: LibraryViewProps) {
             skeleton={<RowSkeleton />}
           />
         ) : (
-          <LibraryGrid<QuestionListItemView>
-            {...gridCommon}
-            label={t("libraryTable.tabs.questions")}
+          <QuestionsTable
+            t={t}
             columns={columns}
-            items={questions.state.items}
-            itemKey={(question) => question.id}
-            renderCell={(column, question, cell) => {
-              switch (column.id) {
-                case "text":
-                  return (
-                    <QuestionTitleCell t={t} question={question} titles={titles} cell={cell} />
-                  );
-                case "answers":
-                  return <NotesCell count={question.answerCount} />;
-                case "status":
-                  return <QuestionStateCell t={t} question={question} />;
-                default:
-                  return <DateCell t={t} iso={question.createdAt} now={now} />;
-              }
-            }}
-            sort={{ id: "asked", dir: "desc" }}
-            hasMore={questions.state.hasMore}
-            loadingMore={questions.state.loadingMore}
-            moreFailed={questions.state.moreFailed}
-            onMore={questions.more}
-            onRetryMore={questions.retry}
-            stale={questions.state.stale}
-            skeleton={<RowSkeleton />}
+            questions={questions}
+            titles={titles}
+            density={density}
+            selected={selected}
+            now={now}
+            onSelect={onSelect}
+            onPeek={onPeek}
+            onOpen={openRow}
           />
         )}
       </div>
@@ -623,9 +611,11 @@ export function LibraryView(props: LibraryViewProps) {
       ) : null}
       <LibraryPeek
         t={t}
-        address={peekRow ? addressOf(peekRow.id) : null}
+        address={peekAddress}
+        object={peekObject}
         title={peek.title}
         meta={peek.meta}
+        place={peek.place}
         onClose={onClosePeek}
         onOpen={onOpen}
         {...(peekPortal === undefined ? {} : { portal: peekPortal })}
@@ -647,6 +637,8 @@ export function LibraryRoot({
   current,
   density: densityProp,
   onDensity: onDensityProp,
+  onAdd,
+  surfaceId,
   preview
 }: LibraryRootProps) {
   const view = parseViewAddress(address);
@@ -730,7 +722,8 @@ export function LibraryRoot({
       titles={titles}
       selected={selectedRow?.id ?? selected}
       peeking={peeking && selectedRow !== undefined}
-      surfaceId={preview === "peek" ? libraryPeekSurface : librarySurface}
+      surfaceId={surfaceId ?? (preview === "peek" ? libraryPeekSurface : librarySurface)}
+      {...(onAdd ? { onAdd } : {})}
       {...(preview === "peek" ? { peekPortal: false } : {})}
       expanded={expanded}
       currentKey={current ? (parseObjectAddress(current)?.id ?? null) : null}

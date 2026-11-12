@@ -246,7 +246,7 @@ describe("the date of a row", () => {
     expect(formatAdded(pt, at(0, 9, 12), now)).toBe("hoje, 09:12");
     expect(formatAdded(pt, at(1, 22, 35), now)).toBe("ontem, 22:35");
     expect(formatAdded(pt, at(8, 10, 0), now)).toBe("3 nov");
-    expect(formatAdded(en, at(1, 22, 35), now)).toBe("yesterday, 10:35 PM");
+    expect(formatAdded(en, at(1, 22, 35), now)).toBe("yesterday, 10:35\u00a0PM");
   });
 
   it("adds the year to a date of another year and survives a bad date", () => {

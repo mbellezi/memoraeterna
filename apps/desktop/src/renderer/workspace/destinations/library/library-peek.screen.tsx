@@ -7,13 +7,36 @@ import { LibraryRoot } from "./LibraryRoot";
 /**
  * Quick-look in the Library (design record §7.3, `#peek`): the table with its first row looked at,
  * the centred non-modal sheet drawn in place so a capture shows its heading line, ribbon, serif
- * summary and foot. It reads the same fixtures as the Library root; the frame is the root's own and
- * reports `library-peek`. With no rows (loading, empty, error) there is nothing to look at and the
- * sheet stays closed.
+ * summary and foot. The rows are answered in every state, and the states are the sheet's own: the
+ * frame reports what the sheet's read says. Loading keeps `objects.get` pending, error makes it
+ * fail, and empty answers an object with no summary and no counts yet.
  */
 
 export const surface = libraryPeekSurface;
-export const fixtures: ScreenModule["fixtures"] = libraryFixtures;
+
+const success = libraryFixtures.success;
+const rowsAnswered = {
+  "library.rows": success["library.rows"],
+  "questions.list": success["questions.list"],
+  "objects.resolveMany": success["objects.resolveMany"]
+};
+
+export const fixtures: ScreenModule["fixtures"] = {
+  success,
+  loading: rowsAnswered,
+  error: { ...rowsAnswered, "objects.locate": success["objects.locate"] },
+  empty: {
+    ...success,
+    "objects.get": ({ address }: { address: string }) => ({
+      address,
+      kind: "source" as const,
+      title: "Ruas completas: lições de duas cidades andinas",
+      status: "current" as const,
+      preview: "",
+      updatedAt: new Date(0).toISOString()
+    })
+  }
+};
 
 const t = screenTranslator();
 const noop = () => undefined;

@@ -132,37 +132,55 @@ export function PlaceCell({ t, row }: { t: Translator; row: LibraryRow }) {
       </span>
     );
   const tentative = place.kind === "tentative";
-  // One inline flow: it wraps at word boundaries, at most two lines (the row's height).
+  const last = place.crumbs.length - 1;
+  // One inline flow that wraps only between crumbs, at most two lines (the row's height): the
+  // first crumb keeps its glyph and the "…" before it, and a separator stays with the crumb it
+  // follows, so a line never starts with "›" nor ends on a lone "…".
+  const separator = (
+    <>
+      <span aria-hidden="true" className="ml-1 text-muted-foreground">
+        ›
+      </span>{" "}
+    </>
+  );
   return (
     <span
       title={tentative ? t("libraryTable.place.tentativeHint") : undefined}
-      className="line-clamp-2 min-w-0 text-sm leading-5 text-secondary-foreground [text-wrap:pretty]"
+      className="line-clamp-2 min-w-0 text-sm leading-5 text-secondary-foreground"
     >
       {tentative ? (
-        <span className="mr-1 text-xs text-muted-foreground">
+        <span className="mr-1 text-xs whitespace-nowrap text-muted-foreground">
           {t("libraryTable.place.tentative")}
         </span>
       ) : null}
-      <ObjectKindGlyph
-        kind="topic"
-        size={12}
-        className={cn("mr-1 inline-block align-[-1px]", objectKindTextClass.topic)}
-      />
-      {place.deeper ? <span aria-hidden="true">… </span> : null}
       {place.crumbs.map((crumb, index) => (
         <Fragment key={crumb.id}>
-          {index > 0 || place.deeper ? (
-            <span aria-hidden="true" className="mx-1 text-muted-foreground">
-              ›
+          {index > 0 ? " " : null}
+          <span className="whitespace-nowrap">
+            {index === 0 ? (
+              <>
+                <ObjectKindGlyph
+                  kind="topic"
+                  size={12}
+                  className={cn("mr-1 inline-block align-[-1px]", objectKindTextClass.topic)}
+                />
+                {place.deeper ? (
+                  <>
+                    <span aria-hidden="true">…</span>
+                    {separator}
+                  </>
+                ) : null}
+              </>
+            ) : null}
+            <span
+              className={cn(
+                tentative && "border-b border-dashed border-border-strong",
+                crumb.title === "" && "italic"
+              )}
+            >
+              {crumb.title === "" ? t("panelFrame.ribbon.untitled") : crumb.title}
             </span>
-          ) : null}
-          <span
-            className={cn(
-              tentative && "border-b border-dashed border-border-strong",
-              crumb.title === "" && "italic"
-            )}
-          >
-            {crumb.title === "" ? t("panelFrame.ribbon.untitled") : crumb.title}
+            {index < last ? separator : null}
           </span>
         </Fragment>
       ))}
@@ -221,7 +239,7 @@ export const NotesCell = ({ count }: { count: number }) => (
 
 export function DateCell({ t, iso, now }: { t: Translator; iso: string; now: Date }) {
   return (
-    <span className="block text-sm leading-5 text-muted-foreground [text-wrap:pretty]">
+    <span className="block text-sm leading-5 text-muted-foreground">
       {formatAdded(t, iso, now)}
     </span>
   );

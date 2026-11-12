@@ -15,7 +15,7 @@ export const surface = librarySurface;
 const t = screenTranslator();
 const noop = () => undefined;
 
-const uuid = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
+export const uuid = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
 
 /** An instant `days` ago today at `hh:mm` local, so "hoje" and "ontem" read right whenever it runs. */
 function at(days: number, hh: number, mm: number): string {
@@ -337,6 +337,7 @@ export function render() {
       onState={noop}
       onPlace={noop}
       onOpen={noop}
+      onAdd={noop}
     />
   );
 }

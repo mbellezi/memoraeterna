@@ -567,6 +567,7 @@
   },
   "libraryTable": {
     "actions": {
+      "chooseFile": "Scegli un file",
       "generate": "Genera note",
       "generateFor": "Genera note per {title}"
     },
@@ -686,7 +687,8 @@
       "questionsKept": "Restano salvate su questo Mac.",
       "sourcesEmpty": "Ancora nessuna fonte.",
       "sourcesEmptyBody": "Aggiungi un PDF, un link o una nota. Memora lo legge, scrive le note e le colloca nell'albero per te.",
-      "sourcesEmptyHint": "Usa Aggiungi, in alto, trascina file sulla finestra o premi",
+      "sourcesEmptyDrop": "Trascina i file qui, o scegli come iniziare",
+      "sourcesEmptyHint": "Da qualsiasi schermata, la scorciatoia è",
       "sourcesError": "Non è stato possibile leggere la Biblioteca.",
       "sourcesFiltered": "Nessuna fonte corrisponde a questo filtro.",
       "sourcesKept": "Le tue fonti e le tue note sono al sicuro."

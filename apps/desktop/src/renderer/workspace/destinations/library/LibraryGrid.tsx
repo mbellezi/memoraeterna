@@ -34,6 +34,9 @@ import {
  * `renderCell` draws it.
  */
 
+/** What the frame of the screens tool reports for the Fontes table in the Compacto density. */
+export const libraryDenseSurface = "library-dense";
+
 export interface GridColumn {
   id: string;
   label: string;

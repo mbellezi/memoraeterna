@@ -765,6 +765,7 @@ export function App({
             shown={stackShown}
             focusMode={focusMode}
             onToggleFocusMode={toggleFocusMode}
+            onAdd={() => handleWorkspaceResult({ type: "newImport" })}
             registry={stackRegistry}
           />
           {stackShown ? null : (

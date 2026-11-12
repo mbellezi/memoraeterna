@@ -241,9 +241,10 @@ export function formatAdded(t: Translator, iso: string, now: Date): string {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return "";
   const days = Math.round((dayStart(now).getTime() - dayStart(date).getTime()) / 86_400_000);
-  const time = new Intl.DateTimeFormat(t.locale, { hour: "2-digit", minute: "2-digit" }).format(
-    date
-  );
+  // A time never breaks from its "PM": its spaces are non-breaking.
+  const time = new Intl.DateTimeFormat(t.locale, { hour: "2-digit", minute: "2-digit" })
+    .format(date)
+    .replace(/\s/gu, "\u00a0");
   if (days === 0) return t("libraryTable.dates.today", { values: { time } });
   if (days === 1) return t("libraryTable.dates.yesterday", { values: { time } });
   const sameYear = date.getFullYear() === now.getFullYear();

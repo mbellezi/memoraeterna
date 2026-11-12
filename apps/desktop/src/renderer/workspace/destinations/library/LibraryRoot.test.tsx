@@ -1,9 +1,10 @@
 import { renderToString } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createTranslator, type Translator } from "@app/i18n";
 
 import type { LibraryRow } from "../../../../shared/ipc-library";
 import type { QuestionListItemView } from "../../../../shared/ipc-questions";
+import { peekFrameState } from "./LibraryPeek";
 import { initialPagedState, type PagedState } from "./paged-list";
 import {
   LibraryView,
@@ -106,6 +107,13 @@ function props(over: Partial<LibraryViewProps> = {}): LibraryViewProps {
   };
 }
 
+// The ribbon reads its place from the main process; a stub shows which place the sheet asks for.
+vi.mock("../../PathRibbon", () => ({
+  PathRibbon: ({ place }: { place?: string }) => (
+    <span data-ribbon-state={place ?? "placed"} data-ribbon-stub="" />
+  )
+}));
+
 const render = (over: Partial<LibraryViewProps> = {}) =>
   renderToString(<LibraryView {...props(over)} />);
 const surface = 'data-surface="destination-library"';
@@ -194,6 +202,29 @@ describe("the table in success", () => {
     expect(render({ selected: id(2) })).not.toContain("Peeking");
   });
 
+  it("draws a tentative source's place as tentative in the sheet's ribbon, never as placed", () => {
+    const sheet = (selected: string) =>
+      render({ selected, peeking: true, peekPortal: false, surfaceId: "library-peek" });
+    expect(sheet(id(1))).toContain('data-ribbon-state="tentativeSource"');
+    expect(sheet(id(2))).toContain('data-ribbon-state="placed"');
+  });
+
+  it("reports the sheet's own read as the frame's state for the screens tool", () => {
+    const summary = { address: "", kind: "source", title: "", status: "current", updatedAt: "" };
+    expect(peekFrameState({ status: "loading" })).toBe("loading");
+    expect(peekFrameState({ status: "error" })).toBe("error");
+    expect(peekFrameState({ status: "missing" })).toBe("error");
+    expect(peekFrameState({ status: "ready", object: { ...summary, preview: "" } as never })).toBe(
+      "empty"
+    );
+    expect(
+      peekFrameState({
+        status: "ready",
+        object: { ...summary, preview: "", counts: { notes: 3 } } as never
+      })
+    ).toBe("success");
+  });
+
   it("marks the sorted header and the selected row", () => {
     const selected = render({ selected: id(2) });
     expect(selected).toContain('aria-selected="true"');
@@ -252,6 +283,31 @@ describe("loading, empty and error", () => {
     expect(html).toContain("⌘N");
     expect(html).toContain("border-dashed");
     expect(html).not.toContain("Clear filters");
+    // Nothing to filter yet: no filter field, chips, territory bar or count above the sentence.
+    expect(html).not.toContain("searchbox");
+    expect(html).not.toContain("By area:");
+    expect(html).not.toContain("0 sources");
+  });
+
+  it("offers the empty library's one action, the shell's Add, as the drop zone's primary button", () => {
+    const empty = ready<LibraryRow, LibraryFacets>([], { total: 0, facets });
+    const without = render({ sources: data(empty) });
+    expect(without).toContain("Drop files here, or choose how to start");
+    expect(without).not.toContain("Choose a file");
+    const html = render({ sources: data(empty), onAdd: noop });
+    expect(html).toContain("Choose a file");
+    expect(html).toContain("Drop files here, or choose how to start");
+  });
+
+  it("keeps the filter and the chips under an error, dimmed and inert", () => {
+    const html = render({
+      sources: data({
+        ...(initialPagedState as PagedState<LibraryRow, LibraryFacets>),
+        status: "error"
+      })
+    });
+    expect(html).toContain("disabled");
+    expect(html).toContain("inert");
   });
 
   it("says a filter matched nothing and offers to clear it", () => {

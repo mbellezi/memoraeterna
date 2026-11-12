@@ -567,6 +567,7 @@
   },
   "libraryTable": {
     "actions": {
+      "chooseFile": "Choisir un fichier",
       "generate": "Générer des notes",
       "generateFor": "Générer des notes pour {title}"
     },
@@ -686,7 +687,8 @@
       "questionsKept": "Elles restent enregistrées sur ce Mac.",
       "sourcesEmpty": "Aucune source pour l'instant.",
       "sourcesEmptyBody": "Ajoutez un PDF, un lien ou une note. Memora le lit, rédige les notes et les place dans l'arbre pour vous.",
-      "sourcesEmptyHint": "Utilisez Ajouter, en haut, déposez des fichiers sur la fenêtre ou appuyez sur",
+      "sourcesEmptyDrop": "Déposez des fichiers ici, ou choisissez comment commencer",
+      "sourcesEmptyHint": "Depuis n'importe quel écran, le raccourci est",
       "sourcesError": "Impossible de lire la bibliothèque.",
       "sourcesFiltered": "Aucune source ne correspond à ce filtre.",
       "sourcesKept": "Vos sources et vos notes sont conservées."

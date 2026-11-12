@@ -567,6 +567,7 @@
   },
   "libraryTable": {
     "actions": {
+      "chooseFile": "Choose a file",
       "generate": "Generate notes",
       "generateFor": "Generate notes for {title}"
     },
@@ -686,7 +687,8 @@
       "questionsKept": "They are still stored on this Mac.",
       "sourcesEmpty": "No sources yet.",
       "sourcesEmptyBody": "Add a PDF, a link or a note. Memora reads it, writes the notes and places them in the tree for you.",
-      "sourcesEmptyHint": "Use Add at the top, drop files on the window, or press",
+      "sourcesEmptyDrop": "Drop files here, or choose how to start",
+      "sourcesEmptyHint": "From any screen, the shortcut is",
       "sourcesError": "Could not read the Library.",
       "sourcesFiltered": "No sources match this filter.",
       "sourcesKept": "Your sources and notes are safe."

@@ -51,6 +51,11 @@ export interface ScreenModule {
      * throws makes its call reject. Absent, every call rejects.
      */
     readonly error?: ScreenFixtureSet;
+    /**
+     * Only for a surface whose loading is a part that reads after the rest is there (a sheet over a
+     * table): the calls named here answer, every other call stays pending. Absent, every call does.
+     */
+    readonly loading?: ScreenFixtureSet;
   };
   /**
    * The surface fills the whole window (the shell, the rail): the screens tool shows it edge to edge
@@ -177,6 +182,27 @@ export const surfaces: readonly SurfaceEntry[] = [
     "overlay",
     "workspace/destinations/library/LibraryPeek.tsx",
     "workspace/destinations/library/library-peek.screen.tsx"
+  ),
+
+  // The Library's other forms: the previous panel's title list, the Perguntas tab and the Compacto
+  // density (T149).
+  entry(
+    "library-compact",
+    "destination",
+    "workspace/destinations/library/LibraryList.tsx",
+    "workspace/destinations/library/library-compact.screen.tsx"
+  ),
+  entry(
+    "library-questions",
+    "destination",
+    "workspace/destinations/library/LibraryQuestions.tsx",
+    "workspace/destinations/library/library-questions.screen.tsx"
+  ),
+  entry(
+    "library-dense",
+    "destination",
+    "workspace/destinations/library/LibraryGrid.tsx",
+    "workspace/destinations/library/library-dense.screen.tsx"
   ),
 
   // Settings v2: the surface and its seven sections.
