@@ -107,7 +107,7 @@ describe("the live generation strip", () => {
     expect(html).toContain("Notes by section of the text");
     expect(html).toContain("Medellín");
     expect(html).toContain("local model, no cost");
-    expect(html).toMatch(/about 8 min left/u);
+    expect(html).toMatch(/about 8\u00a0min left/u);
     expect(html).toContain("ask this source");
   });
 
@@ -130,7 +130,7 @@ describe("the live generation strip", () => {
   it("collapses to one line when the run is done", () => {
     const html = page(snapshot(stripOf(doneProgress(now))));
     expect(html).toContain('data-strip="done"');
-    expect(html).toMatch(/Ready in 4 min/u);
+    expect(html).toMatch(/Ready in 4\u00a0min/u);
     expect(html).toContain("18 notes");
     expect(html).toContain("12 connections");
     expect(html).not.toContain("Generating knowledge");
@@ -342,7 +342,7 @@ describe("pt-BR", () => {
     expect(running).toContain("agora mesmo");
     expect(running).toContain("Abrir no Mapa");
     expect(running).toContain("modelo local, sem custo");
-    expect(running).toMatch(/faltam cerca de 8 min/u);
+    expect(running).toMatch(/faltam cerca de 8\u00a0min/u);
     expect(running).toContain("7 de ~18");
     expect(running).toContain("Visão geral");
   });
