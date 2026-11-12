@@ -178,7 +178,7 @@ describe("Privacy, drawn from the registry", () => {
       ["Escrita rápida", "Na nuvem · ChatGPT subscription", "Trechos das fontes e resumos"],
       ["Escrita cuidadosa", "Na nuvem · ChatGPT subscription", "Trechos das fontes"],
       ["Respostas", "Na nuvem · ChatGPT subscription", "Sua pergunta e as notas citadas"],
-      ["Juiz generativo", "Na nuvem · ChatGPT subscription", "Notas e trechos comparados"],
+      ["Juiz das conexões", "Na nuvem · ChatGPT subscription", "Notas e trechos comparados"],
       ["OpenAI Decisions", "Desligado", "Nada"],
       [
         "Dados de livros e artigos",

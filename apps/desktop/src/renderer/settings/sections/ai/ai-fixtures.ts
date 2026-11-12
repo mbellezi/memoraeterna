@@ -431,7 +431,7 @@ export function describeFixture(
 
 const defaultChanges: Record<string, { value: Json; default: Json | null }> = {
   "ai.route.write-quality": { value: ids.profileCompat, default: ids.profileCodex },
-  themeMode: { value: "dark", default: "system" }
+  themeMode: { value: "light", default: "dark" }
 };
 
 /**

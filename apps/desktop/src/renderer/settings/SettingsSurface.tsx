@@ -245,7 +245,6 @@ export function SettingsSurface({
   const changed = index ? changedIn(section, index, registry) : null;
   const counts = index ? changedCounts(index, registry) : null;
   const Body = sections[section]?.Section ?? GenericSection;
-  const CustomSkeleton = sections[section]?.Skeleton;
   const columns = "grid-cols-[248px_minmax(0,1fr)] min-[1180px]:grid-cols-[288px_minmax(0,1fr)]";
 
   return (
