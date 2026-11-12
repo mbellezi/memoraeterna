@@ -2,7 +2,7 @@ import { Fragment, type MouseEvent } from "react";
 import type { Translator } from "@app/i18n";
 
 import { ObjectKindGlyph, objectKindTextClass } from "../../../components/glyphs";
-import { RunningRing } from "../../../components/activity/solid-glyphs";
+import { RunningRing } from "../../../components/ui/solid-glyphs";
 import { Skeleton } from "../../../components/ui/skeleton";
 import { cn } from "../../../lib/cn";
 import type { NotePath } from "./source-controller";
