@@ -3838,6 +3838,72 @@
     "stackLabel": "Painéis abertos",
     "untitled": "Sem título"
   },
+  "preview": {
+    "card": {
+      "empty": "Ainda sem resumo. Abra para ler tudo.",
+      "error": "Não foi possível ler a prévia.",
+      "errorKept": "O link continua funcionando; nada foi alterado.",
+      "goTo": "Vai para",
+      "keys": {
+        "open": "abrir ao lado",
+        "peek": "espiar"
+      },
+      "label": "Prévia",
+      "missing": "Isto não está mais na biblioteca.",
+      "passage": "Trecho",
+      "relation": "Conexão",
+      "status": {
+        "redirected": "Substituído por outro tópico",
+        "retired": "Fora de uso"
+      }
+    },
+    "counts": {
+      "answers": {
+        "one": "{count} resposta",
+        "other": "{count} respostas"
+      },
+      "items": {
+        "one": "{count} item no tópico",
+        "other": "{count} itens no tópico"
+      },
+      "notes": {
+        "one": "{count} nota",
+        "other": "{count} notas"
+      },
+      "passages": {
+        "one": "{count} trecho",
+        "other": "{count} trechos"
+      },
+      "sources": {
+        "one": "{count} fonte",
+        "other": "{count} fontes"
+      },
+      "subtopics": {
+        "one": "{count} subtópico",
+        "other": "{count} subtópicos"
+      }
+    },
+    "quickLook": {
+      "empty": "Ainda sem resumo. Abra ao lado para ler tudo.",
+      "error": "Não foi possível ler este item.",
+      "errorKept": "Nada foi alterado; a lista continua aqui.",
+      "keys": {
+        "close": "fechar",
+        "closes": "fecha",
+        "openHere": "abrir neste painel",
+        "opensBeside": "abre ao lado",
+        "peekNext": "espiar a próxima",
+        "space": "Espaço"
+      },
+      "label": "Espiar",
+      "missing": "Isto não está mais na biblioteca.",
+      "notesMentioning": "Notas que o mencionam",
+      "notesOfSource": "Notas desta fonte",
+      "peeking": "Espiando",
+      "stays": "Tudo continua onde estava; nada foi aberto.",
+      "updated": "última atualização: {date}"
+    }
+  },
   "entityPage": {
     "aliases": "Outros nomes:",
     "articleLabel": "Entidade: {name}",

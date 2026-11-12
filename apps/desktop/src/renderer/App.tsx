@@ -58,6 +58,8 @@ import { useFirstRun } from "./components/onboarding/use-first-run";
 import { ToastViewport, useToasts } from "./components/ui/toast";
 import type { KnowledgeGraphViewState } from "./components/KnowledgeGraphDashboard";
 import { PanelStack, panelRegistry } from "./workspace/PanelStack";
+import { QuickLookHost } from "./workspace/QuickLook";
+import { toggleQuickLook } from "./workspace/QuickLookModel";
 import { Shell } from "./workspace/Shell";
 import { hasNavigator, hostedViewIds, legacyHostFor } from "./workspace/shell-model";
 import type { WorkspaceState } from "./workspace/state";
@@ -570,6 +572,8 @@ export function App({
       case "toggleFocusMode":
         return toggleFocusMode();
       case "quickLook":
+        // Cmd-Y, from anywhere: the sheet peeks at the row the keyboard is on (Space does it too).
+        return toggleQuickLook();
       case "cycleRegion":
       case "contextTab":
         return;
@@ -774,6 +778,7 @@ export function App({
           )}
         </LegacyViewsContext.Provider>
       </Shell>
+      <QuickLookHost t={t} />
       <ToastViewport
         toasts={toasts}
         dismissLabel={t("shell.toasts.dismiss")}

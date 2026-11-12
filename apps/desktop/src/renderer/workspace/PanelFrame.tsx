@@ -6,6 +6,7 @@ import type { Translator } from "@app/i18n";
 import { ObjectKindGlyph, objectKindTextClass } from "../components/glyphs";
 import { Tooltip } from "../components/ui/tooltip";
 import { cn } from "../lib/cn";
+import { ObjectLinkProvider, type ObjectOpen } from "./ObjectLink";
 import { PathRibbon, type RibbonPlace } from "./PathRibbon";
 
 /**
@@ -53,7 +54,7 @@ export interface PanelFrameProps {
   /** "Fixar no navegador"; absent until the navigator's pins land, so no control does nothing. */
   onPin?: () => void;
   /** Opens an address beside this panel (a ribbon crumb). */
-  onOpen: (address: string) => void;
+  onOpen: ObjectOpen;
   ribbonPlace?: RibbonPlace;
   onChoosePlace?: () => void;
   /** The body's scroll offset to restore when the panel is shown again. */
@@ -304,7 +305,10 @@ export function PanelFrame({
             />
           </div>
         ) : null}
-        {children}
+        {/* The links inside the page (a Markdown `memora://` link) open beside this panel. */}
+        <ObjectLinkProvider t={t} onOpen={onOpen}>
+          {children}
+        </ObjectLinkProvider>
       </div>
     </section>
   );

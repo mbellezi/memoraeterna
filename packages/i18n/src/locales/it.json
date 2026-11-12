@@ -3833,6 +3833,72 @@
     "stackLabel": "Pannelli aperti",
     "untitled": "Senza titolo"
   },
+  "preview": {
+    "card": {
+      "empty": "Ancora nessun riassunto. Aprilo per leggere tutto.",
+      "error": "Impossibile leggere l’anteprima.",
+      "errorKept": "Il link funziona ancora; non è stato cambiato nulla.",
+      "goTo": "Vai a",
+      "keys": {
+        "open": "apri accanto",
+        "peek": "dai un’occhiata"
+      },
+      "label": "Anteprima",
+      "missing": "Questo non è più nella libreria.",
+      "passage": "Brano",
+      "relation": "Connessione",
+      "status": {
+        "redirected": "Sostituito da un altro argomento",
+        "retired": "Non più in uso"
+      }
+    },
+    "counts": {
+      "answers": {
+        "one": "{count} risposta",
+        "other": "{count} risposte"
+      },
+      "items": {
+        "one": "{count} elemento nell’argomento",
+        "other": "{count} elementi nell’argomento"
+      },
+      "notes": {
+        "one": "{count} nota",
+        "other": "{count} note"
+      },
+      "passages": {
+        "one": "{count} brano",
+        "other": "{count} brani"
+      },
+      "sources": {
+        "one": "{count} fonte",
+        "other": "{count} fonti"
+      },
+      "subtopics": {
+        "one": "{count} sottoargomento",
+        "other": "{count} sottoargomenti"
+      }
+    },
+    "quickLook": {
+      "empty": "Ancora nessun riassunto. Aprilo accanto per leggere tutto.",
+      "error": "Impossibile leggere questo elemento.",
+      "errorKept": "Non è stato cambiato nulla; l’elenco è ancora qui.",
+      "keys": {
+        "close": "chiudi",
+        "closes": "chiude",
+        "openHere": "apri in questo pannello",
+        "opensBeside": "apre accanto",
+        "peekNext": "guarda il prossimo",
+        "space": "Spazio"
+      },
+      "label": "Anteprima rapida",
+      "missing": "Questo non è più nella libreria.",
+      "notesMentioning": "Note che lo menzionano",
+      "notesOfSource": "Note di questa fonte",
+      "peeking": "Anteprima rapida",
+      "stays": "Tutto resta dov’era; non è stato aperto nulla.",
+      "updated": "ultimo aggiornamento: {date}"
+    }
+  },
   "entityPage": {
     "aliases": "Altri nomi:",
     "articleLabel": "Entità: {name}",

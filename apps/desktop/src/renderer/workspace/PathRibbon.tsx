@@ -12,11 +12,12 @@ import { Skeleton } from "../components/ui/skeleton";
 import { useAppEvent } from "../lib/app-events";
 import { cn } from "../lib/cn";
 import { useObjectChanged } from "../lib/object-events";
+import { ObjectLink, type ObjectOpen } from "./ObjectLink";
 
 /**
  * The path ribbon (design record §9; D8, X2): where an object sits in the topic tree, above the
  * title of every object panel, read with no click from `objects.locate`. Each crumb opens its topic
- * beside the panel (an `ObjectLink` placeholder until T144); the middle crumbs fold into "…" when
+ * beside the panel (an `ObjectLink`, so it has the hover card and the peek); the middle crumbs fold into "…" when
  * the ribbon would take more than two lines, and the root and the leaf are never cut.
  */
 
@@ -134,8 +135,8 @@ export interface PathRibbonProps {
   place?: RibbonPlace;
   /** A hidden panel listens to nothing and reads again when it is shown. */
   active?: boolean;
-  /** Opens a crumb's topic beside the panel. */
-  onOpen: (address: string) => void;
+  /** Opens a crumb's topic beside the panel, or in it (Option-click). */
+  onOpen: ObjectOpen;
   /** "Escolher lugar" on an unplaced object; absent, the ribbon only says "Sem lugar". */
   onChoosePlace?: () => void;
 }
@@ -313,6 +314,15 @@ export function PathRibbonView({
         <span>{t("panelFrame.ribbon.topLevel")}</span>
       </nav>
     );
+  const clause =
+    place === "tentativeSource"
+      ? t("panelFrame.ribbon.tentativeSource")
+      : place === "tentativeQuestion"
+        ? t("panelFrame.ribbon.tentativeQuestion")
+        : place === "byCitations"
+          ? t("panelFrame.ribbon.placedByCitations")
+          : null;
+
   const shown = expanded ? segments : foldMiddle(segments, hidden);
   const crumbs = shown.map((entry, index) => {
     const separator =
@@ -339,26 +349,42 @@ export function PathRibbonView({
           </button>
         </Fragment>
       );
-    const leaf = !isTopic && index === shown.length - 1;
+    const last = index === shown.length - 1;
+    const leaf = !isTopic && last;
     const label = entry.title === "" ? t("panelFrame.ribbon.untitled") : entry.title;
+    const crumb = (
+      <ObjectLink
+        t={t}
+        address={entry.address}
+        onOpen={onOpen}
+        appearance="bare"
+        data-segment={entry.address}
+        aria-current={leaf ? "location" : undefined}
+        className={cn(
+          "max-w-full text-left [overflow-wrap:anywhere] underline-offset-[3px] hover:text-accent hover:underline",
+          leaf && "font-semibold text-foreground",
+          entry.title === "" && "italic",
+          tentative && dashed
+        )}
+      >
+        {label}
+      </ObjectLink>
+    );
     return (
       <Fragment key={entry.id}>
         {separator}
-        <button
-          type="button"
-          data-segment={entry.address}
-          aria-current={leaf ? "location" : undefined}
-          onClick={() => onOpen(entry.address)}
-          className={cn(
-            "max-w-full rounded-sm text-left [overflow-wrap:anywhere] underline-offset-[3px] hover:text-accent hover:underline",
-            "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent",
-            leaf && "font-semibold text-foreground",
-            entry.title === "" && "italic",
-            tentative && dashed
-          )}
-        >
-          {label}
-        </button>
+        {last && clause ? (
+          // The separator of a trailing clause ends the line of the last crumb, so a wrapped
+          // clause never starts its line with "·".
+          <span className="inline-flex max-w-full items-start gap-1">
+            {crumb}
+            <span aria-hidden="true" className="text-muted-foreground">
+              ·
+            </span>
+          </span>
+        ) : (
+          crumb
+        )}
       </Fragment>
     );
   });
@@ -404,7 +430,6 @@ export function PathRibbonView({
         {clause ? (
           // A trailing clause wraps whole, and a line never starts with its separator.
           <span className="whitespace-normal text-muted-foreground [text-wrap:pretty]">
-            <span aria-hidden="true">· </span>
             {clause}
           </span>
         ) : null}
@@ -417,17 +442,16 @@ export function PathRibbonView({
           )}
         >
           {t("panelFrame.ribbon.alsoIn")}{" "}
-          <button
-            type="button"
+          <ObjectLink
+            t={t}
+            address={topicAddress(first)}
+            onOpen={onOpen}
+            appearance="bare"
             data-also-in={topicAddress(first)}
-            onClick={() => onOpen(topicAddress(first))}
-            className={cn(
-              "rounded-sm text-secondary-foreground underline-offset-[3px] hover:text-accent",
-              "hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-            )}
+            className="text-secondary-foreground underline-offset-[3px] hover:text-accent hover:underline"
           >
             {first.title === "" ? t("panelFrame.ribbon.untitled") : first.title}
-          </button>
+          </ObjectLink>
           {otherCount > 1 ? (
             <> {t("panelFrame.ribbon.andMore", { values: { count: otherCount - 1 } })}</>
           ) : null}

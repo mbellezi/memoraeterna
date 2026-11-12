@@ -66,9 +66,12 @@ export function closeTopDialog(
   return true;
 }
 
-/** The dialogs and dialog-like panels that are open and visible, in document order. */
+/**
+ * The dialogs and dialog-like panels that are open and visible, in document order. A non-modal
+ * preview (the quick-look sheet, `data-non-modal`) is not one: previews never answer Cmd-W.
+ */
 export function openDialogs(root: ParentNode = document): HTMLElement[] {
-  return [...root.querySelectorAll<HTMLElement>('dialog[open], [role="dialog"]')].filter(
-    (element) => element.closest("[hidden]") === null
-  );
+  return [
+    ...root.querySelectorAll<HTMLElement>('dialog[open], [role="dialog"]:not([data-non-modal])')
+  ].filter((element) => element.closest("[hidden]") === null);
 }

@@ -293,9 +293,45 @@ describe("the path ribbon", () => {
     expect(line?.[1]).toContain("flex-wrap");
     // The line's children are the glyph, then each crumb and separator: no wrapper in between.
     const children = (line?.[2] ?? "").replace(/<svg.*?<\/svg>/u, "");
-    expect(children.startsWith("<button")).toBe(true);
+    expect(children.startsWith("<a ")).toBe(true);
     expect(children.match(/data-segment=/gu)).toHaveLength(3);
     expect(html).not.toContain("Mostrar o caminho inteiro");
+  });
+
+  it("makes every crumb and the secondary place an object link a peek can read", () => {
+    const read = {
+      ...located([
+        ref("topic", 1, ""),
+        ref("topic", 2, "Life sciences"),
+        ref("topic", 3, "Microbiology"),
+        ref("note", 5, "Lactic acid")
+      ]),
+      alsoIn: [{ kind: "topic" as const, id: uuid(9), title: "Fermented foods" }],
+      counts: { alsoIn: 1, citedBy: 0, notes: 0, passages: 0, children: 0 }
+    };
+    const html = ribbon(noteAddress, { status: "ready", located: read });
+    for (const id of [2, 3]) expect(html).toContain(`data-quick-look="memora://topic/${uuid(id)}"`);
+    expect(html).toContain(`data-also-in="memora://topic/${uuid(9)}"`);
+    expect(html).toContain(`data-quick-look="memora://topic/${uuid(9)}"`);
+    expect(html).not.toContain("<button");
+  });
+
+  it("ends the last crumb's line with the separator of a trailing clause, never starts one", () => {
+    const read = located([
+      ref("topic", 1, ""),
+      ref("topic", 2, "Life sciences"),
+      ref("note", 5, "Lactic acid")
+    ]);
+    const html = ribbon(
+      noteAddress,
+      { status: "ready", located: read },
+      { place: "tentativeSource" }
+    );
+    // The dot sits inside the group that holds the last crumb; the clause itself has none.
+    expect(html).toMatch(/Life sciences<\/a><span[^>]*aria-hidden="true"[^>]*>·<\/span><\/span>/u);
+    expect(html).toContain("definido quando as notas terminarem");
+    expect(html).not.toContain("· definido");
+    expect(html).not.toContain('<span aria-hidden="true">· </span>');
   });
 
   it("shows a busy skeleton while it reads the place", () => {
