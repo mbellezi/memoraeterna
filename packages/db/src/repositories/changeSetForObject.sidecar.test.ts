@@ -36,6 +36,9 @@ describe.skipIf(!sidecarInstalled)(
     const id = {
       s1: randomUUID(),
       s2: randomUUID(),
+      sa: randomUUID(),
+      sb: randomUUID(),
+      sc: randomUUID(),
       n1: randomUUID(),
       n2: randomUUID(),
       n3: randomUUID(),
@@ -125,7 +128,9 @@ describe.skipIf(!sidecarInstalled)(
       input: {
         kind: "note" | "source";
         relationId: string | null;
-        image: Record<string, string>;
+        image: Record<string, string> | null;
+        before?: Record<string, string>;
+        eventKind?: string;
         at: Date;
         reverted?: boolean;
       }
@@ -137,8 +142,16 @@ describe.skipIf(!sidecarInstalled)(
       );
       await pool.query(
         `insert into relation_events (run_id, relation_kind, relation_id, pair_key, kind, before, after)
-       values ($1, $2, $3, $4, 'applied', null, $5::jsonb)`,
-        [run.rows[0]!.id, input.kind, input.relationId, `pair-${name}`, JSON.stringify(input.image)]
+       values ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb)`,
+        [
+          run.rows[0]!.id,
+          input.kind,
+          input.relationId,
+          `pair-${name}`,
+          input.eventKind ?? "applied",
+          input.before ? JSON.stringify(input.before) : null,
+          input.image ? JSON.stringify(input.image) : null
+        ]
       );
       set[name] = run.rows[0]!.id;
     }
@@ -172,6 +185,9 @@ describe.skipIf(!sidecarInstalled)(
 
       await source(id.s1, "Sleep");
       await source(id.s2, "Memory");
+      await source(id.sa, "Naps");
+      await source(id.sb, "Rest");
+      await source(id.sc, "Nights");
       const [c1, c2] = [await passage(id.s1), await passage(id.s2)];
       await note(id.n1, "Naps", id.s1, c1);
       await note(id.n2, "Consolidation", id.s2, c2);
@@ -292,6 +308,32 @@ describe.skipIf(!sidecarInstalled)(
         image: { source_item_id: id.s1, target_source_item_id: id.s2 },
         at: ago(5)
       });
+      // A promote pass that retired the pending relation Naps-Rest: the row is gone and the pass
+      // was not reverted. Another promote pass moved a relation off Naps to its root Nights: the row
+      // now stands at Nights and Rest.
+      await relationRun("relRetired", {
+        kind: "source",
+        relationId: randomUUID(),
+        eventKind: "retired",
+        before: { source_item_id: id.sa, target_source_item_id: id.sb },
+        image: null,
+        at: ago(4)
+      });
+      const movedId = randomUUID();
+      await pool.query(
+        `insert into source_relations (id, source_item_id, target_source_item_id, identity_key,
+         relation_type, source_idea, target_idea, explanation, importance, confidence, status)
+       values ($1, $2, $3, $4, 'supports', 'An idea', 'Another idea', 'Why.', 0.9, 0.9, 'accepted')`,
+        [movedId, id.sc, id.sb, `identity-${movedId}`]
+      );
+      await relationRun("relMoved", {
+        kind: "source",
+        relationId: movedId,
+        eventKind: "promoted",
+        before: { source_item_id: id.sa, target_source_item_id: id.sb },
+        image: { source_item_id: id.sc, target_source_item_id: id.sb },
+        at: ago(3)
+      });
     }, 120_000);
 
     afterAll(async () => {
@@ -332,6 +374,14 @@ describe.skipIf(!sidecarInstalled)(
     it("lists a source's placements and its source relation passes", async () => {
       expect(await idsOf("source", id.s1)).toEqual([set.relSource, set.placeSource]);
       expect(await idsOf("source", id.s2)).toEqual([set.relSource]);
+    });
+
+    it("lists the passes that retired or re-pointed a source relation, though no row of it stands at the source", async () => {
+      // Naps: the retired relation (its row is gone) and the one moved off it, neither reverted.
+      expect(await idsOf("source", id.sa)).toEqual([set.relMoved, set.relRetired]);
+      // Rest: both; Nights: the pass that moved the relation to it.
+      expect(await idsOf("source", id.sb)).toEqual([set.relMoved, set.relRetired]);
+      expect(await idsOf("source", id.sc)).toEqual([set.relMoved]);
     });
 
     it("answers what changes.list reports: the status, the undo and the title", async () => {

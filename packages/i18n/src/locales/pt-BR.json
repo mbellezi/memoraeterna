@@ -4648,7 +4648,7 @@
         "entity": "Uma entidade não tem histórico próprio. O que muda nas notas dela aparece no Histórico de cada nota.",
         "note": "Nada mudou nesta nota ainda. Quando o Jardineiro a colocar num tópico ou ligar a outra, cada mudança aparece aqui, com Desfazer.",
         "question": "Uma pergunta não tem histórico próprio. Pergunte de novo para escrever uma nova versão da resposta.",
-        "source": "Nada mudou por causa desta fonte ainda. Onde as notas dela são colocadas e ligadas aparece aqui, com Desfazer.",
+        "source": "Nada mudou por causa desta fonte ainda. Onde ela é colocada nos tópicos e como é ligada a outras fontes aparece aqui, com Desfazer.",
         "topic": "Nada mudou neste tópico ainda. Renomeações, movimentos e novos resumos aparecem aqui, com Desfazer."
       },
       "label": "Mudanças neste objeto",

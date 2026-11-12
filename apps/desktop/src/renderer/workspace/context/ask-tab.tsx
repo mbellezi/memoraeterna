@@ -7,6 +7,7 @@ import type { QuestionListItemView } from "../../../shared/ipc-questions";
 import { ErrorState } from "../../components/ui/error-state";
 import { LoadingState, Skeleton } from "../../components/ui/skeleton";
 import { useAppEvent } from "../../lib/app-events";
+import { useObjectKindChanged } from "../../lib/object-events";
 import { useStableCallback } from "../../lib/stable-callback";
 import { AskComposer } from "../panels/ask/AskComposer";
 import { AskLauncherController } from "../panels/ask/ask-launcher";
@@ -15,8 +16,11 @@ import { answerDate } from "../panels/ask/StatusBand";
 import {
   askTabState,
   askTarget,
+  earlierLimit,
+  earlierPagesMax,
   earlierQuestions,
   indexedLine,
+  progressIsLive,
   primaryTopic,
   type AskTarget,
   type AskVariant,
@@ -276,8 +280,23 @@ export function AskTab(props: ContextTabProps) {
     key: `ask-earlier:${scopeKey}`,
     active: active && target !== null,
     follow: [],
-    load: async (app) => (await app.questions.list({ limit: 50 })).items
+    // `questions.list` has no scope filter: read pages (newest first) until the scope's list is
+    // full, up to a bound, so a Question further back than the first page is still found.
+    load: async (app) => {
+      const items: QuestionListItemView[] = [];
+      let cursor: string | undefined;
+      for (let page = 0; page < earlierPagesMax; page += 1) {
+        const result = await app.questions.list({ limit: 50, ...(cursor ? { cursor } : {}) });
+        items.push(...result.items);
+        if (!result.next || !target) break;
+        if (earlierQuestions(items, target.scope).length >= earlierLimit) break;
+        cursor = result.next;
+      }
+      return items;
+    }
   });
+  // A Question asked elsewhere (the Ask page, the palette) shows here without a remount.
+  useObjectKindChanged(["question"], list.reread, active && target !== null);
   const earlier: Read<readonly QuestionListItemView[]> =
     list.read.status === "ready" && target
       ? { status: "ready", value: earlierQuestions(list.read.value, target.scope) }
@@ -317,7 +336,9 @@ export function AskTab(props: ContextTabProps) {
     load: (app) => app.library.sourceProgress({ sourceId: id })
   });
   // The passages are counted as they are indexed: a running job tells, nothing polls.
-  useAppEvent("job.progress", progress.reread, active && kind === "source");
+  // Only a run that is live follows the jobs; a finished one is read again by `object.changed`.
+  const live = progress.read.status === "ready" && progressIsLive(progress.read.value);
+  useAppEvent("job.progress", progress.reread, active && kind === "source" && live);
   const indexed =
     kind === "source" && progress.read.status === "ready" ? indexedLine(progress.read.value) : null;
 

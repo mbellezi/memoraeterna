@@ -4648,7 +4648,7 @@
         "entity": "Una entidad no tiene historial propio. Lo que cambia en sus notas aparece en el Historial de cada nota.",
         "note": "Aún no ha cambiado nada en esta nota. Cuando el Jardinero la coloque en un tema o la enlace con otra, cada cambio aparece aquí, con Deshacer.",
         "question": "Una pregunta no tiene historial propio. Vuelve a preguntar para escribir una nueva versión de la respuesta.",
-        "source": "Aún no ha cambiado nada por esta fuente. Dónde se colocan y enlazan sus notas aparece aquí, con Deshacer.",
+        "source": "Aún no ha cambiado nada por esta fuente. Dónde se coloca en los temas y cómo se enlaza con otras fuentes aparece aquí, con Deshacer.",
         "topic": "Aún no ha cambiado nada en este tema. Los cambios de nombre, los movimientos y los resúmenes nuevos aparecen aquí, con Deshacer."
       },
       "label": "Cambios en este objeto",

@@ -4648,7 +4648,7 @@
         "entity": "An entity keeps no history of its own. What changes its notes shows in their History.",
         "note": "Nothing changed in this note yet. When the Gardener places it or links it, each change shows here, with Undo.",
         "question": "A question keeps no history of its own. Ask again to write a new version of its answer.",
-        "source": "Nothing changed because of this source yet. Where its notes are placed and linked shows here, with Undo.",
+        "source": "Nothing changed because of this source yet. Where it is placed in the topics and how it is linked to other sources shows here, with Undo.",
         "topic": "Nothing changed in this topic yet. Renames, moves and new overviews show here, with Undo."
       },
       "label": "Changes to this object",

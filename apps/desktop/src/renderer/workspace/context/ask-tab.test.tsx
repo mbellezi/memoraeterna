@@ -405,6 +405,69 @@ describe("the Ask tab asks the scope of the object in focus", () => {
     expect(dom.host.textContent).not.toContain("What does the passage 3 say?");
   });
 
+  it("finds the scope's questions further back than the library's first page", async () => {
+    const page = (from: number) =>
+      Array.from({ length: 50 }, (_, index) => question(from + index, { kind: "library" }));
+    app.questions.list
+      .mockResolvedValueOnce({ items: page(100), next: "c1" })
+      .mockResolvedValueOnce({
+        items: [...page(200).slice(0, 4), question(7, { kind: "topic", topicId: uuid(4) })],
+        next: undefined
+      });
+    await mount("topic", uuid(4));
+    expect(app.questions.list).toHaveBeenNthCalledWith(1, { limit: 50 });
+    expect(app.questions.list).toHaveBeenNthCalledWith(2, { limit: 50, cursor: "c1" });
+    expect(dom.host.textContent).toContain("What does the passage 7 say?");
+    expect(dom.host.textContent).not.toContain("Nothing asked about this yet");
+  });
+
+  it("reads the list again when a Question is asked elsewhere", async () => {
+    const handlers: Record<string, (event: unknown) => void> = {};
+    app.onAppEvent = vi.fn((type: string, handler: (event: unknown) => void) => {
+      handlers[type] = handler;
+      return () => undefined;
+    });
+    await mount("topic", uuid(4));
+    expect(app.questions.list).toHaveBeenCalledTimes(1);
+    await dom.act(async () =>
+      handlers["object.changed"]!({
+        type: "object.changed",
+        refs: [{ kind: "question", id: uuid(8), change: "created" }]
+      })
+    );
+    expect(app.questions.list).toHaveBeenCalledTimes(2);
+  });
+
+  it("follows the jobs only while a run of the source is live", async () => {
+    const subscribed = () =>
+      app.onAppEvent.mock.calls.filter(([type]: [string]) => type === "job.progress").length;
+    app.onAppEvent = vi.fn(() => () => undefined);
+    const progress = (status: string | null) => ({
+      sourceId: uuid(5),
+      run: status ? { status } : null,
+      needsYou: null,
+      paused: false,
+      steps: {
+        read: { state: "done", pages: 3 },
+        chunks: { state: "done", indexed: 10 },
+        notes: { state: "done", soFar: 4, estimate: 4 },
+        placed: { state: "done", count: 4 },
+        summary: { state: "done" },
+        relations: { state: "done", count: 0 }
+      },
+      sections: []
+    });
+    app.library.sourceProgress.mockResolvedValue(progress(null));
+    await mount("source", uuid(5));
+    expect(subscribed()).toBe(0);
+    await dom.dispose();
+    dom = createTestDom();
+    (dom.window as unknown as { app: unknown }).app = app;
+    app.library.sourceProgress.mockResolvedValue(progress("running"));
+    await mount("source", uuid(5));
+    expect(subscribed()).toBe(1);
+  });
+
   it("keeps the words and says the send failed once, with a retry", async () => {
     app.questions.ask.mockRejectedValueOnce(new Error("boom"));
     await mount("topic", uuid(4));

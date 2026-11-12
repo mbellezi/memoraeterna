@@ -4648,7 +4648,7 @@
         "entity": "Un’entità non ha una cronologia propria. Ciò che cambia nelle sue note compare nella Cronologia di ogni nota.",
         "note": "In questa nota non è ancora cambiato nulla. Quando il Giardiniere la colloca in un argomento o la collega a un’altra, ogni modifica compare qui, con Annulla.",
         "question": "Una domanda non ha una cronologia propria. Chiedi di nuovo per scrivere una nuova versione della risposta.",
-        "source": "Non è ancora cambiato nulla per questa fonte. Dove le sue note vengono collocate e collegate compare qui, con Annulla.",
+        "source": "Non è ancora cambiato nulla per questa fonte. Dove viene collocata negli argomenti e come si collega ad altre fonti compare qui, con Annulla.",
         "topic": "In questo argomento non è ancora cambiato nulla. Cambi di nome, spostamenti e nuovi riassunti compaiono qui, con Annulla."
       },
       "label": "Modifiche a questo oggetto",

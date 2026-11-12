@@ -200,6 +200,27 @@ describe("the History tab's reads", () => {
     expect(app.changes.forObject).toHaveBeenCalledTimes(2);
   });
 
+  it("says in a status line that the change was undone, and keeps the focus on it", async () => {
+    // The re-read still lists the change as applied: the row's own line is the person's answer.
+    await mount();
+    const button = dom.host.querySelector<HTMLButtonElement>('button[aria-label^="Undo: "]')!;
+    // The DOM of these tests keeps no focus: the call itself is what is asserted.
+    const focused: unknown[] = [];
+    const prototype = dom.window.HTMLElement.prototype as unknown as { focus(): void };
+    const original = prototype.focus;
+    prototype.focus = function (this: unknown) {
+      focused.push(this);
+    };
+    try {
+      await dom.act(async () => button.click());
+    } finally {
+      prototype.focus = original;
+    }
+    const status = dom.host.querySelector<HTMLElement>('[role="status"]');
+    expect(status?.textContent).toBe("Undone");
+    expect(focused).toEqual([status]);
+  });
+
   it("names what stands in the way when the store refuses, and keeps the list", async () => {
     app.changes.undo.mockResolvedValue({
       status: "blocked",

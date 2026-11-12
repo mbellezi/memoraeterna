@@ -4648,7 +4648,7 @@
         "entity": "Une entité n’a pas d’historique propre. Ce qui change dans ses notes apparaît dans l’Historique de chaque note.",
         "note": "Rien n’a encore changé dans cette note. Quand le Jardinier la place dans un sujet ou la relie à une autre, chaque modification apparaît ici, avec Annuler.",
         "question": "Une question n’a pas d’historique propre. Posez-la de nouveau pour écrire une nouvelle version de la réponse.",
-        "source": "Rien n’a encore changé à cause de cette source. L’endroit où ses notes sont placées et reliées apparaît ici, avec Annuler.",
+        "source": "Rien n’a encore changé à cause de cette source. L’endroit où elle est placée dans les sujets et ses liens avec d’autres sources apparaissent ici, avec Annuler.",
         "topic": "Rien n’a encore changé dans ce sujet. Les changements de nom, les déplacements et les nouveaux résumés apparaissent ici, avec Annuler."
       },
       "label": "Modifications de cet objet",

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Undo2 } from "lucide-react";
 import type { ChangeSetSummary } from "@app/domain";
 import type { MessageKey, Translator } from "@app/i18n";
@@ -74,6 +74,16 @@ function HistoryRow({
 }) {
   const row = historyRow(change, local);
   const sentence = changeSetTitle(t, change);
+  // Desfazer unmounts with the undo: the person's focus lands on the line that says it was done,
+  // which a screen reader reads, unless focus already went somewhere else.
+  const noteRef = useRef<HTMLParagraphElement | null>(null);
+  const undone = local?.status === "undone";
+  useEffect(() => {
+    const note = noteRef.current;
+    if (!undone || !note) return;
+    const active = note.ownerDocument.activeElement;
+    if (!active || active === note.ownerDocument.body) note.focus();
+  }, [undone]);
   return (
     <li className="relative grid gap-0.5 pl-5">
       <span
@@ -97,7 +107,13 @@ function HistoryRow({
         ]}
       />
       {row.note ? (
-        <p className="m-0 text-xs leading-5 text-muted-foreground">{t(noteKeys[row.note])}</p>
+        <p
+          ref={noteRef}
+          {...(undone ? { role: "status", tabIndex: -1 } : {})}
+          className="m-0 text-xs leading-5 text-muted-foreground outline-none"
+        >
+          {t(noteKeys[row.note])}
+        </p>
       ) : null}
       {row.undo ? (
         <span className="mt-0.5">

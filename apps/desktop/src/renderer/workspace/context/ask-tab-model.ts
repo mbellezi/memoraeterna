@@ -79,12 +79,20 @@ export function sameScope(a: AskScope, b: AskScope): boolean {
 /** How many earlier questions the tab lists. */
 export const earlierLimit = 5;
 
+/** How many pages of 50 the tab reads to find them: the scope has no filter in `questions.list`. */
+export const earlierPagesMax = 6;
+
 /** The questions already asked of this scope, in the order they came (newest first). */
 export function earlierQuestions(
   items: readonly QuestionListItemView[],
   scope: AskScope
 ): QuestionListItemView[] {
   return items.filter((item) => sameScope(item.scope, scope)).slice(0, earlierLimit);
+}
+
+/** Whether a run of the source is queued or running: only then do the jobs move its line. */
+export function progressIsLive(progress: LibrarySourceProgress): boolean {
+  return progress?.run?.status === "running" || progress?.run?.status === "pending";
 }
 
 /** What the milestone line of a source says: its passages are searchable, or not yet. */
@@ -98,7 +106,7 @@ export type IndexedLine =
  */
 export function indexedLine(progress: LibrarySourceProgress): IndexedLine | null {
   if (!progress) return null;
-  const running = progress.run?.status === "running" || progress.run?.status === "pending";
+  const running = progressIsLive(progress);
   const { chunks, notes } = progress.steps;
   if (chunks.indexed > 0)
     return {
