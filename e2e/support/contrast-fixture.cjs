@@ -27,7 +27,12 @@ async function run() {
     width: plan.width ?? 900,
     height: plan.height ?? 700,
     useContentSize: true,
-    webPreferences: { offscreen: true, sandbox: true, contextIsolation: true, nodeIntegration: false }
+    webPreferences: {
+      offscreen: true,
+      sandbox: true,
+      contextIsolation: true,
+      nodeIntegration: false
+    }
   });
   await window.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(plan.html)}`);
   const results = [];
