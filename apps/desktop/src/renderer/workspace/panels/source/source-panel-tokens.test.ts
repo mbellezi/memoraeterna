@@ -21,6 +21,12 @@ const files: Record<string, string> = {
 };
 
 describe("the Source panel's styles", () => {
+  it("looks for the Library import at any depth, and finds one in a sample", () => {
+    const libraryImport = /from "(?:\.\.\/)+components\/LibraryView"/u;
+    expect(libraryImport.test('import { X } from "../../components/LibraryView";')).toBe(true);
+    expect(libraryImport.test('import { X } from "../../../components/LibraryView";')).toBe(true);
+  });
+
   it("use tokens only: no raw palette classes, hex colours, rgba or arbitrary font sizes", () => {
     for (const [file, source] of Object.entries(files)) {
       expect(source, file).not.toMatch(
@@ -37,7 +43,7 @@ describe("the Source panel's styles", () => {
       expect(source, file).not.toContain("setInterval");
       expect(source, file).not.toMatch(/\b(?:window\.)?(?:confirm|alert|prompt)\s*\(/u);
       expect(source, file).not.toContain("window.history");
-      expect(source, file).not.toMatch(/from "\.\.\/\.\.\/components\/LibraryView"/u);
+      expect(source, file).not.toMatch(/from "(?:\.\.\/)+components\/LibraryView"/u);
     }
   });
 });

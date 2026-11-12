@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Eye, Network } from "lucide-react";
 import { parseObjectAddress } from "@app/domain";
 import type { Translator } from "@app/i18n";
@@ -42,6 +42,20 @@ export interface SourcePanelHandlers {
   onRun: (request: "notes" | "retry") => void;
   /** The places of the notes on screen. */
   want: (noteIds: readonly string[]) => void;
+}
+
+/**
+ * The page's content grid (design record 5.4, "Focus mode"): 600 of text, a 48 gap and a 264
+ * margin, 912 in all. The Source has nothing for the margin, but the page sits in the same grid as
+ * the other object pages, so focus mode, which centres the grid, puts the text where theirs is. The
+ * loading, error and gone states use it too, so the page does not move when it arrives.
+ */
+export function SourceGrid({ children }: { children: ReactNode }) {
+  return (
+    <div className="min-w-0 max-w-[57rem]" data-source-grid="">
+      {children}
+    </div>
+  );
 }
 
 /** A sentence with one inline keycap: the translator gets a token and the caller draws the key. */
@@ -241,112 +255,115 @@ export function SourcePanelView({
   );
 
   return (
-    <article className="min-w-0 max-w-(--measure)" data-source-page="">
-      <h1 className="m-0 mb-1 font-reading text-xl font-semibold text-foreground [text-wrap:balance]">
-        {detail.title}
-      </h1>
-      {detail.subtitle ? (
-        <p className="m-0 mb-1 text-sm text-secondary-foreground [text-wrap:pretty]">
-          {detail.subtitle}
-        </p>
-      ) : null}
-      <MetaLine items={meta} className="mb-5 text-sm text-secondary-foreground" />
-      {strip.status === "loading" ? (
-        <SourceStripSkeleton />
-      ) : strip.status === "error" ? (
-        <SourceStripError t={t} onRetry={handlers.onRetryStrip} />
-      ) : (
-        <SourceStrip
-          t={t}
-          model={model}
-          cost={cost}
-          action={action}
-          actions={{
-            onAsk: () =>
-              handlers.onOpen(
-                formatView({ view: "ask", scope: { kind: "source", id: detail.id } })
-              ),
-            onRun: handlers.onRun,
-            onChooseModel: () => handlers.onOpen(formatView({ view: "settings", section: "ai" }))
-          }}
-        />
-      )}
-      <SourceTabRow
-        label={t("sourcePage.tabs.label")}
-        value={tab}
-        onChange={setTab}
-        items={[
-          { id: "overview", label: t("sourcePage.overview") },
-          { id: "notes", label: t("sourcePage.tabs.notes"), count: notesCount },
-          {
-            id: "connections",
-            label: t("sourcePage.tabs.connections"),
-            count: detail.relations.length
-          },
-          { id: "content", label: t("sourcePage.content") },
-          { id: "details", label: t("sourcePage.tabs.details") }
-        ]}
-      >
-        {tab === "overview" ? (
-          <>
-            {generating ? <Hint t={t} firstSource={snapshot.firstSource} /> : null}
+    <SourceGrid>
+      <article className="min-w-0 max-w-(--measure)" data-source-page="">
+        <h1 className="m-0 mb-1 font-reading text-xl font-semibold text-foreground [text-wrap:balance]">
+          {detail.title}
+        </h1>
+        {detail.subtitle ? (
+          <p className="m-0 mb-1 text-sm text-secondary-foreground [text-wrap:pretty]">
+            {detail.subtitle}
+          </p>
+        ) : null}
+        <MetaLine items={meta} className="mb-5 text-sm text-secondary-foreground" />
+        {strip.status === "loading" ? (
+          <SourceStripSkeleton />
+        ) : strip.status === "error" ? (
+          <SourceStripError t={t} onRetry={handlers.onRetryStrip} />
+        ) : (
+          <SourceStrip
+            t={t}
+            model={model}
+            cost={cost}
+            action={action}
+            actions={{
+              onAsk: () =>
+                handlers.onOpen(
+                  formatView({ view: "ask", scope: { kind: "source", id: detail.id } })
+                ),
+              onRun: handlers.onRun,
+              onChooseModel: () => handlers.onOpen(formatView({ view: "settings", section: "ai" }))
+            }}
+          />
+        )}
+        <SourceTabRow
+          label={t("sourcePage.tabs.label")}
+          value={tab}
+          onChange={setTab}
+          items={[
+            { id: "overview", label: t("sourcePage.overview") },
+            { id: "notes", label: t("sourcePage.tabs.notes"), count: notesCount },
+            {
+              id: "connections",
+              label: t("sourcePage.tabs.connections"),
+              count: detail.relations.length
+            },
+            { id: "content", label: t("sourcePage.content") },
+            { id: "details", label: t("sourcePage.tabs.details") }
+          ]}
+        >
+          {tab === "overview" ? (
+            <>
+              {generating ? <Hint t={t} firstSource={snapshot.firstSource} /> : null}
+              <section className="mb-8">
+                <div className="mb-1 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+                  {notesHeading}
+                  <Button
+                    variant="secondary"
+                    onClick={() => handlers.onOpen(openInMapAddress(detail.id))}
+                  >
+                    <Network aria-hidden="true" />
+                    {t("sourcePage.actions.openInMap")}
+                  </Button>
+                </div>
+                {empty ?? rowsView}
+                {notesCount > overviewNotes ? (
+                  <Button variant="link" className="mt-2 -ml-3" onClick={() => setTab("notes")}>
+                    {t("sourcePage.notes.seeAll", { values: { count: notesCount } })}
+                  </Button>
+                ) : null}
+              </section>
+              <Summary t={t} detail={detail} model={model} />
+            </>
+          ) : null}
+          {tab === "notes" ? (
             <section className="mb-8">
-              <div className="mb-1 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
-                {notesHeading}
-                <Button
-                  variant="secondary"
-                  onClick={() => handlers.onOpen(openInMapAddress(detail.id))}
-                >
-                  <Network aria-hidden="true" />
-                  {t("sourcePage.actions.openInMap")}
-                </Button>
-              </div>
+              <div className="mb-1">{notesHeading}</div>
               {empty ?? rowsView}
-              {notesCount > overviewNotes ? (
-                <Button variant="link" className="mt-2 -ml-3" onClick={() => setTab("notes")}>
-                  {t("sourcePage.notes.seeAll", { values: { count: notesCount } })}
+              {notesCount > notesShown ? (
+                <Button
+                  variant="link"
+                  className="mt-2 -ml-3"
+                  onClick={() => setNotesShown((count) => count + notesPageSize)}
+                >
+                  {t("sourcePage.notes.showMore", {
+                    values: { count: Math.min(notesPageSize, notesCount - notesShown) }
+                  })}
                 </Button>
               ) : null}
             </section>
-            <Summary t={t} detail={detail} model={model} />
-          </>
-        ) : null}
-        {tab === "notes" ? (
-          <section className="mb-8">
-            <div className="mb-1">{notesHeading}</div>
-            {empty ?? rowsView}
-            {notesCount > notesShown ? (
-              <Button
-                variant="link"
-                className="mt-2 -ml-3"
-                onClick={() => setNotesShown((count) => count + notesPageSize)}
-              >
-                {t("sourcePage.notes.showMore", {
-                  values: { count: Math.min(notesPageSize, notesCount - notesShown) }
-                })}
-              </Button>
-            ) : null}
-          </section>
-        ) : null}
-        {tab === "connections" ? (
-          <ConnectionsTab
-            t={t}
-            detail={detail}
-            relationId={anchor?.relation}
-            onOpen={handlers.onOpen}
-          />
-        ) : null}
-        {tab === "content" ? (
-          <ContentTab t={t} detail={detail} cited={cited} asked={passage ? address : null} />
-        ) : null}
-        {tab === "details" ? (
-          <DetailsTab
-            t={t}
-            detail={detail}
-            onEdit={() => handlers.onOpen(formatView({ view: "import", sourceId: detail.id }))}
-          />
-        ) : null}
-      </SourceTabRow>
-    </article>
+          ) : null}
+          {tab === "connections" ? (
+            <ConnectionsTab
+              t={t}
+              detail={detail}
+              relationId={anchor?.relation}
+              onOpen={handlers.onOpen}
+              relationsEpoch={snapshot.relationsEpoch}
+            />
+          ) : null}
+          {tab === "content" ? (
+            <ContentTab t={t} detail={detail} cited={cited} asked={passage ? address : null} />
+          ) : null}
+          {tab === "details" ? (
+            <DetailsTab
+              t={t}
+              detail={detail}
+              onEdit={() => handlers.onOpen(formatView({ view: "import", sourceId: detail.id }))}
+            />
+          ) : null}
+        </SourceTabRow>
+      </article>
+    </SourceGrid>
   );
 }
