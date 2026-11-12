@@ -7,7 +7,7 @@ import { keymap, type KeyInput } from "./keymap";
  * store, so the keys can be proven without a browser. Any row or link that can be peeked at carries
  * `data-quick-look="<object address>"`; the keyboard stays on that row while the sheet is open, so
  * "the row" is always the focused element, the row its `aria-activedescendant` names (Cmd-K keeps
- * focus in its input) or the row marked selected.
+ * focus in its input) or, for Cmd-Y and the arrows, the shown row marked selected.
  *
  *  - Space on a row, outside text fields, opens the sheet; Space again closes it.
  *  - Cmd-Y opens or closes it from anywhere, text fields and Cmd-K included.
@@ -52,11 +52,13 @@ export function quickLookKey(
 export interface RowLookup {
   activeElement: Element | null;
   getElementById(id: string): Element | null;
-  querySelector(selector: string): Element | null;
+  querySelectorAll(selector: string): Iterable<Element>;
 }
 
 const peekableSelector = `[${quickLookAttribute}]`;
 const selectedSelector = `${peekableSelector}[aria-selected="true"], ${peekableSelector}[data-selected="true"]`;
+/** A destination that is not shown stays mounted: its selected row is not a row to peek at. */
+const unseenSelector = "[hidden], [inert]";
 
 /** The address a row names, or null for a row with no valid object address. */
 function addressOfRow(row: Element | null | undefined): string | null {
@@ -66,10 +68,12 @@ function addressOfRow(row: Element | null | undefined): string | null {
 
 /**
  * The address to peek at: the focused element's row, else the row the focused element points at
- * (`aria-activedescendant`, which a combobox such as Cmd-K's input uses), else the row marked
- * selected. Null when no row qualifies.
+ * (`aria-activedescendant`, which a combobox such as Cmd-K's input uses), else, when `selected` is
+ * allowed, the first shown row marked selected. Null when no row qualifies. Space does not allow
+ * the selected row: it is a plain key, and the focus may be on something else entirely (a button,
+ * a switch), which must keep its Space.
  */
-export function quickLookTarget(doc: RowLookup): string | null {
+export function quickLookTarget(doc: RowLookup, selected = true): string | null {
   const active = doc.activeElement;
   const own = addressOfRow(active);
   if (own !== null) return own;
@@ -78,7 +82,13 @@ export function quickLookTarget(doc: RowLookup): string | null {
     const row = addressOfRow(doc.getElementById(pointed));
     if (row !== null) return row;
   }
-  return addressOfRow(doc.querySelector(selectedSelector));
+  if (!selected) return null;
+  for (const row of doc.querySelectorAll(selectedSelector)) {
+    if (row.closest(unseenSelector) !== null) continue;
+    const address = addressOfRow(row);
+    if (address !== null) return address;
+  }
+  return null;
 }
 
 /** Whether a keyboard event's target takes text: an input, a textarea, a select or an editor. */

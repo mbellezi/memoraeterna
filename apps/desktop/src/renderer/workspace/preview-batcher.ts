@@ -22,8 +22,11 @@ export const previewBatchMax = objectResolveManyMax;
 export type PreviewResult = { status: "ready"; item: ObjectResolved } | { status: "missing" };
 
 export interface PreviewBatcher {
-  /** Resolves `address` (an anchor previews its passage); rejects when the call fails. */
-  request(address: string): Promise<PreviewResult>;
+  /**
+   * Resolves `address` (an anchor previews its passage); rejects when the call fails. `fresh` asks
+   * for a read that starts now: it never joins a call already on its way (a re-read after a change).
+   */
+  request(address: string, options?: { fresh?: boolean }): Promise<PreviewResult>;
 }
 
 export interface PreviewBatcherOptions {
@@ -35,7 +38,8 @@ export interface PreviewBatcherOptions {
   clearTimer?: (handle: unknown) => void;
 }
 
-interface Waiter {
+interface Entry {
+  promise: Promise<PreviewResult>;
   resolve: (result: PreviewResult) => void;
   reject: (error: unknown) => void;
 }
@@ -46,33 +50,32 @@ export function createPreviewBatcher(options: PreviewBatcherOptions): PreviewBat
   const setTimer = options.setTimer ?? ((run, ms) => setTimeout(run, ms));
   const clearTimer = options.clearTimer ?? ((handle) => clearTimeout(handle as never));
 
-  // The addresses of the open window, in the order they came; the promise every asker of one
-  // address shares, from its first request until the call that answers it settles.
+  // The addresses of the open window, in the order they came, and the entry every asker of one
+  // address shares: while it waits in the window (`open`), and from the call that sends it until
+  // that call settles (`flying`, the newest call per address).
   let queued: string[] = [];
   let timer: unknown = null;
-  const shared = new Map<string, Promise<PreviewResult>>();
-  const waiters = new Map<string, Waiter>();
+  const open = new Map<string, Entry>();
+  const flying = new Map<string, Entry>();
 
-  const settle = (address: string, run: (waiter: Waiter) => void) => {
-    const waiter = waiters.get(address);
-    waiters.delete(address);
-    shared.delete(address);
-    if (waiter) run(waiter);
-  };
-
-  const call = (addresses: string[]) => {
+  const call = (taken: Array<[string, Entry]>) => {
+    for (const [address, entry] of taken) flying.set(address, entry);
+    const settle = (address: string, entry: Entry, run: (entry: Entry) => void) => {
+      if (flying.get(address) === entry) flying.delete(address);
+      run(entry);
+    };
     options
-      .resolveMany({ addresses, include: { path: true } })
+      .resolveMany({ addresses: taken.map(([address]) => address), include: { path: true } })
       .then((result) => {
-        for (const address of addresses) {
+        for (const [address, entry] of taken) {
           const item = result.items[address];
-          settle(address, (waiter) =>
-            waiter.resolve(item ? { status: "ready", item } : { status: "missing" })
+          settle(address, entry, (one) =>
+            one.resolve(item ? { status: "ready", item } : { status: "missing" })
           );
         }
       })
       .catch((error: unknown) => {
-        for (const address of addresses) settle(address, (waiter) => waiter.reject(error));
+        for (const [address, entry] of taken) settle(address, entry, (one) => one.reject(error));
       });
   };
 
@@ -81,21 +84,31 @@ export function createPreviewBatcher(options: PreviewBatcherOptions): PreviewBat
       clearTimer(timer);
       timer = null;
     }
-    const taken = queued;
+    const taken = queued.flatMap((address): Array<[string, Entry]> => {
+      const entry = open.get(address);
+      return entry ? [[address, entry]] : [];
+    });
     queued = [];
+    open.clear();
     for (let index = 0; index < taken.length; index += max) call(taken.slice(index, index + max));
   };
 
   return {
-    request(address) {
+    request(address, requestOptions) {
       // An address `resolveMany` would refuse never reaches it: it would fail the whole window.
       if (parseObjectAddress(address) === null) return Promise.resolve({ status: "missing" });
-      const existing = shared.get(address);
-      if (existing) return existing;
-      const promise = new Promise<PreviewResult>((resolve, reject) => {
-        waiters.set(address, { resolve, reject });
+      const waiting = open.get(address);
+      if (waiting) return waiting.promise;
+      // A read that follows a change must not join a call that began before the commit.
+      const inFlight = requestOptions?.fresh ? undefined : flying.get(address);
+      if (inFlight) return inFlight.promise;
+      let resolve!: Entry["resolve"];
+      let reject!: Entry["reject"];
+      const promise = new Promise<PreviewResult>((done, fail) => {
+        resolve = done;
+        reject = fail;
       });
-      shared.set(address, promise);
+      open.set(address, { promise, resolve, reject });
       queued.push(address);
       if (queued.length >= max) flush();
       else if (timer === null) timer = setTimer(flush, windowMs);
