@@ -1,0 +1,189 @@
+// What the object journeys J4, J5, J6 and J8 share (F5 T155, spec 5.3): reading the workspace's
+// stack, opening an object address the way the system does, waiting for a surface by the
+// `data-surface` and `data-state` its frame writes, and a step log that captures each step in both
+// themes with its contrast scan (X12) and reports the failures at the end of the journey. A selector
+// is a data attribute or a role the surface emits, never its copy.
+import { expect, type ElectronApplication, type Locator, type Page } from "@playwright/test";
+
+import { captureStep, type MemoraSession } from "./app.js";
+import { readGestures } from "./gestures.js";
+
+/** The device-local layout key of the workspace (`R/workspace/persist.ts`, D8). */
+export const workspaceStorageKey = "memora.workspace.v1";
+
+export interface StackView {
+  root: string;
+  /** The address each panel shows now (the current entry of its own history), left to right. */
+  panels: string[];
+  /** The focused panel's index; -1 is the root. */
+  focus: number;
+}
+
+/** The stack of one destination in a stored workspace state; null when the shape is not one. */
+export function stackOf(state: unknown, destination: string): StackView | null {
+  const stacks = (state as { stacks?: Record<string, unknown> } | null)?.stacks;
+  const stack = stacks?.[destination] as
+    { root?: unknown; panels?: unknown; focus?: unknown } | undefined;
+  if (!stack || typeof stack.root !== "string" || !Array.isArray(stack.panels)) return null;
+  const panels = stack.panels.map((panel: { history?: unknown; index?: unknown }) =>
+    Array.isArray(panel.history) && typeof panel.index === "number"
+      ? (panel.history[panel.index] as string | undefined)
+      : undefined
+  );
+  if (panels.some((address) => typeof address !== "string")) return null;
+  return {
+    root: stack.root,
+    panels: panels as string[],
+    focus: typeof stack.focus === "number" ? stack.focus : -1
+  };
+}
+
+/** The destination the workspace is in (`explore`, `inbox`, ...) and its stack, as stored. */
+export async function readWorkspace(page: Page): Promise<{ destination: string; state: unknown }> {
+  const raw = await page.evaluate((key) => {
+    try {
+      return localStorage.getItem(key);
+    } catch {
+      return null;
+    }
+  }, workspaceStorageKey);
+  const state = raw ? (JSON.parse(raw) as unknown) : null;
+  return {
+    destination: (state as { destination?: string } | null)?.destination ?? "",
+    state
+  };
+}
+
+/** The stack of `destination` as stored (the shell saves it at most every 500 ms: poll for it). */
+export async function readStack(page: Page, destination: string): Promise<StackView | null> {
+  return stackOf((await readWorkspace(page)).state, destination);
+}
+
+/** Waits until the stored stack of `destination` satisfies `check`; the message names the stack. */
+export async function expectStack(
+  page: Page,
+  destination: string,
+  check: (stack: StackView) => boolean,
+  what: string,
+  timeout = 15_000
+): Promise<StackView> {
+  let last: StackView | null = null;
+  await expect
+    .poll(
+      async () => {
+        last = await readStack(page, destination);
+        return last !== null && check(last);
+      },
+      { message: `the ${destination} stack: ${what}`, timeout }
+    )
+    .toBe(true);
+  return last as unknown as StackView;
+}
+
+/**
+ * Presses `Meta+<key>` the way the person's keyboard does in the built app. Cmd-1..5, Cmd-K and the
+ * other workspace accelerators belong to the native menu, which on macOS acts after the page has
+ * seen the key, and a key that Playwright injects over the DevTools protocol never reaches the menu:
+ * so the key reaches the page (a trusted keydown, counted as the gesture it is) and the menu item
+ * that owns the accelerator is clicked in main, as the menu would on that key.
+ */
+export async function pressMenuShortcut(
+  session: { electronApp: ElectronApplication; page: Page },
+  key: string
+): Promise<void> {
+  await session.page.keyboard.press(`Meta+${key}`);
+  const wanted = `CmdOrCtrl+${key.length === 1 ? key.toUpperCase() : key}`;
+  const found = await session.electronApp.evaluate(({ BrowserWindow, Menu }, accelerator) => {
+    const find = (items: Electron.MenuItem[]): Electron.MenuItem | null => {
+      for (const item of items) {
+        if (String(item.accelerator ?? "") === accelerator) return item;
+        const inner = item.submenu ? find(item.submenu.items) : null;
+        if (inner) return inner;
+      }
+      return null;
+    };
+    const item = find(Menu.getApplicationMenu()?.items ?? []);
+    if (!item) return false;
+    const window = BrowserWindow.getAllWindows()[0];
+    item.click({ triggeredByAccelerator: true } as never, window, window?.webContents);
+    return true;
+  }, wanted);
+  if (!found) throw new Error(`The application menu has no item for ${wanted}`);
+}
+
+/** `memora://note/<id>`. */
+export const noteAddress = (id: string) => `memora://note/${id}`;
+
+/** Opens an object the way the system does (`open-url` in the main process, D10). */
+export async function openObject(session: MemoraSession, address: string): Promise<void> {
+  await session.electronApp.evaluate(({ app }, url) => {
+    app.emit("open-url", { preventDefault: () => undefined }, url);
+  }, address);
+}
+
+/** A surface's frame by the id it reports; `state` narrows it to one of the four states. */
+export function surface(page: Page, id: string, state?: string): Locator {
+  return page.locator(`[data-surface="${id}"]${state ? `[data-state="${state}"]` : ""}`);
+}
+
+/** The top panel of the stack: the frame that marks itself `data-panel-top`. */
+export function topPanel(page: Page): Locator {
+  return page.locator("[data-panel-top]");
+}
+
+/**
+ * The steps of one journey: each is captured in light and dark and scanned for contrast (X12). The
+ * failures are collected and asserted softly at the end, so a contrast defect does not hide what a
+ * later functional step would have shown, and is still a red journey.
+ */
+export class StepLog {
+  private index = 0;
+  private readonly failures: string[] = [];
+  private readonly notes: string[] = [];
+
+  constructor(
+    private readonly session: MemoraSession,
+    private readonly spec: string
+  ) {}
+
+  async step(name: string): Promise<void> {
+    this.index += 1;
+    const record = await captureStep(this.session, this.spec, this.index, name);
+    for (const theme of ["light", "dark"] as const)
+      for (const failure of record.contrast[theme].failures)
+        this.failures.push(
+          `${name} ${theme}: "${failure.text}" ${failure.ratio}:1 < ${failure.required}:1`
+        );
+  }
+
+  note(text: string): void {
+    this.notes.push(text);
+  }
+
+  /** The contrast failures so far (X12). */
+  contrastFailures(): readonly string[] {
+    return this.failures;
+  }
+
+  /** Records the run's evidence on the test and asserts the contrast bar; call it last. */
+  async finish(info: {
+    annotations: { push(...items: { type: string; description: string }[]): void };
+  }): Promise<void> {
+    const gestures = await readGestures(this.session.page).catch(() => null);
+    info.annotations.push(
+      { type: "contrast failures", description: String(this.failures.length) },
+      ...(gestures
+        ? [
+            {
+              type: "gestures",
+              description: `${gestures.total} (${gestures.pointer} pointer, ${gestures.keys} keys): ${gestures.log.join(" ")}`
+            }
+          ]
+        : []),
+      ...this.notes.map((text) => ({ type: "note", description: text }))
+    );
+    expect
+      .soft(this.failures, "contrast (X12): every visible text and glyph, both themes")
+      .toEqual([]);
+  }
+}
