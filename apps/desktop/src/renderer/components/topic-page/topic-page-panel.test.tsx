@@ -109,4 +109,19 @@ describe("the Topic page in a panel (design record 6.1)", () => {
     // The previous panel would close the top one: it offers no button.
     expect(render({ status: "missing" }, { compact: true })).not.toContain(">Close panel<");
   });
+
+  it("says a failed read once: the previous panel is a quiet caption, the top panel the sentence", () => {
+    const quiet = render({ status: "error" }, { compact: true });
+    expect(quiet).toContain("Could not open this.");
+    expect(quiet).not.toContain("Retry");
+    const top = render({ status: "error" });
+    expect(top).toContain("Could not open this topic.");
+    expect(top).toContain("Retry");
+  });
+
+  it("starts on the ribbon's edge: the page column is capped, not centred", () => {
+    const html = render({ status: "loading" });
+    expect(html).toContain("w-full max-w-264");
+    expect(html).not.toContain("mx-auto");
+  });
 });

@@ -14,13 +14,19 @@ export function RelationStanceLabel({
   t,
   size = 14,
   className,
-  linked = false
+  linked = false,
+  phrase = null
 }: {
   type: string;
   t: Translator;
   size?: number;
   className?: string;
   linked?: boolean;
+  /**
+   * The wide sheet's directional phrase ("supports this note"), shown in place of the word from
+   * 760 px of the page's container; narrower, the word.
+   */
+  phrase?: string | null;
 }) {
   const view = relationTypeView(type);
   return (
@@ -32,7 +38,16 @@ export function RelationStanceLabel({
       )}
     >
       <StanceGlyph stance={view.stance} size={size} />
-      {linked ? t("notePage.linkedStance", { values: { type: t(view.wordKey) } }) : t(view.wordKey)}
+      {phrase ? (
+        <>
+          <span className="@min-[760px]:hidden">{t(view.wordKey)}</span>
+          <span className="hidden whitespace-normal @min-[760px]:inline">{phrase}</span>
+        </>
+      ) : linked ? (
+        t("notePage.linkedStance", { values: { type: t(view.wordKey) } })
+      ) : (
+        t(view.wordKey)
+      )}
     </span>
   );
 }

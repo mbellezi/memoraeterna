@@ -118,7 +118,9 @@ describe("the navigator's states", () => {
   it("says a failed tree once, with no second retry, when the surface beside it has one", () => {
     const failed = blank({ branches: new Map([[rootBranchKey, emptyBranch("error")]]) });
     const html = view(failed, { retryBeside: true });
-    expect(html).toContain("Could not load the tree.");
+    // The surface beside it says what failed; the navigator says only what is kept.
+    expect(html).not.toContain("Could not load the tree.");
+    expect(html).toContain("Pinned and Recents are still here.");
     expect(html).not.toContain("Retry");
     expect(html).not.toContain('role="alert"');
   });

@@ -98,7 +98,14 @@ export function NotePageView(props: NotePageViewProps) {
   if (embedded && props.compact && load.status === "ready")
     return <NoteCompact t={t} page={load.page} />;
   return (
-    <div className="@container flex flex-col gap-4">
+    <div
+      className={cn(
+        "@container flex flex-col gap-4",
+        // The page's column is capped; focus mode centres it (panel-stack-styles), and otherwise it
+        // starts on the ribbon's edge.
+        embedded && "w-full max-w-264"
+      )}
+    >
       {embedded ? null : (
         <div className="flex items-center gap-3">
           <Button type="button" variant="secondary" onClick={props.onBack}>
@@ -159,7 +166,10 @@ function EmbeddedStates({ t, load, compact, onRetry }: NotePageViewProps) {
       </LoadingState>
     );
   if (load.status === "error")
-    return (
+    // The previous panel is quiet: the top panel's one sentence and retry say the failure.
+    return compact ? (
+      <p className="m-0 text-sm text-muted-foreground">{t("explore.compactError")}</p>
+    ) : (
       <ErrorState
         t={t}
         className="max-w-(--measure)"
@@ -268,10 +278,7 @@ function NoteArticle(props: NotePageViewProps & { page: NotePage }) {
   return (
     <article
       aria-label={t("notePage.articleLabel", { values: { title: note.title } })}
-      className={cn(
-        "flex w-full flex-col gap-8 pb-12",
-        embedded ? "mx-auto max-w-264" : "max-w-190"
-      )}
+      className={cn("flex w-full flex-col gap-8 pb-12", !embedded && "max-w-190")}
     >
       {embedded ? (
         // The wide sheet (design record 6.3): from 760 px the text column keeps its 600 px and
@@ -280,9 +287,10 @@ function NoteArticle(props: NotePageViewProps & { page: NotePage }) {
         <div className="grid min-w-0 gap-8 @min-[760px]:grid-cols-[minmax(0,600px)_264px] @min-[760px]:gap-x-12">
           <div className="flex min-w-0 flex-col gap-6">
             {header}
-            <NoteBodyText t={t} note={note} embedded />
+            <NoteBodyText t={t} note={note} embedded citations={page.evidence.items.length} />
           </div>
-          <div className="min-w-0">{evidence}</div>
+          {/* Folded under the prose (below 760 px) the quotes keep the prose's measure. */}
+          <div className="min-w-0 max-w-(--measure) @min-[760px]:max-w-none">{evidence}</div>
         </div>
       ) : (
         <>
@@ -307,6 +315,7 @@ function NoteArticle(props: NotePageViewProps & { page: NotePage }) {
         focusRequest={props.relationFocus}
         graph={props.graph}
         view={props.relationsView ?? "full"}
+        embedded={embedded}
         onCardEvent={props.onCardEvent}
         onOpenNote={props.onOpenNote}
         onRetryExplanation={props.onRetryExplanation}

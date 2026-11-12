@@ -326,8 +326,9 @@ export function TopicNavigatorView({
           <TreeSkeleton t={t} />
         ) : state === "error" ? (
           retryBeside ? (
+            // The root says what failed and offers the retry; here only what is kept.
             <p role="status" className="m-0 px-2 py-1 text-xs leading-5 text-muted-foreground">
-              {t("workspace.navigator.error")} {t("explore.navigator.errorKept")}
+              {t("explore.navigator.errorKept")}
             </p>
           ) : (
             <ErrorState

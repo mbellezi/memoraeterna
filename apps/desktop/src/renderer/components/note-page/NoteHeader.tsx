@@ -200,11 +200,12 @@ export function NoteHeader({
         ) : null}
         <span className="flex-1" />
         {!editing && (actions.markReviewed || actions.edit) ? (
-          <div className="flex flex-wrap items-center gap-2">
+          // Quiet text actions in a panel start on the text's edge, not on their own padding.
+          <div className={cn("flex flex-wrap items-center gap-2", embedded && "-ml-3")}>
             {actions.markReviewed ? (
               <Button
                 type="button"
-                variant="secondary"
+                variant={embedded ? "link" : "secondary"}
                 disabled={review.pending}
                 aria-busy={review.pending || undefined}
                 onClick={onMarkReviewed}
@@ -220,6 +221,13 @@ export function NoteHeader({
                 noteTitle={note.title}
                 active={place.active}
                 onPlaced={place.onPlaced}
+                quiet={embedded}
+                placed={
+                  embedded &&
+                  page.placement.primaryPath.some(
+                    (step) => step.kind === "topic" && step.title !== ""
+                  )
+                }
               />
             ) : null}
             {actions.edit ? (

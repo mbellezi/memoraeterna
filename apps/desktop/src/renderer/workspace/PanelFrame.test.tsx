@@ -67,10 +67,10 @@ describe("the panel frame", () => {
     ).not.toContain("data-path-ribbon");
   });
 
-  it("says a failed object once: no ribbon failure line above the body's error", () => {
+  it("says a failed object once, and shows no place for one that is gone", () => {
     expect(frame({ state: "error" })).not.toContain("data-path-ribbon");
     expect(frame({ state: "loading" })).toContain("data-path-ribbon");
-    expect(frame({ state: "empty" })).toContain("data-path-ribbon");
+    expect(frame({ state: "empty" })).not.toContain("data-path-ribbon");
   });
 
   it("gives the top panel Foco and close, and the arrows only where history exists", () => {

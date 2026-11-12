@@ -4248,6 +4248,7 @@
     "untitled": "Untitled"
   },
   "explore": {
+    "compactError": "Could not open this.",
     "navigator": {
       "branch": "Branch",
       "branchLabel": "Showing only one branch of the tree",
@@ -4257,8 +4258,11 @@
     },
     "note": {
       "alsoInInbox": "also in the Inbox",
+      "connections": "Connections",
       "error": "Could not open this note.",
       "errorKept": "The rest of Explore stays open and your notes are untouched.",
+      "explainedLocally": "explanation written by the local AI",
+      "gardenerConfidence": "Gardener · {word} confidence",
       "gardenerSuggestion": "Gardener suggestion · decide whenever you like",
       "goneBody": "It may have been merged into another note or removed. Nothing else changed.",
       "goneHeadline": "This note is no longer in your library.",

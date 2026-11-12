@@ -4248,6 +4248,7 @@
     "untitled": "Sin título"
   },
   "explore": {
+    "compactError": "No se pudo abrir.",
     "navigator": {
       "branch": "Rama",
       "branchLabel": "Mostrando solo una rama del árbol",
@@ -4257,8 +4258,11 @@
     },
     "note": {
       "alsoInInbox": "también en la Bandeja de entrada",
+      "connections": "Conexiones",
       "error": "No se pudo abrir esta nota.",
       "errorKept": "El resto de Explorar sigue abierto y tus notas no han cambiado.",
+      "explainedLocally": "explicación escrita por la IA local",
+      "gardenerConfidence": "Jardinero · confianza {word}",
       "gardenerSuggestion": "sugerencia del Jardinero · decide cuando quieras",
       "goneBody": "Puede que se haya unido a otra nota o que se haya eliminado. Nada más ha cambiado.",
       "goneHeadline": "Esta nota ya no está en tu biblioteca.",

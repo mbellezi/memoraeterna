@@ -64,8 +64,9 @@ export function TopicPageView(props: TopicPageViewProps) {
     <div
       className={cn(
         "@container flex min-w-0 flex-col gap-4",
-        // The page's column is capped so focus mode can centre it.
-        embedded && "mx-auto w-full max-w-264"
+        // The page's column is capped; focus mode centres it (panel-stack-styles), and otherwise it
+        // starts on the ribbon's edge.
+        embedded && "w-full max-w-264"
       )}
     >
       {embedded ? <EmbeddedStates {...props} /> : null}
@@ -147,7 +148,10 @@ function EmbeddedStates({ t, snapshot, compact, onRetry }: TopicPageViewProps) {
       </LoadingState>
     );
   if (load.status === "error")
-    return (
+    // The previous panel is quiet: the top panel's one sentence and retry say the failure.
+    return compact ? (
+      <p className="m-0 text-sm text-muted-foreground">{t("explore.compactError")}</p>
+    ) : (
       <ErrorState
         t={t}
         className="max-w-(--measure)"

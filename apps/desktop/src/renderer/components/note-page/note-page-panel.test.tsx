@@ -1,7 +1,7 @@
 import { renderToString } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
-import { notePage, viewProps } from "./note-page-fixtures";
+import { fixtureId, notePage, relationItem, viewProps } from "./note-page-fixtures";
 import { NotePageView } from "./NotePageView";
 
 const render = (load: Parameters<typeof viewProps>[0], overrides = {}) =>
@@ -43,5 +43,59 @@ describe("the Note page in a panel (design record 6.3)", () => {
     const html = render({ status: "missing" });
     expect(html).toContain("This note is no longer in your library.");
     expect(html).toContain(">Close panel<");
+  });
+
+  it("keeps the previous panel quiet when the read failed: one caption, no glyph, no retry", () => {
+    const html = render({ status: "error" }, { compact: true });
+    expect(html).toContain("Could not open this.");
+    expect(html).not.toContain("Retry");
+    expect(html).not.toContain('role="alert"');
+  });
+
+  it("draws quiet text actions and moves a note that already has a place", () => {
+    const html = render(
+      { status: "ready", page: notePage() },
+      { place: { active: true, onPlaced: () => undefined } }
+    );
+    expect(html).toContain("Move to...");
+    expect(html).not.toContain("Place in topic");
+    expect(html).not.toContain("border-border-strong bg-surface text-foreground");
+  });
+
+  it("shows [n] of the prose as an accent numeral when Evidence lists that quote", () => {
+    const base = notePage();
+    const page = notePage({
+      note: { ...base.note, bodyMarkdown: "A claim [1] and a stray [9]." }
+    });
+    const html = render({ status: "ready", page });
+    expect(html).toContain('<sup class="ml-px text-xs font-semibold text-accent">1</sup>');
+    expect(html).toContain("[9]");
+  });
+
+  it("calls the relations Connections, says the direction and offers a suggestion's answers", () => {
+    const base = notePage();
+    const page = notePage({
+      relations: {
+        total: 2,
+        items: [
+          relationItem({ id: fixtureId(60), type: "supports", direction: "incoming" }),
+          relationItem({
+            id: fixtureId(64),
+            type: "extends",
+            state: "suggested",
+            probability: 0.7,
+            other: { ...base.relations.items[0]!.other, id: fixtureId(65) }
+          })
+        ]
+      }
+    });
+    const html = render({ status: "ready", page });
+    expect(html).toContain(">Connections<");
+    expect(html).toContain("supports this note");
+    expect(html).toContain("border-dashed");
+    expect(html).toContain(">Keep<");
+    expect(html).toContain(">Remove<");
+    // The graph belongs to the context panel: no List and Graph tabs here.
+    expect(html).not.toContain('role="tablist"');
   });
 });

@@ -130,20 +130,16 @@ export const fixtures: ScreenModule["fixtures"] = {
   }
 };
 
-/** Explore as the shell draws it: its navigator with a topic open, and the root beside it. */
+/**
+ * Explore as the shell draws it with nothing open: its navigator and the root beside it. No row is
+ * the open one, because no panel is (the long area name shows clamped on two lines in the tree).
+ */
 function Explore() {
   const width = useViewportWidth();
   const [workspace, dispatch] = useReducer(
     (state: WorkspaceState, action: WorkspaceAction) => reduce(state, action),
     undefined,
-    // The topic with the long name is the open one: its row shows the whole name on two lines.
-    () =>
-      reduce(reduce(defaultWorkspace("2026-11-12"), { type: "go", destination: "explore" }), {
-        type: "open",
-        address: `memora://topic/${id(6)}`,
-        from: -1,
-        mode: "push"
-      })
+    () => reduce(defaultWorkspace("2026-11-12"), { type: "go", destination: "explore" })
   );
   return (
     <AddSourceContext.Provider value={noop}>
