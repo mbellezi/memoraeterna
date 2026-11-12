@@ -10,7 +10,7 @@ import { recordView } from "../../lib/view-history";
 import type { PanelLoadState } from "../PanelFrame";
 import type { PanelProps } from "../PanelStack";
 import { SourceController, type SourceSnapshot } from "./source/source-controller";
-import { SourcePanelView } from "./source/SourcePanelView";
+import { SourceGrid, SourcePanelView } from "./source/SourcePanelView";
 import { SourceStripSkeleton } from "./source/SourceStrip";
 import { stripModel } from "./source/source-strip-model";
 
@@ -54,12 +54,14 @@ export function loadStateOf(snapshot: SourceSnapshot): PanelLoadState {
 
 function PanelLoading({ t, compact }: { t: Translator; compact: boolean }) {
   return (
-    <LoadingState t={t} className="max-w-(--measure)">
-      <Skeleton className="h-6 w-4/5 max-w-(--measure) sm:w-3/5" />
-      <Skeleton className="w-2/5" />
-      {compact ? null : <SourceStripSkeleton />}
-      <SkeletonLines lines={compact ? 3 : 4} className="mt-2 max-w-(--measure)" />
-    </LoadingState>
+    <SourceGrid>
+      <LoadingState t={t} className="max-w-(--measure)">
+        <Skeleton className="h-6 w-4/5 max-w-(--measure) sm:w-3/5" />
+        <Skeleton className="w-2/5" />
+        {compact ? null : <SourceStripSkeleton />}
+        <SkeletonLines lines={compact ? 3 : 4} className="mt-2 max-w-(--measure)" />
+      </LoadingState>
+    </SourceGrid>
   );
 }
 
@@ -116,28 +118,32 @@ export function Component({
   if (reported === "loading") return <PanelLoading t={t} compact={mode === "compact"} />;
   if (reported === "error")
     return (
-      <ErrorState
-        t={t}
-        className="max-w-(--measure)"
-        message={t("sourcePage.errors.open")}
-        kept={t("sourcePage.errors.kept")}
-        retryLabel={t("shell.actions.retry")}
-        onRetry={() => controller.retry()}
-      />
+      <SourceGrid>
+        <ErrorState
+          t={t}
+          className="max-w-(--measure)"
+          message={t("sourcePage.errors.open")}
+          kept={t("sourcePage.errors.kept")}
+          retryLabel={t("shell.actions.retry")}
+          onRetry={() => controller.retry()}
+        />
+      </SourceGrid>
     );
   if (snapshot.load.status !== "ready")
     return (
-      <EmptyState
-        className="max-w-(--measure)"
-        headline={t("sourcePage.gone.title")}
-        action={
-          <Button variant="secondary" onClick={() => onOpen("memora://library")}>
-            {t("sourcePage.gone.action")}
-          </Button>
-        }
-      >
-        {t("sourcePage.gone.body")}
-      </EmptyState>
+      <SourceGrid>
+        <EmptyState
+          className="max-w-(--measure)"
+          headline={t("sourcePage.gone.title")}
+          action={
+            <Button variant="secondary" onClick={() => onOpen("memora://library")}>
+              {t("sourcePage.gone.action")}
+            </Button>
+          }
+        >
+          {t("sourcePage.gone.body")}
+        </EmptyState>
+      </SourceGrid>
     );
   return (
     <SourcePanelView

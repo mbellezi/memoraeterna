@@ -14,7 +14,9 @@ import {
   sourceFixture,
   sourceFixtureAddress
 } from "./source-panel-fixtures";
+import pageView from "./SourcePanelView.tsx?raw";
 import { SourcePanelView } from "./SourcePanelView";
+import tabBodies from "./source-tab-bodies.tsx?raw";
 
 const en = createTranslator("en");
 const pt = createTranslator("pt-BR");
@@ -37,6 +39,7 @@ function snapshot(overrides: Partial<SourceSnapshot> = {}): SourceSnapshot {
     action: { status: "idle" },
     firstSource: false,
     readAt: now,
+    relationsEpoch: 0,
     ...overrides
   };
 }
@@ -237,6 +240,19 @@ describe("the notes", () => {
     );
     expect(html).toContain("No notes from this source yet");
     expect(html).toContain("Generate notes");
+  });
+});
+
+describe("the page's content grid", () => {
+  it("sits in the 912 px grid (600 + 48 + 264) that focus mode centres, text column inside it", () => {
+    const html = page(snapshot());
+    expect(html).toMatch(/data-source-grid=""[^>]*>\s*<article[^>]*data-source-page=""/u);
+    expect(html).toContain("max-w-[57rem]");
+  });
+
+  it("hands the Connections list its epoch, so a promoted relation is read again in place", () => {
+    expect(tabBodies).toContain("refreshToken={relationsEpoch}");
+    expect(pageView).toContain("relationsEpoch={snapshot.relationsEpoch}");
   });
 });
 

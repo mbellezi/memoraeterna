@@ -6,7 +6,12 @@ import type { LibrarySourceProgress } from "../../../../shared/ipc-library";
 import type { ViewHistoryRecordInput } from "../../../../shared/view-history";
 import { subscribe } from "../../../lib/app-events";
 import { defaultProcessingPlan } from "../../../components/ProcessingPlanPicker";
-import { noticeForKinds, noticeForTargets, type ObjectTarget } from "../../../lib/object-events";
+import {
+  noticeForKinds,
+  noticeForTargets,
+  type ObjectChangeNotice,
+  type ObjectTarget
+} from "../../../lib/object-events";
 import { isUnsorted, ribbonSegments } from "../../PathRibbon";
 import { stripModel } from "./source-strip-model";
 
@@ -56,6 +61,11 @@ export interface SourceSnapshot {
   firstSource: boolean;
   /** When the answer on screen was read; "agora mesmo" and the time left are measured against it. */
   readAt: number;
+  /**
+   * Moves when the source's relations to other sources may have changed (a link job promoted some,
+   * or the run ended): the Connections tab reads its list again, in place, when it moves.
+   */
+  relationsEpoch: number;
 }
 
 export type SourceApi = {
@@ -88,7 +98,8 @@ const initialSnapshot = (): SourceSnapshot => ({
   cost: { status: "idle" },
   action: { status: "idle" },
   firstSource: false,
-  readAt: 0
+  readAt: 0,
+  relationsEpoch: 0
 });
 
 /** Note places read at the same time. */
@@ -104,11 +115,14 @@ export class SourceController {
   private progressToken = 0;
   private reading = false;
   private again = false;
+  /** A `job.progress` arrived while a full read was in flight: the strip is read once more after it. */
+  private progressAgain = false;
   private wasHidden = false;
   private recorded = false;
   private firstSourceAsked = false;
   private unsubscribers: Array<() => void> = [];
   private timer: ReturnType<typeof setTimeout> | null = null;
+  private relationsTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly wanted = new Set<string>();
   private readonly queue: string[] = [];
   private locating = 0;
@@ -225,6 +239,7 @@ export class SourceController {
     this.progressToken += 1;
     this.reading = false;
     this.again = false;
+    this.progressAgain = false;
     this.recorded = false;
     this.firstSourceAsked = false;
     this.wanted.clear();
@@ -266,10 +281,36 @@ export class SourceController {
       this.recordOpen(detailRead.value);
     }
     this.afterRead();
+    this.requeueStale();
     if (this.again) {
       this.again = false;
+      this.progressAgain = false;
       void this.readAll(true);
+    } else if (this.progressAgain) {
+      this.progressAgain = false;
+      if (this.isLive()) void this.readProgress();
     }
+  }
+
+  /** Whether the strip shows a run that is not finished (running, paused or waiting for the person). */
+  private isLive(): boolean {
+    const strip = this.snapshot.strip;
+    if (strip.status !== "ready") return false;
+    const kind = stripModel(strip.progress, this.now()).kind;
+    return kind === "running" || kind === "paused" || kind === "needsYou";
+  }
+
+  private bumpRelations(): void {
+    this.update({ relationsEpoch: this.snapshot.relationsEpoch + 1 });
+  }
+
+  /** The Connections list reads again once per burst of relation changes. */
+  private scheduleRelations(): void {
+    if (!this.active || this.relationsTimer !== null) return;
+    this.relationsTimer = setTimeout(() => {
+      this.relationsTimer = null;
+      this.bumpRelations();
+    }, this.deps.refreshDelayMs ?? 300);
   }
 
   private async readStrip(sourceId: string): Promise<void> {
@@ -279,7 +320,10 @@ export class SourceController {
       if (token !== this.progressToken || this.sourceId !== sourceId) return;
       // `null`: the source is not there; the detail read says so, the strip has nothing to show.
       if (progress === null) return;
+      const wasLive = this.isLive();
       this.update({ strip: { status: "ready", progress }, readAt: this.now() });
+      // A run that ended may have promoted source relations, which publish no event of their own.
+      if (wasLive && !this.isLive()) this.bumpRelations();
     } catch {
       if (token !== this.progressToken || this.sourceId !== sourceId) return;
       if (this.snapshot.strip.status !== "ready") this.update({ strip: { status: "error" } });
@@ -346,7 +390,7 @@ export class SourceController {
         if (!this.active || id === null) return;
         const targets: ObjectTarget[] = [{ kind: "source", id }];
         const own = noticeForTargets(event, targets);
-        const notes = noticeForKinds(event, ["note"]);
+        const notes = this.ownNotes(noticeForKinds(event, ["note"]));
         const topics = noticeForKinds(event, ["topic"]);
         if (notes) {
           if (notes.overflow)
@@ -357,6 +401,10 @@ export class SourceController {
         if (own || notes) this.schedule();
         else if (topics) this.requeueStale();
       }),
+      on("relation.created", (event) => {
+        if (!this.active) return;
+        if (this.isLive() || this.ownsAny(event.noteIds)) this.scheduleRelations();
+      }),
       on("tree.changed", () => {
         if (!this.active) return;
         for (const noteId of this.snapshot.paths.keys()) this.stale.add(noteId);
@@ -364,14 +412,39 @@ export class SourceController {
       }),
       on("job.progress", () => {
         // Only a strip that is live follows the jobs; a finished one is read again by `object.changed`.
-        if (!this.active || this.reading) return;
-        const strip = this.snapshot.strip;
-        if (strip.status !== "ready") return;
-        const kind = stripModel(strip.progress, this.now()).kind;
-        if (kind === "running" || kind === "paused" || kind === "needsYou")
-          void this.readProgress();
+        if (!this.active) return;
+        if (this.reading) {
+          // The full read in flight may carry an older strip: read the strip once more after it.
+          this.progressAgain = true;
+          return;
+        }
+        if (this.isLive()) void this.readProgress();
       })
     ];
+  }
+
+  /**
+   * The part of a note change that concerns this source: its own notes, and the notes created while
+   * its strip is live (they arrive here). A note of another source asks nothing: a read of the
+   * source carries every passage of its text.
+   */
+  private ownNotes(notice: ObjectChangeNotice | null): ObjectChangeNotice | null {
+    if (!notice) return null;
+    if (notice.overflow) return notice;
+    const live = this.isLive() || this.snapshot.strip.status === "loading";
+    const own = this.ownNoteIds();
+    const refs = notice.refs.filter((ref) => own.has(ref.id) || (live && ref.change === "created"));
+    return refs.length > 0 ? { refs, overflow: false } : null;
+  }
+
+  private ownNoteIds(): ReadonlySet<string> {
+    const load = this.snapshot.load;
+    return new Set(load.status === "ready" ? load.detail.atomicNotes.map((note) => note.id) : []);
+  }
+
+  private ownsAny(noteIds: readonly string[]): boolean {
+    const own = this.ownNoteIds();
+    return noteIds.some((id) => own.has(id));
   }
 
   private stopListening(): void {
@@ -381,9 +454,14 @@ export class SourceController {
   }
 
   private clearTimer(): void {
-    if (this.timer === null) return;
-    clearTimeout(this.timer);
-    this.timer = null;
+    if (this.timer !== null) {
+      clearTimeout(this.timer);
+      this.timer = null;
+    }
+    if (this.relationsTimer !== null) {
+      clearTimeout(this.relationsTimer);
+      this.relationsTimer = null;
+    }
   }
 
   /** The places on screen that a change made stale are read again, in place. */

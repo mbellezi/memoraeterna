@@ -295,7 +295,7 @@ describe("the places of the notes", () => {
     expect(most).toBeLessThanOrEqual(3);
   });
 
-  it("reads a note's place again, in place, after the note changed, keeping the old one meanwhile", async () => {
+  it("reads a note's place again, in place, after the tree changed, keeping the old one meanwhile", async () => {
     const h = harness();
     h.controller.show(sourceId, true);
     await settle();
@@ -332,6 +332,127 @@ describe("the places of the notes", () => {
     h.controller.want([noteIds[1] as string]);
     await settle();
     expect(h.snapshot().paths.get(noteIds[1] as string)).toEqual({ status: "error" });
+  });
+});
+
+describe("keeping up with a run", () => {
+  const job = (): AppEvent =>
+    ({
+      type: "job.progress",
+      lanes: { heavy: zero(), light: zero() },
+      changedIds: [],
+      changedIdsTruncated: false
+    }) as AppEvent;
+  const changed = (kind: "note" | "source", id: string, change: "created" | "updated") =>
+    ({ type: "object.changed", refs: [{ kind, id, change }] }) as AppEvent;
+
+  it("reads the strip again after a full read when a job moved while that read was in flight", async () => {
+    const h = harness();
+    h.controller.show(sourceId, true);
+    await settle();
+    expect(h.api.sourceProgress).toHaveBeenCalledTimes(1);
+    let release: (value: typeof detail) => void = () => undefined;
+    h.api.getSourceDetail.mockImplementationOnce(
+      () => new Promise<typeof detail>((resolve) => (release = resolve))
+    );
+    h.emit(changed("source", sourceId, "updated"));
+    await vi.advanceTimersByTimeAsync(300);
+    expect(h.api.sourceProgress).toHaveBeenCalledTimes(2);
+    h.emit(job());
+    release(detail);
+    await settle();
+    expect(h.api.sourceProgress).toHaveBeenCalledTimes(3);
+    expect(h.api.getSourceDetail).toHaveBeenCalledTimes(2);
+  });
+
+  it("reads a note's place again after that note changed, though the rows on screen did not", async () => {
+    const h = harness();
+    h.controller.show(sourceId, true);
+    await settle();
+    h.controller.want([noteIds[1] as string]);
+    await settle();
+    expect(h.api.locate).toHaveBeenCalledTimes(1);
+    h.emit(changed("note", noteIds[1] as string, "updated"));
+    await vi.advanceTimersByTimeAsync(300);
+    await settle();
+    expect(h.api.locate).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not read the source again for a note of another source, but does for its own", async () => {
+    const h = harness(() => doneProgress(now));
+    h.controller.show(sourceId, true);
+    await settle();
+    h.emit(changed("note", uuid(990), "updated"));
+    h.emit(changed("note", uuid(991), "created"));
+    await vi.advanceTimersByTimeAsync(1_000);
+    await settle();
+    expect(h.api.getSourceDetail).toHaveBeenCalledTimes(1);
+    h.emit(changed("note", noteIds[2] as string, "updated"));
+    await vi.advanceTimersByTimeAsync(300);
+    await settle();
+    expect(h.api.getSourceDetail).toHaveBeenCalledTimes(2);
+  });
+
+  it("reads again for a note created while the strip is live, which is how new notes arrive", async () => {
+    const h = harness();
+    h.controller.show(sourceId, true);
+    await settle();
+    h.emit(changed("note", uuid(992), "created"));
+    await vi.advanceTimersByTimeAsync(300);
+    await settle();
+    expect(h.api.getSourceDetail).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("the source relations of the Connections tab", () => {
+  const relationCreated = (noteId: string) =>
+    ({ type: "relation.created", noteIds: [noteId] }) as AppEvent;
+
+  it("moves its epoch once per burst of relations that concern the source's notes", async () => {
+    const h = harness(() => doneProgress(now));
+    h.controller.show(sourceId, true);
+    await settle();
+    expect(h.snapshot().relationsEpoch).toBe(0);
+    h.emit(relationCreated(uuid(990)));
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(h.snapshot().relationsEpoch).toBe(0);
+    h.emit(relationCreated(noteIds[0] as string));
+    h.emit(relationCreated(noteIds[1] as string));
+    await vi.advanceTimersByTimeAsync(300);
+    expect(h.snapshot().relationsEpoch).toBe(1);
+  });
+
+  it("moves its epoch for any relation while the source is being made", async () => {
+    const h = harness();
+    h.controller.show(sourceId, true);
+    await settle();
+    h.emit(relationCreated(uuid(990)));
+    await vi.advanceTimersByTimeAsync(300);
+    expect(h.snapshot().relationsEpoch).toBe(1);
+  });
+
+  it("moves its epoch when the run ends, since promoted source relations publish nothing", async () => {
+    let progress: () => LibrarySourceProgress = () => runningProgress(now);
+    const h = harness(() => progress());
+    h.controller.show(sourceId, true);
+    await settle();
+    progress = () => doneProgress(now);
+    h.emit({
+      type: "job.progress",
+      lanes: { heavy: zero(), light: zero() },
+      changedIds: [],
+      changedIdsTruncated: false
+    });
+    await settle();
+    expect(h.snapshot().relationsEpoch).toBe(1);
+  });
+
+  it("listens to relations only while shown", async () => {
+    const h = harness();
+    h.controller.show(sourceId, true);
+    expect(h.events.listening("relation.created")).toBe(1);
+    h.controller.show(sourceId, false);
+    expect(h.events.listening("relation.created")).toBe(0);
   });
 });
 

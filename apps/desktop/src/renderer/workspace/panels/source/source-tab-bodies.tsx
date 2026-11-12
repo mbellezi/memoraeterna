@@ -60,12 +60,15 @@ export function ConnectionsTab({
   t,
   detail,
   relationId,
-  onOpen
+  onOpen,
+  relationsEpoch
 }: {
   t: Translator;
   detail: SourceDetail;
   relationId: string | undefined;
   onOpen: (address: string) => void;
+  /** Moves when promoted source relations may have appeared; the list reads again in place. */
+  relationsEpoch: number;
 }) {
   return (
     <>
@@ -130,6 +133,7 @@ export function ConnectionsTab({
         <SourceRelationsList
           sourceItemId={detail.id}
           {...(relationId ? { relationId } : {})}
+          refreshToken={relationsEpoch}
           t={t}
           onOpenNote={(_sourceItemId, noteId) => onOpen(`memora://note/${noteId}`)}
         />
