@@ -10,19 +10,25 @@ import { cn } from "../lib/cn";
 export function InlineAction({
   className,
   size = "sm",
+  tone = "accent",
   type = "button",
   ...props
 }: ComponentPropsWithRef<"button"> & {
   /** The type size follows the line it sits in; one class, never two for the same property. */
   size?: "sm" | "xs";
+  /** "muted" reads as the line's own text and turns accent on hover: a disclosure inside a sentence. */
+  tone?: "accent" | "muted";
 }) {
   return (
     <button
       type={type}
       className={cn(
-        "inline-flex min-w-0 items-center gap-1 rounded-sm border-0 bg-transparent p-0 text-left font-medium text-accent",
+        "inline-flex min-w-0 items-center gap-1 rounded-sm border-0 bg-transparent p-0 text-left font-medium",
+        tone === "muted" ? "text-secondary-foreground" : "text-accent",
         size === "xs" ? "text-xs" : "text-sm",
-        "hover:text-accent-hover hover:underline hover:underline-offset-[3px]",
+        tone === "muted"
+          ? "hover:text-accent hover:underline hover:underline-offset-[3px]"
+          : "hover:text-accent-hover hover:underline hover:underline-offset-[3px]",
         "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent",
         "disabled:cursor-default disabled:text-muted-foreground disabled:no-underline [&>svg]:size-3.5 [&>svg]:shrink-0",
         className

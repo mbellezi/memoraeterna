@@ -21,12 +21,25 @@ export function ChangedMarker({ t, className }: { t: Translator; className?: str
   );
 }
 
-/** The dot alone, for a count in the section column, whose number says the rest. */
-export function ChangedDot({ className }: { className?: string }) {
+/**
+ * The dot alone, for a count in the section column, whose number says the rest. There it is the
+ * accent, so a changed section stands out from its grey description; in a row it stays grey.
+ */
+export function ChangedDot({
+  tone = "muted",
+  className
+}: {
+  tone?: "muted" | "accent";
+  className?: string;
+}) {
   return (
     <span
       aria-hidden="true"
-      className={cn("inline-block size-1.5 shrink-0 rounded-full bg-muted-foreground", className)}
+      className={cn(
+        "inline-block size-1.5 shrink-0 rounded-full",
+        tone === "accent" ? "bg-accent" : "bg-muted-foreground",
+        className
+      )}
     />
   );
 }

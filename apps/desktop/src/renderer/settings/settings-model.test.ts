@@ -23,6 +23,7 @@ import {
 } from "./settings-model";
 
 const en = createTranslator("en");
+const pt = createTranslator("pt-BR");
 const entry = (id: string) => settingsRegistryV2.find((candidate) => candidate.id === id)!;
 const described = (id: string, value: unknown, def: unknown, changed: boolean) => ({
   id,
@@ -54,7 +55,7 @@ describe("the sections", () => {
         settingsRegistryV2.filter((candidate) => candidate.section === id).length
       );
     }
-    expect(groupsOf("general").map((group) => group.group)).toEqual(["appearance", "language"]);
+    expect(groupsOf("general").map((group) => group.group)).toEqual(["language", "appearance"]);
   });
 });
 
@@ -137,10 +138,23 @@ describe("the words of a value", () => {
     expect(valueText(en, credential, described(credential.id, null, null, false))).toBe("Not set");
     const number = entry("knowledge.controls.v1.monthlyCapUsd");
     expect(valueText(en, number, described(number.id, 12, 5, true))).toBe("12");
-    // A code of a choice is not copy: the section's own control says it.
+    // The theme and a language are named; any other choice's code is not copy (its section says it).
     const theme = entry("themeMode");
-    expect(valueText(en, theme, described("themeMode", "system", "system", false))).toBeNull();
+    expect(valueText(en, theme, described("themeMode", "system", "system", false))).toBe("System");
+    expect(defaultText(en, theme, described("themeMode", "dark", "system", true))).toBe("System");
+    expect(valueText(en, theme, described("themeMode", "sepia", "system", true))).toBeNull();
     expect(valueText(en, theme, undefined)).toBeNull();
+    const language = entry("contentLanguage");
+    expect(valueText(en, language, described(language.id, "pt-BR", "en", true))).toBe(
+      "Portuguese (Brazil)"
+    );
+    expect(defaultText(en, language, described(language.id, "pt-BR", "en", true))).toBe("English");
+    expect(valueText(pt, language, described(language.id, "pt-BR", "en", true))).toBe(
+      "Português (Brasil)"
+    );
+    expect(valueText(en, language, described(language.id, "not a code!", "en", true))).toBeNull();
+    const choice = entry("activeMatchingPresetId");
+    expect(valueText(en, choice, described(choice.id, "custom", "balanced", true))).toBeNull();
     expect(defaultText(en, sw, described("debugMode", true, false, true))).toBe("Off");
     expect(defaultText(en, sw, described("debugMode", true, null, true))).toBeNull();
   });
