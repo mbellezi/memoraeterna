@@ -150,7 +150,8 @@ function withMissingKeysDefaulted(value: unknown, locale: string | null | undefi
   const missing: Record<string, unknown> = {};
   if (!("language" in stored)) missing.language = normalizeLanguageCode(locale);
   if (!("themeMode" in stored)) missing.themeMode = defaultAppSettings.themeMode;
-  if (!("updatedAt" in stored)) missing.updatedAt = new Date().toISOString();
+  // A fixed value, not now: a file without a timestamp then reads the same every time until a write.
+  if (!("updatedAt" in stored)) missing.updatedAt = new Date(0).toISOString();
   return Object.keys(missing).length === 0 ? value : { ...stored, ...missing };
 }
 

@@ -715,6 +715,9 @@ describe("theme preference", () => {
     const read = await new SettingsService(path).getApp();
     expect(read).toMatchObject({ language: "pt-BR", navigationCollapsed: true });
     expect(Number.isNaN(Date.parse(read.updatedAt))).toBe(false);
+    // Reads are stable: the filled timestamp is the same on every read until something is written.
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    expect((await new SettingsService(path).getApp()).updatedAt).toBe(read.updatedAt);
 
     await writeFile(
       join(path, "app-settings.json"),
