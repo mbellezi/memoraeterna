@@ -282,7 +282,14 @@ test("J1 first run: onboarding, Home as the first-run surface, the first source 
     await expect(page.locator("main form select")).toHaveCount(2, { timeout: 60_000 });
     await page.locator("main form select").nth(1).selectOption(contentLanguage);
     await page.locator("main form button[type=submit]").click();
-    await expect(page.locator("main form")).toHaveCount(0, { timeout: 60_000 });
+    // The step saved: the settings hold the content language the form was given.
+    await expect
+      .poll(
+        async () =>
+          (await invokeApp<{ contentLanguage: string }>(page, "settings.getApp")).contentLanguage,
+        { timeout: 60_000 }
+      )
+      .toBe(contentLanguage);
     lap("languagesDone");
 
     // Step 2, issued through window.app (a sign-in cannot be played); then the first-run view is done.
