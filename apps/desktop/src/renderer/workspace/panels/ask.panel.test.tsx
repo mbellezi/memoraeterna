@@ -142,6 +142,18 @@ describe("the Ask panel's four states", () => {
     expect(html).not.toContain("Nothing asked yet.");
   });
 
+  it("steps the send button down after a failed send, so the retry is the one action that says so", () => {
+    const sendButton = (html: string) =>
+      html.match(/<button[^>]*aria-label="Ask"[^>]*>/u)?.[0] ?? "";
+    const idle = sendButton(draw(snapshot("idle", [])));
+    expect(idle).toContain("border-accent bg-accent text-accent-foreground");
+    const failed = draw(snapshot("error", []));
+    expect(sendButton(failed)).not.toContain("border-accent bg-accent text-accent-foreground");
+    expect(sendButton(failed)).toContain("bg-surface");
+    // "Tentar de novo" is still there, once.
+    expect(failed.match(/Retry/gu)).toHaveLength(1);
+  });
+
   it("refuses a scope that is not the library, a topic or a source, before anything is sent", () => {
     const note = scopeOfView({ kind: "note", id: askFixture.questionId });
     const html = draw(snapshot("idle", []), note);

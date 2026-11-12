@@ -31,6 +31,11 @@ export interface AskComposerProps {
   /** Show the Enter and Shift-Enter hints under the field. */
   hints?: boolean;
   inputRef?: Ref<HTMLTextAreaElement> | undefined;
+  /**
+   * How loud the send button is: primary by default. After a failed send the panel's one "Tentar de
+   * novo" is the primary action, so the send button steps down to secondary.
+   */
+  submitVariant?: "primary" | "secondary";
   className?: string;
 }
 
@@ -55,6 +60,7 @@ export function AskComposer({
   roomy = false,
   hints = false,
   inputRef,
+  submitVariant = "primary",
   className
 }: AskComposerProps) {
   const noteId = useId();
@@ -79,7 +85,7 @@ export function AskComposer({
   const sendButton = (
     <Button
       type="button"
-      variant="primary"
+      variant={submitVariant}
       aria-label={sendLabel}
       disabled={!canSend}
       aria-busy={busy}
