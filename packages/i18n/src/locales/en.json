@@ -742,6 +742,177 @@
       "dismiss": "Dismiss notification"
     }
   },
+  "libraryTable": {
+    "actions": {
+      "chooseFile": "Choose a file",
+      "generate": "Generate notes",
+      "generateFor": "Generate notes for {title}"
+    },
+    "chips": {
+      "all": "All",
+      "failed": "Blocked",
+      "label": "State",
+      "needsYou": "Needs you",
+      "processing": "Generating",
+      "storedOnly": "No notes",
+      "storedOnlyHint": "Sources kept in Just store or Searchable + organized mode"
+    },
+    "columns": {
+      "added": "Added",
+      "answers": "Answers",
+      "asked": "Asked",
+      "notes": "Notes",
+      "place": "Place in the tree",
+      "question": "Question",
+      "source": "Source",
+      "state": "State"
+    },
+    "compact": {
+      "label": "List of sources",
+      "questionsLabel": "List of questions"
+    },
+    "count": {
+      "questionsMany": "{count} questions",
+      "questionsOne": "{count} question",
+      "sourcesMany": "{count} sources",
+      "sourcesOne": "{count} source"
+    },
+    "dates": {
+      "today": "today, {time}",
+      "yesterday": "yesterday, {time}"
+    },
+    "density": {
+      "comfortable": "Comfortable",
+      "compact": "Compact",
+      "label": "Density"
+    },
+    "filter": {
+      "clear": "Clear filter",
+      "clearAll": "Clear filters",
+      "questionsLabel": "Filter questions",
+      "questionsPlaceholder": "Filter by the words of the question",
+      "sourcesLabel": "Filter sources",
+      "sourcesPlaceholder": "Filter by title"
+    },
+    "keys": {
+      "choose": "choose",
+      "open": "open beside",
+      "peek": "peek",
+      "space": "Space"
+    },
+    "order": {
+      "addedAsc": "oldest first",
+      "addedDesc": "newest first",
+      "newest": "newest first",
+      "notesAsc": "fewest notes first",
+      "notesDesc": "most notes first",
+      "statusAsc": "by state, needs you first",
+      "statusDesc": "by state, ready first",
+      "titleAsc": "by title, A to Z",
+      "titleDesc": "by title, Z to A",
+      "updatedAsc": "changed longest ago first",
+      "updatedDesc": "changed most recently first"
+    },
+    "peek": {
+      "answersMany": "{count} answers",
+      "answersOne": "{count} answer",
+      "close": "close",
+      "closes": "closes",
+      "heading": "Peeking",
+      "kept": "It is still kept; nothing changed.",
+      "next": "peek the next",
+      "noSummaryQuestion": "The answer appears when Memora finishes it.",
+      "noSummarySource": "The summary appears when the notes are done.",
+      "notesMany": "{count} notes",
+      "notesOne": "{count} note",
+      "opens": "opens beside",
+      "passagesMany": "{count} passages",
+      "passagesOne": "{count} passage",
+      "stays": "The Library stays here; nothing was opened.",
+      "title": "Peek at {title}",
+      "unavailableQuestion": "This question could not be read.",
+      "unavailableSource": "This source could not be read."
+    },
+    "place": {
+      "none": "No place",
+      "tentative": "likely:",
+      "tentativeHint": "Likely place, decided when the notes are done"
+    },
+    "questionStatus": {
+      "canceled": "Stopped",
+      "complete": "Answered",
+      "failed": "Not finished",
+      "running": "Answering"
+    },
+    "reasons": {
+      "failed": "stopped; the source is kept",
+      "modelMissing": "a model needs installing",
+      "moneyNear": "near the spending limit",
+      "moneyReached": "spending limit reached",
+      "noRoute": "no model chosen yet",
+      "other": "waiting for you",
+      "signIn": "sign in to your AI provider again"
+    },
+    "scope": {
+      "library": "Whole library",
+      "sourcesMany": "{count} sources chosen",
+      "sourcesOne": "{count} source chosen",
+      "topic": "Topic: {title}",
+      "topicGone": "A topic that no longer exists",
+      "topicPending": "A topic"
+    },
+    "states": {
+      "moreError": "Could not load more.",
+      "questionsEmpty": "No saved questions yet.",
+      "questionsEmptyBody": "Ask from the bar at the top or from any note, topic or source, and each question is saved here with its answers.",
+      "questionsEmptyShortcut": "Shortcut:",
+      "questionsError": "Could not read your saved questions.",
+      "questionsFiltered": "No questions match this filter.",
+      "questionsKept": "They are still stored on this Mac.",
+      "sourcesEmpty": "No sources yet.",
+      "sourcesEmptyBody": "Add a file. Memora reads it, writes the notes and places them in the tree for you.",
+      "sourcesEmptyDrop": "Drop files here to start",
+      "sourcesEmptyHint": "From any screen, the shortcut is",
+      "sourcesError": "Could not read the Library.",
+      "sourcesFiltered": "No sources match this filter.",
+      "sourcesKept": "Your sources and notes are safe."
+    },
+    "status": {
+      "failed": "Blocked",
+      "needsYou": "Needs you",
+      "processing": "Generating",
+      "ready": "Ready",
+      "storedOnly": "Stored, no notes"
+    },
+    "tabs": {
+      "label": "Library views",
+      "questions": "Questions",
+      "sources": "Sources"
+    },
+    "territory": {
+      "fewer": "Show fewer",
+      "heading": "By area:",
+      "label": "Sources by area of the tree",
+      "more": "Show all {count} areas",
+      "sourceMany": "sources",
+      "sourceOne": "source",
+      "untitled": "Untitled area"
+    },
+    "title": "Library",
+    "types": {
+      "AcademicPaper": "Academic paper",
+      "Book": "Book",
+      "BookChapter": "Book chapter",
+      "DailyNote": "Daily note",
+      "DocumentSection": "Document section",
+      "GenericDocument": "Document",
+      "PeriodicalIssue": "Periodical issue",
+      "PersonalNote": "Personal note",
+      "StandaloneArticle": "Standalone article",
+      "Video": "Video",
+      "WebArticle": "Web article"
+    }
+  },
   "knowledgeGraph": {
     "openSourceEntities": "Open source entity graph",
     "backToGraph": "Back to knowledge graph",

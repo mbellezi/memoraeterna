@@ -742,6 +742,177 @@
       "dismiss": "Fermer la notification"
     }
   },
+  "libraryTable": {
+    "actions": {
+      "chooseFile": "Choisir un fichier",
+      "generate": "Générer des notes",
+      "generateFor": "Générer des notes pour {title}"
+    },
+    "chips": {
+      "all": "Toutes",
+      "failed": "Bloquées",
+      "label": "État",
+      "needsYou": "Besoin de vous",
+      "processing": "En cours",
+      "storedOnly": "Sans notes",
+      "storedOnlyHint": "Sources en mode Simplement conserver ou Consultable + organisé"
+    },
+    "columns": {
+      "added": "Ajoutée",
+      "answers": "Réponses",
+      "asked": "Posée le",
+      "notes": "Notes",
+      "place": "Emplacement dans l'arbre",
+      "question": "Question",
+      "source": "Source",
+      "state": "État"
+    },
+    "compact": {
+      "label": "Liste des sources",
+      "questionsLabel": "Liste des questions"
+    },
+    "count": {
+      "questionsMany": "{count} questions",
+      "questionsOne": "{count} question",
+      "sourcesMany": "{count} sources",
+      "sourcesOne": "{count} source"
+    },
+    "dates": {
+      "today": "aujourd'hui, {time}",
+      "yesterday": "hier, {time}"
+    },
+    "density": {
+      "comfortable": "Confortable",
+      "compact": "Compact",
+      "label": "Densité"
+    },
+    "filter": {
+      "clear": "Effacer le filtre",
+      "clearAll": "Effacer les filtres",
+      "questionsLabel": "Filtrer les questions",
+      "questionsPlaceholder": "Filtrer par les mots de la question",
+      "sourcesLabel": "Filtrer les sources",
+      "sourcesPlaceholder": "Filtrer par titre"
+    },
+    "keys": {
+      "choose": "choisir",
+      "open": "ouvrir à côté",
+      "peek": "aperçu",
+      "space": "Espace"
+    },
+    "order": {
+      "addedAsc": "les plus anciennes d'abord",
+      "addedDesc": "les plus récentes d'abord",
+      "newest": "les plus récentes d'abord",
+      "notesAsc": "avec le moins de notes d'abord",
+      "notesDesc": "avec le plus de notes d'abord",
+      "statusAsc": "par état, celles qui attendent d'abord",
+      "statusDesc": "par état, les prêtes d'abord",
+      "titleAsc": "par titre, de A à Z",
+      "titleDesc": "par titre, de Z à A",
+      "updatedAsc": "les modifiées il y a longtemps d'abord",
+      "updatedDesc": "les modifiées récemment d'abord"
+    },
+    "peek": {
+      "answersMany": "{count} réponses",
+      "answersOne": "{count} réponse",
+      "close": "fermer",
+      "closes": "ferme",
+      "heading": "Aperçu",
+      "kept": "Elle reste conservée ; rien n’a changé.",
+      "next": "aperçu de la suivante",
+      "noSummaryQuestion": "La réponse apparaît quand Memora l’a terminée.",
+      "noSummarySource": "Le résumé apparaît quand les notes sont terminées.",
+      "notesMany": "{count} notes",
+      "notesOne": "{count} note",
+      "opens": "ouvre à côté",
+      "passagesMany": "{count} passages",
+      "passagesOne": "{count} passage",
+      "stays": "La bibliothèque reste ici ; rien n'a été ouvert.",
+      "title": "Aperçu de {title}",
+      "unavailableQuestion": "Impossible de lire cette question.",
+      "unavailableSource": "Impossible de lire cette source."
+    },
+    "place": {
+      "none": "Sans emplacement",
+      "tentative": "probable :",
+      "tentativeHint": "Emplacement probable, décidé quand les notes seront prêtes"
+    },
+    "questionStatus": {
+      "canceled": "Interrompue",
+      "complete": "Répondue",
+      "failed": "Non terminée",
+      "running": "Réponse en cours"
+    },
+    "reasons": {
+      "failed": "arrêtée ; la source est conservée",
+      "modelMissing": "un modèle doit être installé",
+      "moneyNear": "proche du plafond de dépenses",
+      "moneyReached": "plafond de dépenses atteint",
+      "noRoute": "aucun modèle choisi",
+      "other": "en attente de vous",
+      "signIn": "reconnectez-vous à votre fournisseur d'IA"
+    },
+    "scope": {
+      "library": "Toute la bibliothèque",
+      "sourcesMany": "{count} sources choisies",
+      "sourcesOne": "{count} source choisie",
+      "topic": "Sujet : {title}",
+      "topicGone": "Un sujet qui n'existe plus",
+      "topicPending": "Un sujet"
+    },
+    "states": {
+      "moreError": "Impossible d'en charger plus.",
+      "questionsEmpty": "Aucune question enregistrée pour l'instant.",
+      "questionsEmptyBody": "Posez une question depuis la barre du haut ou depuis une note, un sujet ou une source : chaque question est conservée ici avec ses réponses.",
+      "questionsEmptyShortcut": "Raccourci :",
+      "questionsError": "Impossible de lire les questions enregistrées.",
+      "questionsFiltered": "Aucune question ne correspond à ce filtre.",
+      "questionsKept": "Elles restent enregistrées sur ce Mac.",
+      "sourcesEmpty": "Aucune source pour l'instant.",
+      "sourcesEmptyBody": "Ajoutez un fichier. Memora le lit, rédige les notes et les place dans l'arbre pour vous.",
+      "sourcesEmptyDrop": "Déposez des fichiers ici pour commencer",
+      "sourcesEmptyHint": "Depuis n'importe quel écran, le raccourci est",
+      "sourcesError": "Impossible de lire la bibliothèque.",
+      "sourcesFiltered": "Aucune source ne correspond à ce filtre.",
+      "sourcesKept": "Vos sources et vos notes sont conservées."
+    },
+    "status": {
+      "failed": "Bloquée",
+      "needsYou": "Besoin de vous",
+      "processing": "En cours",
+      "ready": "Prête",
+      "storedOnly": "Conservée, sans notes"
+    },
+    "tabs": {
+      "label": "Vues de la bibliothèque",
+      "questions": "Questions",
+      "sources": "Sources"
+    },
+    "territory": {
+      "fewer": "Afficher moins",
+      "heading": "Par domaine :",
+      "label": "Sources par domaine de l'arbre",
+      "more": "Afficher les {count} domaines",
+      "sourceMany": "sources",
+      "sourceOne": "source",
+      "untitled": "Domaine sans nom"
+    },
+    "title": "Bibliothèque",
+    "types": {
+      "AcademicPaper": "Article académique",
+      "Book": "Livre",
+      "BookChapter": "Chapitre de livre",
+      "DailyNote": "Note quotidienne",
+      "DocumentSection": "Section de document",
+      "GenericDocument": "Document",
+      "PeriodicalIssue": "Numéro de périodique",
+      "PersonalNote": "Note personnelle",
+      "StandaloneArticle": "Article indépendant",
+      "Video": "Vidéo",
+      "WebArticle": "Article web"
+    }
+  },
   "knowledgeGraph": {
     "openSourceEntities": "Ouvrir le graphe des entités de la source",
     "backToGraph": "Retour au graphe de connaissances",
