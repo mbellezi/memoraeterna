@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useEffectEvent, useState } from "react";
 
 import type { InboxKind } from "@app/domain";
 
@@ -41,12 +41,10 @@ export function InboxRoot({ t, address, mode, active, onState, onOpen }: PanelPr
   const width = useViewportWidth();
   const compact = mode === "compact";
   const kind = inboxKindOf(address);
-  const open = useRef(onOpen);
-  open.current = onOpen;
+  const spend = useEffectEvent(() => onOpen(formatView({ view: "inbox" }), { replace: true }));
   // The list's own effect (a child's) has applied the kind by now, so the request can be spent.
   useEffect(() => {
-    if (kind !== undefined && active && !compact)
-      open.current(formatView({ view: "inbox" }), { replace: true });
+    if (kind !== undefined && active && !compact) spend();
   }, [kind, active, compact]);
 
   return (
