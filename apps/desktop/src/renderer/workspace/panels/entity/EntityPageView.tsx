@@ -440,7 +440,7 @@ function LoadedPage({
             <Button
               variant="ghost"
               size="sm"
-              className="-ml-2.5 self-start text-left"
+              className="-ml-2.5 justify-self-start text-left"
               disabled={more === "loading"}
               aria-busy={more === "loading"}
               onClick={onLoadMore}

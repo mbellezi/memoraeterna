@@ -74,7 +74,8 @@ export function SourceTabRow<T extends string>({
                 "-mb-px inline-flex items-baseline first:-ml-1 gap-1.5 rounded-sm border-b-2 px-1 py-2 text-sm whitespace-nowrap",
                 "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent",
                 current
-                  ? "border-accent font-semibold text-accent"
+                  ? // A focused current tab keeps the outline and loses its underline: no two lines.
+                    "border-accent font-semibold text-accent focus-visible:border-transparent"
                   : "border-transparent font-medium text-secondary-foreground hover:text-foreground"
               )}
             >

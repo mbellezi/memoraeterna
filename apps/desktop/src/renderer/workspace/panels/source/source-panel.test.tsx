@@ -367,6 +367,16 @@ describe("pt-BR", () => {
     expect(running).toContain("Visão geral");
   });
 
+  it("draws one accent line on a focused current tab: the outline, with no underline beside it", () => {
+    const html = page(snapshot());
+    const current = html.match(/<button[^>]*aria-selected="true"[^>]*>/u)?.[0] ?? "";
+    expect(current).toContain("border-accent");
+    expect(current).toContain("focus-visible:border-transparent");
+    expect(html.match(/<button[^>]*aria-selected="false"[^>]*>/gu)?.join("")).not.toContain(
+      "focus-visible:border-transparent"
+    );
+  });
+
   it("keeps every tab in the one row in pt-BR: the labels are whole words", () => {
     const html = page(snapshot(), { t: pt });
     for (const label of ["Visão geral", "Notas", "Conexões", "Conteúdo", "Detalhes"])
