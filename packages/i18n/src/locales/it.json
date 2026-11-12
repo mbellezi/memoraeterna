@@ -4881,7 +4881,6 @@
       "headline": "Ancora nessuna menzione diretta."
     },
     "error": {
-      "compact": "Impossibile aprire.",
       "kept": "Le tue note e le tue fonti sono rimaste come erano.",
       "message": "Impossibile aprire questa entità."
     },
@@ -5035,9 +5034,6 @@
     },
     "chip": {
       "labelPlain": "Citazione {number}"
-    },
-    "compact": {
-      "error": "Impossibile aprire."
     },
     "empty": {
       "add": "Aggiungi una fonte",

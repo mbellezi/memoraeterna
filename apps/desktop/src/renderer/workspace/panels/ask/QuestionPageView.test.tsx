@@ -664,10 +664,11 @@ describe("the four states", () => {
     expect(failure).toContain("This question could not be opened.");
     expect(failure).toContain("Your library is as it was.");
     expect(failure.match(/Retry/g)).toHaveLength(1);
-    // The previous panel reads the same Question: it says it quietly, with no second retry.
+    // The previous panel reads the same Question: it says one neutral word, with no second retry.
     const quiet = draw(snapshot(null, emptyStream, { status: "error" }), "compact");
-    expect(quiet).toContain("Could not open.");
+    expect(quiet).toContain(">Unavailable<");
     expect(quiet).not.toContain("Retry");
+    expect(draw(snapshot(null), "compact")).toContain(">No longer here<");
     const missing = draw(snapshot(null));
     expect(missing).toContain("This question is no longer in the library.");
     // A way out: the stored Questions, in the full form only.

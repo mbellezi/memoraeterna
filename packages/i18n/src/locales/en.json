@@ -4881,7 +4881,6 @@
       "headline": "No direct mentions yet."
     },
     "error": {
-      "compact": "Could not open.",
       "kept": "Your notes and sources are as they were.",
       "message": "This entity could not be opened."
     },
@@ -5035,9 +5034,6 @@
     },
     "chip": {
       "labelPlain": "Citation {number}"
-    },
-    "compact": {
-      "error": "Could not open."
     },
     "empty": {
       "add": "Add a source",

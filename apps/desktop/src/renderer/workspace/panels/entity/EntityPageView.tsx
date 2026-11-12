@@ -89,14 +89,10 @@ export function EntityPageView(props: EntityPageViewProps) {
       </LoadingState>
     );
 
-  // One cause shows one failure: the previous panel reads the same page, so it says it quietly and
-  // the retry lives on the top panel.
+  // One cause shows one failure: the previous panel reads the same page, so it says one neutral
+  // word (as the Note and the Topic do) and the sentence and the retry live on the top panel.
   if (load.status === "error" && compact)
-    return (
-      <p role="status" className="m-0 text-xs text-muted-foreground">
-        {t("entityPage.error.compact")}
-      </p>
-    );
+    return <p className="m-0 text-sm text-muted-foreground">{t("explore.compactError")}</p>;
 
   if (load.status === "error")
     return (
@@ -110,10 +106,15 @@ export function EntityPageView(props: EntityPageViewProps) {
       />
     );
 
+  // A gone entity says the same neutral word in the previous panel; the top panel's box says what
+  // happened, once.
+  if (load.status === "missing" && compact)
+    return <p className="m-0 text-sm text-muted-foreground">{t("explore.compactGone")}</p>;
+
   if (load.status === "missing")
     return (
       <EmptyState
-        variant={compact ? "compact" : "inline"}
+        variant="inline"
         className="max-w-(--measure)"
         headline={t("entityPage.missing.headline")}
       >

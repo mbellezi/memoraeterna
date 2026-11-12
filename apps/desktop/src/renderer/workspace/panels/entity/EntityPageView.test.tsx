@@ -135,11 +135,19 @@ describe("the four states", () => {
     expect(html.match(/Tentar de novo/g)).toHaveLength(1);
   });
 
-  it("the previous panel says the failure quietly, so one cause shows one retry", () => {
+  it("the previous panel says a failure in one neutral word, so one cause shows one retry", () => {
     const html = view({ load: { status: "error" }, mode: "compact", t: pt });
-    expect(html).toContain("Não foi possível abrir.");
+    expect(html).toContain(">Indisponível<");
     expect(html).not.toContain("Tentar de novo");
     expect(html).not.toContain("<button");
+    expect(html).not.toContain("Não foi possível");
+  });
+
+  it("the previous panel says a gone entity in one neutral word, with no box", () => {
+    const html = view({ load: { status: "missing" }, mode: "compact", t: pt });
+    expect(html).toContain(">Já não está aqui<");
+    expect(html).not.toContain("<button");
+    expect(html).not.toContain("border-dashed");
   });
 
   it("empty offers to ask the library about the name, and the page with mentions does not", () => {
