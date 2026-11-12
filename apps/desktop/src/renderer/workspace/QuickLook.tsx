@@ -228,8 +228,12 @@ function SheetObject({
   );
 }
 
-function Keys({ children }: { children: ReactNode }) {
-  return <span className="inline-flex flex-wrap items-center gap-x-1.5 gap-y-1">{children}</span>;
+function Keys({ children, className }: { children: ReactNode; className?: string }) {
+  return (
+    <span className={cn("inline-flex flex-wrap items-center gap-x-1.5 gap-y-1", className)}>
+      {children}
+    </span>
+  );
 }
 
 export interface QuickLookViewProps {
@@ -279,7 +283,8 @@ export function QuickLookView({
               <Kbd>↵</Kbd>
               <span>{t("preview.quickLook.keys.opensBeside")}</span>
             </Keys>
-            <Keys>
+            {/* The head's right padding is the primitive's 12 px; this margin brings it to the left's 20. */}
+            <Keys className="mr-2">
               <Kbd>↑</Kbd>
               <Kbd>↓</Kbd>
               <span>{t("preview.quickLook.keys.peekNext")}</span>
@@ -298,7 +303,10 @@ export function QuickLookView({
               <Kbd>Esc</Kbd>
               <span>{t("preview.quickLook.keys.close")}</span>
             </Keys>
-            <span className="text-muted-foreground">{t("preview.quickLook.stays")}</span>
+            {/* A failed read already says what is kept; the foot does not say it twice. */}
+            {preview.state.status === "error" ? null : (
+              <span className="text-muted-foreground">{t("preview.quickLook.stays")}</span>
+            )}
           </SheetFooter>
         </div>
       </SheetContent>

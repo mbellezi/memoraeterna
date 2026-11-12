@@ -23,12 +23,13 @@ function screenBatcher() {
 /**
  * Two links in running text with their hover cards held open: a plain object link (the card shows
  * the place, the first lines and the counts) and a relation link (the card says "Vai para" and
- * the place it leads to). Each card sits to the right of its link, as it does in a panel's margin.
+ * the place it leads to). The text is a reading column at its measure and each card hangs in the margin beside it,
+ * past the end of the paragraph, so no running text is covered.
  */
 export function render() {
   const batcher = screenBatcher();
   return (
-    <div className="grid max-w-md gap-80 font-reading text-reading leading-relaxed">
+    <div className="grid max-w-(--measure) gap-80 font-reading text-reading leading-relaxed">
       <p className="m-0">
         Sauerkraut keeps for weeks outside the fridge because{" "}
         <ObjectLink
