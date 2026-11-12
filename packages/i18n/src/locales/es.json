@@ -4429,6 +4429,8 @@
       "noText": "{name} no tiene texto que Memora pueda leer.",
       "noTextNoName": "Ese archivo no tiene texto que Memora pueda leer.",
       "notAFile": "{name} no es un archivo.",
+      "shortMany": "Archivos no añadidos.",
+      "shortOne": "Archivo no añadido.",
       "symlink": "{name} es un acceso directo. Suelta el archivo original.",
       "tooLarge": "{name} es demasiado grande para importar.",
       "tooLargeNoName": "Ese archivo es demasiado grande para importar.",

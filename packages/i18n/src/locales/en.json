@@ -4429,6 +4429,8 @@
       "noText": "{name} has no text Memora can read.",
       "noTextNoName": "That file has no text Memora can read.",
       "notAFile": "{name} is not a file.",
+      "shortMany": "Files not added.",
+      "shortOne": "File not added.",
       "symlink": "{name} is a shortcut. Drop the original file instead.",
       "tooLarge": "{name} is too large to import.",
       "tooLargeNoName": "That file is too large to import.",

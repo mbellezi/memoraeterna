@@ -192,5 +192,11 @@ describe("what the Add menu says when something fails", () => {
     expect(alerts[0]?.textContent).toContain("could not be added");
     expect(alerts[0]?.textContent).toContain("Retry");
     expect(alerts[0]?.className ?? "").not.toContain("shadow");
+    // One line in the bar: a shorter whole form stands in for the sentence in a narrow slot, a
+    // screen reader hears the sentence and what is kept either way, and the close names itself.
+    expect(alerts[0]?.textContent).toContain("File not added.");
+    expect(alerts[0]?.querySelector(".sr-only")?.textContent).toContain("could not be added");
+    expect(alerts[0]?.querySelector(".sr-only")?.textContent).toContain("Nothing was saved");
+    expect(alerts[0]?.querySelector('button[aria-label="Close"]')).not.toBeNull();
   });
 });

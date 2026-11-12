@@ -40,6 +40,9 @@ export function addMenuState(
   return snapshot.readiness.status === "ready" && !snapshot.readiness.writer ? "empty" : "success";
 }
 
+/** The rows' icons are small and muted, so the titles carry the menu (design record 5.2). */
+const menuIconClass = "size-4 text-muted-foreground";
+
 const entryIcons: Record<AddMenuEntryId, typeof FileText> = {
   file: FileText,
   link: Link2,
@@ -135,7 +138,7 @@ export function AddMenu({
               return (
                 <DropdownMenuItem
                   key={entry.id}
-                  icon={<Icon />}
+                  icon={<Icon className={menuIconClass} />}
                   description={t(keys.hint)}
                   {...("shortcut" in entry ? { shortcut: entry.shortcut } : {})}
                   onSelect={() =>
@@ -187,7 +190,10 @@ export function AddMenu({
               {t("addFlow.menu.foot")}
             </p>
             <DropdownMenuSeparator />
-            <DropdownMenuItem icon={<SlidersHorizontal />} onSelect={() => flow.openImportPanel()}>
+            <DropdownMenuItem
+              icon={<SlidersHorizontal className={menuIconClass} />}
+              onSelect={() => flow.openImportPanel()}
+            >
               {t("addFlow.menu.more")}
             </DropdownMenuItem>
           </DropdownMenuContent>

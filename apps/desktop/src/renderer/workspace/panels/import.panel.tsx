@@ -7,12 +7,12 @@ import { ImportView } from "../../components/ImportView";
 import { Button } from "../../components/ui/button";
 import { EmptyState } from "../../components/ui/empty-state";
 import { ErrorState } from "../../components/ui/error-state";
-import { ScrollArea } from "../../components/ui/scroll-area";
 import { NoteLeaveDialog, type LeaveCopy } from "../../components/note-page/NoteLeaveDialog";
-import { LoadingState, Skeleton, SkeletonLines } from "../../components/ui/skeleton";
+import { LoadingState } from "../../components/ui/skeleton";
 import type { PanelLoadState } from "../PanelFrame";
 import type { PanelProps } from "../PanelStack";
 import { parseViewAddress } from "../route";
+import { ImportScroller, ImportSkeleton } from "./import-scroller";
 
 /**
  * The advanced import panel (D32, T150): the old import wizard hosted in the panel stack until F6
@@ -60,14 +60,21 @@ function useImportData(sourceId: string | null, active: boolean) {
     void (async () => {
       let data: Data;
       try {
+        // A new import reads only whether the metadata lookup is on; if that read fails the wizard
+        // still opens, with the lookup off, so no sentence about editing a source is ever told
+        // for an import that has no source.
         const [app, source] = await Promise.all([
-          window.app.settings.getApp(),
+          sourceId ? window.app.settings.getApp() : window.app.settings.getApp().catch(() => null),
           sourceId ? window.app.knowledge.getSourceDetail(sourceId) : Promise.resolve(null)
         ]);
         data =
           sourceId && source === null
             ? { status: "gone" }
-            : { status: "ready", metadataEnrichmentEnabled: app.metadataEnrichmentEnabled, source };
+            : {
+                status: "ready",
+                metadataEnrichmentEnabled: app?.metadataEnrichmentEnabled ?? false,
+                source
+              };
       } catch {
         data = { status: "error" };
       }
@@ -93,25 +100,6 @@ export const loadStateOf = (data: Data): PanelLoadState =>
 
 function Body({ children }: { children: React.ReactNode }) {
   return <div className="min-w-0 max-w-[57rem]">{children}</div>;
-}
-
-/**
- * The wizard's footer is `sticky bottom-0`, which sticks to the edge of its own scroll box. The
- * frame's body pads its end (3 rem) and its top (1.25 rem) and scrolls with that padding inside, so
- * the footer would stop above the panel's bottom edge with the form showing beneath it. This box
- * takes the padding back (and the body's side padding, so the scroll bar is at the panel's edge)
- * and scrolls on its own, so the footer sits on the panel's bottom edge and nothing renders below
- * it. The form keeps a form's width, not the full width of a wide panel.
- */
-function Scroller({ children }: { children: React.ReactNode }) {
-  return (
-    <ScrollArea
-      className="-mx-(--top-pl) -mb-12 -mt-5 h-[calc(100%+4.25rem)]"
-      viewportClassName="[&>div]:block!"
-    >
-      <div className="max-w-[48rem] px-(--top-pl) pb-3 pt-5">{children}</div>
-    </ScrollArea>
-  );
 }
 
 const leaveCopy: LeaveCopy = {
@@ -163,10 +151,8 @@ export function Component({ t, address, active, onState, onOpen, onLeaveGuard }:
   if (data.status === "loading")
     return (
       <Body>
-        <LoadingState t={t} className="max-w-(--measure)">
-          <Skeleton className="h-6 w-3/5" />
-          <Skeleton className="w-2/5" />
-          <SkeletonLines lines={4} className="mt-2" />
+        <LoadingState t={t}>
+          <ImportSkeleton />
         </LoadingState>
       </Body>
     );
@@ -200,7 +186,7 @@ export function Component({ t, address, active, onState, onOpen, onLeaveGuard }:
     );
   return (
     <>
-      <Scroller>
+      <ImportScroller>
         <ImportView
           t={t}
           active={active}
@@ -213,7 +199,7 @@ export function Component({ t, address, active, onState, onOpen, onLeaveGuard }:
             onOpen(formatObjectAddress({ kind: "source", id: sourceItemId }), { replace: true });
           }}
         />
-      </Scroller>
+      </ImportScroller>
       {guard.leaving ? (
         <NoteLeaveDialog
           t={t}

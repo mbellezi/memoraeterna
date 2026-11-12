@@ -4429,6 +4429,8 @@
       "noText": "{name} ne contient aucun texte que Memora puisse lire.",
       "noTextNoName": "Ce fichier ne contient aucun texte que Memora puisse lire.",
       "notAFile": "{name} n'est pas un fichier.",
+      "shortMany": "Fichiers non ajoutés.",
+      "shortOne": "Fichier non ajouté.",
       "symlink": "{name} est un raccourci. Déposez plutôt le fichier d'origine.",
       "tooLarge": "{name} est trop volumineux pour être importé.",
       "tooLargeNoName": "Ce fichier est trop volumineux pour être importé.",

@@ -55,7 +55,7 @@ export function DropOverlay({
     >
       <div
         aria-hidden="true"
-        className="absolute inset-1 rounded-2xl border-2 border-dashed border-accent"
+        className="absolute inset-px rounded-2xl border-2 border-dashed border-accent"
       />
       <div
         role="status"
@@ -77,7 +77,10 @@ export function DropOverlay({
             <Skeleton className="w-4/5" />
           </div>
         ) : readiness.status === "error" ? (
-          <p className="m-0 inline-flex max-w-prose items-start gap-2 text-left text-sm text-secondary-foreground [text-wrap:pretty]">
+          <p
+            role="alert"
+            className="m-0 inline-flex max-w-prose items-start gap-2 text-left text-sm text-secondary-foreground [text-wrap:pretty]"
+          >
             <SolidTriangle className="mt-0.5 text-danger" />
             {t("addFlow.drop.modeError")}
           </p>
