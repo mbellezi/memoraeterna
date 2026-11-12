@@ -25,6 +25,7 @@ import {
   matchingSubgroups,
   presetLimit,
   presetNameMax,
+  presetBaseName,
   presetOptions,
   restoreCalibratedUpdate,
   savePresetUpdate,
@@ -202,9 +203,8 @@ function PresetRow({
   const options = presetOptions(t, settings);
   const selected = settings.matchingPresets.find((preset) => preset.id === active);
   const full = settings.matchingPresets.length >= presetLimit;
-  const selectedName =
-    options.find((option) => option.id === active)?.label ??
-    t("settingsAdvanced.matching.presetRecommended");
+  // What the selector shows ("Custom: name") is for reading; a name to edit or to copy is the plain one.
+  const selectedName = presetBaseName(t, settings, active);
 
   const choose = (id: string) => {
     hold(id);

@@ -5803,7 +5803,7 @@
       "days": "dias",
       "deletedMany": "{count} registros apagados.",
       "deletedOne": "{count} registro apagado.",
-      "description": "As chamadas mais antigas saem do registro. A auditoria das tarefas de IA e o seu conteúdo ficam.",
+      "description": "O que for apagado aqui não volta. A auditoria das tarefas de IA e o seu conteúdo ficam.",
       "failed": "Não deu para apagar os registros. Nada foi removido.",
       "invalid": "Digite um número inteiro de dias ou meses, de 1 a 3650.",
       "months": "meses",
@@ -5812,7 +5812,7 @@
       "previewMany": "{count} registros anteriores a {date} serão apagados.",
       "previewOne": "{count} registro anterior a {date} será apagado.",
       "scope": "O que apagar",
-      "scopeAll": "As chamadas e os seus registros",
+      "scopeAll": "Chamadas, registros de operações e execuções de similaridade",
       "scopePayloads": "Só os prompts e as respostas completos",
       "title": "Apagar registros antigos?",
       "unit": "Unidade"

@@ -2,9 +2,14 @@ import { jobRecordSchema, type JobRecord } from "../../../shared/ipc";
 import { monitoringRowSchema, type MonitoringRow } from "../../../shared/monitoring";
 import { screenTranslator } from "../../workspace/screen-locale";
 import type { ScreenModule } from "../../workspace/surfaces";
-import { DiagnosticsSurface } from "./DiagnosticsSurface";
+import { SettingsSurface } from "../SettingsSurface";
+import { appSettings, describeEntries } from "../sections/advanced/advanced.screen";
+import { useAppSettings } from "../sections/advanced/use-app-settings";
+import { useSettings } from "../settings-context";
+import { groupLabelOf, groupsOf } from "../settings-model";
+import { DiagnosticsGroup } from "./DiagnosticsGroup";
 
-/** The Diagnostics pages fill the Settings content area: the rail and the section column stand empty. */
+/** Settings fills the content area of the window: the rail's width stands empty beside it. */
 export const fullWindow = true;
 
 export const surface = "settings-diagnostics";
@@ -124,8 +129,15 @@ const jobs: JobRecord[] = [
 
 const emptyPage = { rows: [], totals: totals([]) };
 
+/** What Settings reads before any page opens; the pages' own reads are what each state changes. */
+const settings = {
+  "settings.describe": { entries: describeEntries() },
+  "settings.getApp": appSettings
+};
+
 export const fixtures: ScreenModule["fixtures"] = {
   success: {
+    ...settings,
     "monitoring.list": (query?: { status?: string }) => {
       const rows =
         query?.status === "failed" ? calls.filter((row) => row.status === "failed") : calls;
@@ -133,13 +145,42 @@ export const fixtures: ScreenModule["fixtures"] = {
     },
     "jobs.list": jobs
   },
-  empty: { "monitoring.list": emptyPage, "jobs.list": [] }
+  empty: { ...settings, "monitoring.list": emptyPage, "jobs.list": [] },
+  // Loading and failure belong to the pages: Settings itself has its values, the pages wait or fail.
+  loading: settings,
+  error: settings
 };
+
+/** The Diagnostics group of Advanced as the app shows it, with both pages open. */
+function DiagnosticsBody() {
+  const { t: translate, section } = useSettings();
+  const app = useAppSettings();
+  const entries = groupsOf(section).find(({ group }) => group === "diagnostics")?.entries ?? [];
+  return (
+    <section aria-labelledby="settings-group-advanced-diagnostics">
+      <h3
+        id="settings-group-advanced-diagnostics"
+        className="m-0 mt-8 text-sm font-semibold text-foreground"
+      >
+        {groupLabelOf(translate, section, "diagnostics")}
+      </h3>
+      <p className="m-0 mt-1 max-w-[27.5rem] text-sm text-secondary-foreground [text-wrap:pretty]">
+        {translate("settingsAdvanced.groups.diagnosticsIntro")}
+      </p>
+      <DiagnosticsGroup entries={entries} saveApp={app.save} openPages />
+    </section>
+  );
+}
 
 export function render() {
   return (
-    <div className="h-screen overflow-auto bg-background text-foreground">
-      <DiagnosticsSurface t={t} />
+    <div className="h-screen bg-background text-foreground">
+      <SettingsSurface
+        t={t}
+        surface={surface}
+        initialSection="advanced"
+        sections={{ advanced: { id: "advanced", Section: DiagnosticsBody } }}
+      />
     </div>
   );
 }

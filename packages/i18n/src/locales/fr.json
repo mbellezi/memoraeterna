@@ -5805,7 +5805,7 @@
       "days": "jours",
       "deletedMany": "{count} enregistrements supprimés.",
       "deletedOne": "{count} enregistrement supprimé.",
-      "description": "Les appels les plus anciens quittent le journal. L’audit des tâches d’IA et votre contenu restent.",
+      "description": "Ce qui est supprimé ici ne peut pas être récupéré. L’audit des tâches d’IA et votre contenu restent.",
       "failed": "Les enregistrements n’ont pas pu être supprimés. Rien n’a été retiré.",
       "invalid": "Saisissez un nombre entier de jours ou de mois, de 1 à 3650.",
       "months": "mois",
@@ -5814,7 +5814,7 @@
       "previewMany": "{count} enregistrements antérieurs au {date} seront supprimés.",
       "previewOne": "{count} enregistrement antérieur au {date} sera supprimé.",
       "scope": "Quoi supprimer",
-      "scopeAll": "Les appels et leurs journaux",
+      "scopeAll": "Appels, enregistrements d’opérations et exécutions de similarité",
       "scopePayloads": "Seulement les prompts et les réponses complets",
       "title": "Supprimer les anciens enregistrements ?",
       "unit": "Unité"

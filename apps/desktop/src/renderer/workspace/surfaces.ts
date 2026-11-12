@@ -240,7 +240,7 @@ export const surfaces: readonly SurfaceEntry[] = [
   entry(
     "settings-diagnostics",
     "settings",
-    "settings/diagnostics/DiagnosticsSurface.tsx",
+    "settings/diagnostics/DiagnosticsGroup.tsx",
     "settings/diagnostics/diagnostics.screen.tsx"
   ),
 

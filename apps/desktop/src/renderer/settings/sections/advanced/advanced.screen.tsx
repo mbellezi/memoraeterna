@@ -27,7 +27,7 @@ const customSettings = {
 };
 
 /** The app settings: a saved preset is selected, and one of its values is away from the calibrated set. */
-const appSettings: AppSettings = {
+export const appSettings: AppSettings = {
   ...defaultAppSettings,
   ...customSettings,
   language: t.locale,
@@ -58,7 +58,7 @@ const changedIds = new Set([
   "graphWheelZoomSensitivity"
 ]);
 
-function describeEntries(): SettingDescription[] {
+export function describeEntries(): SettingDescription[] {
   return settingsRegistryV2
     .filter((entry) => entry.store.kind !== "none")
     .map((entry) => {

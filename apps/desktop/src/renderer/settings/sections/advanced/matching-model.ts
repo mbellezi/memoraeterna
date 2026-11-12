@@ -241,6 +241,21 @@ export function presetLabel(t: Translator, preset: MatchingPreset): string {
     : preset.name;
 }
 
+/**
+ * The name a rename or a copy starts from: the preset's own name (never the "Custom: " label the
+ * selector shows), "Previous settings" for one saved without a name, and the recommendation's name
+ * when no saved preset is selected.
+ */
+export function presetBaseName(
+  t: Translator,
+  settings: Pick<AppSettings, "matchingPresets">,
+  id: string
+): string {
+  const preset = settings.matchingPresets.find((candidate) => candidate.id === id);
+  if (!preset) return t("settingsAdvanced.matching.presetRecommended");
+  return preset.name ?? t("settingsAdvanced.matching.presetPrevious");
+}
+
 /** The selector's options: the recommendation, then the saved presets. */
 export function presetOptions(
   t: Translator,

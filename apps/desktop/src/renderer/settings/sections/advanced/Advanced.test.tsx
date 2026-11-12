@@ -39,6 +39,7 @@ let storageUpdates: unknown[];
 let calls: string[];
 let monitoring: { list: ReturnType<typeof vi.fn>; prune: ReturnType<typeof vi.fn> };
 let events: Record<string, Array<(event: unknown) => void>>;
+let focused: Element[];
 
 const describeEntries = () =>
   settingsRegistryV2
@@ -84,7 +85,10 @@ beforeEach(() => {
   dom = createTestDom();
   const prototype = (dom.window as unknown as { HTMLElement: { prototype: object } }).HTMLElement
     .prototype as { focus?: () => void; select?: () => void };
-  prototype.focus = () => undefined;
+  focused = [];
+  prototype.focus = function focus(this: Element) {
+    focused.push(this);
+  };
   prototype.select = () => undefined;
   (dom.window as unknown as { app: unknown }).app = {
     settings: {
@@ -326,5 +330,124 @@ describe("Advanced, in the DOM", () => {
     await settle();
     expect(calls).toContain("similarity");
     expect(text()).toContain("12 runs deleted.");
+  });
+
+  it("takes a link to a matching value to its row even though the presets are still being read", async () => {
+    let answer: (value: AppSettings) => void = () => undefined;
+    getApp = () =>
+      new Promise<AppSettings>((resolve) => {
+        answer = resolve;
+      });
+    await mount();
+    expect(row("sourceRelationSettings.minConfidence")).toBeNull();
+    requestSettingsTarget({ section: "advanced", setting: "sourceRelationSettings.minConfidence" });
+    await settle();
+    expect(row("sourceRelationSettings.minConfidence")).toBeNull();
+    answer(app);
+    await settle();
+    await settle();
+    const target = row("sourceRelationSettings.minConfidence");
+    expect(target).not.toBeNull();
+    expect(focused).toContain(target);
+    expect(target?.className).toContain("bg-surface-selected");
+  });
+
+  it("names, in the deletion's confirmation, everything that goes with the old calls", async () => {
+    monitoring.list.mockResolvedValue({
+      rows: [
+        {
+          id: "50000000-0000-4000-8000-000000000001",
+          kind: "ai",
+          operation: "embed",
+          taskType: "embed",
+          modelId: "Qwen3-Embedding-0.6B",
+          status: "succeeded",
+          startedAt: new Date().toISOString(),
+          durationMs: 38,
+          tokenUsage: { totalTokens: 512 },
+          error: null
+        }
+      ],
+      totals: { count: 5, failed: 0, running: 0, tokens: null }
+    });
+    await mount();
+    await click(within("advanced.callLog", "button"));
+    await settle();
+    await click(button("Delete old records…")!);
+    const dialog = text();
+    expect(dialog).toContain("operation");
+    expect(dialog).toContain("similarity");
+  });
+
+  it("starts a rename from the preset's own name and a copy from it, never from the 'Custom:' label", async () => {
+    app = customApp;
+    await mount();
+    expect(text()).toContain("Custom: Confidence test");
+    await click(button("Rename")!);
+    const rename = within("activeMatchingPresetId", "input") as HTMLInputElement;
+    expect(propsOf(rename).value).toBe("Confidence test");
+    await click(button("Cancel")!);
+    await click(button("Duplicate")!);
+    const copy = within("activeMatchingPresetId", "input") as HTMLInputElement;
+    expect(propsOf(copy).value).toBe("Confidence test (copy)");
+  });
+
+  it("reads the job history again on the first run that finishes after it opened", async () => {
+    const jobsList = vi.fn(() => Promise.resolve([]));
+    (dom.window as unknown as { app: { jobs: unknown } }).app.jobs = {
+      list: jobsList,
+      clearCompletedOrFailed: () => Promise.resolve({ deletedCount: 0 })
+    };
+    await mount();
+    await click(within("advanced.taskHistory", "button"));
+    await settle();
+    expect(jobsList).toHaveBeenCalledTimes(1);
+    const lane = { queued: 0, blocked: 0, running: 0, succeeded: 1, failed: 0, canceled: 0 };
+    const idle = { ...lane, succeeded: 0 };
+    await dom.act(() =>
+      (events["job.progress"] ?? []).forEach((handler) =>
+        handler({
+          type: "job.progress",
+          lanes: { heavy: idle, light: lane },
+          changedIds: ["60000000-0000-4000-8000-000000000001"],
+          changedIdsTruncated: false
+        })
+      )
+    );
+    await settle();
+    expect(jobsList).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not keep the rows of every call under the 'Only failures' chip while the failed ones are read", async () => {
+    const calls = [
+      {
+        id: "50000000-0000-4000-8000-000000000001",
+        kind: "ai",
+        operation: "embed",
+        taskType: "embed",
+        modelId: "Qwen3-Embedding-0.6B",
+        status: "succeeded",
+        startedAt: new Date().toISOString(),
+        durationMs: 38,
+        tokenUsage: { totalTokens: 512 },
+        error: null
+      }
+    ];
+    monitoring.list.mockImplementation((query: { status: string }) =>
+      query.status === "failed"
+        ? new Promise(() => undefined)
+        : Promise.resolve({
+            rows: calls,
+            totals: { count: 1, failed: 0, running: 0, tokens: null }
+          })
+    );
+    await mount();
+    await click(within("advanced.callLog", "button"));
+    await settle();
+    expect(dom.document.querySelector("table")).not.toBeNull();
+    await click(button("Failed only")!);
+    await settle();
+    expect(dom.document.querySelector("table")).toBeNull();
+    expect(button("Failed only")?.getAttribute("aria-pressed")).toBe("true");
   });
 });

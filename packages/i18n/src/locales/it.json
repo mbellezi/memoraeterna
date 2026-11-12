@@ -5798,7 +5798,7 @@
       "days": "giorni",
       "deletedMany": "{count} registri eliminati.",
       "deletedOne": "{count} registro eliminato.",
-      "description": "Le chiamate più vecchie escono dal registro. L’audit delle attività IA e i tuoi contenuti restano.",
+      "description": "Ciò che elimini qui non si può recuperare. L’audit delle attività IA e i tuoi contenuti restano.",
       "failed": "Non è stato possibile eliminare i registri. Non è stato rimosso nulla.",
       "invalid": "Scrivi un numero intero di giorni o mesi, da 1 a 3650.",
       "months": "mesi",
@@ -5807,7 +5807,7 @@
       "previewMany": "{count} registri precedenti al {date} verranno eliminati.",
       "previewOne": "{count} registro precedente al {date} verrà eliminato.",
       "scope": "Cosa eliminare",
-      "scopeAll": "Le chiamate e i loro registri",
+      "scopeAll": "Chiamate, registri delle operazioni ed esecuzioni di similarità",
       "scopePayloads": "Solo i prompt e le risposte complete",
       "title": "Eliminare i registri vecchi?",
       "unit": "Unità"

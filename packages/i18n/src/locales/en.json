@@ -5800,7 +5800,7 @@
       "days": "days",
       "deletedMany": "{count} records deleted.",
       "deletedOne": "{count} record deleted.",
-      "description": "Older calls leave the log. The AI task audit and your content stay.",
+      "description": "Anything deleted here cannot be brought back. The AI task audit and your content stay.",
       "failed": "The records could not be deleted. Nothing was removed.",
       "invalid": "Type a whole number of days or months, from 1 to 3650.",
       "months": "months",
@@ -5809,7 +5809,7 @@
       "previewMany": "{count} records from before {date} will be deleted.",
       "previewOne": "{count} record from before {date} will be deleted.",
       "scope": "What to delete",
-      "scopeAll": "Calls and their logs",
+      "scopeAll": "Calls, operation records and similarity runs",
       "scopePayloads": "Only the full prompts and responses",
       "title": "Delete old records?",
       "unit": "Unit"

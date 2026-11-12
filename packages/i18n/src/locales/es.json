@@ -5807,7 +5807,7 @@
       "days": "días",
       "deletedMany": "{count} registros borrados.",
       "deletedOne": "{count} registro borrado.",
-      "description": "Las llamadas más antiguas salen del registro. La auditoría de las tareas de IA y tu contenido se quedan.",
+      "description": "Lo que se borre aquí no se puede recuperar. La auditoría de las tareas de IA y tu contenido se quedan.",
       "failed": "No se pudieron borrar los registros. No se quitó nada.",
       "invalid": "Escribe un número entero de días o meses, de 1 a 3650.",
       "months": "meses",
@@ -5816,7 +5816,7 @@
       "previewMany": "Se borrarán {count} registros anteriores al {date}.",
       "previewOne": "Se borrará {count} registro anterior al {date}.",
       "scope": "Qué borrar",
-      "scopeAll": "Las llamadas y sus registros",
+      "scopeAll": "Llamadas, registros de operaciones y ejecuciones de similitud",
       "scopePayloads": "Solo los prompts y las respuestas completos",
       "title": "¿Borrar registros antiguos?",
       "unit": "Unidad"

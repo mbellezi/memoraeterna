@@ -42,23 +42,52 @@ export function CallLogView({ t, state }: { t: Translator; state: CallLogState }
     [read, t]
   );
 
-  if (read.status === "loading")
+  const filters: ReadonlyArray<{ id: CallFilter; label: string }> = [
+    { id: "all", label: t("diagnostics.callLog.filterAll") },
+    { id: "failed", label: t("diagnostics.callLog.filterFailed") }
+  ];
+  const chips = (
+    <div role="group" aria-label={t("diagnostics.callLog.filterLabel")} className="flex gap-1">
+      {filters.map((option) => (
+        <Button
+          key={option.id}
+          variant="chip"
+          size="sm"
+          aria-pressed={filter === option.id}
+          onClick={() => state.setFilter(option.id)}
+        >
+          {option.label}
+        </Button>
+      ))}
+    </div>
+  );
+  const skeleton = (
+    <LoadingState t={t} className="max-w-[45rem]">
+      <div className="grid gap-3 pt-1">
+        {[0, 1, 2, 3, 4].map((row) => (
+          <div
+            key={row}
+            className="grid grid-cols-[3rem_7rem_minmax(0,1fr)_3.5rem_3.5rem_5rem] gap-3"
+          >
+            {["w-full", "w-full", "w-4/5", "w-full", "w-full", "w-full"].map((width, cell) => (
+              <Skeleton key={cell} className={cn("h-3.5", width)} />
+            ))}
+          </div>
+        ))}
+      </div>
+    </LoadingState>
+  );
+
+  // A new filter is being read: the chips stay (the person is on one) and the rows come.
+  if (read.status === "loading" && state.switching)
     return (
-      <LoadingState t={t} className="max-w-[45rem]">
-        <div className="grid gap-3 pt-1">
-          {[0, 1, 2, 3, 4].map((row) => (
-            <div
-              key={row}
-              className="grid grid-cols-[3rem_7rem_minmax(0,1fr)_3.5rem_3.5rem_5rem] gap-3"
-            >
-              {["w-full", "w-full", "w-4/5", "w-full", "w-full", "w-full"].map((width, cell) => (
-                <Skeleton key={cell} className={cn("h-3.5", width)} />
-              ))}
-            </div>
-          ))}
-        </div>
-      </LoadingState>
+      <div className="grid gap-3">
+        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">{chips}</div>
+        {skeleton}
+      </div>
     );
+
+  if (read.status === "loading") return skeleton;
 
   if (read.status === "error")
     return (
@@ -82,27 +111,10 @@ export function CallLogView({ t, state }: { t: Translator; state: CallLogState }
       </EmptyState>
     );
 
-  const filters: ReadonlyArray<{ id: CallFilter; label: string }> = [
-    { id: "all", label: t("diagnostics.callLog.filterAll") },
-    { id: "failed", label: t("diagnostics.callLog.filterFailed") }
-  ];
-
   return (
     <div className="grid gap-3">
       <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
-        <div role="group" aria-label={t("diagnostics.callLog.filterLabel")} className="flex gap-1">
-          {filters.map((option) => (
-            <Button
-              key={option.id}
-              variant="chip"
-              size="sm"
-              aria-pressed={filter === option.id}
-              onClick={() => state.setFilter(option.id)}
-            >
-              {option.label}
-            </Button>
-          ))}
-        </div>
+        {chips}
         <p className="m-0 text-xs text-secondary-foreground" aria-live="polite">
           {t(
             totals.count === 1 ? "diagnostics.callLog.countOne" : "diagnostics.callLog.countMany",

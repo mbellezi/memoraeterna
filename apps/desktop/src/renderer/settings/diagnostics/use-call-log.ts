@@ -14,7 +14,10 @@ import { callPageSize, type CallFilter, type PageRead } from "./call-log-model";
  */
 
 export interface CallLogState {
+  /** What was read for the filter now chosen: after a change of filter it is loading until that read answers. */
   read: PageRead<MonitoringPage>;
+  /** The filter changed and its rows are on their way: the page keeps its chips and shows rows to come. */
+  switching: boolean;
   filter: CallFilter;
   limit: number;
   setFilter: (filter: CallFilter) => void;
@@ -25,7 +28,10 @@ export interface CallLogState {
 }
 
 export function useCallLog(active: boolean): CallLogState {
-  const [read, setRead] = useState<PageRead<MonitoringPage>>({ status: "loading" });
+  // The value is tagged with the filter it answers: rows read for another filter are not this one's.
+  const [stored, setRead] = useState<
+    PageRead<MonitoringPage> | { status: "ready"; value: MonitoringPage; filter: CallFilter }
+  >({ status: "loading" });
   const [filter, setFilterState] = useState<CallFilter>("all");
   const [limit, setLimit] = useState(callPageSize);
   const [token, setToken] = useState(0);
@@ -44,23 +50,39 @@ export function useCallLog(active: boolean): CallLogState {
           limit,
           offset: 0
         }),
-      onValue: (value) => setRead({ status: "ready", value }),
+      onValue: (value) => setRead({ status: "ready", value, filter }),
+      // Rows that were shown for this filter stay when a later read fails; any other failure is the page's.
       onError: () =>
-        setRead((current) => (current.status === "ready" ? current : { status: "error" }))
+        setRead((current) =>
+          current.status === "ready" && "filter" in current && current.filter === filter
+            ? current
+            : { status: "error" }
+        )
     });
     return () => reading.stop();
   }, [active, filter, limit, token]);
 
+  const answersFilter = stored.status === "ready" && "filter" in stored && stored.filter === filter;
+  const read: PageRead<MonitoringPage> =
+    stored.status === "ready"
+      ? answersFilter
+        ? { status: "ready", value: stored.value }
+        : { status: "loading" }
+      : stored;
+  const switching = stored.status === "ready" && !answersFilter;
+
   const setFilter = useCallback((next: CallFilter) => {
     setFilterState(next);
     setLimit(callPageSize);
+    // A failure of the other filter's read is not this one's.
+    setRead((current) => (current.status === "error" ? { status: "loading" } : current));
   }, []);
   const retry = useCallback(() => {
     setRead({ status: "loading" });
     setToken((value) => value + 1);
   }, []);
   const refresh = useCallback(() => setToken((value) => value + 1), []);
-  return { read, filter, limit, setFilter, showMore: setLimit, retry, refresh };
+  return { read, switching, filter, limit, setFilter, showMore: setLimit, retry, refresh };
 }
 
 export interface TaskHistoryState {
@@ -81,7 +103,9 @@ export function useTaskHistory(active: boolean): TaskHistoryState {
 
   useEffect(() => {
     if (!active) return undefined;
-    // `job.progress` arrives while work runs; only a rise in the finished total changes the history.
+    // `job.progress` arrives while work runs; only a change of the finished total changes the history.
+    // The first event has nothing to be compared with (it carries every run that finished since the
+    // page opened, and is never replayed), so it reads again.
     let seen: number | null = null;
     const reading = readOnEvents<JobRecord[]>({
       api: () => window.app,
@@ -90,7 +114,7 @@ export function useTaskHistory(active: boolean): TaskHistoryState {
           type: "job.progress",
           when: (event) => {
             const total = finishedTotal(event);
-            const changed = seen !== null && total !== seen;
+            const changed = seen === null || total !== seen;
             seen = total;
             return changed;
           }

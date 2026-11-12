@@ -21,7 +21,7 @@ import { cn } from "../lib/cn";
 import { GenericSection } from "./GenericSection";
 import { InlineAction } from "./InlineAction";
 import { SectionNav } from "./SectionNav";
-import { SettingsContext, type SettingsContextValue } from "./settings-context";
+import { SettingsContext, type SectionState, type SettingsContextValue } from "./settings-context";
 import {
   changedCounts,
   changedIn,
@@ -95,6 +95,10 @@ export function SettingsSurface({
   const [query, setQuery] = useState(initialQuery);
   const [highlighted, setHighlighted] = useState<string | null>(null);
   const [pendingRow, setPendingRow] = useState<string | null>(null);
+  // Rows that appear after the section mounted (a read of its own) ask the request to look again.
+  const [rowsTick, setRowsTick] = useState(0);
+  const [sectionState, setSectionState] = useState<SectionState | null>(null);
+  const rowsChanged = useCallback(() => setRowsTick((tick) => tick + 1), []);
 
   const { store, snapshot } = useSettingsStore(active && visited);
   const read = snapshot.read;
@@ -153,7 +157,7 @@ export function SettingsSurface({
     setPendingRow(null);
     if (timer.current !== null) clearTimeout(timer.current);
     timer.current = setTimeout(() => setHighlighted(null), highlightMs);
-  }, [pendingRow, active, section, query, read.status]);
+  }, [pendingRow, active, section, query, read.status, rowsTick]);
   useEffect(
     () => () => {
       if (timer.current !== null) clearTimeout(timer.current);
@@ -231,9 +235,11 @@ export function SettingsSurface({
       read: read.status,
       rowState: (id) => snapshot.rows[id] ?? "idle",
       highlighted,
-      reset: (id, confirmed) => store.reset(id, confirmed)
+      reset: (id, confirmed) => store.reset(id, confirmed),
+      rowsChanged,
+      reportState: setSectionState
     }),
-    [t, section, index, read.status, snapshot.rows, highlighted, store]
+    [t, section, index, read.status, snapshot.rows, highlighted, store, rowsChanged]
   );
 
   if (!visited) return null;
@@ -246,7 +252,7 @@ export function SettingsSurface({
   return (
     <div
       data-surface={surface}
-      data-state={state}
+      data-state={state === "success" && sectionState !== null ? sectionState : state}
       hidden={!active}
       className={cn("grid h-full min-h-0 bg-background text-foreground", columns)}
     >

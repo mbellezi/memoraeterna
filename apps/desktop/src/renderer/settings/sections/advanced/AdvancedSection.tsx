@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
 import type { MessageKey } from "@app/i18n";
 
 import type { SettingEntryV2 } from "../../../../shared/settings-registry";
@@ -56,7 +56,12 @@ function plainRow(entry: SettingEntryV2, saveApp: SaveApp): ReactNode {
  * search finds are the same list. It takes the app settings as a prop so a test can hand a fake.
  */
 export function AdvancedBody({ app }: { app: AppSettingsState }) {
-  const { t, section } = useSettings();
+  const { t, section, rowsChanged } = useSettings();
+  // The matching rows exist only once the presets are read: a link or a search result that asked
+  // for one of them is answered then, not when this section was mounted.
+  useEffect(() => {
+    if (app.status === "ready") rowsChanged();
+  }, [app.status, rowsChanged]);
   const saveApp: SaveApp = (update) => app.save(update);
   return (
     <>

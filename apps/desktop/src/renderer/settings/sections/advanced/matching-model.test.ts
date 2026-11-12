@@ -19,6 +19,7 @@ import {
   matchingControlsCoverDomain,
   matchingSpecOf,
   parseNumber,
+  presetBaseName,
   presetLimit,
   presetOptions,
   restoreCalibratedUpdate,
@@ -245,5 +246,22 @@ describe("presets", () => {
       recommendedMatchingConfiguration.sourceRelationSettings
     );
     expect(deletePresetUpdate(base)).toBeNull();
+  });
+});
+
+describe("the name a rename or a copy starts from", () => {
+  it("is the preset's own name, not the 'Custom:' label of the selector", () => {
+    expect(presetOptions(en, custom).at(-1)?.label).toBe("Custom: Confidence test");
+    expect(presetBaseName(en, custom, customId)).toBe("Confidence test");
+  });
+
+  it("is the 'previous' label for a preset without a name, and the recommendation's name for it", () => {
+    const unnamed = { ...custom, matchingPresets: [{ ...custom.matchingPresets[0]!, name: null }] };
+    expect(presetBaseName(en, unnamed, customId)).toBe(
+      en("settingsAdvanced.matching.presetPrevious")
+    );
+    expect(presetBaseName(en, custom, recommendedMatchingPresetId)).toBe(
+      en("settingsAdvanced.matching.presetRecommended")
+    );
   });
 });

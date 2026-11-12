@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { Translator } from "@app/i18n";
 
 import type { AppSettingsUpdate } from "../../../shared/ipc";
@@ -8,19 +8,36 @@ import { SolidTriangle } from "../../components/ui/solid-glyphs";
 import { PageRow } from "../PageRow";
 import { RegistryRow } from "../SettingRow";
 import { useHeldValue, SettingSwitch } from "../sections/advanced/advanced-controls";
-import { useSettings } from "../settings-context";
+import { useSettings, type SectionState } from "../settings-context";
 import { helpOf, labelOf } from "../settings-model";
+import { callLogState } from "./call-log-model";
 import { CallLogView } from "./CallLogView";
 import { ConfirmDialog } from "./ConfirmDialog";
+import { diagnosticsState, taskHistoryState } from "./task-history-model";
 import { TaskHistoryView } from "./TaskHistoryView";
 import { useCallLog, useTaskHistory } from "./use-call-log";
 
+type PageName = "calls" | "tasks";
+type Report = (page: PageName, state: SectionState | null) => void;
+
 /** A page that reads only while it is open: the hook lives in the body PageRow mounts. */
-function CallLogPage({ t }: { t: Translator }) {
-  return <CallLogView t={t} state={useCallLog(true)} />;
+function CallLogPage({ t, report }: { t: Translator; report: Report }) {
+  const state = useCallLog(true);
+  const shown = callLogState(state.read, state.filter);
+  useEffect(() => {
+    report("calls", shown);
+    return () => report("calls", null);
+  }, [report, shown]);
+  return <CallLogView t={t} state={state} />;
 }
-function TaskHistoryPage({ t }: { t: Translator }) {
-  return <TaskHistoryView t={t} state={useTaskHistory(true)} />;
+function TaskHistoryPage({ t, report }: { t: Translator; report: Report }) {
+  const state = useTaskHistory(true);
+  const shown = taskHistoryState(state.read, t, new Date());
+  useEffect(() => {
+    report("tasks", shown);
+    return () => report("tasks", null);
+  }, [report, shown]);
+  return <TaskHistoryView t={t} state={state} />;
 }
 
 type Step = "idle" | "asking" | "working";
@@ -177,17 +194,46 @@ function DebugSwitches({
  */
 export function DiagnosticsGroup({
   entries,
-  saveApp
+  saveApp,
+  openPages = false
 }: {
   entries: readonly SettingEntryV2[];
   saveApp: (update: AppSettingsUpdate) => Promise<boolean>;
+  /** Both pages start open (the screens tool shows them so; in the app they open on a press or a link). */
+  openPages?: boolean;
 }) {
-  const { t } = useSettings();
+  const { t, reportState } = useSettings();
+  // The frame says what the open pages are in (loading while one reads, error when one failed, empty
+  // when every open page has nothing); with every page closed it says nothing.
+  const [pages, setPages] = useState<Partial<Record<PageName, SectionState>>>({});
+  const report = useMemo<Report>(
+    () => (page, state) =>
+      setPages((current) => {
+        if ((current[page] ?? null) === state) return current;
+        const next = { ...current };
+        if (state === null) delete next[page];
+        else next[page] = state;
+        return next;
+      }),
+    []
+  );
+  const open = Object.values(pages);
+  const framed = open.length === 0 ? null : diagnosticsState(open);
+  useEffect(() => {
+    reportState(framed);
+    return () => reportState(null);
+  }, [reportState, framed]);
   const byId = (id: string) => entries.find((entry) => entry.id === id);
   const page = (id: string, body: React.ReactNode) => {
     const entry = byId(id);
     return entry ? (
-      <PageRow key={id} id={id} label={labelOf(t, entry)} help={helpOf(t, entry)}>
+      <PageRow
+        key={id}
+        id={id}
+        label={labelOf(t, entry)}
+        help={helpOf(t, entry)}
+        defaultOpen={openPages}
+      >
         {body}
       </PageRow>
     ) : null;
@@ -199,8 +245,8 @@ export function DiagnosticsGroup({
         entries={{ mode: byId("debugMode"), capture: byId("debugFullCapture") }}
         saveApp={saveApp}
       />
-      {page("advanced.callLog", <CallLogPage t={t} />)}
-      {page("advanced.taskHistory", <TaskHistoryPage t={t} />)}
+      {page("advanced.callLog", <CallLogPage t={t} report={report} />)}
+      {page("advanced.taskHistory", <TaskHistoryPage t={t} report={report} />)}
       {similarity ? <SimilarityRunsRow entry={similarity} /> : null}
     </>
   );
