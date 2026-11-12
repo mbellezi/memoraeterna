@@ -313,6 +313,14 @@ export function PathRibbonView({
         <span>{t("panelFrame.ribbon.topLevel")}</span>
       </nav>
     );
+  const clause =
+    place === "tentativeSource"
+      ? t("panelFrame.ribbon.tentativeSource")
+      : place === "tentativeQuestion"
+        ? t("panelFrame.ribbon.tentativeQuestion")
+        : place === "byCitations"
+          ? t("panelFrame.ribbon.placedByCitations")
+          : null;
   const shown = expanded ? segments : foldMiddle(segments, hidden);
   const crumbs = shown.map((entry, index) => {
     const separator =
@@ -341,24 +349,38 @@ export function PathRibbonView({
       );
     const leaf = !isTopic && index === shown.length - 1;
     const label = entry.title === "" ? t("panelFrame.ribbon.untitled") : entry.title;
+    const crumb = (
+      <button
+        type="button"
+        data-segment={entry.address}
+        aria-current={leaf ? "location" : undefined}
+        onClick={() => onOpen(entry.address)}
+        className={cn(
+          "max-w-full rounded-sm text-left [overflow-wrap:anywhere] underline-offset-[3px] hover:text-accent hover:underline",
+          "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent",
+          leaf && "font-semibold text-foreground",
+          entry.title === "" && "italic",
+          tentative && dashed
+        )}
+      >
+        {label}
+      </button>
+    );
     return (
       <Fragment key={entry.id}>
         {separator}
-        <button
-          type="button"
-          data-segment={entry.address}
-          aria-current={leaf ? "location" : undefined}
-          onClick={() => onOpen(entry.address)}
-          className={cn(
-            "max-w-full rounded-sm text-left [overflow-wrap:anywhere] underline-offset-[3px] hover:text-accent hover:underline",
-            "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent",
-            leaf && "font-semibold text-foreground",
-            entry.title === "" && "italic",
-            tentative && dashed
-          )}
-        >
-          {label}
-        </button>
+        {clause !== null && index === shown.length - 1 ? (
+          // The clause's "·" ends the last crumb's own line: when the clause wraps, the dot stays
+          // behind and no line starts with a separator (design record 9).
+          <span className="min-w-0 max-w-full">
+            {crumb}
+            <span aria-hidden="true" className="text-muted-foreground">
+              &nbsp;·
+            </span>
+          </span>
+        ) : (
+          crumb
+        )}
       </Fragment>
     );
   });
@@ -367,14 +389,6 @@ export function PathRibbonView({
   const otherCount = located.status === "ready" ? (located.located?.counts.alsoIn ?? 0) : 0;
   // The previous panel keeps to the place itself: where else an entity is cited is the top panel's.
   const first = compact && place === "mostCited" ? undefined : others[0];
-  const clause =
-    place === "tentativeSource"
-      ? t("panelFrame.ribbon.tentativeSource")
-      : place === "tentativeQuestion"
-        ? t("panelFrame.ribbon.tentativeQuestion")
-        : place === "byCitations"
-          ? t("panelFrame.ribbon.placedByCitations")
-          : null;
 
   return (
     <nav
@@ -402,9 +416,8 @@ export function PathRibbonView({
             as wide as the whole path, and would drop to a line of its own under the glyph. */}
         {crumbs}
         {clause ? (
-          // A trailing clause wraps whole, and a line never starts with its separator.
+          // A trailing clause wraps whole; its separator lives at the end of the last crumb.
           <span className="whitespace-normal text-muted-foreground [text-wrap:pretty]">
-            <span aria-hidden="true">· </span>
             {clause}
           </span>
         ) : null}

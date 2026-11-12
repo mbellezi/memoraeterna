@@ -657,7 +657,10 @@
       "close": "cerrar",
       "closes": "cierra",
       "heading": "Ojeando",
+      "kept": "Sigue guardada; no ha cambiado nada.",
       "next": "ojear la siguiente",
+      "noSummaryQuestion": "La respuesta aparece cuando Memora la termine.",
+      "noSummarySource": "El resumen aparece cuando terminen las notas.",
       "notesMany": "{count} notas",
       "notesOne": "{count} nota",
       "opens": "abre al lado",
@@ -665,7 +668,8 @@
       "passagesOne": "{count} pasaje",
       "stays": "La Biblioteca sigue aquí; no se abrió nada.",
       "title": "Ojeando {title}",
-      "unavailable": "No se pudo leer este elemento."
+      "unavailableQuestion": "No se pudo leer esta pregunta.",
+      "unavailableSource": "No se pudo leer esta fuente."
     },
     "place": {
       "none": "Sin lugar",
@@ -689,6 +693,8 @@
     },
     "scope": {
       "library": "Toda la Biblioteca",
+      "sourcesMany": "{count} fuentes elegidas",
+      "sourcesOne": "{count} fuente elegida",
       "topic": "Tema: {title}",
       "topicGone": "Un tema que ya no existe",
       "topicPending": "Un tema"
@@ -696,13 +702,14 @@
     "states": {
       "moreError": "No se pudo cargar más.",
       "questionsEmpty": "Todavía no hay preguntas guardadas.",
-      "questionsEmptyBody": "Pregunta desde la barra superior o desde cualquier nota, tema o fuente, y cada pregunta se guarda aquí con sus respuestas. Atajo:",
+      "questionsEmptyBody": "Pregunta desde la barra superior o desde cualquier nota, tema o fuente, y cada pregunta se guarda aquí con sus respuestas.",
+      "questionsEmptyShortcut": "Atajo:",
       "questionsError": "No se pudieron leer las preguntas guardadas.",
       "questionsFiltered": "Ninguna pregunta con ese filtro.",
       "questionsKept": "Siguen guardadas en este Mac.",
       "sourcesEmpty": "Todavía no hay fuentes.",
       "sourcesEmptyBody": "Añade un PDF, un enlace o una nota. Memora lo lee, escribe las notas y las coloca en el árbol por ti.",
-      "sourcesEmptyDrop": "Suelta archivos aquí, o elige cómo empezar",
+      "sourcesEmptyDrop": "Suelta archivos aquí para empezar",
       "sourcesEmptyHint": "Desde cualquier pantalla, el atajo es",
       "sourcesError": "No se pudo leer la Biblioteca.",
       "sourcesFiltered": "Ninguna fuente con ese filtro.",

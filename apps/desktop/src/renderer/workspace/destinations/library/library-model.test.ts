@@ -314,9 +314,9 @@ describe("the questions' scopes", () => {
       "Um tópico que não existe mais"
     );
     expect(scopeLabel(pt, { kind: "topic", topicId: id(3) }, titles)).toBe("Um tópico");
-    expect(scopeLabel(en, { kind: "sources", sourceIds: [id(5)] }, titles)).toBe("1 source");
+    expect(scopeLabel(en, { kind: "sources", sourceIds: [id(5)] }, titles)).toBe("1 source chosen");
     expect(scopeLabel(en, { kind: "sources", sourceIds: [id(5), id(6)] }, titles)).toBe(
-      "2 sources"
+      "2 sources chosen"
     );
   });
 

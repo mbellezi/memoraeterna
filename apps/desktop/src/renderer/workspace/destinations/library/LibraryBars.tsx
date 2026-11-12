@@ -304,67 +304,72 @@ export function TerritoryBar({
     <div
       role="group"
       aria-label={t("libraryTable.territory.label")}
-      className="flex min-h-6 flex-none flex-wrap items-center gap-x-1 gap-y-1 px-8 pb-3 text-xs text-muted-foreground"
+      className="grid min-h-6 flex-none grid-cols-[auto_minmax(0,1fr)] items-start gap-x-2 px-8 pb-3 text-xs text-muted-foreground"
     >
-      <span className="mr-1">{t("libraryTable.territory.heading")}</span>
-      {facets === null
-        ? [0, 1, 2, 3].map((index) => <Skeleton key={index} className="mx-1 h-3 w-24" />)
-        : null}
-      {shown.map((entry) => {
-        const pressed = entry.id === topic;
-        const title = entry.title === "" ? t("libraryTable.territory.untitled") : entry.title;
-        return (
+      <span className="inline-flex h-6 items-center">{t("libraryTable.territory.heading")}</span>
+      {/* The chips wrap in their own column, so a second line starts under the first chip. */}
+      <div className="flex min-w-0 flex-wrap items-center gap-x-1 gap-y-1">
+        {facets === null
+          ? [0, 1, 2, 3].map((index) => <Skeleton key={index} className="mx-1 h-3 w-24" />)
+          : null}
+        {shown.map((entry) => {
+          const pressed = entry.id === topic;
+          const title = entry.title === "" ? t("libraryTable.territory.untitled") : entry.title;
+          return (
+            <button
+              key={entry.id}
+              type="button"
+              aria-pressed={pressed}
+              title={title}
+              onClick={() => onTopic(pressed ? undefined : (entry.id ?? undefined))}
+              className={cn(
+                "inline-flex h-6 min-w-0 max-w-56 items-center gap-1 rounded-full px-2 text-xs",
+                "focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent",
+                pressed
+                  ? "bg-surface-selected text-foreground [box-shadow:inset_0_0_0_1px_var(--accent)]"
+                  : "text-secondary-foreground hover:bg-surface-hover"
+              )}
+            >
+              <ObjectKindGlyph
+                kind="topic"
+                size={12}
+                className={cn("shrink-0", objectKindTextClass.topic)}
+              />
+              <span className="min-w-0 truncate">{title}</span>
+              <b className="font-semibold text-foreground tabular-nums">{number(t, entry.count)}</b>
+            </button>
+          );
+        })}
+        {placed.length > territoryShown ? (
           <button
-            key={entry.id}
             type="button"
-            aria-pressed={pressed}
-            title={title}
-            onClick={() => onTopic(pressed ? undefined : (entry.id ?? undefined))}
+            aria-expanded={expanded}
+            onClick={() => onExpand(!expanded)}
             className={cn(
-              "inline-flex h-6 min-w-0 max-w-56 items-center gap-1 rounded-full px-2 text-xs",
-              "focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent",
-              pressed
-                ? "bg-surface-selected text-foreground [box-shadow:inset_0_0_0_1px_var(--accent)]"
-                : "text-secondary-foreground hover:bg-surface-hover"
+              "h-6 rounded-full px-2 text-xs text-accent hover:bg-surface-hover hover:text-accent-hover",
+              "focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent"
             )}
           >
-            <ObjectKindGlyph
-              kind="topic"
-              size={12}
-              className={cn("shrink-0", objectKindTextClass.topic)}
-            />
-            <span className="min-w-0 truncate">{title}</span>
-            <b className="font-semibold text-foreground tabular-nums">{number(t, entry.count)}</b>
+            {expanded
+              ? t("libraryTable.territory.fewer")
+              : t("libraryTable.territory.more", { values: { count: number(t, placed.length) } })}
           </button>
-        );
-      })}
-      {placed.length > territoryShown ? (
-        <button
-          type="button"
-          aria-expanded={expanded}
-          onClick={() => onExpand(!expanded)}
-          className={cn(
-            "h-6 rounded-full px-2 text-xs text-accent hover:bg-surface-hover hover:text-accent-hover",
-            "focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent"
-          )}
-        >
-          {expanded
-            ? t("libraryTable.territory.fewer")
-            : t("libraryTable.territory.more", { values: { count: number(t, placed.length) } })}
-        </button>
-      ) : null}
-      {unplaced ? (
-        <span className="inline-flex h-6 items-center gap-1 px-2 text-secondary-foreground">
-          <Circle aria-hidden="true" className="size-3 shrink-0 text-muted-foreground" />
-          {t("libraryTable.place.none")}
-          <b className="font-semibold text-foreground tabular-nums">{number(t, unplaced.count)}</b>
-          {t(
-            unplaced.count === 1
-              ? "libraryTable.territory.sourceOne"
-              : "libraryTable.territory.sourceMany"
-          )}
-        </span>
-      ) : null}
+        ) : null}
+        {unplaced ? (
+          <span className="inline-flex h-6 items-center gap-1 px-2 text-secondary-foreground">
+            <Circle aria-hidden="true" className="size-3 shrink-0 text-muted-foreground" />
+            {t("libraryTable.place.none")}
+            <b className="font-semibold text-foreground tabular-nums">
+              {number(t, unplaced.count)}
+            </b>
+            {t(
+              unplaced.count === 1
+                ? "libraryTable.territory.sourceOne"
+                : "libraryTable.territory.sourceMany"
+            )}
+          </span>
+        ) : null}
+      </div>
     </div>
   );
 }

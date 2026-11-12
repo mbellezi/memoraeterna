@@ -657,7 +657,10 @@
       "close": "close",
       "closes": "closes",
       "heading": "Peeking",
+      "kept": "It is still kept; nothing changed.",
       "next": "peek the next",
+      "noSummaryQuestion": "The answer appears when Memora finishes it.",
+      "noSummarySource": "The summary appears when the notes are done.",
       "notesMany": "{count} notes",
       "notesOne": "{count} note",
       "opens": "opens beside",
@@ -665,7 +668,8 @@
       "passagesOne": "{count} passage",
       "stays": "The Library stays here; nothing was opened.",
       "title": "Peek at {title}",
-      "unavailable": "This one could not be read."
+      "unavailableQuestion": "This question could not be read.",
+      "unavailableSource": "This source could not be read."
     },
     "place": {
       "none": "No place",
@@ -689,6 +693,8 @@
     },
     "scope": {
       "library": "Whole library",
+      "sourcesMany": "{count} sources chosen",
+      "sourcesOne": "{count} source chosen",
       "topic": "Topic: {title}",
       "topicGone": "A topic that no longer exists",
       "topicPending": "A topic"
@@ -696,13 +702,14 @@
     "states": {
       "moreError": "Could not load more.",
       "questionsEmpty": "No saved questions yet.",
-      "questionsEmptyBody": "Ask from the bar at the top or from any note, topic or source, and each question is saved here with its answers. Shortcut:",
+      "questionsEmptyBody": "Ask from the bar at the top or from any note, topic or source, and each question is saved here with its answers.",
+      "questionsEmptyShortcut": "Shortcut:",
       "questionsError": "Could not read your saved questions.",
       "questionsFiltered": "No questions match this filter.",
       "questionsKept": "They are still stored on this Mac.",
       "sourcesEmpty": "No sources yet.",
       "sourcesEmptyBody": "Add a PDF, a link or a note. Memora reads it, writes the notes and places them in the tree for you.",
-      "sourcesEmptyDrop": "Drop files here, or choose how to start",
+      "sourcesEmptyDrop": "Drop files here to start",
       "sourcesEmptyHint": "From any screen, the shortcut is",
       "sourcesError": "Could not read the Library.",
       "sourcesFiltered": "No sources match this filter.",

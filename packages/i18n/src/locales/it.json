@@ -657,7 +657,10 @@
       "close": "chiudi",
       "closes": "chiude",
       "heading": "Anteprima",
+      "kept": "Resta salvata; non è cambiato nulla.",
       "next": "anteprima della successiva",
+      "noSummaryQuestion": "La risposta compare quando Memora l’ha finita.",
+      "noSummarySource": "Il riassunto compare quando le note sono pronte.",
       "notesMany": "{count} note",
       "notesOne": "{count} nota",
       "opens": "apre accanto",
@@ -665,7 +668,8 @@
       "passagesOne": "{count} brano",
       "stays": "La Biblioteca resta qui; non è stato aperto nulla.",
       "title": "Anteprima di {title}",
-      "unavailable": "Non è stato possibile leggere questo elemento."
+      "unavailableQuestion": "Non è stato possibile leggere questa domanda.",
+      "unavailableSource": "Non è stato possibile leggere questa fonte."
     },
     "place": {
       "none": "Senza posizione",
@@ -689,6 +693,8 @@
     },
     "scope": {
       "library": "Tutta la Biblioteca",
+      "sourcesMany": "{count} fonti scelte",
+      "sourcesOne": "{count} fonte scelta",
       "topic": "Argomento: {title}",
       "topicGone": "Un argomento che non esiste più",
       "topicPending": "Un argomento"
@@ -696,13 +702,14 @@
     "states": {
       "moreError": "Impossibile caricarne altre.",
       "questionsEmpty": "Ancora nessuna domanda salvata.",
-      "questionsEmptyBody": "Chiedi dalla barra in alto o da una nota, un argomento o una fonte: ogni domanda resta salvata qui con le sue risposte. Scorciatoia:",
+      "questionsEmptyBody": "Chiedi dalla barra in alto o da una nota, un argomento o una fonte: ogni domanda resta salvata qui con le sue risposte.",
+      "questionsEmptyShortcut": "Scorciatoia:",
       "questionsError": "Non è stato possibile leggere le domande salvate.",
       "questionsFiltered": "Nessuna domanda corrisponde a questo filtro.",
       "questionsKept": "Restano salvate su questo Mac.",
       "sourcesEmpty": "Ancora nessuna fonte.",
       "sourcesEmptyBody": "Aggiungi un PDF, un link o una nota. Memora lo legge, scrive le note e le colloca nell'albero per te.",
-      "sourcesEmptyDrop": "Trascina i file qui, o scegli come iniziare",
+      "sourcesEmptyDrop": "Trascina i file qui per iniziare",
       "sourcesEmptyHint": "Da qualsiasi schermata, la scorciatoia è",
       "sourcesError": "Non è stato possibile leggere la Biblioteca.",
       "sourcesFiltered": "Nessuna fonte corrisponde a questo filtro.",

@@ -657,7 +657,10 @@
       "close": "fechar",
       "closes": "fecha",
       "heading": "Espiando",
+      "kept": "Ela continua guardada; nada mudou.",
       "next": "espiar a próxima",
+      "noSummaryQuestion": "A resposta aparece quando o Memora terminar.",
+      "noSummarySource": "O resumo aparece quando as notas terminarem.",
       "notesMany": "{count} notas",
       "notesOne": "{count} nota",
       "opens": "abre ao lado",
@@ -665,7 +668,8 @@
       "passagesOne": "{count} trecho",
       "stays": "A Biblioteca continua aqui; nada foi aberto.",
       "title": "Espiando {title}",
-      "unavailable": "Não deu para ler este item."
+      "unavailableQuestion": "Não deu para ler esta pergunta.",
+      "unavailableSource": "Não deu para ler esta fonte."
     },
     "place": {
       "none": "Sem lugar",
@@ -689,6 +693,8 @@
     },
     "scope": {
       "library": "Toda a Biblioteca",
+      "sourcesMany": "{count} fontes escolhidas",
+      "sourcesOne": "{count} fonte escolhida",
       "topic": "Tópico: {title}",
       "topicGone": "Um tópico que não existe mais",
       "topicPending": "Um tópico"
@@ -696,13 +702,14 @@
     "states": {
       "moreError": "Não deu para carregar mais.",
       "questionsEmpty": "Nenhuma pergunta guardada ainda.",
-      "questionsEmptyBody": "Pergunte pela barra do topo ou a partir de uma nota, tópico ou fonte; cada pergunta fica guardada aqui, com as respostas. Atalho:",
+      "questionsEmptyBody": "Pergunte pela barra do topo ou a partir de uma nota, tópico ou fonte; cada pergunta fica guardada aqui, com as respostas.",
+      "questionsEmptyShortcut": "Atalho:",
       "questionsError": "Não deu para ler as perguntas guardadas.",
       "questionsFiltered": "Nenhuma pergunta com esse filtro.",
       "questionsKept": "Elas continuam guardadas neste Mac.",
       "sourcesEmpty": "Nenhuma fonte ainda.",
       "sourcesEmptyBody": "Adicione um PDF, um link ou uma nota. O Memora lê, escreve as notas e coloca tudo na árvore para você.",
-      "sourcesEmptyDrop": "Solte arquivos aqui, ou escolha como começar",
+      "sourcesEmptyDrop": "Solte arquivos aqui para começar",
       "sourcesEmptyHint": "De qualquer tela, o atalho é",
       "sourcesError": "Não deu para ler a Biblioteca.",
       "sourcesFiltered": "Nenhuma fonte com esse filtro.",

@@ -206,6 +206,10 @@ describe("the path ribbon", () => {
     );
     expect(html).toContain('data-ribbon-state="tentative"');
     expect(html).toContain("Lugar provável:");
+    // The clause's "·" ends the last crumb's line, so a wrapped clause never starts with a dot.
+    expect(html).toContain("\u00a0·</span>");
+    expect(html).not.toContain("· definido");
+    expect(html).not.toMatch(/<span[^>]*>· /u);
   });
 
   it("says an entity's place is where it is most cited, before the path", () => {

@@ -3,7 +3,7 @@ import { formatObjectAddress, type ObjectKind } from "@app/domain";
 
 import type { LibraryRow } from "../../../../shared/ipc-library";
 import type { QuestionListItemView } from "../../../../shared/ipc-questions";
-import { useObjectKindChanged } from "../../../lib/object-events";
+import { useObjectKindChanged, watchObject, type ObjectState } from "../../../lib/object-events";
 import type { LibraryQuery } from "../../route";
 import {
   facetKey,
@@ -214,4 +214,24 @@ export function useScopeTitles(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key, active, changes]);
   return titles;
+}
+
+/**
+ * The object the quick-look sheet looks at: read through `objects.get` and again when it changes,
+ * with `retry` for a read that failed (the sheet says so once and offers "Tentar de novo").
+ */
+export function usePeekObject(address: string | null): { object: ObjectState; retry: () => void } {
+  const [object, setObject] = useState<ObjectState>({ status: "loading" });
+  const [attempt, setAttempt] = useState(0);
+  useEffect(() => {
+    if (address === null) return undefined;
+    return watchObject(
+      () => (typeof window === "undefined" ? undefined : window.app),
+      address,
+      setObject
+    );
+    // `attempt` re-runs the read: it is the retry.
+  }, [address, attempt]);
+  const retry = useCallback(() => setAttempt((value) => value + 1), []);
+  return { object, retry };
 }

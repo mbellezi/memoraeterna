@@ -4,7 +4,7 @@ import { createTranslator, type Translator } from "@app/i18n";
 
 import type { LibraryRow } from "../../../../shared/ipc-library";
 import type { QuestionListItemView } from "../../../../shared/ipc-questions";
-import { peekFrameState } from "./LibraryPeek";
+import { LibraryPeek, peekFrameState } from "./LibraryPeek";
 import { initialPagedState, type PagedState } from "./paged-list";
 import {
   LibraryView,
@@ -237,6 +237,49 @@ describe("the table in success", () => {
   });
 });
 
+describe("the quick-look sheet's own states", () => {
+  const sheet = (object: Parameters<typeof LibraryPeek>[0]["object"], kind = "source") =>
+    renderToString(
+      <LibraryPeek
+        t={pt}
+        address={`memora://${kind}/${id(7)}`}
+        object={object}
+        title="Ruas completas"
+        meta="Fonte"
+        portal={false}
+        onClose={noop}
+        onRetry={noop}
+        onOpen={noop}
+      />
+    );
+  const summary = {
+    address: `memora://source/${id(7)}`,
+    kind: "source",
+    title: "Ruas completas",
+    status: "current",
+    updatedAt: "2026-11-10T22:35:00.000Z"
+  };
+
+  it("says what failed, what is kept and offers the shared retry word when the read failed", () => {
+    const html = sheet({ status: "error" });
+    expect(html).toContain("Não deu para ler esta fonte.");
+    expect(html).toContain("Ela continua guardada; nada mudou.");
+    expect(html).toContain("Tentar de novo");
+    expect(sheet({ status: "error" }, "question")).toContain("Não deu para ler esta pergunta.");
+  });
+
+  it("teaches what comes next when the object has no summary and no counts yet", () => {
+    const html = sheet({ status: "ready", object: { ...summary, preview: "" } as never });
+    expect(html).toContain("O resumo aparece quando as notas terminarem.");
+    expect(html).toContain("abre ao lado");
+    const filled = sheet({
+      status: "ready",
+      object: { ...summary, preview: "Compara ruas.", counts: { notes: 2 } } as never
+    });
+    expect(filled).not.toContain("O resumo aparece");
+  });
+});
+
 describe("the table in the compact tier", () => {
   it("drops Added and Notes, and keeps Source, Place and State", () => {
     const labels = (compact: boolean) => sourceColumns(en, compact).map((column) => column.id);
@@ -292,11 +335,11 @@ describe("loading, empty and error", () => {
   it("offers the empty library's one action, the shell's Add, as the drop zone's primary button", () => {
     const empty = ready<LibraryRow, LibraryFacets>([], { total: 0, facets });
     const without = render({ sources: data(empty) });
-    expect(without).toContain("Drop files here, or choose how to start");
+    expect(without).toContain("Drop files here to start");
     expect(without).not.toContain("Choose a file");
     const html = render({ sources: data(empty), onAdd: noop });
     expect(html).toContain("Choose a file");
-    expect(html).toContain("Drop files here, or choose how to start");
+    expect(html).toContain("Drop files here to start");
   });
 
   it("keeps the filter and the chips under an error, dimmed and inert", () => {

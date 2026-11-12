@@ -3,6 +3,7 @@ import { parseObjectAddress, type ObjectSummary } from "@app/domain";
 import type { Translator } from "@app/i18n";
 
 import { ObjectKindGlyph, objectKindTextClass } from "../../../components/glyphs";
+import { ErrorState } from "../../../components/ui/error-state";
 import { Kbd } from "../../../components/ui/kbd";
 import {
   Sheet,
@@ -40,6 +41,8 @@ export interface LibraryPeekProps {
   /** How the object is placed: a source still being made reads tentative, never as placed. */
   place?: RibbonPlace;
   onClose: () => void;
+  /** Read the object again after a failed read ("Tentar de novo"). */
+  onRetry: () => void;
   /** A crumb of the ribbon: its topic opens beside the table. */
   onOpen: (address: string) => void;
   /** Render in place instead of in a portal (tests and screens). */
@@ -71,8 +74,13 @@ export function peekCounts(t: Translator, counts: ObjectSummary["counts"]): stri
 export function peekFrameState(object: ObjectState): PanelLoadState {
   if (object.status === "loading") return "loading";
   if (object.status !== "ready") return "error";
-  const counts = Object.values(object.object.counts ?? {}).some((value) => (value ?? 0) > 0);
-  return object.object.preview || counts ? "success" : "empty";
+  return peekIsEmpty(object.object) ? "empty" : "success";
+}
+
+/** An object that has no summary and no counts yet: the sheet then says why and what to do. */
+export function peekIsEmpty(summary: ObjectSummary): boolean {
+  const counts = Object.values(summary.counts ?? {}).some((value) => (value ?? 0) > 0);
+  return !summary.preview && !counts;
 }
 
 function PeekBody({
@@ -82,8 +90,9 @@ function PeekBody({
   title,
   meta,
   place,
-  onOpen
-}: Pick<LibraryPeekProps, "t" | "object" | "title" | "meta" | "place" | "onOpen"> & {
+  onOpen,
+  onRetry
+}: Pick<LibraryPeekProps, "t" | "object" | "title" | "meta" | "place" | "onOpen" | "onRetry"> & {
   address: string;
 }) {
   const kind = parseObjectAddress(address)?.kind ?? "source";
@@ -109,11 +118,33 @@ function PeekBody({
             </p>
           ) : null}
           {counts ? <p className="m-0 text-xs text-muted-foreground">{counts}</p> : null}
+          {summary && peekIsEmpty(summary) ? (
+            <div className="grid gap-1 text-sm text-secondary-foreground">
+              <p className="m-0 [text-wrap:pretty]">
+                {t(
+                  kind === "question"
+                    ? "libraryTable.peek.noSummaryQuestion"
+                    : "libraryTable.peek.noSummarySource"
+                )}
+              </p>
+              <p className="m-0 inline-flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+                <Kbd>↵</Kbd> {t("libraryTable.peek.opens")}
+              </p>
+            </div>
+          ) : null}
         </>
       ) : (
-        <p role="alert" className="m-0 text-sm text-secondary-foreground">
-          {t("libraryTable.peek.unavailable")}
-        </p>
+        <ErrorState
+          t={t}
+          message={t(
+            kind === "question"
+              ? "libraryTable.peek.unavailableQuestion"
+              : "libraryTable.peek.unavailableSource"
+          )}
+          kept={t("libraryTable.peek.kept")}
+          retryLabel={t("shell.actions.retry")}
+          onRetry={onRetry}
+        />
       )}
     </SheetBody>
   );
@@ -127,6 +158,7 @@ export function LibraryPeek({
   meta,
   place,
   onClose,
+  onRetry,
   onOpen,
   portal
 }: LibraryPeekProps) {
@@ -135,16 +167,21 @@ export function LibraryPeek({
       {address !== null ? (
         <SheetContent
           title={t("libraryTable.peek.title", { values: { title } })}
+          // Centred in the window but never over the bars: below the filter, the chips and the
+          // territory bar (two lines at 960), so no half-hidden chip shows above the sheet.
+          className="top-[max(12rem,calc(50%-10rem))]!"
           {...(portal === undefined ? {} : { portal })}
         >
-          <SheetHeader className="flex-wrap">
-            <Eye aria-hidden="true" className="size-3.5 shrink-0" />
-            <span className="font-semibold text-foreground">{t("libraryTable.peek.heading")}</span>
-            <span aria-hidden="true">·</span>
+          <SheetHeader className="flex-wrap gap-x-4 gap-y-1">
+            <span className="inline-flex items-center gap-2">
+              <Eye aria-hidden="true" className="size-3.5 shrink-0" />
+              <span className="font-semibold text-foreground">
+                {t("libraryTable.peek.heading")}
+              </span>
+            </span>
             <span>
               <Kbd>{t("libraryTable.keys.space")}</Kbd> {t("libraryTable.peek.closes")}
             </span>
-            <span aria-hidden="true">·</span>
             <span>
               <Kbd>↵</Kbd> {t("libraryTable.peek.opens")}
             </span>
@@ -159,6 +196,7 @@ export function LibraryPeek({
             title={title}
             meta={meta}
             onOpen={onOpen}
+            onRetry={onRetry}
             {...(place ? { place } : {})}
           />
           <SheetFooter>

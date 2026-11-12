@@ -2,7 +2,7 @@ import { Fragment, useLayoutEffect, useRef, useState, type ReactNode } from "rea
 import { Circle } from "lucide-react";
 import type { Translator } from "@app/i18n";
 
-import { RunningRing, SolidCheck, SolidTriangle } from "../../../components/activity/solid-glyphs";
+import { RunningRing, SolidCheck, SolidTriangle } from "../../../components/ui/solid-glyphs";
 import { ObjectKindGlyph, objectKindTextClass } from "../../../components/glyphs";
 import { Tooltip } from "../../../components/ui/tooltip";
 import { cn } from "../../../lib/cn";

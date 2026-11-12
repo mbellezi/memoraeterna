@@ -16,7 +16,7 @@ import { EmptyState } from "../../../components/ui/empty-state";
 import { ErrorState } from "../../../components/ui/error-state";
 import { ObjectKindGlyph, objectKindTextClass } from "../../../components/glyphs";
 import { Kbd } from "../../../components/ui/kbd";
-import { LoadingState } from "../../../components/ui/skeleton";
+import { LoadingState, Skeleton } from "../../../components/ui/skeleton";
 import { cn } from "../../../lib/cn";
 import type { LibraryRow } from "../../../../shared/ipc-library";
 import type { QuestionListItemView } from "../../../../shared/ipc-questions";
@@ -38,7 +38,6 @@ import {
 import { LibraryGrid, RowSkeleton, type GridColumn } from "./LibraryGrid";
 import { LibraryList, questionAddress, sourceAddress } from "./LibraryList";
 import { LibraryPeek, libraryPeekSurface, peekFrameState } from "./LibraryPeek";
-import { useObject } from "../../../lib/object-events";
 import type { RibbonPlace } from "../../PathRibbon";
 import { QuestionsTable } from "./LibraryQuestions";
 import { DateCell, NotesCell, PlaceCell, SourceTitleCell, StateCell } from "./library-cells";
@@ -50,6 +49,7 @@ import {
   rowHeights,
   scopeLabel,
   sourceMeta,
+  titleListRowHeight,
   toggleSort,
   withoutField,
   type LibraryFacets
@@ -58,6 +58,7 @@ import type { LibrarySort } from "../../../../shared/ipc-library";
 import {
   useLibraryQuestions,
   useLibrarySources,
+  usePeekObject,
   useScopeTitles,
   type PagedData
 } from "./use-library-data";
@@ -197,11 +198,18 @@ function TableSkeleton({
   );
 }
 
+/** The previous panel's rows are one line each: one bar per row, at the list's row height. */
 function ListSkeleton({ t }: { t: Translator }) {
   return (
-    <LoadingState t={t} className="gap-3 px-4 pt-1">
+    <LoadingState t={t} className="gap-0 px-4 pt-1">
       {Array.from({ length: 8 }, (_, index) => (
-        <RowSkeleton key={index} wide={index % 2 === 0} />
+        <div
+          key={index}
+          style={{ height: titleListRowHeight }}
+          className="flex items-center border-b border-border"
+        >
+          <Skeleton className={cn("h-3.5", index % 2 === 0 ? "w-3/5" : "w-2/5")} />
+        </div>
       ))}
     </LoadingState>
   );
@@ -301,6 +309,9 @@ export function LibraryView(props: LibraryViewProps) {
   const errorMessage = t(
     onSources ? "libraryTable.states.sourcesError" : "libraryTable.states.questionsError"
   );
+  const keptMessage = t(
+    onSources ? "libraryTable.states.sourcesKept" : "libraryTable.states.questionsKept"
+  );
   const peekRow = peeking
     ? (data.state.items as readonly Row[]).find((row) => row.id === selected)
     : undefined;
@@ -323,7 +334,7 @@ export function LibraryView(props: LibraryViewProps) {
   };
   const peek = peekInfo(peekRow);
   const peekAddress = peekRow ? addressOf(peekRow.id) : null;
-  const peekObject = useObject(peekAddress ?? "", peekAddress !== null);
+  const { object: peekObject, retry: retryPeek } = usePeekObject(peekAddress);
   // The screens tool's capture of the sheet reports the sheet's own read, once the rows are there.
   const frameState =
     surfaceId === libraryPeekSurface && state !== "error"
@@ -368,7 +379,9 @@ export function LibraryView(props: LibraryViewProps) {
       >
         <header className="flex-none px-4 pt-4 pb-2">
           <h2 className="m-0 font-reading text-lg font-semibold">{t("libraryTable.title")}</h2>
-          <p className="m-0 text-xs text-muted-foreground">{count}</p>
+          {count === "" || state === "empty" ? null : (
+            <p className="m-0 text-xs text-muted-foreground">{count}</p>
+          )}
         </header>
         {state === "loading" ? (
           <ListSkeleton t={t} />
@@ -377,6 +390,7 @@ export function LibraryView(props: LibraryViewProps) {
             <ErrorState
               t={t}
               message={errorMessage}
+              kept={keptMessage}
               retryLabel={t("shell.actions.retry")}
               onRetry={retry}
             />
@@ -403,6 +417,7 @@ export function LibraryView(props: LibraryViewProps) {
           meta={peek.meta}
           place={peek.place}
           onClose={onClosePeek}
+          onRetry={retryPeek}
           onOpen={onOpen}
           {...(peekPortal === undefined ? {} : { portal: peekPortal })}
         />
@@ -460,12 +475,13 @@ export function LibraryView(props: LibraryViewProps) {
   ) : (
     <EmptyState
       variant="page"
-      className="max-w-xl"
+      className="max-w-xl bg-surface"
       icon={<ObjectKindGlyph kind="question" size={20} className={objectKindTextClass.question} />}
       headline={t("libraryTable.states.questionsEmpty")}
     >
-      <p className="m-0 flex flex-wrap items-center gap-1.5">
-        {t("libraryTable.states.questionsEmptyBody")} <Kbd>⌘K</Kbd>
+      <p className="m-0">{t("libraryTable.states.questionsEmptyBody")}</p>
+      <p className="m-0 mt-3 inline-flex items-center gap-1.5 whitespace-nowrap">
+        {t("libraryTable.states.questionsEmptyShortcut")} <Kbd>⌘K</Kbd>
       </p>
     </EmptyState>
   );
@@ -551,9 +567,7 @@ export function LibraryView(props: LibraryViewProps) {
               t={t}
               className="max-w-xl"
               message={errorMessage}
-              kept={t(
-                onSources ? "libraryTable.states.sourcesKept" : "libraryTable.states.questionsKept"
-              )}
+              kept={keptMessage}
               retryLabel={t("shell.actions.retry")}
               onRetry={retry}
             />
@@ -617,6 +631,7 @@ export function LibraryView(props: LibraryViewProps) {
         meta={peek.meta}
         place={peek.place}
         onClose={onClosePeek}
+        onRetry={retryPeek}
         onOpen={onOpen}
         {...(peekPortal === undefined ? {} : { portal: peekPortal })}
       />

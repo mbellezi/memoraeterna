@@ -370,8 +370,9 @@ export function scopeLabel(
 ): string {
   if (scope.kind === "library") return t("libraryTable.scope.library");
   if (scope.kind === "sources") {
+    // "2 fontes escolhidas", so it is never read as a count of citations or of the library's sources.
     const count = scope.sourceIds.length;
-    return t(count === 1 ? "libraryTable.count.sourcesOne" : "libraryTable.count.sourcesMany", {
+    return t(count === 1 ? "libraryTable.scope.sourcesOne" : "libraryTable.scope.sourcesMany", {
       values: { count }
     });
   }
