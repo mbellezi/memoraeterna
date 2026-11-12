@@ -8,6 +8,8 @@ import {
   appendRelations,
   connectionCounts,
   connectionMeta,
+  stripParts,
+  suggestionRouting,
   connectionRow,
   countText,
   focusedObject,
@@ -285,20 +287,14 @@ describe("a note's connections", () => {
         relation(1, { type: "supports", state: "suggested", probability: 0.64 })
       );
       expect(low.routesToInbox).toBe(true);
-      expect(words(low)).toEqual([
-        "sugestão do Jardineiro",
-        "confiança média",
-        "também na Caixa de entrada"
-      ]);
+      expect(words(low)).toEqual(["sugestão do Jardineiro", "confiança média"]);
+      expect(pt(suggestionRouting(low))).toBe("também na Caixa de entrada");
       const high = connectionRow(
         relation(1, { type: "supports", state: "suggested", probability: 0.92 })
       );
       expect(high.routesToInbox).toBe(false);
-      expect(words(high)).toEqual([
-        "sugestão do Jardineiro",
-        "confiança alta",
-        "decida quando quiser"
-      ]);
+      expect(words(high)).toEqual(["sugestão do Jardineiro", "confiança alta"]);
+      expect(pt(suggestionRouting(high))).toBe("decida quando quiser");
     });
 
     it("words a null probability as unknown, routes it, and never invents a number", () => {
@@ -481,5 +477,13 @@ describe("evidence", () => {
     expect(list[1]?.address).toBe(`memora://source/${uuid(2)}#passage=${uuid(40)}`);
     expect(list[2]?.stale).toBe(true);
     expect(answerCitations([])).toEqual([]);
+  });
+});
+
+describe("the strip's words", () => {
+  it("names the tab and its count, and leaves out a count that is zero or not known", () => {
+    expect(stripParts("Conexões", 5)).toEqual(["Conexões", "5"]);
+    expect(stripParts("Conexões", 0)).toEqual(["Conexões"]);
+    expect(stripParts("Conexões", null)).toEqual(["Conexões"]);
   });
 });

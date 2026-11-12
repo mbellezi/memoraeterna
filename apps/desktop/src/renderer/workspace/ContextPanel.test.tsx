@@ -35,11 +35,16 @@ const ready = <T,>(value: T) => ({ status: "ready" as const, value });
 const paged = (items: NotePageRelation[], extra = {}) =>
   ready({ items, total: items.length, hasMore: false, more: "idle" as const, ...extra });
 
-function connections(read: Parameters<typeof NoteConnectionsView>[0]["read"], t = pt) {
+function connections(
+  read: Parameters<typeof NoteConnectionsView>[0]["read"],
+  t = pt,
+  onLink?: () => void
+) {
   return renderToString(
     <NoteConnectionsView
       t={t}
       read={read}
+      {...(onLink ? { onLink } : {})}
       resolved={new Map()}
       review={null}
       onOpen={noop}
@@ -108,7 +113,18 @@ describe("the connections list", () => {
     expect(html).toContain("Conexões desta nota");
   });
 
-  it("teaches in empty: the sentence and the six stances, no button that does nothing", () => {
+  it("offers the next action in empty only where it is wired", () => {
+    expect(connections(paged([]))).not.toContain("Ligar a outra nota");
+    const html = connections(paged([]), pt, noop);
+    expect(html).toContain("Ligar a outra nota");
+    // The action sits between the sentence and the legend.
+    expect(html.indexOf("Ligar a outra nota")).toBeGreaterThan(html.indexOf("Ainda sem conexões."));
+    expect(html.indexOf("Ligar a outra nota")).toBeLessThan(
+      html.indexOf("As seis formas de conexão")
+    );
+  });
+
+  it("teaches in empty: the sentence and the six stances", () => {
     const html = connections(paged([]));
     expect(html).toContain('data-state="empty"');
     expect(html).toContain("Ainda sem conexões. O Jardineiro procura quando o Mac está ocioso.");
@@ -163,10 +179,15 @@ describe("the connections list", () => {
 });
 
 describe("a meta line", () => {
-  it("binds each separator to the item that follows it", () => {
+  it("draws each separator inside the item it leads, so no wrapped line starts or ends on one", () => {
     const html = renderToString(<MetaLine parts={["a", "b", "c"]} />);
-    expect(html.match(/inline-block/g)).toHaveLength(3);
-    expect(html.indexOf("· ")).toBeGreaterThan(html.indexOf("a"));
+    // The row is clipped and pulled left by one separator's width; every item carries its own dot.
+    expect(html).toContain("overflow-hidden");
+    expect(html).toContain("-ml-3");
+    expect(html.match(/before:content-/g)).toHaveLength(3);
+    // The dot is drawn by the stylesheet, never written as text that could end a line.
+    expect(html).not.toMatch(/>\s*·/);
+    expect(html.indexOf(">a<")).toBeLessThan(html.indexOf(">b<"));
   });
 });
 
@@ -195,7 +216,7 @@ describe("mentions", () => {
     );
     expect(html).toContain('data-surface="context-mentions"');
     expect(html).toContain("Tópicos cuja visão geral cita esta nota");
-    expect(html).toContain("Perguntas cujas respostas citam isto");
+    expect(html).toContain("Perguntas cujas respostas citam esta nota");
     expect(html).toContain("2 menções");
   });
 
@@ -444,6 +465,44 @@ describe("the graph tab", () => {
     expect(html).toContain('data-state="success"');
   });
 
+  it("says so and offers the list when there is nothing to draw, instead of the graph's controls", () => {
+    const html = renderToString(
+      <NoteGraphView
+        t={pt}
+        load={{
+          status: "ready",
+          answer: {
+            focus: uuid(22),
+            depth: 1,
+            nodes: [
+              {
+                id: uuid(22),
+                kind: "note",
+                title: "N",
+                ideaStatement: "N",
+                language: "en",
+                depth: 0
+              }
+            ],
+            edges: [],
+            neighbourTotal: 0,
+            truncated: false
+          }
+        }}
+        webgl
+        onDepth={noop}
+        onRetry={noop}
+        onOpenNote={noop}
+        onUnavailable={noop}
+        onShowList={noop}
+      />
+    );
+    expect(html).toContain('data-state="empty"');
+    expect(html).toContain("Ainda não há nada para desenhar");
+    expect(html).toContain("Ver como lista");
+    expect(html).not.toContain("notas ·");
+  });
+
   it("loads and fails like the other tabs", () => {
     const view = (load: Parameters<typeof NoteGraphView>[0]["load"]) =>
       renderToString(
@@ -502,7 +561,7 @@ describe("the locate header", () => {
     expect(html).toContain("Life sciences");
     expect(html).toContain("também em");
     expect(html).toContain("e mais 2");
-    expect(html).toContain("citado por");
+    expect(html).toContain("citado pela visão geral de");
   });
 
   it("folds a deep path to its last three crumbs", () => {

@@ -18,7 +18,9 @@ import { useObjectChanged } from "../../lib/object-events";
 import type { PanelLoadState } from "../PanelFrame";
 import { formatView } from "../route";
 import {
+  ContextEmpty,
   ContextError,
+  ContextLink,
   ContextFrame,
   ContextHeading,
   StanceLegend,
@@ -81,14 +83,20 @@ export function NoteGraphView({
       />
       {load.status === "error" ? (
         <ContextError t={t} message="contextPanel.errors.graph" kept="note" onRetry={onRetry} />
+      ) : state === "empty" ? (
+        <ContextEmpty
+          action={
+            <ContextLink onClick={onShowList}>{t("contextPanel.graph.showList")}</ContextLink>
+          }
+        >
+          {t("contextPanel.graph.empty")}
+        </ContextEmpty>
       ) : state === "success" && !webgl ? (
         <div className="grid justify-items-start gap-2">
           <p role="status" className="m-0 text-sm text-secondary-foreground [text-wrap:pretty]">
             {t("contextPanel.graph.unavailable")}
           </p>
-          <Button variant="link" className="min-h-0 px-0 py-0.5" onClick={onShowList}>
-            {t("contextPanel.graph.showList")}
-          </Button>
+          <ContextLink onClick={onShowList}>{t("contextPanel.graph.showList")}</ContextLink>
         </div>
       ) : (
         <EgoGraphBody

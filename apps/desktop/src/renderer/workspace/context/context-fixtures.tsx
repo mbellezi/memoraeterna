@@ -227,7 +227,7 @@ const evidence = (empty: boolean) => ({
     ownership: "source",
     humanProtected: false,
     authorship: "ai",
-    generationModel: "local model",
+    generationModel: "Qwen3 8B",
     homeSourceId: ids.source,
     createdAt: "2026-11-03T21:14:00.000Z",
     updatedAt: "2026-11-03T21:14:00.000Z",
@@ -368,6 +368,12 @@ export function contextFixtures(empty: boolean): ScreenFixtureSet {
     "relations.review": () => ({ relationId: relations[5]!.id, outcome: "kept", changed: true })
   };
 }
+
+/**
+ * The panel's error screens: the place still reads, so only the tab says it failed (one failure, one
+ * retry), as it does when the tab's own read is what breaks.
+ */
+export const panelErrorFixtures: ScreenFixtureSet = { "objects.locate": () => located };
 
 /** A column as wide as the context panel at this window, on the desk colour. */
 export function ContextColumn({ children }: { children: ReactNode }) {

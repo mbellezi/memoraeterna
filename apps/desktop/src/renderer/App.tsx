@@ -225,7 +225,9 @@ export function App({
     dispatch,
     viewportWidth,
     stackShown: legacyView === null && workspace.destination !== "settings",
-    focusMode
+    focusMode,
+    // Until the note link picker lands (T141/T150) "Ligar a outra nota" opens the palette to find the note.
+    onLink: () => handleWorkspaceResult({ type: "openPalette" })
   });
   const isDarkMode = useResolvedTheme(appSettings.themeMode) === "dark";
   // The preference the startup screen of the next launch starts from; the boot defaults are not stored.

@@ -35,8 +35,10 @@ export function useContextPanel(options: {
   /** The destination's stack is on screen (Settings and the old screens cover it otherwise). */
   stackShown: boolean;
   focusMode: boolean;
+  /** Starts linking a note to another; absent, the panel does not offer "Ligar a outra nota". */
+  onLink?: (address: string) => void;
 }): ContextHost {
-  const { t, workspace, dispatch, viewportWidth, stackShown, focusMode } = options;
+  const { t, workspace, dispatch, viewportWidth, stackShown, focusMode, onLink } = options;
   const [open, setOpen] = useState(false);
   const mode = contextMode(viewportWidth);
   const present = workspace.context && stackShown && !focusMode;
@@ -95,6 +97,7 @@ export function useContextPanel(options: {
         open={open}
         onOpenChange={setOpen}
         onOpen={onOpen}
+        {...(onLink ? { onLink } : {})}
         shown={stackShown}
       />
     ) : null

@@ -4248,6 +4248,7 @@
         "topics": "Linked topics"
       },
       "legend": "The six kinds of connection",
+      "link": "Link to another note",
       "meta": {
         "alsoInInbox": "also in the Inbox",
         "byYou": "you kept it",
@@ -4310,6 +4311,7 @@
       "unavailable": "this passage is no longer in the library"
     },
     "graph": {
+      "empty": "Nothing to draw yet: no note is linked to this one.",
       "legend": "Kinds of connection",
       "openMap": "Open in the Map › Graph",
       "showList": "See as a list",
@@ -4380,6 +4382,7 @@
       "alsoIn": "also in",
       "andMore": "and {count} more",
       "citedBy": "cited by",
+      "citedByOverview": "cited by the overview of",
       "error": "Could not read the place.",
       "label": "Where this is"
     },
@@ -4388,7 +4391,7 @@
       "groups": {
         "mention": "Notes that mention this entity",
         "overview": "Topics whose overview cites this note",
-        "question": "Questions whose answers cite this"
+        "question": "Questions whose answers cite this note"
       }
     },
     "more": "More",

@@ -343,17 +343,18 @@ export const confidenceKey = (word: RelationConfidenceWord): MessageKey => confi
  */
 export function connectionMeta(row: ConnectionRow): MessageKey[] {
   if (row.state === "suggested")
-    return [
-      "contextPanel.connections.meta.gardenerSuggested",
-      confidenceKeys[row.confidence],
-      row.routesToInbox
-        ? "contextPanel.connections.meta.alsoInInbox"
-        : "contextPanel.connections.meta.decideWhenever"
-    ];
+    return ["contextPanel.connections.meta.gardenerSuggested", confidenceKeys[row.confidence]];
   if (row.state === "kept") return ["contextPanel.connections.meta.byYou"];
   const parts: MessageKey[] = ["contextPanel.connections.meta.gardener"];
   if (row.probability !== null) parts.push(confidenceKeys[row.confidence]);
   return parts;
+}
+
+/** What a suggestion's box says on its own line: where else it is held, or that nothing is urgent. */
+export function suggestionRouting(row: Pick<ConnectionRow, "routesToInbox">): MessageKey {
+  return row.routesToInbox
+    ? "contextPanel.connections.meta.alsoInInbox"
+    : "contextPanel.connections.meta.decideWhenever";
 }
 
 /** The key a suggestion's box answers to: `a` keeps, Backspace removes (D34); no modifier, no field. */
@@ -636,5 +637,6 @@ export function pathCrumbs(titles: readonly string[]): { folded: boolean; titles
 
 /** What the strip says top to bottom, as parts: "Contexto", the tab and, when known, a count. */
 export function stripParts(tabName: string, count: number | null): string[] {
-  return count === null ? [tabName] : [tabName, String(count)];
+  // A zero says nothing the empty tab does not say better.
+  return count === null || count === 0 ? [tabName] : [tabName, String(count)];
 }

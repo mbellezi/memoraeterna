@@ -4246,6 +4246,7 @@
         "topics": "Argomenti collegati"
       },
       "legend": "Le sei forme di connessione",
+      "link": "Collega a un’altra nota",
       "meta": {
         "alsoInInbox": "anche nella Posta in arrivo",
         "byYou": "l'hai mantenuta tu",
@@ -4308,6 +4309,7 @@
       "unavailable": "questo brano non è più nella libreria"
     },
     "graph": {
+      "empty": "Non c’è ancora nulla da disegnare: nessuna nota è collegata a questa.",
       "legend": "Forme di connessione",
       "openMap": "Apri nella Mappa › Grafo",
       "showList": "Vedi come elenco",
@@ -4378,6 +4380,7 @@
       "alsoIn": "anche in",
       "andMore": "e altri {count}",
       "citedBy": "citato da",
+      "citedByOverview": "citato dalla panoramica di",
       "error": "Impossibile leggere la posizione.",
       "label": "Dove si trova"
     },
@@ -4386,7 +4389,7 @@
       "groups": {
         "mention": "Note che menzionano questa entità",
         "overview": "Argomenti la cui panoramica cita questa nota",
-        "question": "Domande le cui risposte citano questo"
+        "question": "Domande le cui risposte citano questa nota"
       }
     },
     "more": "Altro",

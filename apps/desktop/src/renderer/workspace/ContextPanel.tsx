@@ -98,6 +98,8 @@ export interface ContextPanelProps {
   onOpenChange: (open: boolean) => void;
   /** Opens an address beside the focused panel, or in it (Option-click). */
   onOpen: ContextTabProps["onOpen"];
+  /** Starts linking a note to another ("Ligar a outra nota"); absent, the action is not offered. */
+  onLink?: ContextTabProps["onLink"];
   /** The panel is on screen; one that is not reads nothing and listens to nothing. */
   shown?: boolean;
   registry?: readonly ContextTabModule[];
@@ -140,7 +142,7 @@ export function ContextTabs({
         ref={content}
         data-fit="context-tabs"
         data-fit-level={level}
-        className="flex w-max min-w-0 items-stretch"
+        className="flex w-max min-w-full items-stretch"
       >
         <div
           role="tablist"
@@ -186,7 +188,7 @@ export function ContextTabs({
                 type="button"
                 aria-label={t("contextPanel.moreLabel")}
                 className={cn(
-                  "ml-1 flex items-center gap-1 px-1.5 text-sm whitespace-nowrap text-secondary-foreground",
+                  "ml-auto flex items-center gap-1 px-1.5 text-sm whitespace-nowrap text-secondary-foreground",
                   "hover:bg-surface-hover hover:text-foreground",
                   "focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent"
                 )}
@@ -244,11 +246,11 @@ export function LocateLines({
   if (segments.length === 0 && !alsoIn && cited.length === 0) return null;
   return (
     <div data-locate="" className="mb-3 grid gap-0.5 text-xs leading-5 text-secondary-foreground">
+      <p className="m-0 text-xs leading-5 font-medium text-muted-foreground">
+        {t("contextPanel.locate.label")}
+      </p>
       {segments.length > 0 ? (
-        <p
-          className="m-0 flex min-w-0 items-start gap-1"
-          aria-label={t("contextPanel.locate.label")}
-        >
+        <p className="m-0 flex min-w-0 items-start gap-1">
           <ObjectKindGlyph
             kind="topic"
             size={12}
@@ -291,7 +293,11 @@ export function LocateLines({
       ) : null}
       {cited.length > 0 ? (
         <p className="m-0 pl-4 text-muted-foreground [text-wrap:pretty]">
-          {t("contextPanel.locate.citedBy")}{" "}
+          {t(
+            cited.every((ref) => ref.kind === "topic")
+              ? "contextPanel.locate.citedByOverview"
+              : "contextPanel.locate.citedBy"
+          )}{" "}
           {cited.map((ref, index) => (
             <Fragment key={ref.id}>
               {index > 0 ? ", " : null}
@@ -361,6 +367,7 @@ function ContextBody({
   onCount,
   onTab,
   onOpen,
+  onLink,
   state
 }: {
   t: Translator;
@@ -372,6 +379,7 @@ function ContextBody({
   onCount: (count: number | null) => void;
   onTab: (tab: ContextTabId) => void;
   onOpen: ContextTabProps["onOpen"];
+  onLink: ContextTabProps["onLink"];
   state: PanelLoadState;
 }) {
   if (!focus)
@@ -403,6 +411,7 @@ function ContextBody({
           onCount={onCount}
           onOpen={onOpen}
           onTab={onTab}
+          {...(onLink ? { onLink } : {})}
         />
       ) : null}
     </>
@@ -418,6 +427,7 @@ export function ContextPanel({
   open,
   onOpenChange,
   onOpen,
+  onLink,
   shown = true,
   registry = contextTabRegistry
 }: ContextPanelProps) {
@@ -498,7 +508,7 @@ export function ContextPanel({
         aria-labelledby={`${id}-tab-${tab}`}
         tabIndex={-1}
         data-scroll=""
-        className="min-h-0 flex-1 overflow-y-auto px-4 pt-4 pb-8 outline-none"
+        className="min-h-0 flex-1 scroll-pb-4 overflow-y-auto px-4 pt-4 pb-8 outline-none"
       >
         <ContextBody
           t={t}
@@ -510,6 +520,7 @@ export function ContextPanel({
           onCount={onCount}
           onTab={onTab}
           onOpen={onOpen}
+          onLink={onLink}
           state={state}
         />
       </div>

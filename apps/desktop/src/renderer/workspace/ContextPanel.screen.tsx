@@ -1,7 +1,7 @@
 import { useState, type CSSProperties } from "react";
 
 import { ContextPanel } from "./ContextPanel";
-import { contextFixtures, focusedNote, t } from "./context/context-fixtures";
+import { contextFixtures, focusedNote, panelErrorFixtures, t } from "./context/context-fixtures";
 import { contextMode } from "./layout-config";
 import { layoutCustomProperties } from "./shell-model";
 import type { ContextTabId } from "./state";
@@ -12,7 +12,8 @@ export const surface = "context-panel";
 
 export const fixtures: ScreenModule["fixtures"] = {
   success: contextFixtures(false),
-  empty: contextFixtures(true)
+  empty: contextFixtures(true),
+  error: panelErrorFixtures
 };
 
 // The panel fills the window beside a stand-in for the top panel, as the shell lays it out.
@@ -56,6 +57,7 @@ function Stage() {
         open={open}
         onOpenChange={setOpen}
         onOpen={noop}
+        onLink={noop}
       />
     </div>
   );

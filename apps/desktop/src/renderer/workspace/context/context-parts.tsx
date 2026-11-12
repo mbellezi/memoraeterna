@@ -1,4 +1,4 @@
-import { useEffect, type MouseEvent, type ReactNode } from "react";
+import { useEffect, type ComponentPropsWithoutRef, type MouseEvent, type ReactNode } from "react";
 import type { ObjectKind, ObjectResolved } from "@app/domain";
 import type { MessageKey, Translator } from "@app/i18n";
 
@@ -38,6 +38,8 @@ export interface ContextTabProps {
   onOpen: (address: string, options?: { replace?: boolean }) => void;
   /** Switches the panel to another tab ("Ver como lista"). */
   onTab?: (tab: "connections" | "graph") => void;
+  /** Starts linking this note to another ("Ligar a outra nota"); absent, the action is not offered. */
+  onLink?: (address: string) => void;
 }
 
 /**
@@ -166,7 +168,6 @@ export function ContextRow({
   showKind = false,
   path = true,
   meta,
-  metaStacked = false,
   extra,
   onOpen,
   muted = false
@@ -178,8 +179,6 @@ export function ContextRow({
   showKind?: boolean;
   path?: boolean;
   meta?: readonly string[];
-  /** The meta parts one per line. */
-  metaStacked?: boolean;
   /** More under the meta (a snippet). */
   extra?: ReactNode;
   onOpen: (address: string, options?: { replace?: boolean }) => void;
@@ -227,7 +226,7 @@ export function ContextRow({
           {titles.length > 0 ? (
             <PathLine titles={titles} label={t("contextPanel.locate.label")} />
           ) : null}
-          {meta && meta.length > 0 ? <MetaLine parts={meta} stacked={metaStacked} /> : null}
+          {meta && meta.length > 0 ? <MetaLine parts={meta} /> : null}
           {extra}
         </span>
       </span>
@@ -235,37 +234,61 @@ export function ContextRow({
   );
 }
 
-/** A meta line: each part binds to the separator before it, so a line never starts or ends on "·". */
-export function MetaLine({
-  parts,
-  stacked = false
+/**
+ * Items side by side with a muted "·" before each one after the first. The separator is drawn inside
+ * the left padding of the item it leads, and the row's negative margin pulls the first item of every
+ * line out of the clipped box, so a line never starts or ends on "·" however it wraps.
+ */
+export function SeparatedRow({
+  items,
+  className
 }: {
-  parts: readonly string[];
-  /** One part per line, with no separators (a box that would wrap a long line before a "·"). */
-  stacked?: boolean;
+  items: readonly ReactNode[];
+  className?: string;
 }) {
-  if (stacked)
-    return (
-      <span className="block text-xs leading-5 text-muted-foreground">
-        {parts.map((part, index) => (
-          <span key={`${index}:${part}`} className="block">
-            {part}
+  return (
+    <span className={cn("block overflow-hidden", className)}>
+      <span className="-ml-3 flex flex-wrap items-baseline">
+        {items.map((item, index) => (
+          <span
+            key={index}
+            className="relative pl-3 before:absolute before:left-0 before:w-3 before:text-center before:text-muted-foreground before:content-['·']"
+          >
+            {item}
           </span>
         ))}
       </span>
-    );
-  return (
-    <span className="block text-xs leading-5 text-muted-foreground [text-wrap:pretty]">
-      {parts.map((part, index) => (
-        <span key={`${index}:${part}`}>
-          {index > 0 ? " " : null}
-          <span className="inline-block">
-            {index > 0 ? <span aria-hidden="true">{"· "}</span> : null}
-            {part}
-          </span>
-        </span>
-      ))}
     </span>
+  );
+}
+
+/** A meta line: its parts in a separated row (design record §5.6). */
+export function MetaLine({ parts }: { parts: readonly string[] }) {
+  return <SeparatedRow items={parts} className="text-xs leading-5 text-muted-foreground" />;
+}
+
+/** The foot of a list: quiet links to the same objects seen another way, set apart by a rule. */
+export function ContextFoot({ items }: { items: readonly ReactNode[] }) {
+  return (
+    <footer className="border-t border-border pt-2">
+      <SeparatedRow items={items} />
+    </footer>
+  );
+}
+
+/** A quiet text action: accent words, no box, the first letter on the text's own left edge. */
+export function ContextLink({ className, ...props }: ComponentPropsWithoutRef<"button">) {
+  return (
+    <button
+      type="button"
+      className={cn(
+        "cursor-pointer rounded-sm border-0 bg-transparent p-0 text-left text-xs leading-5 font-medium text-accent underline-offset-[3px]",
+        "hover:text-accent-hover hover:underline",
+        "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent",
+        className
+      )}
+      {...props}
+    />
   );
 }
 
@@ -290,7 +313,7 @@ export function GroupHeading({
       {glyph ? <span className="mt-[3px] flex-none">{glyph}</span> : null}
       <span className="min-w-0 [text-wrap:pretty]">{children}</span>
       {count === undefined ? null : (
-        <span className="ml-auto flex-none pl-2 text-xs font-normal text-muted-foreground tabular-nums">
+        <span className="flex-none text-xs leading-5 font-normal text-muted-foreground tabular-nums">
           {count}
         </span>
       )}
@@ -370,9 +393,13 @@ export function ContextError({
   );
 }
 
-/** An empty tab: what this is and what comes next, in one sentence. */
-export function ContextEmpty({ children }: { children: ReactNode }) {
-  return <EmptyState variant="compact">{children}</EmptyState>;
+/** An empty tab: what this is and what comes next, in one sentence, and the action when there is one. */
+export function ContextEmpty({ children, action }: { children: ReactNode; action?: ReactNode }) {
+  return (
+    <EmptyState variant="compact" action={action}>
+      {children}
+    </EmptyState>
+  );
 }
 
 const stanceLegendTypes = [

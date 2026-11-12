@@ -171,9 +171,10 @@ type NoteEvidenceRead = Pick<NotePage, "note" | "evidence">;
 export function noteEvidenceMeta(t: Translator, item: NotePageEvidence): string[] {
   const parts = [item.workTitle ?? item.sourceTitle];
   if (item.workTitle !== null && item.sourceTitle !== item.workTitle) parts.push(item.sourceTitle);
-  if (item.chunkIndex !== null)
-    parts.push(t("notePage.evidence.passage", { values: { number: item.chunkIndex + 1 } }));
+  // A page is something a reader can turn to; the passage's own number is only for a source with none.
   if (item.page !== null) parts.push(t("notePage.evidence.page", { values: { page: item.page } }));
+  else if (item.chunkIndex !== null)
+    parts.push(t("notePage.evidence.passage", { values: { number: item.chunkIndex + 1 } }));
   return parts;
 }
 

@@ -1,5 +1,5 @@
 import { useState, type KeyboardEvent } from "react";
-import { Check, X } from "lucide-react";
+import { Check, Delete, Link2, X } from "lucide-react";
 import { formatObjectAddress, type NotePageRelation, type ObjectResolved } from "@app/domain";
 import type { Translator } from "@app/i18n";
 
@@ -18,6 +18,7 @@ import {
   groupConnections,
   isShownSourceRelation,
   sourceConnectionRow,
+  suggestionRouting,
   suggestionVerdict,
   type ConnectionRow
 } from "../context-model";
@@ -25,6 +26,8 @@ import type { PanelLoadState } from "../PanelFrame";
 import { formatView } from "../route";
 import {
   ContextEmpty,
+  ContextFoot,
+  ContextLink,
   ContextError,
   ContextFrame,
   ContextHeading,
@@ -101,6 +104,7 @@ export function NoteConnectionsView({
   onRetry,
   onReview,
   onTab,
+  onLink,
   mapAddress
 }: {
   t: Translator;
@@ -112,6 +116,8 @@ export function NoteConnectionsView({
   onRetry: () => void;
   onReview: (row: ConnectionRow, verdict: "keep" | "remove") => void;
   onTab?: ContextTabProps["onTab"];
+  /** Starts linking this note to another; absent, the empty tab does not offer it. */
+  onLink?: () => void;
   mapAddress: string;
 }) {
   const state = listState(read);
@@ -137,7 +143,18 @@ export function NoteConnectionsView({
       ) : read.value.items.length === 0 ? (
         <>
           <ContextHeading title={title} description={description} />
-          <ContextEmpty>{t("contextPanel.connections.empty.note")}</ContextEmpty>
+          <ContextEmpty
+            action={
+              onLink ? (
+                <Button variant="secondary" onClick={onLink}>
+                  <Link2 aria-hidden="true" />
+                  {t("contextPanel.connections.link")}
+                </Button>
+              ) : undefined
+            }
+          >
+            {t("contextPanel.connections.empty.note")}
+          </ContextEmpty>
           <StanceLegend t={t} />
         </>
       ) : (
@@ -232,16 +249,20 @@ function NoteConnectionsList({
         />
       ))}
       <ShowMore t={t} paged={paged} onMore={onMore} />
-      <footer className="flex flex-wrap items-center gap-x-2 gap-y-1 border-t border-border pt-2 text-xs">
-        {onTab ? (
-          <Button variant="link" className="min-h-0 px-1 py-0.5" onClick={() => onTab("graph")}>
-            {t("contextPanel.connections.foot.graph")}
-          </Button>
-        ) : null}
-        <Button variant="link" className="min-h-0 px-1 py-0.5" onClick={() => onOpen(mapAddress)}>
-          {t("contextPanel.connections.foot.map")}
-        </Button>
-      </footer>
+      <ContextFoot
+        items={[
+          ...(onTab
+            ? [
+                <ContextLink key="graph" onClick={() => onTab("graph")}>
+                  {t("contextPanel.connections.foot.graph")}
+                </ContextLink>
+              ]
+            : []),
+          <ContextLink key="map" onClick={() => onOpen(mapAddress)}>
+            {t("contextPanel.connections.foot.map")}
+          </ContextLink>
+        ]}
+      />
     </>
   );
 }
@@ -300,7 +321,11 @@ function SuggestionBox({
         object={{ address: row.address, kind: "note", title: row.title }}
         resolved={resolved}
         meta={connectionMeta(row).map((key) => t(key))}
-        metaStacked
+        extra={
+          <span className="block text-xs leading-5 text-muted-foreground">
+            {t(suggestionRouting(row))}
+          </span>
+        }
         onOpen={onOpen}
       />
       <div className="mt-1 flex flex-wrap items-center gap-2">
@@ -326,7 +351,9 @@ function SuggestionBox({
         >
           <X aria-hidden="true" />
           {t("contextPanel.connections.actions.remove")}
-          <Kbd>⌫</Kbd>
+          <Kbd aria-hidden="true">
+            <Delete className="size-3.5" />
+          </Kbd>
         </Button>
       </div>
       {review?.status === "failed" ? (
@@ -339,7 +366,7 @@ function SuggestionBox({
 }
 
 function NoteConnections(props: ContextTabProps) {
-  const { t, id, address, active, onOpen, onTab, onState, onCount } = props;
+  const { t, id, address, active, onOpen, onTab, onLink, onState, onCount } = props;
   const paged = usePagedRead<NotePageRelation, number>({
     key: `note:${id}`,
     active,
@@ -415,6 +442,7 @@ function NoteConnections(props: ContextTabProps) {
       onRetry={paged.retry}
       onReview={onReview}
       {...(onTab ? { onTab } : {})}
+      {...(onLink ? { onLink: () => onLink(address) } : {})}
       mapAddress={mapScope("note", id)}
     />
   );
@@ -501,15 +529,13 @@ function OtherConnectionsView({
               />
             ))}
           </section>
-          <footer className="flex flex-wrap items-center gap-x-2 gap-y-1 border-t border-border pt-2 text-xs">
-            <Button
-              variant="link"
-              className="min-h-0 px-1 py-0.5"
-              onClick={() => onOpen(mapAddress)}
-            >
-              {t("contextPanel.connections.foot.map")}
-            </Button>
-          </footer>
+          <ContextFoot
+            items={[
+              <ContextLink key="map" onClick={() => onOpen(mapAddress)}>
+                {t("contextPanel.connections.foot.map")}
+              </ContextLink>
+            ]}
+          />
         </>
       )}
     </ContextFrame>

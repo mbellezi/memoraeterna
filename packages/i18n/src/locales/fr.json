@@ -4253,6 +4253,7 @@
         "topics": "Sujets liés"
       },
       "legend": "Les six formes de connexion",
+      "link": "Relier à une autre note",
       "meta": {
         "alsoInInbox": "aussi dans la Boîte de réception",
         "byYou": "vous l'avez gardée",
@@ -4315,6 +4316,7 @@
       "unavailable": "ce passage n'est plus dans la bibliothèque"
     },
     "graph": {
+      "empty": "Rien à dessiner pour l’instant : aucune note n’est reliée à celle-ci.",
       "legend": "Formes de connexion",
       "openMap": "Ouvrir dans la Carte › Graphe",
       "showList": "Voir sous forme de liste",
@@ -4385,6 +4387,7 @@
       "alsoIn": "aussi dans",
       "andMore": "et {count} de plus",
       "citedBy": "cité par",
+      "citedByOverview": "cité par la vue d’ensemble de",
       "error": "Impossible de lire l'emplacement.",
       "label": "Où se trouve-t-il"
     },
@@ -4393,7 +4396,7 @@
       "groups": {
         "mention": "Notes qui mentionnent cette entité",
         "overview": "Sujets dont la vue d'ensemble cite cette note",
-        "question": "Questions dont les réponses citent ceci"
+        "question": "Questions dont les réponses citent cette note"
       }
     },
     "more": "Plus",

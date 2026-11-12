@@ -4251,6 +4251,7 @@
         "topics": "Tópicos ligados"
       },
       "legend": "As seis formas de conexão",
+      "link": "Ligar a outra nota",
       "meta": {
         "alsoInInbox": "também na Caixa de entrada",
         "byYou": "você manteve",
@@ -4313,6 +4314,7 @@
       "unavailable": "este trecho não está mais na biblioteca"
     },
     "graph": {
+      "empty": "Ainda não há nada para desenhar: nenhuma nota está ligada a esta.",
       "legend": "Formas de conexão",
       "openMap": "Abrir no Mapa › Grafo",
       "showList": "Ver como lista",
@@ -4383,6 +4385,7 @@
       "alsoIn": "também em",
       "andMore": "e mais {count}",
       "citedBy": "citado por",
+      "citedByOverview": "citado pela visão geral de",
       "error": "Não foi possível ler o lugar.",
       "label": "Onde está"
     },
@@ -4391,7 +4394,7 @@
       "groups": {
         "mention": "Notas que mencionam esta entidade",
         "overview": "Tópicos cuja visão geral cita esta nota",
-        "question": "Perguntas cujas respostas citam isto"
+        "question": "Perguntas cujas respostas citam esta nota"
       }
     },
     "more": "Mais",
