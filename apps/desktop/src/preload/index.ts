@@ -112,6 +112,7 @@ import { z } from "zod";
 import { contextBridge, ipcRenderer, webUtils } from "electron";
 import { createObjectsApi } from "./objects-api.js";
 import { createQuestionsApi } from "./questions-api.js";
+import { createChangesObjectApi } from "./changes-object-api.js";
 import { createDropApi } from "./drop-api.js";
 import { createEntitiesApi } from "./entities-api.js";
 import { createHomeApi } from "./home-api.js";
@@ -467,7 +468,8 @@ const api: DesktopApi = {
     diff: async (input) =>
       ChangesDiffSchema.nullable().parse(
         await ipcRenderer.invoke(ipcChannels.changesDiff, ChangesDiffInputSchema.parse(input))
-      )
+      ),
+    ...createChangesObjectApi((channel, ...args) => ipcRenderer.invoke(channel, ...args))
   },
   inbox: {
     list: async (input) =>

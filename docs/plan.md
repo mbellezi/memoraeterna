@@ -433,7 +433,7 @@ call" blocks.
   relation stance (always with a glyph) and state. Light accent `#07707f` (AA 5.4:1), dark accent `#65d6e8`;
   all text colours ≥4.5:1, glyphs ≥3:1 in both themes. Inter for UI and Source Serif 4 for reading, both
   bundled offline (OFL); fixed type scale, no arbitrary sizes; 4 px grid; short functional motion honoring
-  `prefers-reduced-motion`; System theme by default; the graph reads tokens.
+  `prefers-reduced-motion`; dark theme by default (owner, 2026-11-12), System and Light on request; the graph reads tokens.
 
 ## 6. Visualization lenses
 

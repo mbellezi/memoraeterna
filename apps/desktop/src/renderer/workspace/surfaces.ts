@@ -150,6 +150,13 @@ export const surfaces: readonly SurfaceEntry[] = [
     "workspace/destinations/map/relations/RelationsLens.tsx",
     "workspace/destinations/map/relations/relations.screen.tsx"
   ),
+  // The Grafo's table alone ("Só tabela"): a large branch with the notice and the lists around it.
+  entry(
+    "map-relations-table",
+    "destination",
+    "workspace/destinations/map/relations/RelationsTable.tsx",
+    "workspace/destinations/map/relations/relations-table.screen.tsx"
+  ),
 
   // Panels, one file per kind (the object kinds show the path ribbon).
   panel("source", true),
@@ -244,6 +251,12 @@ export const surfaces: readonly SurfaceEntry[] = [
   section("integrations", "Integrations"),
   section("privacy", "Privacy"),
   section("advanced", "Advanced"),
+  entry(
+    "settings-diagnostics",
+    "settings",
+    "settings/diagnostics/DiagnosticsGroup.tsx",
+    "settings/diagnostics/diagnostics.screen.tsx"
+  ),
 
   // Screens that exist today and that the shell hosts: they keep their own components until the
   // cards that move them (T141 note and topic, T142 inbox and shape) land.

@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { ChevronDown, ListTree } from "lucide-react";
 import type { Translator } from "@app/i18n";
 import { formatObjectAddress } from "@app/domain";
@@ -41,6 +41,9 @@ import {
   type BranchRead
 } from "./branch-reads";
 import { RelationsCanvas, type BranchLayoutFactory } from "./RelationsCanvas";
+import { superNodeRatio } from "./branch-sigma";
+import { BranchNotices, DisplayToggle, type RelationsDisplay } from "./lens-controls";
+import { RelationsAside, relationsBlockHeight } from "./RelationsTable";
 
 export const surfaceId = "map-relations";
 
@@ -85,15 +88,10 @@ export interface RelationsLensProps {
   /** Shows the Map's Tree tab. */
   onShowTree: () => void;
   onState?: (state: PanelLoadState) => void;
-  /** The table of the same connections (T152) beside the canvas. */
-  aside?: (model: BranchModel, selection: BranchSelection) => ReactNode;
   /** The canvas's layout engine (the worker by default). */
   createLayout?: BranchLayoutFactory;
-}
-
-export interface BranchSelection {
-  selected: BranchCursorItem | null;
-  onSelect: (item: BranchCursorItem | null) => void;
+  /** What the screens tool names this frame, and how it opens (a screen module's business). */
+  frame?: { surface: string; display?: RelationsDisplay; selected?: BranchCursorItem | null };
 }
 
 /** The read of the largest area, the Grafo's branch when the Map was opened without one. */
@@ -126,14 +124,15 @@ export function RelationsLens({
   onOpenNote,
   onShowTree,
   onState,
-  aside,
-  createLayout
+  createLayout,
+  frame
 }: RelationsLensProps) {
   const [chosen, setChosen] = useState<BranchScope | null>(null);
   const [depth, setDepth] = useState<ColourDepth>(1);
   const [load, setLoad] = useState<Load>({ status: "loading" });
   const [attempt, setAttempt] = useState(0);
-  const [selected, setSelected] = useState<BranchCursorItem | null>(null);
+  const [selected, setSelected] = useState<BranchCursorItem | null>(frame?.selected ?? null);
+  const [display, setDisplay] = useState<RelationsDisplay>(frame?.display ?? "both");
   const [webgl] = useState(() => isWebGLAvailable());
   const [unavailable, setUnavailable] = useState(false);
   const [known, setKnown] = useState<KnownScope | null>(null);
@@ -270,27 +269,44 @@ export function RelationsLens({
     });
   };
 
+  // "Só tabela" and a window that cannot draw WebGL read the same table, alone.
+  const canvasShown = display === "both" && webgl && !unavailable;
+  // Without the canvas nothing is coloured: the same control groups the topics of the list.
+  const depthLabelKey = canvasShown ? "mapRelations.depth.label" : "mapRelationsTable.groupBy";
+  const depthHelpKey = canvasShown ? "mapRelations.depth.help" : "mapRelationsTable.groupByHelp";
+  const aside = model ? (
+    <RelationsAside
+      t={t}
+      model={model}
+      selected={selected}
+      onSelect={setSelected}
+      onOpenNote={onOpenNote}
+      onChoose={pick}
+      alone={!canvasShown}
+    />
+  ) : null;
+
   return (
     <section
-      data-surface={surfaceId}
+      data-surface={frame?.surface ?? surfaceId}
       data-state={state}
       aria-label={t("map.lens.relations")}
       className="flex min-w-0 flex-col gap-3"
     >
       <span id={helpId} className="sr-only">
-        {t("mapRelations.depth.help")}
+        {t(depthHelpKey)}
       </span>
       <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
         <p className="m-0 text-sm text-secondary-foreground">{t("mapRelations.description")}</p>
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
           <div className="flex items-center gap-2">
             <span className="text-xs text-secondary-foreground" aria-hidden="true">
-              {t("mapRelations.depth.label")}
+              {t(depthLabelKey)}
             </span>
             <ToggleGroup
-              label={t("mapRelations.depth.label")}
+              label={t(depthLabelKey)}
               aria-describedby={helpId}
-              title={t("mapRelations.depth.help")}
+              title={t(depthHelpKey)}
               value={String(depth) as "1" | "2" | "3"}
               onValueChange={(value) => {
                 setSelected(null);
@@ -302,6 +318,13 @@ export function RelationsLens({
               <ToggleGroupItem value="3">{t("mapRelations.depth.three")}</ToggleGroupItem>
             </ToggleGroup>
           </div>
+          {/* In every state, so the controls keep one layout and the mode stays readable. */}
+          <DisplayToggle
+            t={t}
+            value={display}
+            onChange={setDisplay}
+            disabled={load.status === "loading"}
+          />
           <BranchPicker
             t={t}
             model={model}
@@ -314,7 +337,9 @@ export function RelationsLens({
           />
         </div>
       </div>
-      {load.status === "loading" ? <RelationsSkeleton t={t} /> : null}
+      {load.status === "loading" ? (
+        <RelationsSkeleton t={t} tableOnly={display === "table"} />
+      ) : null}
       {load.status === "error" ? (
         <ErrorState
           t={t}
@@ -348,53 +373,43 @@ export function RelationsLens({
         </EmptyState>
       ) : null}
       {model && hasConnections(model) ? (
-        // The second column is the table's: without it, the canvas runs to the header's right edge.
-        <div
-          className={cn(
-            "grid min-w-0 gap-4",
-            aside && "min-[1180px]:grid-cols-[minmax(0,1fr)_auto]"
-          )}
-        >
-          <div className="flex min-w-0 flex-col gap-3">
-            {webgl && !unavailable ? (
-              <RelationsCanvas
-                t={t}
-                model={model}
-                wheelZoomSensitivity={sensitivity}
-                onOpenNote={onOpenNote}
-                onUnavailable={() => setUnavailable(true)}
-                selected={selected}
-                onSelect={setSelected}
-                {...(createLayout ? { createLayout } : {})}
-                className="h-[clamp(20rem,58vh,38rem)]"
-              />
-            ) : (
-              // Not a failure of the person's data: a quiet note where the canvas would be.
-              <div className="grid gap-1 rounded-lg border border-border bg-surface p-4 text-sm">
-                <p className="m-0 font-semibold text-foreground">
-                  {t("mapRelations.failure.unavailable")}
-                </p>
-                {aside ? (
+        <>
+          <BranchNotices t={t} model={model} />
+          {canvasShown ? (
+            <div className="grid min-w-0 gap-4 min-[1180px]:grid-cols-[minmax(0,1fr)_26rem]">
+              <div className="flex min-w-0 flex-col gap-3">
+                <RelationsCanvas
+                  t={t}
+                  model={model}
+                  wheelZoomSensitivity={sensitivity}
+                  onOpenNote={onOpenNote}
+                  onUnavailable={() => setUnavailable(true)}
+                  selected={selected}
+                  onSelect={setSelected}
+                  {...(createLayout ? { createLayout } : {})}
+                  className={relationsBlockHeight}
+                />
+                <RelationsLegend t={t} model={model} />
+              </div>
+              {aside}
+            </div>
+          ) : (
+            <div className="grid min-w-0 gap-3">
+              {webgl && !unavailable ? null : (
+                // Not a failure of the person's data: a quiet note, and the table that carries the same.
+                <div className="grid max-w-4xl gap-1 rounded-lg border border-border bg-surface p-4 text-sm">
+                  <p className="m-0 font-semibold text-foreground">
+                    {t("mapRelations.failure.unavailable")}
+                  </p>
                   <p className="m-0 text-secondary-foreground">
                     {t("mapRelations.failure.unavailableBody")}
                   </p>
-                ) : (
-                  // Until the table stands beside the canvas, the Tree is the way to these notes.
-                  <>
-                    <p className="m-0 text-secondary-foreground">
-                      {t("mapRelations.failure.unavailableTree")}
-                    </p>
-                    <div className="mt-2">
-                      <TreeButton t={t} onClick={onShowTree} />
-                    </div>
-                  </>
-                )}
-              </div>
-            )}
-            <RelationsLegend t={t} model={model} />
-          </div>
-          {aside ? aside(model, { selected, onSelect: setSelected }) : null}
-        </div>
+                </div>
+              )}
+              {aside}
+            </div>
+          )}
+        </>
       ) : null}
     </section>
   );
@@ -410,13 +425,30 @@ function TreeButton({ t, onClick }: { t: Translator; onClick: () => void }) {
 }
 
 /** Loading keeps the layout: the canvas's block and the legend's two lines. */
-function RelationsSkeleton({ t }: { t: Translator }) {
+function RelationsSkeleton({ t, tableOnly }: { t: Translator; tableOnly: boolean }) {
   return (
-    <LoadingState t={t} delayMs={0}>
-      <Skeleton className="h-[clamp(20rem,58vh,38rem)] rounded-lg" />
-      <div className="grid max-w-(--measure) gap-2">
-        <Skeleton className="w-4/5" />
-        <Skeleton className="w-3/5" />
+    <LoadingState
+      t={t}
+      delayMs={0}
+      className={cn(
+        !tableOnly && "min-[1180px]:grid-cols-[minmax(0,1fr)_26rem] min-[1180px]:gap-4"
+      )}
+    >
+      {tableOnly ? null : (
+        <div className="grid min-w-0 gap-3">
+          <Skeleton className={cn(relationsBlockHeight, "rounded-lg")} />
+          <div className="grid max-w-(--measure) gap-2">
+            <Skeleton className="w-4/5" />
+            <Skeleton className="w-3/5" />
+          </div>
+        </div>
+      )}
+      <div className={cn("grid min-w-0 content-start gap-3", tableOnly && "max-w-4xl")}>
+        <Skeleton className="w-2/5" />
+        <Skeleton className="h-10 rounded-lg" />
+        <Skeleton className="h-10 rounded-lg" />
+        <Skeleton className="h-10 rounded-lg" />
+        <Skeleton className="h-10 rounded-lg" />
       </div>
     </LoadingState>
   );
@@ -475,7 +507,7 @@ export function RelationsLegend({ t, model }: { t: Translator; model: BranchMode
           </li>
         ) : null}
       </ul>
-      {model.groups.length >= 2 ? (
+      {superNodeRatio(model) !== null ? (
         <p className="m-0">{t("mapRelations.legend.thickness")}</p>
       ) : null}
     </section>

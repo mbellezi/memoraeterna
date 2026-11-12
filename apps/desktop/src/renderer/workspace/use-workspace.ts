@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useReducer, useRef, useState, type Dispatch } from "react";
 
+import { announceSettingsAddress } from "../settings/settings-target";
 import { closePanelPriority, subscribeClosePanel } from "../lib/close-panel";
 import { subscribeWindowNavigation } from "../lib/window-navigation";
 import { createWorkspaceSaver, loadWorkspace } from "./persist";
@@ -64,6 +65,9 @@ export function useWorkspace(options: { commands?: boolean } = {}): Workspace {
     guardedMove(latest.current, action, () => {
       // A move that follows in the same tick (a link's "go", then "open") reads this one's result.
       latest.current = reduce(latest.current, action);
+      // An address that names a Settings section or setting also tells Settings, which reads its
+      // own section (the state keeps only that the place is Settings).
+      announceSettingsAddress(action);
       rawDispatch(action);
     });
   }, []);

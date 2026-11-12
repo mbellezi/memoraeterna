@@ -139,6 +139,7 @@ export const tabShortcut = (tab: ContextTabId): string => `⌥${contextTabIds.in
 // Counted nouns
 
 const nouns = {
+  changes: ["contextPanel.count.changesOne", "contextPanel.count.changesOther"],
   connections: ["contextPanel.count.connectionsOne", "contextPanel.count.connectionsOther"],
   suggestions: ["contextPanel.count.suggestionsOne", "contextPanel.count.suggestionsOther"],
   passages: ["contextPanel.count.passagesOne", "contextPanel.count.passagesOther"],

@@ -3135,12 +3135,12 @@
       "proposal": "Proposed topic reorganization ({items} items)",
       "redirects": "Shortened the redirects of {topics} old topics",
       "naming": "Topic names updated: {topics}",
-      "humanRename": "You renamed a topic.",
-      "humanMove": "You moved a topic.",
-      "humanCreate": "You created a topic.",
-      "humanPin": "You pinned a topic.",
-      "humanUnpin": "You unpinned a topic.",
-      "humanPlace": "You placed a note or source in a topic.",
+      "humanRename": "You renamed a topic",
+      "humanMove": "You moved a topic",
+      "humanCreate": "You created a topic",
+      "humanPin": "You pinned a topic",
+      "humanUnpin": "You unpinned a topic",
+      "humanPlace": "You placed a note or source in a topic",
       "gate": "Checked {items} uncertain placements",
       "areas": "Regrouped the top areas: {areas} areas, {topics} topics moved",
       "undo": "Undid an earlier change to the topics"
@@ -4455,6 +4455,39 @@
     "untitled": "Untitled"
   },
   "contextPanel": {
+    "ask": {
+      "description": {
+        "entity": "The answer uses the whole library and cites each passage. The name is already in the field.",
+        "library": "The answer uses the whole library and cites each passage.",
+        "note": "That is the topic this note is in. The answer uses only what is in it and cites each passage.",
+        "noteUnplaced": "This note is not in a topic yet, so the question covers the whole library.",
+        "pending": "The question needs the topic this note is in.",
+        "source": "The answer uses only the passages of this source and cites each one.",
+        "topic": "The answer uses only what is in this topic and cites each passage."
+      },
+      "earlier": {
+        "heading": "Earlier questions",
+        "label": "Open an earlier question"
+      },
+      "empty": "Nothing asked about this yet. Each question is kept in Library › Questions, with its answer.",
+      "errors": {
+        "earlier": "Could not load the earlier questions.",
+        "earlierKept": "You can still ask.",
+        "scope": "Could not find where this note is, so the question has no scope yet."
+      },
+      "indexedOne": "You can already ask: the passage is indexed.",
+      "indexedOther": "You can already ask: the {count} passages are indexed.",
+      "indexing": "The passages are still being indexed. An answer now may find nothing to cite.",
+      "notesArriving": "The notes are still arriving.",
+      "title": {
+        "entity": "Ask about this entity",
+        "library": "Ask your library",
+        "note": "Ask about {topic}",
+        "pending": "Ask about this note",
+        "source": "Ask this source",
+        "topic": "Ask this topic"
+      }
+    },
     "connections": {
       "actions": {
         "failed": "Your choice could not be saved. Try again.",
@@ -4521,6 +4554,8 @@
       "suggestionsLabel": "Suggested connections"
     },
     "count": {
+      "changesOne": "{count} change",
+      "changesOther": "{count} changes",
       "connectionsOne": "{count} connection",
       "connectionsOther": "{count} connections",
       "mentionsOne": "{count} mention",
@@ -4540,6 +4575,7 @@
       "connections": "Could not load the connections.",
       "evidence": "Could not load the evidence.",
       "graph": "Could not load the graph.",
+      "history": "Could not load the history.",
       "kept": {
         "entity": "The entity stays open.",
         "note": "The note stays open.",
@@ -4629,10 +4665,35 @@
           "title": "Graph"
         }
       },
+      "history": {
+        "description": "Everything that changed in this object, with Undo.",
+        "title": "History"
+      },
       "mentions": {
         "description": "Where this object is cited without a connection.",
         "title": "Mentions"
       }
+    },
+    "history": {
+      "by": {
+        "gardener": "Gardener",
+        "you": "You"
+      },
+      "empty": {
+        "entity": "An entity keeps no history of its own. What changes its notes shows in their History.",
+        "note": "Nothing changed in this note yet. When the Gardener places it or links it, each change shows here, with Undo.",
+        "question": "A question keeps no history of its own. Ask again to write a new version of its answer.",
+        "source": "Nothing changed because of this source yet. Where it is placed in the topics and how it is linked to other sources shows here, with Undo.",
+        "topic": "Nothing changed in this topic yet. Renames, moves and new overviews show here, with Undo."
+      },
+      "label": "Changes to this object",
+      "latest": "The {count} most recent.",
+      "state": {
+        "dismissed": "Dismissed",
+        "undone": "Undone",
+        "waiting": "Waits for your decision in the Inbox"
+      },
+      "undoLabel": "Undo: {title}"
     },
     "loadingMore": "Loading more…",
     "locate": {
@@ -5147,6 +5208,146 @@
       "updated": "last updated {date}"
     }
   },
+  "settingsGeneral": {
+    "language": {
+      "connectionsNote": "Connection descriptions already written can be redone in",
+      "defaultOs": "same as macOS, {language}"
+    },
+    "saveFailed": "This could not be saved. Nothing was changed.",
+    "theme": {
+      "dark": "Dark",
+      "light": "Light",
+      "system": "System"
+    }
+  },
+  "settingsLibrary": {
+    "backup": {
+      "action": "Back up now",
+      "done": "Backup finished.",
+      "failed": "The backup could not be made.",
+      "running": "Backing up…",
+      "savedIn": "Saved in {path}",
+      "verified": "A test restore passed."
+    },
+    "plans": {
+      "deleteAction": "Delete",
+      "deleteAsk": "Delete “{name}”?",
+      "deleteConfirm": "Delete plan",
+      "deleteKept": "Sources already imported keep what was made.",
+      "empty": "No saved import plans yet. Save one while importing.",
+      "loadFailed": "Your saved import plans could not be read.",
+      "loadKept": "Nothing was changed.",
+      "renameAction": "Rename",
+      "renameLabel": "Name of the plan",
+      "saveFailed": "This could not be saved. Nothing was changed."
+    },
+    "storage": {
+      "database": "Local database",
+      "files": "Stored files",
+      "filesNote": "the originals you sent",
+      "sourcesMany": "{count} sources",
+      "sourcesOne": "{count} source",
+      "where": "Both live inside Memora’s data folder on this Mac, and their place is fixed. To keep the originals in a folder of yours, turn on the copy below; to move everything to another disk, use Backup."
+    },
+    "uploads": {
+      "change": "Change folder",
+      "choose": "Choose a folder",
+      "needsFolder": "Choose the folder first: the copies need somewhere to go.",
+      "noFolder": "No folder chosen yet",
+      "off": "Off",
+      "on": "On",
+      "pathHint": "Paste the full path of a folder on this Mac.",
+      "pathLabel": "Folder path",
+      "pathRejected": "A full path starts with “/” and names a folder that exists.",
+      "readFailed": "The copy folder could not be read.",
+      "saveFailed": "This could not be saved. Nothing was changed.",
+      "willReceive": "This folder starts receiving the copies once you turn this on."
+    }
+  },
+  "settingsPrivacy": {
+    "callLog": {
+      "full": "Full capture is on: it keeps whole prompts and answers.",
+      "light": "It keeps times, models and tokens; whole prompts and answers only with full capture.",
+      "none": "The AI call log is empty.",
+      "open": "View and delete in Advanced",
+      "readFailed": "The call log could not be read.",
+      "summaryMany": "The AI call log keeps {count} calls on this Mac.",
+      "summaryOne": "The AI call log keeps {count} call on this Mac."
+    },
+    "history": {
+      "action": "Clear…",
+      "confirm": "Clear Recents",
+      "dialogBody": "This erases the list of items opened recently on this Mac. Pinned items stay.",
+      "dialogTitle": "Clear Recents?",
+      "doneMany": "{count} items removed from Recents.",
+      "doneNone": "Recents was already empty.",
+      "doneOne": "{count} item removed from Recents.",
+      "failed": "Recents could not be cleared. Nothing was changed."
+    },
+    "leaves": {
+      "books": "Book and article details",
+      "booksGoogle": "Google Books",
+      "changeInAi": "Change in AI",
+      "cloud": "In the cloud",
+      "columns": {
+        "job": "Job",
+        "what": "What leaves",
+        "where": "Where it runs"
+      },
+      "credentials": "Credentials kept on this Mac (names only; the values never appear): {names}.",
+      "decisions": "OpenAI Decisions",
+      "internet": "On the internet",
+      "local": "On this Mac",
+      "lookupAuto": "Open Library, Google Books and Crossref",
+      "lookupGoogle": "Google Books and Crossref",
+      "lookupOpenLibrary": "Open Library and Crossref",
+      "noCredentials": "No credentials are kept on this Mac.",
+      "noModel": "No model chosen",
+      "nothing": "Nothing",
+      "off": "Off",
+      "readFailed": "What leaves this Mac could not be read.",
+      "readKept": "Nothing was changed.",
+      "tableLabel": "What leaves this Mac, by job",
+      "what": {
+        "answer": "Your question and the notes it cites",
+        "books": "ISBN, DOI, title and authors",
+        "decide": "Titles and ideas of the notes compared",
+        "decisions": "Title, idea and start of the text of the notes compared",
+        "embed": "Excerpts of your sources and notes",
+        "judge": "Notes and excerpts compared",
+        "writeFast": "Excerpts of sources, and summaries",
+        "writeQuality": "Excerpts of sources"
+      }
+    },
+    "questions": {
+      "action": "Delete questions…",
+      "confirm": "Delete questions",
+      "countMany": "{count} saved questions",
+      "countMore": "More than {count} saved questions",
+      "countNone": "No saved questions.",
+      "countOne": "{count} saved question",
+      "dialogBody": "This erases every saved question and its answers. Your sources and notes stay. It cannot be undone.",
+      "dialogTitle": "Delete all questions?",
+      "doneMany": "{count} questions deleted.",
+      "doneNone": "There were no questions to delete.",
+      "doneOne": "{count} question deleted.",
+      "failed": "The questions could not be deleted. Nothing was changed.",
+      "readFailed": "The saved questions could not be counted."
+    },
+    "reset": {
+      "action": "Reset everything…",
+      "backupLink": "Make a backup first",
+      "confirm": "Reset everything",
+      "dialogBody": "This erases your library, search indexes, graphs, questions, histories, connections, preferences and stored files. Profiles, providers, routes and installed models stay; backups and your personal files are not touched.",
+      "dialogTitle": "Reset everything?",
+      "dialogWarn": "This cannot be undone.",
+      "failed": "The reset could not be finished. Check the file permissions and try again.",
+      "noUndo": "This cannot be undone.",
+      "running": "Resetting…",
+      "warnings": "The reset is done, but some stored files could not be removed."
+    },
+    "working": "Working…"
+  },
   "settingsRegistry": {
     "activeMatchingPresetId": {
       "help": "Balanced is the calibrated set and is read only. To edit values, create or duplicate a preset.",
@@ -5158,7 +5359,7 @@
     },
     "advancedPrompts": {
       "help": "The instructions Memora sends to the models, by category. Editing one creates a new revision; the earlier one is kept.",
-      "label": "Prompts"
+      "label": "Model instructions"
     },
     "advancedSimilarityRuns": {
       "help": "Comparisons recorded while diagnostics were on. Clearing them changes no connection.",
@@ -5225,7 +5426,7 @@
       "label": "This Mac"
     },
     "atomicNoteMatchingSettingsMaxRerankOutputTokens": {
-      "help": "The most tokens the AI may write when it places one note. Default 4,096.",
+      "help": "The most tokens the AI may write when it places one note.",
       "label": "Output limit per note"
     },
     "bookLookup": {
@@ -5233,19 +5434,19 @@
       "label": "Look up book details online"
     },
     "canonicalMatchingSettingsConfirmationBatchSize": {
-      "help": "How many identities go to the AI in one confirmation call. Default 12.",
+      "help": "How many identities go to the AI in one confirmation call.",
       "label": "Identities per confirmation"
     },
     "canonicalMatchingSettingsConfirmationMaxCharacters": {
-      "help": "The text size a confirmation call may reach. One identity larger than this still goes alone. Default 12,000.",
+      "help": "The text size a confirmation call may reach. One identity larger than this still goes alone.",
       "label": "Confirmation size in characters"
     },
     "canonicalMatchingSettingsEntityCandidateLimit": {
-      "help": "How many similar entities the AI compares with each new one. Default 3.",
+      "help": "How many similar entities the AI compares with each new one.",
       "label": "Candidates per entity"
     },
     "canonicalMatchingSettingsRelationTypeCandidateLimit": {
-      "help": "How many similar relation types the AI compares with each new one. Default 3.",
+      "help": "How many similar relation types the AI compares with each new one.",
       "label": "Candidates per relation type"
     },
     "contentLanguage": {
@@ -5261,7 +5462,7 @@
       "label": "Operation diagnostics"
     },
     "entityIdentitySimilarityThreshold": {
-      "help": "How alike two entities must be before the AI checks whether they are the same. Higher finds fewer candidates. Default 0.92.",
+      "help": "How alike two entities must be before the AI checks whether they are the same. Higher finds fewer candidates.",
       "label": "Entity similarity"
     },
     "graphWheelZoomSensitivity": {
@@ -5364,7 +5565,7 @@
       "label": "Hugging Face token"
     },
     "managedRoot": {
-      "help": "The folder, inside the vault, where Memora writes its files. Default Memora.",
+      "help": "The folder, inside the vault, where Memora writes its files.",
       "label": "Memora folder in the vault"
     },
     "metadataGoogleBooks": {
@@ -5396,7 +5597,7 @@
       "label": "Sources that become pages"
     },
     "privacyCallLog": {
-      "help": "The latest calls to a model, local or in the cloud. Read only; the full log is under Advanced.",
+      "help": "What this Mac keeps about the calls made to models, local or in the cloud.",
       "label": "Recent AI calls"
     },
     "privacyClearQuestions": {
@@ -5424,7 +5625,7 @@
       "label": "Connection descriptions"
     },
     "relationTypeSimilarityThreshold": {
-      "help": "How alike two relation types must be before the AI checks whether they are the same. Higher finds fewer candidates. Default 0.92.",
+      "help": "How alike two relation types must be before the AI checks whether they are the same. Higher finds fewer candidates.",
       "label": "Relation type similarity"
     },
     "relationsDeciderMode": {
@@ -5436,11 +5637,11 @@
       "label": "Decide connections with OpenAI Decisions"
     },
     "sourceRelationSettingsEvidenceChunksPerSource": {
-      "help": "How many passages of each source the AI reads when it compares a pair. Default 2.",
+      "help": "How many passages of each source the AI reads when it compares a pair.",
       "label": "Evidence passages per source"
     },
     "sourceRelationSettingsEvidenceMaxCharacters": {
-      "help": "The longest piece of a passage the AI reads. Default 800.",
+      "help": "The longest piece of a passage the AI reads.",
       "label": "Characters per passage"
     },
     "sourceRelationSettingsIncludeWeakTypes": {
@@ -5448,31 +5649,31 @@
       "label": "Allow weak relations"
     },
     "sourceRelationSettingsMaxInputTokens": {
-      "help": "The most input tokens one source and its chapters may use in a run. A call can pass it; the next ones then stop. Default 60,000.",
+      "help": "The most input tokens one source and its chapters may use in a run. A call can pass it; the next ones then stop.",
       "label": "Input budget"
     },
     "sourceRelationSettingsMaxOutputTokens": {
-      "help": "The most tokens the AI may write when it compares two sources. Default 4,096.",
+      "help": "The most tokens the AI may write when it compares two sources.",
       "label": "Output limit per source pair"
     },
     "sourceRelationSettingsMaxRelationsPerPair": {
-      "help": "The most connections kept between two sources. Default 4.",
+      "help": "The most connections kept between two sources.",
       "label": "Relations per source pair"
     },
     "sourceRelationSettingsMinConfidence": {
-      "help": "Connections the evidence supports below this confidence are dropped. Default 0.85.",
+      "help": "Connections the evidence supports below this confidence are dropped.",
       "label": "Minimum confidence"
     },
     "sourceRelationSettingsMinImportance": {
-      "help": "Connections the AI scores below this importance are dropped. Default 0.75.",
+      "help": "Connections the AI scores below this importance are dropped.",
       "label": "Minimum importance"
     },
     "sourceRelationSettingsSummaryMaxCharacters": {
-      "help": "How much of each source’s summary goes into a comparison. Default 1,000.",
+      "help": "How much of each source’s summary goes into a comparison.",
       "label": "Summary characters per source"
     },
     "summaryMinimumWordCount": {
-      "help": "Saves an AI call on items too small to summarise. Use 0 to turn it off. Default 40.",
+      "help": "Saves an AI call on items too small to summarise. Use 0 to turn it off.",
       "label": "Minimum words for a summary"
     },
     "themeMode": {
@@ -5609,8 +5810,7 @@
       "context": "The graph stopped drawing.",
       "layout": "The graph could not be arranged.",
       "unavailable": "This window cannot draw the graph.",
-      "unavailableBody": "The table lists the same connections.",
-      "unavailableTree": "The Tree shows this branch’s topics and notes; each note lists its connections."
+      "unavailableBody": "The table lists the same connections."
     },
     "group": {
       "description": "{topic}. Notes drawn: {notes}. Connections to other topics: {count}."
@@ -5639,5 +5839,739 @@
       "sourceUnnamed": "this source"
     },
     "untitledTopic": "Untitled topic"
+  },
+  "mapRelationsTable": {
+    "caption": "The same connections as the graph, one row per connection",
+    "count": "{count} connections",
+    "countOne": "1 connection",
+    "from": "From",
+    "groupBy": "Group by",
+    "groupByHelp": "Which level of subtopics groups the topics in the list",
+    "groups": {
+      "all": "Show all {count}",
+      "and": "and",
+      "body": "The lines the graph draws from far away, one per pair of topics.",
+      "capped": "Only the strongest links are listed.",
+      "fewer": "Show fewer",
+      "title": "Between topics"
+    },
+    "keyMove": "choose",
+    "keyOpen": "open the first note beside",
+    "keyOpenSecond": "open the second",
+    "link": "Link",
+    "more": "Show {count} more",
+    "notice": {
+      "groupLines": "From far away, only the strongest links between topics are drawn.",
+      "truncated": "This branch is larger than the graph holds, so it shows the most connected notes and connections. Pick a smaller branch to see everything."
+    },
+    "outside": {
+      "action": "See the branch {title}",
+      "body": "Topics outside this branch that connect to its notes. Click to see their branch.",
+      "capped": "The {count} most connected topics.",
+      "title": "Outside the branch"
+    },
+    "suggested": "suggested",
+    "title": "Same connections as a table",
+    "to": "To"
+  },
+  "settingsShell": {
+    "classic": {
+      "open": "Open the old settings"
+    },
+    "navChangedMany": "{count} settings changed",
+    "navChangedOne": "{count} setting changed",
+    "navFoot": "Every setting shows whether it changed and how to go back to the default.",
+    "navHitsMany": "{count} results",
+    "navHitsOne": "{count} result",
+    "navLabel": "Settings sections",
+    "row": {
+      "changed": "Changed",
+      "default": "Default:",
+      "defaultVaries": "Default: depends on this Mac and the other options",
+      "removeAsk": "Remove it from this Mac? You would have to enter it again.",
+      "removeConfirm": "Remove",
+      "reset": "Restore default",
+      "resetFailed": "Could not restore it. Nothing was changed.",
+      "resetPending": "One step is left for you to confirm in the option itself.",
+      "resetting": "Restoring…",
+      "themeDark": "Dark",
+      "themeLight": "Light",
+      "themeSystem": "System",
+      "valueNone": "Not set",
+      "valueOff": "Off",
+      "valueOn": "On",
+      "valueSet": "Set"
+    },
+    "search": {
+      "clear": "Clear the search",
+      "emptyBack": "and go back to {section}.",
+      "emptyBody": "Try another word or a synonym. For example:",
+      "emptyClear": "Clear the search",
+      "emptyTitle": "Nothing for “{query}” in settings.",
+      "exampleBudget": "budget",
+      "exampleDark": "dark",
+      "exampleObsidian": "Obsidian",
+      "examplePrivacy": "privacy",
+      "help": "Also finds synonyms: “dark” leads to Theme.",
+      "keysClear": "clears the search",
+      "keysMove": "move",
+      "keysOpen": "opens the best",
+      "label": "Search settings",
+      "placeholder": "Search: theme, budget…",
+      "placeholderShort": "Search…",
+      "resultsMany": "{count} results for “{query}”",
+      "resultsOne": "1 result for “{query}”"
+    },
+    "section": {
+      "allDefault": "Everything is at its default in this section.",
+      "changedMany": "{count} settings changed",
+      "changedOne": "{count} setting changed",
+      "inSection": "in this section",
+      "listLabel": "Which settings changed",
+      "restoreAll": "Restore all",
+      "restoreAskMany": "Restore {count} settings to their defaults?",
+      "restoreAskOne": "Restore {count} setting to its default?",
+      "restoreConfirm": "Restore",
+      "restoreFailedMany": "{count} could not be restored and stayed as they were.",
+      "restoreFailedOne": "{count} could not be restored and stayed as it was.",
+      "restoreSkippedMany": "{count} need a step from you and stayed as they were.",
+      "restoreSkippedOne": "{count} needs a step from you and stayed as it was."
+    },
+    "sections": {
+      "advanced": {
+        "description": "Matching, logs",
+        "name": "Advanced and diagnostics"
+      },
+      "ai": {
+        "description": "Setup and models",
+        "name": "AI"
+      },
+      "general": {
+        "description": "Theme and languages",
+        "name": "General and appearance"
+      },
+      "integrations": {
+        "description": "Obsidian, books, browser",
+        "name": "Integrations"
+      },
+      "knowledge": {
+        "description": "Gardener, tree, connections",
+        "name": "Knowledge"
+      },
+      "library": {
+        "description": "Copies, backup, imports",
+        "name": "Library and storage"
+      },
+      "privacy": {
+        "description": "What leaves this Mac, delete",
+        "name": "Privacy and data"
+      }
+    },
+    "states": {
+      "errorKept": "Nothing was changed: Memora keeps using the values that already applied.",
+      "errorTitle": "Could not read your saved settings."
+    },
+    "title": "Settings",
+    "words": {
+      "activeMatchingPresetId": "matching preset calibrated balanced recommended duplicate custom profile correspondence thresholds defaults",
+      "advancedCallLog": "ai call log history requests model calls tokens time latency cost audit prune read only of",
+      "advancedPrompts": "prompts instructions system edit templates revisions catalog prompt text customize wording",
+      "advancedSimilarityRuns": "similarity debug runs clear delete comparisons recorded diagnostics erase logs cleanup",
+      "advancedTaskHistory": "task history jobs finished failed cancelled runs past activity log completed of",
+      "aiDecisionsOpenaiPlatform": "openai platform api key decisions credential secret token for",
+      "aiModels": "local models download install gguf import mlx catalog hugging face test default on this mac",
+      "aiPresetV1": "setup preset mode local hybrid cloud custom offline no internet run on this mac private where ai runs device",
+      "aiProfiles": "profiles model parameters temperature max tokens reasoning effort settings per profile advanced options",
+      "aiProviderGoogle": "google gemini api key provider cloud model ai studio",
+      "aiProviderOpenaiCodex": "chatgpt codex subscription oauth sign in login connect account provider plus pro openai",
+      "aiProviderOpenaiCompatible": "openai compatible api key base url endpoint custom server openrouter lm studio ollama proxy provider",
+      "aiRouteAnswer": "answers ask questions model chat answer responses question answering",
+      "aiRouteDecide": "ranking ranker rerank decide relations related notes scoring judge matching model decider",
+      "aiRouteEmbed": "embeddings embedding vectors search model semantic similarity topics matching index",
+      "aiRouteJudge": "generative judge decide relations when no ranker writing model sources relate decider fallback",
+      "aiRouteWriteFast": "quick writing fast model summaries topic names short explanations cheap small writer",
+      "aiRouteWriteQuality": "careful writing quality model notes entities knowledge graph best writer large",
+      "aiThisMac": "this mac hardware chip memory ram apple silicon recommended setup tier specs which models fit",
+      "atomicNoteMatchingSettingsMaxRerankOutputTokens": "output token limit per note rerank max tokens ai atomic notes answer length cap cost",
+      "bookLookup": "book lookup metadata internet isbn doi crossref google books cover authors title online fetch details",
+      "canonicalMatchingSettingsConfirmationBatchSize": "identities per confirmation batch size request group items call confirm count",
+      "canonicalMatchingSettingsConfirmationMaxCharacters": "confirmation batch characters size limit max text length per request prompt",
+      "canonicalMatchingSettingsEntityCandidateLimit": "candidates per entity limit how many entities compare top k maximum",
+      "canonicalMatchingSettingsRelationTypeCandidateLimit": "candidates per relation type limit how many types compare top k maximum",
+      "contentLanguage": "content language notes writing summaries translation generated text output answers topic names",
+      "debugFullCapture": "full capture prompts responses complete text store raw record everything debug sensitive",
+      "debugMode": "debug diagnostics logging verbose trace troubleshoot problem investigate bug log operations similarity canonicalization",
+      "entityIdentitySimilarityThreshold": "entity identity similarity threshold cutoff merge entities duplicates same person place candidates strictness",
+      "graphWheelZoomSensitivity": "graph zoom sensitivity speed mouse wheel scroll trackpad map faster slower scale pinch",
+      "integrationsGateway": "paired apps pairing chrome extension obsidian plugin connect local gateway mcp token browser clipper pair devices",
+      "keepLocalEmbeddingModelsLoaded": "keep model loaded memory ram local embedding preload unload faster search free resident",
+      "knowledgeControlsV1Autonomy": "autonomy gardener automation off suggest automatic how much auto ask first confirm approve manual hands",
+      "knowledgeControlsV1MonthlyCapUsd": "monthly cap budget spending limit cost money dollars usd cloud spend maximum price",
+      "knowledgeControlsV1OnlyIdle": "idle only when mac not in use background wait inactive away battery cpu schedule quiet",
+      "knowledgeControlsV1OnlyOnAc": "plugged in power adapter ac charger battery only on laptop schedule save",
+      "knowledgeControlsV1Paused": "pause gardener stop background work automation resume halt freeze disable",
+      "knowledgeControlsV1TreeShape": "tree shape topics balanced broad deep shallow organization structure hierarchy depth flat narrow",
+      "language": "app language interface ui menus buttons messages locale translate display",
+      "libraryBackup": "backup restore export copy database safety archive save library verify recover dated folder",
+      "libraryStorage": "storage database where data lives files folder location disk size space library path",
+      "localModelsRepositoryTokenRef": "hugging face token hf access private repository gated models download credentials",
+      "managedRoot": "managed folder root obsidian vault subfolder memora where files written directory name inside",
+      "metadataGoogleBooks": "google books api key metadata credential lookup quota rate limit book",
+      "obsidianLayoutAttachments": "attachments copy original files pdf images obsidian vault attach text only binary",
+      "obsidianLayoutLanguage": "vault folder language names obsidian layout override rename folders translate",
+      "obsidianSync": "obsidian sync two way on off pause markdown notes export vault write library back edits synchronize",
+      "obsidianVaultPath": "obsidian vault folder path directory pick choose notes sync location markdown",
+      "obsidianWikiIncludeDescendants": "chapters parts descendants include children sub sources obsidian wiki nested sections",
+      "obsidianWikiScope": "obsidian wiki pages sources scope which become choose limit 100 publish export subset",
+      "privacyCallLog": "ai calls log recent what was sent models requests providers tokens history audit transparency",
+      "privacyClearQuestions": "delete questions erase answers ask history clear conversations saved remove chats",
+      "privacyClearViewHistory": "clear recents history recently opened list erase view delete recent items",
+      "privacyReset": "reset everything wipe erase all data factory start over delete library clean slate danger zone",
+      "privacySummary": "privacy what leaves this mac data sent remote cloud providers external network offline local only sharing",
+      "processingPresets": "import plans processing presets saved settings rename delete templates options",
+      "relationLabels": "relation descriptions labels connection text regenerate rewrite missing language explanation connections",
+      "relationsDeciderMode": "decider mode who decides relations ranker judge automatic only matching connections decision",
+      "relationsDecisions": "openai decisions remote decider cloud ranker cheaper accurate connections relations paid opt in",
+      "relationTypeSimilarityThreshold": "relation type similarity threshold cutoff merge types duplicates candidates strictness embedding score",
+      "sourceRelationSettingsEvidenceChunksPerSource": "evidence passages per source pair chunks excerpts quotes how many relations context",
+      "sourceRelationSettingsEvidenceMaxCharacters": "characters per evidence passage excerpt length max size text limit",
+      "sourceRelationSettingsIncludeWeakTypes": "weak relation types mentions related generic allow include vague connections loose links noise",
+      "sourceRelationSettingsMaxInputTokens": "input token budget max tokens limit cost cap per run source relations spending ceiling context size",
+      "sourceRelationSettingsMaxOutputTokens": "output token limit per source pair max tokens ai answer length cap cost relations",
+      "sourceRelationSettingsMaxRelationsPerPair": "relations per source pair maximum connections between two sources limit how many cap",
+      "sourceRelationSettingsMinConfidence": "minimum confidence evidence threshold score filter relations certainty cutoff",
+      "sourceRelationSettingsMinImportance": "minimum importance conceptual threshold score filter relations quality cutoff weak",
+      "sourceRelationSettingsSummaryMaxCharacters": "summary characters per source length max size",
+      "summaryMinimumWordCount": "minimum words summary short items skip summaries word count threshold tiny sources save calls zero off",
+      "themeMode": "theme dark light night mode appearance colors color scheme system",
+      "uploadCopies": "upload copies keep original files copy folder store imports originals backup of uploads second"
+    }
+  },
+  "settingsAi": {
+    "blocked": {
+      "localRequiresAppleSilicon": "Local needs a Mac with Apple silicon.",
+      "modelMissing": "{name} needs {model}, which is not installed. Install it in Models on this Mac, then try again.",
+      "noRemoteProfile": "{name} needs a provider model. Add a provider above, then try again.",
+      "thisJob": "this job",
+      "title": "Could not apply {setup}."
+    },
+    "cap": {
+      "change": "Change in Knowledge",
+      "label": "Monthly cloud spending limit: {amount}",
+      "noSpend": "The limit applies to the Gardener and lives in Knowledge.",
+      "spent": "{amount} spent this month. The limit applies to the Gardener and lives in Knowledge."
+    },
+    "confirm": {
+      "apply": "Apply and test",
+      "body": "This replaces the model of every job and tests one call of each. Nothing is downloaded.",
+      "bodyLocal": "There is no validated local writing model yet, so writing may stay on hold.",
+      "title": "Switch to {setup}?"
+    },
+    "credential": {
+      "save": "Save"
+    },
+    "decisions": {
+      "calibrated": "Relations above its calibrated threshold are applied automatically; the others are suggestions you can keep or remove.",
+      "confirmApply": "Turn on",
+      "confirmBody": "Turning this on sends note text to OpenAI as described above. You can turn it off at any time; nothing is sent after that.",
+      "confirmTitle": "Send note text to OpenAI?",
+      "errorTitle": "Could not read the OpenAI Decisions status.",
+      "fallback": "On, but the local ranker is deciding: {reason}.",
+      "key": {
+        "add": "Save key…",
+        "hint": "It is stored encrypted on this computer, never shown again and sent only to OpenAI.",
+        "invalid": "OpenAI refused the saved key. Save a valid one.",
+        "label": "OpenAI Platform key",
+        "none": "No key",
+        "replace": "Replace key…",
+        "set": "Key saved, never shown again",
+        "test": "Test key",
+        "testOk": "OpenAI accepted the key.",
+        "testing": "Testing…"
+      },
+      "keySaved": "The OpenAI key was saved.",
+      "lastFallback": "The last time, the local ranker decided instead: {reason}.",
+      "noticeBody": "While this is on, the title, the idea statement and the first {characters} characters of the text of each note being compared, and of the notes it is compared with (including those it was compared with before), are sent to OpenAI (the Decisions API, model {model}) with your own OpenAI Platform key. By default OpenAI does not train on API data, and it may keep requests for up to 30 days to monitor abuse. Memora does not control that retention. Nothing is sent while this is off, in the Local setup, or without a key.",
+      "noticeCost": "It costs about {price} per million input tokens, typically a cent or less per note. Memora stops using it for the day at {cap}, and the local ranker takes over.",
+      "noticeTitle": "Your note text is sent to OpenAI",
+      "off": "Off: nothing is sent. The local ranker decides the relations.",
+      "ready": "On: OpenAI Decisions decides the relations.",
+      "reason": {
+        "breaker_open": "OpenAI is not responding right now",
+        "error": "OpenAI returned an unexpected error",
+        "invalid_key": "OpenAI refused the saved key",
+        "network": "OpenAI could not be reached",
+        "no_key": "no OpenAI key is saved",
+        "quota": "your OpenAI account has no credit left",
+        "spend_cap": "today's spending limit was reached"
+      },
+      "spend": "Spent today: {spent} of {cap} ({requests} requests).",
+      "turnedOff": "OpenAI Decisions is off.",
+      "turnedOn": "OpenAI Decisions is on.",
+      "unavailable": "Not available in Local or Custom, which never send note text out.",
+      "uncalibrated": "It is not calibrated yet, so every relation it finds is a suggestion you can keep or remove."
+    },
+    "errors": {
+      "write": "Could not save. Nothing was changed."
+    },
+    "intro": "Start with the setup: it picks the model for every job at once. Hybrid and Cloud need a provider, just below. Everything else is fine-tuning.",
+    "models": {
+      "action": {
+        "download": "Download",
+        "import": "Import GGUF file…",
+        "remove": "Remove",
+        "resume": "Resume",
+        "test": "Test",
+        "useRecommended": "Use the recommended values"
+      },
+      "compat": {
+        "compatible": "Fits this Mac",
+        "insufficient_memory": "Not enough memory",
+        "unsupported_platform": "Needs macOS on Apple silicon"
+      },
+      "empty": "No model matches. Clear a filter to see the others.",
+      "errorKept": "Nothing was changed: installed models stay where they are.",
+      "errorTitle": "Could not read the model list.",
+      "eta": {
+        "minutes": "{minutes} min left",
+        "seconds": "{seconds} s left"
+      },
+      "filter": {
+        "all": "All",
+        "compatible": "Only models that fit this Mac",
+        "label": "Show",
+        "ranking": "Comparison",
+        "search": "Search",
+        "writing": "Writing"
+      },
+      "license": "I accept the license:",
+      "parameters": "Parameters",
+      "ranker": {
+        "fallback": "Without a validated ranker, notes that fit more than one topic start new topics. They are placed again once a ranker is ready.",
+        "installing": "This ranker places notes that fit more than one topic. Until it is ready, those notes start new topics and are placed again afterwards.",
+        "pending": "Run the test to validate this ranker."
+      },
+      "removeAsk": "Remove {model} and its files from this Mac?",
+      "removeBlocked": "In use by {profiles}. Change the profile first.",
+      "saveDefaults": "Save defaults",
+      "status": {
+        "downloading": "Downloading",
+        "failed": "Failed",
+        "not_downloaded": "Not downloaded",
+        "ready": "Installed",
+        "removing": "Removing",
+        "verifying": "Verifying"
+      },
+      "summaryMany": "{count} installed · {size}",
+      "summaryNone": "None installed",
+      "summaryOne": "1 installed · {size}",
+      "testOk": "The model ran on this Mac.",
+      "token": {
+        "add": "Add token…",
+        "label": "Token",
+        "none": "No token",
+        "replace": "Replace token…",
+        "set": "Token saved, never shown"
+      }
+    },
+    "preset": {
+      "cloud": {
+        "help": "Almost everything on your provider."
+      },
+      "custom": {
+        "help": "You choose the model of each job, right below."
+      },
+      "estimate": "About {amount} a month with an API key.",
+      "hybrid": {
+        "help": "Search and comparison on this Mac; writing and answers on your provider."
+      },
+      "local": {
+        "help": "Everything runs on this Mac and nothing leaves it.",
+        "unavailableMemory": "This Mac does not have enough memory for the local writing model.",
+        "unavailableSilicon": "Needs a Mac with Apple silicon.",
+        "unavailableSystem": "No local writing model exists for this system.",
+        "unverified": "No validated local writing model yet."
+      },
+      "name": {
+        "cloud": "Cloud",
+        "custom": "Custom",
+        "hybrid": "Hybrid",
+        "local": "Local"
+      },
+      "recommended": "recommended",
+      "unset": "No setup chosen yet. Choose where the AI runs: it picks the model of every job."
+    },
+    "profiles": {
+      "close": "Close",
+      "create": "Create profile",
+      "customize": "Customized",
+      "duplicate": "Duplicate profile",
+      "edit": "Edit",
+      "empty": "No profiles yet. A profile ties a model to the jobs it serves.",
+      "model": "Model",
+      "modelDefaults": "Model defaults",
+      "name": "Profile name",
+      "new": "New profile…",
+      "remove": "Remove profile",
+      "removeAsk": "Remove this profile and its job routes? Downloaded models are kept.",
+      "resetTask": "Use model defaults",
+      "save": "Save profile",
+      "selectModel": "Choose a provider or local model",
+      "summaryMany": "{count} profiles",
+      "summaryNone": "No profiles",
+      "summaryOne": "1 profile",
+      "task": {
+        "atomic-note-generation": "Atomic notes",
+        "embedding": "Search and similarity",
+        "knowledge-graph-generation": "Knowledge graph",
+        "reranking": "Comparison (ranker)",
+        "structured-output": "Structured answers",
+        "summarization": "Summaries",
+        "text-generation": "Text writing"
+      }
+    },
+    "providers": {
+      "action": {
+        "addKey": "Add key…",
+        "addModel": "Add a model…",
+        "find": "Find models",
+        "finding": "Finding…",
+        "remove": "Remove",
+        "replaceKey": "Replace key…",
+        "save": "Save",
+        "saving": "Saving…",
+        "signIn": "Sign in…",
+        "signInAgain": "Sign in again",
+        "test": "Test",
+        "testing": "Testing…"
+      },
+      "form": {
+        "address": "Server address",
+        "addressHint": "For OpenAI itself, leave the default address.",
+        "key": "API key",
+        "model": "Model",
+        "modelHint": "Pick one the provider lists, or type its name.",
+        "purpose": "Used for",
+        "signInHint": "Opens ChatGPT in your browser. Only the writing jobs use it.",
+        "signedIn": "Signed in. Choose the model to use."
+      },
+      "modelsLabel": "Models",
+      "purpose": {
+        "embedding": "Search",
+        "generation": "Writing",
+        "reranking": "Comparison"
+      },
+      "removeAsk": "Remove {model}? Profiles that use it lose their model.",
+      "status": {
+        "connected": "Connected",
+        "keySaved": "Key saved, never shown",
+        "none": "No key",
+        "notConnected": "Not signed in"
+      },
+      "testOk": "Connection works"
+    },
+    "routes": {
+      "choose": "Choose a model",
+      "disclosure": {
+        "body": "When this model decides or judges, the titles and ideas of the notes being compared, and excerpts of the sources, are sent to {provider}. It keeps them under its own retention terms, which Memora does not control.",
+        "confirm": "Use this model",
+        "title": "{provider} receives your text"
+      },
+      "empty": "Choose a setup above: it picks the model of each job.",
+      "intro": "The setup chooses these models. Changing one here changes only that job, and the setup becomes Custom.",
+      "introCustom": "Each job keeps the model you chose. To start over, pick a setup above.",
+      "noModel": "No model chosen",
+      "noModelsAvailable": "No models to choose from. Add a provider or install a local model below.",
+      "noRanker": "No ranker installed yet. Relations wait for one unless the generative judge decides.",
+      "partial": "Some routes of the judge are missing. Choose a model to set them all.",
+      "where": {
+        "local": "On this Mac",
+        "remote": "Provider"
+      }
+    },
+    "states": {
+      "errorKept": "Nothing was changed: Memora keeps using the models it already had.",
+      "errorTitle": "Could not read the AI setup."
+    },
+    "status": {
+      "applied": "{setup} is applied. Each job shows its test result.",
+      "applying": "Applying {setup}…",
+      "testing": "Testing {name}…"
+    },
+    "test": {
+      "button": "Test",
+      "failed": "Test failed",
+      "failedWith": "Test failed: {reason}",
+      "none": "No ranker",
+      "passed": "Test passed",
+      "passedMs": "Test passed in {ms} ms",
+      "passedSeconds": "Test passed in {seconds} s",
+      "running": "Testing…",
+      "untested": "Not tested"
+    },
+    "thisMac": {
+      "detectedOn": "{date}, {time}",
+      "detectedToday": "today, {time}",
+      "error": "Could not detect this Mac.",
+      "errorKept": "Nothing was changed: the setup above works as before.",
+      "fact": {
+        "detected": "Detected",
+        "disk": "Free disk",
+        "gpuMemory": "Memory for the GPU",
+        "graphicsMemory": "Graphics memory",
+        "memory": "Memory",
+        "memoryUnified": "Unified memory"
+      },
+      "intro": "What Memora found on this Mac, and the setup that fits it.",
+      "nothingChanges": "Nothing changes by itself: you choose the setup.",
+      "reason": {
+        "local_memory_too_small": "This Mac has little memory for the local writing model.",
+        "local_quality_unverified": "Local does not have a validated writing model for this Mac yet.",
+        "local_requires_apple_silicon": "Local needs a Mac with Apple silicon.",
+        "local_writer_unavailable": "No local writing model exists for this system.",
+        "probe_incomplete": "Not everything could be detected, so some figures may be missing.",
+        "ranker_slow_on_cpu": "Without a dedicated graphics card, comparing notes is slow on this computer.",
+        "running_under_rosetta": "Memora is running translated (Rosetta). It works, but slower than the native version."
+      },
+      "recommended": "Recommended for this Mac: {setup}.",
+      "redetect": "Detect again",
+      "redetected": "Detected again.",
+      "redetecting": "Detecting…",
+      "tag": "information only",
+      "title": {
+        "intel": "Mac with an Intel processor",
+        "other": "This computer",
+        "silicon": "Mac with Apple silicon",
+        "windows": "Windows computer"
+      },
+      "why": {
+        "cloud": "Almost everything uses your provider; this computer keeps your library.",
+        "hybrid": "Search and comparison run here at no cost; writing uses your provider.",
+        "local": "Everything runs here and nothing leaves this Mac."
+      }
+    }
+  },
+  "settingsAdvanced": {
+    "decider": {
+      "auto": "Automatic",
+      "autoHelp": "Follows your models: the ranker when one is validated, otherwise the judge.",
+      "generative": "Judge only",
+      "generativeHelp": "The judge decides every connection: slower, and it sends the notes’ text out if the judge runs in the cloud.",
+      "ranker": "Ranker only",
+      "rankerElse": "Ranker, otherwise judge",
+      "rankerElseHelp": "The ranker decides, and the judge steps in when no ranker is validated.",
+      "rankerHelp": "Only a validated ranker decides; without one, matching waits."
+    },
+    "groups": {
+      "diagnosticsIntro": "For investigating problems. The jobs’ technical names appear here.",
+      "matchingIntro": "Each decision keeps the values it was made with; a new value only applies to new decisions. To redo old ones, use the Inbox.",
+      "processingModels": "Processing and models"
+    },
+    "intro": "Rarely needed: the defaults suit most libraries. The matching values were measured; change them only if you know why.",
+    "layout": {
+      "failed": "The change could not be prepared. Nothing was moved.",
+      "followsNotes": "Same as the notes ({language})",
+      "hint": "Choosing another language does not move anything yet: it prepares the change, which you review and apply in Integrations.",
+      "noVault": "Choose an Obsidian vault first; until then there are no folders to name.",
+      "openIntegrations": "Open Integrations",
+      "prepared": "The change is ready to review. Apply it in Integrations, with Obsidian’s editors closed.",
+      "preparing": "Preparing the change…"
+    },
+    "matching": {
+      "deleteBody": "The matching values go back to the calibrated set. Connections already found do not change.",
+      "deleteConfirm": "Delete preset",
+      "deleteTitle": "Delete “{name}”?",
+      "differenceItem": "{label} ({current} instead of {calibrated})",
+      "differsList": "Different: {list}.",
+      "differsMany": "{count} values differ from the calibrated set.",
+      "differsNote": "Connections found with these values were not measured.",
+      "differsOne": "{count} value differs from the calibrated set.",
+      "errorKept": "Your saved values stay as they were.",
+      "errorTitle": "The matching presets could not be read.",
+      "nameInvalid": "Give the preset a name of up to 100 characters.",
+      "nameNew": "Name of the new preset",
+      "nameRename": "New name of the preset",
+      "nameSave": "Save",
+      "off": "off",
+      "on": "on",
+      "presetCopyName": "{name} (copy)",
+      "presetCreate": "Create preset",
+      "presetCustomNamed": "Custom: {name}",
+      "presetDelete": "Delete",
+      "presetDuplicate": "Duplicate",
+      "presetLimit": "You can keep up to 50 presets.",
+      "presetPrevious": "Earlier settings",
+      "presetRecommended": "Balanced (recommended)",
+      "presetRename": "Rename",
+      "restoreCalibrated": "Restore the calibrated values",
+      "subgroups": {
+        "identity": {
+          "intro": "From the knowledge graph: how the AI joins similar relation types and entities that are the same.",
+          "title": "Relation types and entity identity"
+        },
+        "notes": {
+          "intro": "How much the AI may write when it judges the connections between notes.",
+          "title": "Notes"
+        },
+        "sources": {
+          "intro": "Relations link whole sources; connections, in Knowledge, link notes.",
+          "title": "Relations between sources"
+        }
+      }
+    },
+    "prompts": {
+      "body": "Open the editor to read, change or restore a prompt.",
+      "close": "Close the prompts",
+      "open": "Open the prompts"
+    },
+    "rootFailed": "That name could not be saved. Use a folder name inside the vault, without “..” and without a leading “/”.",
+    "rootHint": "A folder name inside the vault, not a path.",
+    "saveFailed": "The change could not be saved. Nothing was changed.",
+    "units": {
+      "characters": "characters",
+      "tokens": "tokens",
+      "words": "words"
+    }
+  },
+  "diagnostics": {
+    "callLog": {
+      "caption": "The latest AI calls",
+      "columns": {
+        "job": "Job",
+        "model": "Model",
+        "result": "Result",
+        "time": "Time",
+        "tokens": "Tokens",
+        "when": "When"
+      },
+      "countMany": "{count} calls recorded",
+      "countOne": "{count} call recorded",
+      "emptyBody": "The first one appears here as soon as Memora calls a model.",
+      "emptyTitle": "No AI calls recorded yet",
+      "errorKept": "The records are still stored; nothing was deleted.",
+      "errorTitle": "The call log could not be read.",
+      "filterAll": "All",
+      "filterFailed": "Failed only",
+      "filterLabel": "Show",
+      "limitNote": "Showing the {count} most recent calls.",
+      "noneFailed": "No failed calls.",
+      "prune": "Delete old records…",
+      "results": {
+        "canceled": "Canceled",
+        "failed": "Failed",
+        "interrupted": "Interrupted",
+        "running": "Running",
+        "succeeded": "Done"
+      },
+      "showMore": "Show more",
+      "title": "AI call log"
+    },
+    "debug": {
+      "captureBody": "The full prompts and responses stay in this local database. They can hold the whole text of your sources and take a lot of space.",
+      "captureConfirm": "Turn capture on",
+      "captureNeedsDiagnostics": "Turn on the operation diagnostics to use this.",
+      "captureTitle": "Keep complete prompts and responses?",
+      "captureWarning": "The logs may hold the whole text of your sources and take a lot of space. Turn this off after the diagnosis."
+    },
+    "errorKept": "The records are still stored; nothing was deleted.",
+    "errorTitle": "The diagnostics could not be read.",
+    "intro": "For investigating problems. The jobs’ technical names appear here.",
+    "jobTypes": {
+      "assetStorage": "Saving files",
+      "atomicNoteGeneration": "Note writing",
+      "atomicNoteMatching": "Connections between notes",
+      "catalogHeader": "Summaries for book and paper entries",
+      "chunking": "Splitting into passages",
+      "conversion": "Conversion",
+      "embedding": "Search index",
+      "ingestion": "Source import",
+      "knowledgeGraphGeneration": "Knowledge graph",
+      "localModelDownload": "Local model download",
+      "noteEmbedding": "Note search index",
+      "obsidianSync": "Obsidian sync",
+      "obsidianWiki": "Obsidian topic maps",
+      "other": "Background work",
+      "relationComposite": "Preparing books and papers for related sources",
+      "relationLabels": "Connection descriptions",
+      "relationLink": "Linking relations",
+      "relationPromote": "Relations between sources from notes",
+      "relationRetype": "Typing relations",
+      "sourceMatching": "Relations between sources",
+      "summarization": "Summary",
+      "topicAreas": "Topic areas",
+      "topicAudit": "Topic tree audit",
+      "topicBuild": "Topic tree build",
+      "topicGate": "Topic placement decision",
+      "topicLabelEmbed": "Topic labels",
+      "topicName": "Topic naming",
+      "topicPlace": "Topic placement",
+      "topicRebalance": "Topic tree rebalancing",
+      "topicSweep": "Topic tree check"
+    },
+    "prune": {
+      "confirm": "Delete records",
+      "countFailed": "The records could not be counted. Nothing was deleted.",
+      "counting": "Counting…",
+      "days": "days",
+      "deletedMany": "{count} records deleted.",
+      "deletedOne": "{count} record deleted.",
+      "description": "Anything deleted here cannot be brought back. The AI task audit and your content stay.",
+      "failed": "The records could not be deleted. Nothing was removed.",
+      "invalid": "Type a whole number of days or months, from 1 to 3650.",
+      "months": "months",
+      "nothing": "Nothing is older than that.",
+      "olderThan": "Older than",
+      "previewMany": "{count} records from before {date} will be deleted.",
+      "previewOne": "{count} record from before {date} will be deleted.",
+      "scope": "What to delete",
+      "scopeAll": "Calls, operation records and similarity runs",
+      "scopePayloads": "Only the full prompts and responses",
+      "title": "Delete old records?",
+      "unit": "Unit"
+    },
+    "similarity": {
+      "action": "Delete runs…",
+      "body": "The debug records go away. No connection changes.",
+      "confirm": "Delete runs",
+      "deletedMany": "{count} runs deleted.",
+      "deletedOne": "{count} run deleted.",
+      "failed": "The runs could not be deleted. Nothing was removed.",
+      "none": "There were no runs to delete.",
+      "title": "Delete the similarity debug runs?"
+    },
+    "taskHistory": {
+      "caption": "Finished jobs",
+      "clear": "Clear job history…",
+      "clearBody": "Takes finished, failed and canceled runs off the lists. Active jobs, pending items, the audit and spending stay.",
+      "clearConfirm": "Clear history",
+      "clearFailed": "The history could not be cleared. Nothing was removed.",
+      "clearTitle": "Clear the job history?",
+      "clearedMany": "{count} runs cleared.",
+      "clearedOne": "{count} run cleared.",
+      "columns": {
+        "duration": "Duration",
+        "job": "Job",
+        "result": "Result",
+        "when": "When"
+      },
+      "countMany": "{count} finished runs",
+      "countOne": "{count} finished run",
+      "emptyBody": "Each import or other job appears here when it finishes.",
+      "emptyTitle": "No finished jobs yet",
+      "errorKept": "The records are still stored; nothing was deleted.",
+      "errorTitle": "The job history could not be read.",
+      "outcomes": {
+        "canceled": "Canceled",
+        "failed": "Failed",
+        "graphIncomplete": "Done, without the graph",
+        "succeeded": "Done"
+      },
+      "title": "Job history",
+      "waiting": "Shows up when the read works again."
+    },
+    "title": "Diagnostics",
+    "when": {
+      "yesterday": "yesterday {time}"
+    }
   }
 }

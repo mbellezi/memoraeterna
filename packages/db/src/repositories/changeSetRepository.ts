@@ -100,6 +100,51 @@ export const changeSetSql = {
      limit $7::int`,
   /** $1 kind, $2 id. */
   get: `select ${changeSetViewColumns} from change_sets where kind = $1 and id = $2::uuid`,
+  /**
+   * $1 object kind (topic, note or source), $2 its ID, $3 rows: the change-sets that touched the
+   * object, newest first. Each arm starts from an index: the structure events by topic, by the
+   * topics they reference and by item; the overview writes by topic; the relation events through the
+   * relations the object stands at the end of (by relation ID). A pass can leave no row at the
+   * object (a reverted pass deleted its rows, a promote pass retired a pending one or re-pointed a
+   * relation to its roots), so the events are also read by the end points of both images.
+   */
+  forObject: `with hits(kind, id) as (
+      select 'topic', e.change_set_id from topic_structure_events e
+       where $1::text = 'topic' and e.topic_id = $2::uuid
+      union
+      select 'topic', e.change_set_id from topic_structure_events e
+       where $1::text = 'topic' and e.ref_topic_ids @> array[$2::uuid]
+      union
+      select 'topic', e.change_set_id from topic_structure_events e
+       where $1::text in ('note', 'source') and e.item_kind = $1::text and e.item_id = $2::uuid
+      union
+      select 'overview', v.id from topic_overview_versions v
+       where $1::text = 'topic' and v.topic_id = $2::uuid
+      union
+      select 'relation', e.run_id from relation_events e
+       where $1::text = 'note' and e.relation_kind = 'note'
+         and e.relation_id in (select r.id from atomic_note_relations r
+                                where r.source_atomic_note_id = $2::uuid or r.target_atomic_note_id = $2::uuid)
+      union
+      select 'relation', e.run_id from relation_events e
+       where $1::text = 'source' and e.relation_kind = 'source'
+         and e.relation_id in (select r.id from source_relations r
+                                where r.source_item_id = $2::uuid or r.target_source_item_id = $2::uuid)
+      union
+      select 'relation', e.run_id from relation_events e
+       where $1::text = 'note' and e.relation_kind = 'note'
+         and ($2::text in (e.before ->> 'source_atomic_note_id', e.before ->> 'target_atomic_note_id',
+                           e.after ->> 'source_atomic_note_id', e.after ->> 'target_atomic_note_id'))
+      union
+      select 'relation', e.run_id from relation_events e
+       where $1::text = 'source' and e.relation_kind = 'source'
+         and ($2::text in (e.before ->> 'source_item_id', e.before ->> 'target_source_item_id',
+                           e.after ->> 'source_item_id', e.after ->> 'target_source_item_id'))
+    )
+    select ${changeSetViewColumns} from change_sets
+     where (kind, id) in (select kind, id from hits)
+     order by at desc, kind, id
+     limit $3::int`,
   /** $1 kinds, $2 IDs, pair by pair. */
   getMany: `select ${changeSetViewColumns} from change_sets
      where (kind, id) in (select * from unnest($1::text[], $2::uuid[]))`,
@@ -656,6 +701,26 @@ export function createChangeSetRepository(pool: PgPool) {
           items,
           nextCursor: rows.length > limit && last ? encodeChangeSetCursor(last) : null
         };
+      });
+    },
+
+    /**
+     * The change-sets that touched one object, newest first (`changes.forObject`, the History tab).
+     * An entity or a question is touched by no change-set: the answer is empty without a read.
+     */
+    async forObject(input: {
+      kind: string;
+      id: string;
+      limit: number;
+    }): Promise<ChangeSetSummary[]> {
+      if (!["topic", "note", "source"].includes(input.kind) || !/^[0-9a-f-]{36}$/iu.test(input.id))
+        return [];
+      const limit = Math.max(1, Math.min(input.limit, changeSetReadLimits.objectMax));
+      return snapshot(async (db) => {
+        const rows = (
+          await db.query<ChangeSetViewRow>(changeSetSql.forObject, [input.kind, input.id, limit])
+        ).rows;
+        return summaries(db, rows);
       });
     },
 

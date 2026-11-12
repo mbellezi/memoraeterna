@@ -129,6 +129,7 @@ import { promptPinGeneration } from "./services/prompt-runtime.js";
 import { createTopicTreeServices, type TopicTreeServices } from "./services/topic-tree/index.js";
 import { ChangesService } from "./services/gardener/changes-service.js";
 import { registerChangesIpc } from "./services/gardener/changes-ipc.js";
+import { createChangesObjectService, registerChangesObjectIpc } from "./services/changes-ipc.js";
 import { InboxService } from "./services/gardener/inbox-service.js";
 import { registerInboxIpc } from "./services/gardener/inbox-ipc.js";
 import {
@@ -195,6 +196,9 @@ function createMainWindow(): BrowserWindow {
     minWidth: 960,
     minHeight: 640,
     show: false,
+    // The dark theme's canvas (--surface-canvas): dark is the default theme, so a profile with no
+    // stored choice never sees a white frame before the renderer paints.
+    backgroundColor: "#10151d",
     title: createTranslator(app.getLocale())("app.title"),
     webPreferences: {
       preload: join(__dirname, "../preload/index.cjs"),
@@ -714,6 +718,10 @@ void app.whenReady().then(() => {
     ...changeSetEventHooks(events)
   });
   registerChangesIpc(ipcMain, changesService);
+  registerChangesObjectIpc(
+    ipcMain,
+    createChangesObjectService({ getPool: () => databaseService?.getPool() ?? null })
+  );
   registerSourceRelationExplanationIpc(
     ipcMain,
     new SourceRelationExplanationService({

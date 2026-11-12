@@ -3135,12 +3135,12 @@
       "proposal": "Reorganización de temas propuesta ({items} elementos)",
       "redirects": "Redirecciones acortadas de {topics} temas antiguos",
       "naming": "Nombres de temas actualizados: {topics}",
-      "humanRename": "Renombraste un tema.",
-      "humanMove": "Moviste un tema.",
-      "humanCreate": "Creaste un tema.",
-      "humanPin": "Fijaste un tema.",
-      "humanUnpin": "Dejaste de fijar un tema.",
-      "humanPlace": "Colocaste una nota o fuente en un tema.",
+      "humanRename": "Renombraste un tema",
+      "humanMove": "Moviste un tema",
+      "humanCreate": "Creaste un tema",
+      "humanPin": "Fijaste un tema",
+      "humanUnpin": "Dejaste de fijar un tema",
+      "humanPlace": "Colocaste una nota o fuente en un tema",
       "gate": "{items} ubicaciones dudosas revisadas",
       "areas": "Áreas principales reagrupadas: {areas} áreas, {topics} temas movidos",
       "undo": "Se deshizo un cambio anterior de los temas"
@@ -4455,6 +4455,39 @@
     "untitled": "Sin título"
   },
   "contextPanel": {
+    "ask": {
+      "description": {
+        "entity": "La respuesta usa toda la biblioteca y cita cada pasaje. El nombre ya está en el campo.",
+        "library": "La respuesta usa toda la biblioteca y cita cada pasaje.",
+        "note": "Es el tema en el que está esta nota. La respuesta usa solo lo que hay en él y cita cada pasaje.",
+        "noteUnplaced": "Esta nota aún no está en un tema, así que la pregunta vale para toda la biblioteca.",
+        "pending": "La pregunta necesita el tema en el que está esta nota.",
+        "source": "La respuesta usa solo los pasajes de esta fuente y cita cada uno.",
+        "topic": "La respuesta usa solo lo que hay en este tema y cita cada pasaje."
+      },
+      "earlier": {
+        "heading": "Preguntas anteriores",
+        "label": "Abrir una pregunta anterior"
+      },
+      "empty": "Aún no se ha preguntado nada sobre esto. Cada pregunta queda en Biblioteca › Preguntas, con su respuesta.",
+      "errors": {
+        "earlier": "No se pudieron cargar las preguntas anteriores.",
+        "earlierKept": "Aún puedes preguntar.",
+        "scope": "No se pudo ver dónde está esta nota, así que la pregunta aún no tiene alcance."
+      },
+      "indexedOne": "Ya puedes preguntar: el pasaje está indexado.",
+      "indexedOther": "Ya puedes preguntar: los {count} pasajes están indexados.",
+      "indexing": "Los pasajes aún se están indexando. Una respuesta ahora puede no encontrar nada que citar.",
+      "notesArriving": "Las notas aún están llegando.",
+      "title": {
+        "entity": "Preguntar sobre esta entidad",
+        "library": "Preguntar a la biblioteca",
+        "note": "Preguntar sobre {topic}",
+        "pending": "Preguntar sobre esta nota",
+        "source": "Preguntar a esta fuente",
+        "topic": "Preguntar a este tema"
+      }
+    },
     "connections": {
       "actions": {
         "failed": "No se pudo guardar tu elección. Inténtalo de nuevo.",
@@ -4521,6 +4554,8 @@
       "suggestionsLabel": "Conexiones sugeridas"
     },
     "count": {
+      "changesOne": "{count} cambio",
+      "changesOther": "{count} cambios",
       "connectionsOne": "{count} conexión",
       "connectionsOther": "{count} conexiones",
       "mentionsOne": "{count} mención",
@@ -4540,6 +4575,7 @@
       "connections": "No se pudieron cargar las conexiones.",
       "evidence": "No se pudo cargar la evidencia.",
       "graph": "No se pudo cargar el grafo.",
+      "history": "No se pudo cargar el historial.",
       "kept": {
         "entity": "La entidad sigue abierta.",
         "note": "La nota sigue abierta.",
@@ -4629,10 +4665,35 @@
           "title": "Grafo"
         }
       },
+      "history": {
+        "description": "Todo lo que cambió en este objeto, con Deshacer.",
+        "title": "Historial"
+      },
       "mentions": {
         "description": "Dónde se cita este objeto sin una conexión.",
         "title": "Menciones"
       }
+    },
+    "history": {
+      "by": {
+        "gardener": "Jardinero",
+        "you": "Tú"
+      },
+      "empty": {
+        "entity": "Una entidad no tiene historial propio. Lo que cambia en sus notas aparece en el Historial de cada nota.",
+        "note": "Aún no ha cambiado nada en esta nota. Cuando el Jardinero la coloque en un tema o la enlace con otra, cada cambio aparece aquí, con Deshacer.",
+        "question": "Una pregunta no tiene historial propio. Vuelve a preguntar para escribir una nueva versión de la respuesta.",
+        "source": "Aún no ha cambiado nada por esta fuente. Dónde se coloca en los temas y cómo se enlaza con otras fuentes aparece aquí, con Deshacer.",
+        "topic": "Aún no ha cambiado nada en este tema. Los cambios de nombre, los movimientos y los resúmenes nuevos aparecen aquí, con Deshacer."
+      },
+      "label": "Cambios en este objeto",
+      "latest": "Los {count} más recientes.",
+      "state": {
+        "dismissed": "Descartado",
+        "undone": "Deshecho",
+        "waiting": "Espera tu decisión en la Bandeja de entrada"
+      },
+      "undoLabel": "Deshacer: {title}"
     },
     "loadingMore": "Cargando más…",
     "locate": {
@@ -5147,6 +5208,146 @@
       "updated": "última actualización: {date}"
     }
   },
+  "settingsGeneral": {
+    "language": {
+      "connectionsNote": "Las descripciones de conexiones ya escritas se pueden rehacer en",
+      "defaultOs": "igual que macOS, {language}"
+    },
+    "saveFailed": "No se pudo guardar. No se cambió nada.",
+    "theme": {
+      "dark": "Oscuro",
+      "light": "Claro",
+      "system": "Sistema"
+    }
+  },
+  "settingsLibrary": {
+    "backup": {
+      "action": "Hacer copia ahora",
+      "done": "Copia de seguridad terminada.",
+      "failed": "No se pudo hacer la copia de seguridad.",
+      "running": "Haciendo la copia…",
+      "savedIn": "Guardada en {path}",
+      "verified": "Una restauración de prueba salió bien."
+    },
+    "plans": {
+      "deleteAction": "Eliminar",
+      "deleteAsk": "¿Eliminar «{name}»?",
+      "deleteConfirm": "Eliminar plan",
+      "deleteKept": "Las fuentes ya importadas se quedan como están.",
+      "empty": "Aún no hay planes de importación guardados. Guarda uno al importar.",
+      "loadFailed": "No se pudieron leer los planes de importación guardados.",
+      "loadKept": "No se cambió nada.",
+      "renameAction": "Renombrar",
+      "renameLabel": "Nombre del plan",
+      "saveFailed": "No se pudo guardar. No se cambió nada."
+    },
+    "storage": {
+      "database": "Base de datos local",
+      "files": "Archivos guardados",
+      "filesNote": "los originales que subiste",
+      "sourcesMany": "{count} fuentes",
+      "sourcesOne": "{count} fuente",
+      "where": "Ambos están en la carpeta de datos de Memora en este Mac, y su lugar es fijo. Para tener los originales en una carpeta tuya, activa la copia de aquí abajo; para llevar todo a otro disco, usa la copia de seguridad."
+    },
+    "uploads": {
+      "change": "Cambiar carpeta",
+      "choose": "Elegir una carpeta",
+      "needsFolder": "Elige primero la carpeta: las copias necesitan un lugar.",
+      "noFolder": "Aún no hay carpeta elegida",
+      "off": "Desactivado",
+      "on": "Activado",
+      "pathHint": "Pega la ruta completa de una carpeta de este Mac.",
+      "pathLabel": "Ruta de la carpeta",
+      "pathRejected": "Una ruta completa empieza con «/» e indica una carpeta que existe.",
+      "readFailed": "No se pudo leer la carpeta de las copias.",
+      "saveFailed": "No se pudo guardar. No se cambió nada.",
+      "willReceive": "Esta carpeta empezará a recibir las copias cuando lo actives."
+    }
+  },
+  "settingsPrivacy": {
+    "callLog": {
+      "full": "La captura completa está activada: guarda prompts y respuestas enteros.",
+      "light": "Guarda tiempos, modelos y tokens; prompts y respuestas enteros solo con la captura completa.",
+      "none": "El registro de llamadas de IA está vacío.",
+      "open": "Ver y borrar en Avanzado",
+      "readFailed": "No se pudo leer el registro de llamadas.",
+      "summaryMany": "El registro de llamadas de IA guarda {count} llamadas en este Mac.",
+      "summaryOne": "El registro de llamadas de IA guarda {count} llamada en este Mac."
+    },
+    "history": {
+      "action": "Borrar…",
+      "confirm": "Borrar los Recientes",
+      "dialogBody": "Borra la lista de elementos abiertos hace poco en este Mac. Los elementos fijados se quedan.",
+      "dialogTitle": "¿Borrar los Recientes?",
+      "doneMany": "{count} elementos salieron de los Recientes.",
+      "doneNone": "Los Recientes ya estaban vacíos.",
+      "doneOne": "{count} elemento salió de los Recientes.",
+      "failed": "No se pudieron borrar los Recientes. No se cambió nada."
+    },
+    "leaves": {
+      "books": "Datos de libros y artículos",
+      "booksGoogle": "Google Books",
+      "changeInAi": "Cambiar en IA",
+      "cloud": "En la nube",
+      "columns": {
+        "job": "Trabajo",
+        "what": "Qué sale",
+        "where": "Dónde se ejecuta"
+      },
+      "credentials": "Credenciales guardadas en este Mac (solo los nombres; los valores nunca aparecen): {names}.",
+      "decisions": "OpenAI Decisions",
+      "internet": "En internet",
+      "local": "En este Mac",
+      "lookupAuto": "Open Library, Google Books y Crossref",
+      "lookupGoogle": "Google Books y Crossref",
+      "lookupOpenLibrary": "Open Library y Crossref",
+      "noCredentials": "No hay credenciales guardadas en este Mac.",
+      "noModel": "Ningún modelo elegido",
+      "nothing": "Nada",
+      "off": "Desactivado",
+      "readFailed": "No se pudo leer qué sale de este Mac.",
+      "readKept": "No se cambió nada.",
+      "tableLabel": "Qué sale de este Mac, por trabajo",
+      "what": {
+        "answer": "Tu pregunta y las notas citadas",
+        "books": "ISBN, DOI, título y autores",
+        "decide": "Títulos e ideas de las notas comparadas",
+        "decisions": "Título, idea y comienzo del texto de las notas comparadas",
+        "embed": "Fragmentos de tus fuentes y notas",
+        "judge": "Notas y fragmentos comparados",
+        "writeFast": "Fragmentos de las fuentes y resúmenes",
+        "writeQuality": "Fragmentos de las fuentes"
+      }
+    },
+    "questions": {
+      "action": "Borrar preguntas…",
+      "confirm": "Borrar preguntas",
+      "countMany": "{count} preguntas guardadas",
+      "countMore": "Más de {count} preguntas guardadas",
+      "countNone": "No hay preguntas guardadas.",
+      "countOne": "{count} pregunta guardada",
+      "dialogBody": "Borra todas las preguntas guardadas y sus respuestas. Tus fuentes y notas se quedan. No se puede deshacer.",
+      "dialogTitle": "¿Borrar todas las preguntas?",
+      "doneMany": "{count} preguntas borradas.",
+      "doneNone": "No había preguntas que borrar.",
+      "doneOne": "{count} pregunta borrada.",
+      "failed": "No se pudieron borrar las preguntas. No se cambió nada.",
+      "readFailed": "No se pudieron contar las preguntas guardadas."
+    },
+    "reset": {
+      "action": "Restablecer todo…",
+      "backupLink": "Haz una copia de seguridad antes",
+      "confirm": "Restablecer todo",
+      "dialogBody": "Borra la biblioteca, los índices de búsqueda, los grafos, las preguntas, los historiales, las conexiones, las preferencias y los archivos guardados. Se quedan los perfiles, los proveedores, las rutas y los modelos instalados; las copias de seguridad y tus archivos personales no se tocan.",
+      "dialogTitle": "¿Restablecer todo?",
+      "dialogWarn": "No se puede deshacer.",
+      "failed": "No se pudo terminar el restablecimiento. Revisa los permisos de los archivos y vuelve a intentarlo.",
+      "noUndo": "No se puede deshacer.",
+      "running": "Restableciendo…",
+      "warnings": "El restablecimiento terminó, pero algunos archivos guardados no se pudieron quitar."
+    },
+    "working": "Trabajando…"
+  },
   "settingsRegistry": {
     "activeMatchingPresetId": {
       "help": "Equilibrado es el conjunto calibrado y es de solo lectura. Para editar valores, crea o duplica un preajuste.",
@@ -5158,7 +5359,7 @@
     },
     "advancedPrompts": {
       "help": "Las instrucciones que Memora envía a los modelos, por categoría. Editar una crea una revisión nueva; la anterior se conserva.",
-      "label": "Prompts"
+      "label": "Instrucciones de los modelos"
     },
     "advancedSimilarityRuns": {
       "help": "Comparaciones registradas con los diagnósticos activados. Borrarlas no cambia ninguna conexión.",
@@ -5225,7 +5426,7 @@
       "label": "Este Mac"
     },
     "atomicNoteMatchingSettingsMaxRerankOutputTokens": {
-      "help": "El máximo de tokens que la IA puede escribir al ubicar una nota. Predeterminado: 4.096.",
+      "help": "El máximo de tokens que la IA puede escribir al ubicar una nota.",
       "label": "Límite de salida por nota"
     },
     "bookLookup": {
@@ -5233,19 +5434,19 @@
       "label": "Buscar datos de libros en internet"
     },
     "canonicalMatchingSettingsConfirmationBatchSize": {
-      "help": "Cuántas identidades van a la IA en una llamada de confirmación. Predeterminado: 12.",
+      "help": "Cuántas identidades van a la IA en una llamada de confirmación.",
       "label": "Identidades por confirmación"
     },
     "canonicalMatchingSettingsConfirmationMaxCharacters": {
-      "help": "El tamaño de texto que puede alcanzar una llamada de confirmación. Una identidad mayor se envía sola. Predeterminado: 12.000.",
+      "help": "El tamaño de texto que puede alcanzar una llamada de confirmación. Una identidad mayor se envía sola.",
       "label": "Tamaño de la confirmación en caracteres"
     },
     "canonicalMatchingSettingsEntityCandidateLimit": {
-      "help": "Cuántas entidades parecidas compara la IA con cada entidad nueva. Predeterminado: 3.",
+      "help": "Cuántas entidades parecidas compara la IA con cada entidad nueva.",
       "label": "Candidatos por entidad"
     },
     "canonicalMatchingSettingsRelationTypeCandidateLimit": {
-      "help": "Cuántos tipos de relación parecidos compara la IA con cada tipo nuevo. Predeterminado: 3.",
+      "help": "Cuántos tipos de relación parecidos compara la IA con cada tipo nuevo.",
       "label": "Candidatos por tipo de relación"
     },
     "contentLanguage": {
@@ -5261,7 +5462,7 @@
       "label": "Diagnósticos de las operaciones"
     },
     "entityIdentitySimilarityThreshold": {
-      "help": "Cuánto deben parecerse dos entidades para que la IA compruebe si son la misma. Más alto, menos candidatos. Predeterminado: 0,92.",
+      "help": "Cuánto deben parecerse dos entidades para que la IA compruebe si son la misma. Más alto, menos candidatos.",
       "label": "Similitud entre entidades"
     },
     "graphWheelZoomSensitivity": {
@@ -5364,7 +5565,7 @@
       "label": "Token de Hugging Face"
     },
     "managedRoot": {
-      "help": "La carpeta, dentro de la bóveda, donde escribe Memora sus archivos. Predeterminado: Memora.",
+      "help": "La carpeta, dentro de la bóveda, donde escribe Memora sus archivos.",
       "label": "Carpeta de Memora en la bóveda"
     },
     "metadataGoogleBooks": {
@@ -5396,7 +5597,7 @@
       "label": "Fuentes que se vuelven páginas"
     },
     "privacyCallLog": {
-      "help": "Las últimas llamadas a un modelo, local o en la nube. Solo lectura; el registro completo está en Avanzado.",
+      "help": "Lo que este Mac guarda sobre las llamadas hechas a modelos, locales o en la nube.",
       "label": "Llamadas de IA recientes"
     },
     "privacyClearQuestions": {
@@ -5424,7 +5625,7 @@
       "label": "Descripciones de las conexiones"
     },
     "relationTypeSimilarityThreshold": {
-      "help": "Cuánto deben parecerse dos tipos de relación para que la IA compruebe si son el mismo. Más alto, menos candidatos. Predeterminado: 0,92.",
+      "help": "Cuánto deben parecerse dos tipos de relación para que la IA compruebe si son el mismo. Más alto, menos candidatos.",
       "label": "Similitud entre tipos de relación"
     },
     "relationsDeciderMode": {
@@ -5436,11 +5637,11 @@
       "label": "Decidir las conexiones con OpenAI Decisions"
     },
     "sourceRelationSettingsEvidenceChunksPerSource": {
-      "help": "Cuántos fragmentos de cada fuente lee la IA al comparar un par. Predeterminado: 2.",
+      "help": "Cuántos fragmentos de cada fuente lee la IA al comparar un par.",
       "label": "Fragmentos de evidencia por fuente"
     },
     "sourceRelationSettingsEvidenceMaxCharacters": {
-      "help": "El trozo más largo de un fragmento que lee la IA. Predeterminado: 800.",
+      "help": "El trozo más largo de un fragmento que lee la IA.",
       "label": "Caracteres por fragmento"
     },
     "sourceRelationSettingsIncludeWeakTypes": {
@@ -5448,31 +5649,31 @@
       "label": "Permitir relaciones débiles"
     },
     "sourceRelationSettingsMaxInputTokens": {
-      "help": "El máximo de tokens de entrada que una fuente y sus capítulos pueden usar en una ejecución. Una llamada puede pasarse; las siguientes se detienen. Predeterminado: 60.000.",
+      "help": "El máximo de tokens de entrada que una fuente y sus capítulos pueden usar en una ejecución. Una llamada puede pasarse; las siguientes se detienen.",
       "label": "Presupuesto de entrada"
     },
     "sourceRelationSettingsMaxOutputTokens": {
-      "help": "El máximo de tokens que la IA puede escribir al comparar dos fuentes. Predeterminado: 4.096.",
+      "help": "El máximo de tokens que la IA puede escribir al comparar dos fuentes.",
       "label": "Límite de salida por par de fuentes"
     },
     "sourceRelationSettingsMaxRelationsPerPair": {
-      "help": "El máximo de conexiones que se conservan entre dos fuentes. Predeterminado: 4.",
+      "help": "El máximo de conexiones que se conservan entre dos fuentes.",
       "label": "Relaciones por par de fuentes"
     },
     "sourceRelationSettingsMinConfidence": {
-      "help": "Las conexiones que la evidencia respalda por debajo de esta confianza se descartan. Predeterminado: 0,85.",
+      "help": "Las conexiones que la evidencia respalda por debajo de esta confianza se descartan.",
       "label": "Confianza mínima"
     },
     "sourceRelationSettingsMinImportance": {
-      "help": "Las conexiones que la IA puntúa por debajo de esta importancia se descartan. Predeterminado: 0,75.",
+      "help": "Las conexiones que la IA puntúa por debajo de esta importancia se descartan.",
       "label": "Importancia mínima"
     },
     "sourceRelationSettingsSummaryMaxCharacters": {
-      "help": "Cuánto del resumen de cada fuente entra en una comparación. Predeterminado: 1.000.",
+      "help": "Cuánto del resumen de cada fuente entra en una comparación.",
       "label": "Caracteres de resumen por fuente"
     },
     "summaryMinimumWordCount": {
-      "help": "Evita gastar una llamada de IA en elementos demasiado pequeños. Usa 0 para desactivarlo. Predeterminado: 40.",
+      "help": "Evita gastar una llamada de IA en elementos demasiado pequeños. Usa 0 para desactivarlo.",
       "label": "Mínimo de palabras para generar un resumen"
     },
     "themeMode": {
@@ -5609,8 +5810,7 @@
       "context": "El grafo dejó de dibujarse.",
       "layout": "No se pudo organizar el grafo.",
       "unavailable": "Esta ventana no puede dibujar el grafo.",
-      "unavailableBody": "La tabla muestra las mismas conexiones.",
-      "unavailableTree": "El Árbol muestra los temas y las notas de esta rama; cada nota lista sus conexiones."
+      "unavailableBody": "La tabla muestra las mismas conexiones."
     },
     "group": {
       "description": "{topic}. Notas en el grafo: {notes}. Conexiones con otros temas: {count}."
@@ -5639,5 +5839,739 @@
       "sourceUnnamed": "esta fuente"
     },
     "untitledTopic": "Tema sin nombre"
+  },
+  "mapRelationsTable": {
+    "caption": "Las mismas conexiones del grafo, una fila por conexión",
+    "count": "{count} conexiones",
+    "countOne": "1 conexión",
+    "from": "De",
+    "groupBy": "Agrupar por",
+    "groupByHelp": "Qué nivel de subtemas agrupa los temas de la lista",
+    "groups": {
+      "all": "Ver las {count}",
+      "and": "y",
+      "body": "Las líneas que el grafo dibuja de lejos, una por cada par de temas.",
+      "capped": "Solo están listados los enlaces más fuertes.",
+      "fewer": "Ver menos",
+      "title": "Entre temas"
+    },
+    "keyMove": "elegir",
+    "keyOpen": "abrir la primera nota al lado",
+    "keyOpenSecond": "abrir la segunda",
+    "link": "Conexión",
+    "more": "Mostrar {count} más",
+    "notice": {
+      "groupLines": "De lejos, solo se dibujan los enlaces más fuertes entre temas.",
+      "truncated": "Esta rama es más grande de lo que cabe en el grafo, que muestra las notas y conexiones más enlazadas. Elige una rama menor para verlo todo."
+    },
+    "outside": {
+      "action": "Ver la rama {title}",
+      "body": "Temas de fuera que se enlazan con notas de esta rama. Haz clic para ver su rama.",
+      "capped": "Los {count} temas más conectados.",
+      "title": "Fuera de la rama"
+    },
+    "suggested": "sugerida",
+    "title": "Mismas conexiones en tabla",
+    "to": "A"
+  },
+  "settingsShell": {
+    "classic": {
+      "open": "Abrir los ajustes antiguos"
+    },
+    "navChangedMany": "{count} ajustes cambiados",
+    "navChangedOne": "{count} ajuste cambiado",
+    "navFoot": "Cada ajuste muestra si cambió y cómo volver al valor predeterminado.",
+    "navHitsMany": "{count} resultados",
+    "navHitsOne": "{count} resultado",
+    "navLabel": "Secciones de los ajustes",
+    "row": {
+      "changed": "Cambiado",
+      "default": "Predeterminado:",
+      "defaultVaries": "Predeterminado: depende de este Mac y de las otras opciones",
+      "removeAsk": "¿Quitar de este Mac? Tendrías que volver a introducirlo.",
+      "removeConfirm": "Quitar",
+      "reset": "Restaurar predeterminado",
+      "resetFailed": "No se pudo restaurar. No se cambió nada.",
+      "resetPending": "Falta un paso que confirmas en la propia opción.",
+      "resetting": "Restaurando…",
+      "themeDark": "Oscuro",
+      "themeLight": "Claro",
+      "themeSystem": "Sistema",
+      "valueNone": "Sin definir",
+      "valueOff": "Desactivado",
+      "valueOn": "Activado",
+      "valueSet": "Definido"
+    },
+    "search": {
+      "clear": "Borrar la búsqueda",
+      "emptyBack": "y volver a {section}.",
+      "emptyBody": "Prueba con otra palabra, un sinónimo o el nombre en inglés. Por ejemplo:",
+      "emptyClear": "Borrar la búsqueda",
+      "emptyTitle": "Nada con “{query}” en los ajustes.",
+      "exampleBudget": "gastos",
+      "exampleDark": "oscuro",
+      "exampleObsidian": "Obsidian",
+      "examplePrivacy": "privacidad",
+      "help": "También encuentra sinónimos: “oscuro” lleva a Tema.",
+      "keysClear": "borra la búsqueda",
+      "keysMove": "recorren",
+      "keysOpen": "abre el mejor",
+      "label": "Buscar en los ajustes",
+      "placeholder": "Buscar: tema, gastos…",
+      "placeholderShort": "Buscar…",
+      "resultsMany": "{count} resultados para “{query}”",
+      "resultsOne": "1 resultado para “{query}”"
+    },
+    "section": {
+      "allDefault": "Todo está en su valor predeterminado en esta sección.",
+      "changedMany": "{count} ajustes cambiados",
+      "changedOne": "{count} ajuste cambiado",
+      "inSection": "en esta sección",
+      "listLabel": "Qué ajustes cambiaron",
+      "restoreAll": "Restaurar todos",
+      "restoreAskMany": "¿Restaurar {count} ajustes a su valor predeterminado?",
+      "restoreAskOne": "¿Restaurar {count} ajuste a su valor predeterminado?",
+      "restoreConfirm": "Restaurar",
+      "restoreFailedMany": "{count} no se pudieron restaurar y quedaron como estaban.",
+      "restoreFailedOne": "{count} no se pudo restaurar y quedó como estaba.",
+      "restoreSkippedMany": "{count} necesitan un paso tuyo y quedaron como estaban.",
+      "restoreSkippedOne": "{count} necesita un paso tuyo y quedó como estaba."
+    },
+    "sections": {
+      "advanced": {
+        "description": "Correspondencia, registros",
+        "name": "Avanzado y diagnóstico"
+      },
+      "ai": {
+        "description": "Configuración y modelos",
+        "name": "IA"
+      },
+      "general": {
+        "description": "Tema e idiomas",
+        "name": "General y apariencia"
+      },
+      "integrations": {
+        "description": "Obsidian, libros, navegador",
+        "name": "Integraciones"
+      },
+      "knowledge": {
+        "description": "Jardinero, árbol, conexiones",
+        "name": "Conocimiento"
+      },
+      "library": {
+        "description": "Copias, seguridad, importación",
+        "name": "Biblioteca y almacenamiento"
+      },
+      "privacy": {
+        "description": "Qué sale del Mac, borrar",
+        "name": "Privacidad y datos"
+      }
+    },
+    "states": {
+      "errorKept": "No se cambió nada: Memora sigue usando los valores que ya valían.",
+      "errorTitle": "No se pudieron leer los ajustes guardados."
+    },
+    "title": "Ajustes",
+    "words": {
+      "activeMatchingPresetId": "preajuste correspondencia calibrado equilibrado recomendado duplicar personalizado perfil umbrales valores predeterminados comparación configuraciones guardar mis",
+      "advancedCallLog": "registro llamadas de ia historial solicitudes modelo tokens tiempo latencia coste auditoría limpiar solo lectura ver todas",
+      "advancedPrompts": "prompts instrucciones sistema editar plantillas revisiones catálogo texto del prompt personalizar redacción versiones en uso activos",
+      "advancedSimilarityRuns": "ejecuciones depuración similitud limpiar borrar comparaciones registradas diagnósticos registros limpieza",
+      "advancedTaskHistory": "historial trabajos tareas terminadas fallos canceladas ejecuciones pasado actividad registro lista",
+      "aiDecisionsOpenaiPlatform": "clave openai platform api decisiones credencial secreto token",
+      "aiModels": "modelos locales descargar instalar gguf importar mlx catálogo hugging face probar predeterminado en este mac",
+      "aiPresetV1": "configuración modo local híbrido nube personalizado sin conexión sin internet ejecutar en este mac privado dónde corre la ia en el dispositivo",
+      "aiProfiles": "perfiles modelo parámetros temperatura tokens máximos razonamiento esfuerzo por perfil opciones avanzadas del modelo",
+      "aiProviderGoogle": "google gemini clave api proveedor nube modelo ai studio",
+      "aiProviderOpenaiCodex": "chatgpt codex suscripción plan iniciar sesión entrar conectar cuenta proveedor plus pro openai",
+      "aiProviderOpenaiCompatible": "compatible openai clave api dirección url servidor propio openrouter lm studio ollama proxy proveedor",
+      "aiRouteAnswer": "respuestas preguntas modelo conversación responder preguntar chat",
+      "aiRouteDecide": "clasificación clasificador reordenar decidir relaciones notas relacionadas puntuación juez modelo decisor",
+      "aiRouteEmbed": "embeddings vectores búsqueda modelo semejanza semántica similitud temas comparación índice",
+      "aiRouteJudge": "juez generativo decidir relaciones sin clasificador modelo de escritura fuentes relacionar decisor respaldo",
+      "aiRouteWriteFast": "escritura rápida modelo resúmenes nombres de temas explicaciones cortas barato pequeño redactor",
+      "aiRouteWriteQuality": "escritura cuidadosa calidad modelo notas entidades grafo de conocimiento mejor redactor grande",
+      "aiThisMac": "este mac ordenador equipo hardware chip memoria ram apple silicon configuración recomendada capacidad qué puede ejecutar especificaciones qué modelos caben",
+      "atomicNoteMatchingSettingsMaxRerankOutputTokens": "límite de salida por nota tokens reordenar longitud de la respuesta tope coste juzgar enlaces entre notas",
+      "bookLookup": "buscar datos libros internet metadatos isbn doi crossref google books portada autores título en línea detalles proveedor",
+      "canonicalMatchingSettingsConfirmationBatchSize": "identidades por confirmación lote tamaño solicitud grupo elementos llamada confirmar cantidad",
+      "canonicalMatchingSettingsConfirmationMaxCharacters": "tamaño de la confirmación caracteres límite máximo texto longitud por solicitud",
+      "canonicalMatchingSettingsEntityCandidateLimit": "candidatos por entidad límite cuántas entidades comparar máximo nombres parecidos",
+      "canonicalMatchingSettingsRelationTypeCandidateLimit": "candidatos por tipo de relación límite cuántos tipos comparar máximo",
+      "contentLanguage": "idioma lengua contenido notas resúmenes escritura traducción texto generado respuestas nombres de los temas",
+      "debugFullCapture": "captura completa prompts respuestas texto íntegro guardar en bruto registrar todo depuración sensible grabar soporte",
+      "debugMode": "depuración diagnósticos registro detallado rastreo solución de problemas investigar error log operaciones similitud modo de depuración soporte",
+      "entityIdentitySimilarityThreshold": "semejanza entidades identidad umbral corte fusionar entidades duplicadas misma persona lugar candidatos rigor parecidos nombres",
+      "graphWheelZoomSensitivity": "zoom grafo sensibilidad velocidad rueda del ratón desplazamiento trackpad mapa más rápido más lento escala pellizco",
+      "integrationsGateway": "apps emparejadas emparejamiento extensión chrome plugin obsidian conectar gateway local mcp token navegador clipper dispositivos otra aplicación",
+      "keepLocalEmbeddingModelsLoaded": "mantener modelo local búsqueda cargado memoria ram embedding precargar descargar más rápido liberar residente en memoria",
+      "knowledgeControlsV1Autonomy": "autonomía jardinero automatización apagado sugerir automático cuánto trabajar solo sin preguntar confirmar aprobar manual",
+      "knowledgeControlsV1MonthlyCapUsd": "límite mensual tope presupuesto gastos coste dinero dólares nube gasto máximo precio",
+      "knowledgeControlsV1OnlyIdle": "inactivo reposo solo cuando mac sin uso segundo plano esperar ausente batería cpu horario tranquilo ordenador",
+      "knowledgeControlsV1OnlyOnAc": "enchufado cargador corriente adaptador batería solo cargando portátil horario ahorrar conectado",
+      "knowledgeControlsV1Paused": "pausar jardinero detener trabajo en segundo plano automatización reanudar parar congelar desactivar",
+      "knowledgeControlsV1TreeShape": "forma árbol temas equilibrado amplio profundo plano organización estructura jerarquía profundidad estrecho",
+      "language": "idioma lengua de la app interfaz menús botones mensajes pantalla traducción",
+      "libraryBackup": "copia de seguridad restaurar exportar base de datos archivo guardar biblioteca verificar recuperar carpeta con fecha",
+      "libraryStorage": "almacenamiento base de datos dónde están los datos archivos carpeta ubicación disco tamaño espacio biblioteca ruta",
+      "localModelsRepositoryTokenRef": "token hugging face hf acceso repositorio privado modelos restringidos descargar credenciales",
+      "managedRoot": "carpeta raíz gestionada obsidian bóveda subcarpeta memora dónde se escriben archivos directorio nombre dentro",
+      "metadataGoogleBooks": "clave google books api metadatos credencial cuota límite libros",
+      "obsidianLayoutAttachments": "adjuntos copiar archivos originales pdf imágenes obsidian bóveda adjuntar solo texto binario",
+      "obsidianLayoutLanguage": "idioma carpetas bóveda nombres obsidian estructura organización archivos nombrados renombrar carpetas traducir disposición",
+      "obsidianSync": "sincronizar obsidian doble sentido activar desactivar pausar detener markdown notas exportar bóveda escribir biblioteca ediciones temporalmente",
+      "obsidianVaultPath": "bóveda obsidian carpeta ruta directorio elegir notas sincronizar ubicación markdown vault",
+      "obsidianWikiIncludeDescendants": "capítulos partes descendientes incluir hijos subfuentes obsidian wiki anidadas secciones",
+      "obsidianWikiScope": "wiki obsidian páginas fuentes alcance cuáles se convierten elegir límite publicar exportar subconjunto",
+      "privacyCallLog": "llamadas de ia registro recientes qué se envió modelos solicitudes proveedores tokens historial auditoría transparencia",
+      "privacyClearQuestions": "borrar preguntas respuestas historial conversaciones guardadas quitar chats limpiar",
+      "privacyClearViewHistory": "borrar recientes historial abiertos recientemente lista eliminar elementos recientes",
+      "privacyReset": "restablecer todo borrar datos de fábrica empezar de cero biblioteca limpiar peligro reiniciar",
+      "privacySummary": "privacidad qué sale de este mac datos enviados remoto nube proveedores externos red sin conexión solo local compartir",
+      "processingPresets": "planes de importación procesamiento preajustes guardados renombrar borrar plantillas opciones ajustes",
+      "relationLabels": "descripciones relaciones etiquetas conexiones texto regenerar reescribir faltantes idioma explicación",
+      "relationsDeciderMode": "quién decide relaciones entre notas modo decisor clasificador juez automático conexiones decisión cómo se deciden los enlaces",
+      "relationsDecisions": "openai decisions decisor remoto nube clasificador más barato preciso conexiones relaciones de pago activar servicio en línea",
+      "relationTypeSimilarityThreshold": "semejanza tipos de relación umbral corte fusionar tipos duplicados candidatos rigor puntuación parecidos nombres",
+      "sourceRelationSettingsEvidenceChunksPerSource": "pasajes de evidencia por fuente par citas cuántos pasajes citar comparar libros contexto",
+      "sourceRelationSettingsEvidenceMaxCharacters": "caracteres por pasaje evidencia extracto longitud máxima tamaño texto límite citado",
+      "sourceRelationSettingsIncludeWeakTypes": "relaciones débiles tipos menciones genéricas permitir incluir vagas conexiones sueltas enlaces ruido tenues",
+      "sourceRelationSettingsMaxInputTokens": "presupuesto de entrada tokens máximo límite coste tope por ejecución relaciones entre fuentes gasto contexto cuánto texto comparar par de libros",
+      "sourceRelationSettingsMaxOutputTokens": "límite de salida por par de fuentes tokens respuesta longitud tope coste relaciones comparar dos libros",
+      "sourceRelationSettingsMaxRelationsPerPair": "relaciones por par de fuentes máximo conexiones entre dos fuentes límite cuántas mantener libros",
+      "sourceRelationSettingsMinConfidence": "confianza mínima evidencia umbral puntuación filtro relaciones certeza corte ignorar incertidumbre está segura",
+      "sourceRelationSettingsMinImportance": "importancia mínima conceptual umbral puntuación filtro relaciones calidad corte débiles ignorar poco importantes enlaces",
+      "sourceRelationSettingsSummaryMaxCharacters": "caracteres de resumen por fuente longitud máxima tamaño usado para comparar",
+      "summaryMinimumWordCount": "mínimo palabras resumen elementos cortos omitir resúmenes recuento umbral fuentes pequeñas ahorrar llamadas cero apagar texto más corto",
+      "themeMode": "tema oscuro claro noche modo apariencia colores esquema sistema visual",
+      "uploadCopies": "copias subidos guardar originales archivos copia carpeta importaciones segunda seguridad de las subidas"
+    }
+  },
+  "settingsAi": {
+    "blocked": {
+      "localRequiresAppleSilicon": "Local requiere un Mac con Apple silicon.",
+      "modelMissing": "{name} necesita {model}, que no está instalado. Instálalo en Modelos en este Mac y vuelve a intentarlo.",
+      "noRemoteProfile": "{name} necesita un modelo de proveedor. Añade un proveedor arriba y vuelve a intentarlo.",
+      "thisJob": "esta tarea",
+      "title": "No se pudo aplicar {setup}."
+    },
+    "cap": {
+      "change": "Cambiar en Conocimiento",
+      "label": "Límite mensual de gasto en la nube: {amount}",
+      "noSpend": "El límite se aplica al Jardinero y está en Conocimiento.",
+      "spent": "{amount} gastados este mes. El límite se aplica al Jardinero y está en Conocimiento."
+    },
+    "confirm": {
+      "apply": "Aplicar y probar",
+      "body": "Esto sustituye el modelo de cada tarea y prueba una llamada de cada una. No se descarga nada.",
+      "bodyLocal": "Aún no hay un modelo de escritura local validado, así que la escritura puede quedar en pausa.",
+      "title": "¿Cambiar a {setup}?"
+    },
+    "credential": {
+      "save": "Guardar"
+    },
+    "decisions": {
+      "calibrated": "Las relaciones por encima de su umbral calibrado se aplican automáticamente; las demás son sugerencias que puedes conservar o quitar.",
+      "confirmApply": "Activar",
+      "confirmBody": "Activarlo envía el texto de las notas a OpenAI como se describe arriba. Puedes desactivarlo en cualquier momento; después no se envía nada.",
+      "confirmTitle": "¿Enviar el texto de las notas a OpenAI?",
+      "errorTitle": "No se pudo leer el estado de OpenAI Decisions.",
+      "fallback": "Activado, pero está decidiendo el clasificador local: {reason}.",
+      "key": {
+        "add": "Guardar clave…",
+        "hint": "Se guarda cifrada en este equipo, no se vuelve a mostrar y solo se envía a OpenAI.",
+        "invalid": "OpenAI rechazó la clave guardada. Guarda una válida.",
+        "label": "Clave de OpenAI Platform",
+        "none": "Sin clave",
+        "replace": "Cambiar clave…",
+        "set": "Clave guardada, nunca se vuelve a mostrar",
+        "test": "Probar clave",
+        "testOk": "OpenAI aceptó la clave.",
+        "testing": "Probando…"
+      },
+      "keySaved": "Se guardó la clave de OpenAI.",
+      "lastFallback": "La última vez decidió el clasificador local en su lugar: {reason}.",
+      "noticeBody": "Mientras esté activado, el título, la idea y los primeros {characters} caracteres del texto de cada nota comparada, y de las notas con las que se compara (incluidas las que ya se compararon antes), se envían a OpenAI (la API Decisions, modelo {model}) con tu propia clave de OpenAI Platform. Por defecto OpenAI no entrena con los datos de la API y puede conservar las solicitudes hasta 30 días para vigilar abusos. Memora no controla esa retención. No se envía nada si está desactivado, en la configuración Local o sin clave.",
+      "noticeCost": "Cuesta unos {price} por millón de tokens de entrada, normalmente un centavo o menos por nota. Memora deja de usarlo por el día al llegar a {cap} y el clasificador local toma el relevo.",
+      "noticeTitle": "El texto de tus notas se envía a OpenAI",
+      "off": "Desactivado: no se envía nada. El reordenador local decide las conexiones.",
+      "ready": "Activado: OpenAI Decisions decide las conexiones.",
+      "reason": {
+        "breaker_open": "OpenAI no responde ahora mismo",
+        "error": "OpenAI devolvió un error inesperado",
+        "invalid_key": "OpenAI rechazó la clave guardada",
+        "network": "no se pudo contactar con OpenAI",
+        "no_key": "no hay ninguna clave de OpenAI guardada",
+        "quota": "tu cuenta de OpenAI no tiene crédito",
+        "spend_cap": "se alcanzó el límite de gasto de hoy"
+      },
+      "spend": "Gastado hoy: {spent} de {cap} ({requests} solicitudes).",
+      "turnedOff": "OpenAI Decisions está desactivado.",
+      "turnedOn": "OpenAI Decisions está activado.",
+      "unavailable": "No está disponible en Local ni en Personalizada, que nunca envían el texto de las notas al exterior.",
+      "uncalibrated": "Todavía no está calibrado, así que cada relación que encuentra es una sugerencia que puedes conservar o quitar."
+    },
+    "errors": {
+      "write": "No se pudo guardar. No se cambió nada."
+    },
+    "intro": "Empieza por la configuración: elige el modelo de cada trabajo de una vez. Híbrida y Nube piden un proveedor, justo debajo. Lo demás es ajuste fino.",
+    "models": {
+      "action": {
+        "download": "Descargar",
+        "import": "Importar archivo GGUF…",
+        "remove": "Quitar",
+        "resume": "Reanudar",
+        "test": "Probar",
+        "useRecommended": "Usar los valores recomendados"
+      },
+      "compat": {
+        "compatible": "Cabe en este Mac",
+        "insufficient_memory": "Memoria insuficiente",
+        "unsupported_platform": "Requiere macOS con Apple silicon"
+      },
+      "empty": "Ningún modelo coincide. Quita un filtro para ver los demás.",
+      "errorKept": "No se cambió nada: los modelos instalados siguen donde están.",
+      "errorTitle": "No se pudo leer la lista de modelos.",
+      "eta": {
+        "minutes": "faltan {minutes} min",
+        "seconds": "faltan {seconds} s"
+      },
+      "filter": {
+        "all": "Todos",
+        "compatible": "Solo los que caben en este Mac",
+        "label": "Mostrar",
+        "ranking": "Comparación",
+        "search": "Búsqueda",
+        "writing": "Escritura"
+      },
+      "license": "Acepto la licencia:",
+      "parameters": "Parámetros",
+      "ranker": {
+        "fallback": "Sin un reordenador validado, las notas que caben en más de un tema inician temas nuevos. Se vuelven a colocar cuando haya uno listo.",
+        "installing": "Este reordenador coloca las notas que caben en más de un tema. Hasta que esté listo, esas notas inician temas nuevos y se vuelven a colocar después.",
+        "pending": "Ejecuta la prueba para validar este reordenador."
+      },
+      "removeAsk": "¿Quitar {model} y sus archivos de este Mac?",
+      "removeBlocked": "En uso por {profiles}. Cambia antes el perfil.",
+      "saveDefaults": "Guardar valores predeterminados",
+      "status": {
+        "downloading": "Descargando",
+        "failed": "Falló",
+        "not_downloaded": "No descargado",
+        "ready": "Instalado",
+        "removing": "Quitando",
+        "verifying": "Verificando"
+      },
+      "summaryMany": "{count} instalados · {size}",
+      "summaryNone": "Ninguno instalado",
+      "summaryOne": "1 instalado · {size}",
+      "testOk": "El modelo se ejecutó en este Mac.",
+      "token": {
+        "add": "Añadir token…",
+        "label": "Token",
+        "none": "Sin token",
+        "replace": "Cambiar token…",
+        "set": "Token guardado, nunca se muestra"
+      }
+    },
+    "preset": {
+      "cloud": {
+        "help": "Casi todo en tu proveedor."
+      },
+      "custom": {
+        "help": "Tú eliges el modelo de cada tarea, justo debajo."
+      },
+      "estimate": "Unos {amount} al mes con una clave de API.",
+      "hybrid": {
+        "help": "Búsqueda y comparación en este Mac; escritura y respuestas en tu proveedor."
+      },
+      "local": {
+        "help": "Todo se ejecuta en este Mac y nada sale de él.",
+        "unavailableMemory": "Este Mac no tiene memoria suficiente para el modelo de escritura local.",
+        "unavailableSilicon": "Requiere un Mac con Apple silicon.",
+        "unavailableSystem": "No hay un modelo de escritura local para este sistema.",
+        "unverified": "Aún sin un modelo de escritura local validado."
+      },
+      "name": {
+        "cloud": "Nube",
+        "custom": "Personalizada",
+        "hybrid": "Híbrida",
+        "local": "Local"
+      },
+      "recommended": "recomendada",
+      "unset": "Aún no has elegido una configuración. Elige dónde se ejecuta la IA: define el modelo de cada tarea."
+    },
+    "profiles": {
+      "close": "Cerrar",
+      "create": "Crear perfil",
+      "customize": "Personalizado",
+      "duplicate": "Duplicar perfil",
+      "edit": "Editar",
+      "empty": "Aún no hay perfiles. Un perfil une un modelo con las tareas que atiende.",
+      "model": "Modelo",
+      "modelDefaults": "Valores del modelo",
+      "name": "Nombre del perfil",
+      "new": "Nuevo perfil…",
+      "remove": "Quitar perfil",
+      "removeAsk": "¿Quitar este perfil y las rutas de sus tareas? Los modelos descargados se conservan.",
+      "resetTask": "Usar los valores del modelo",
+      "save": "Guardar perfil",
+      "selectModel": "Elige un modelo de proveedor o local",
+      "summaryMany": "{count} perfiles",
+      "summaryNone": "Ningún perfil",
+      "summaryOne": "1 perfil",
+      "task": {
+        "atomic-note-generation": "Notas atómicas",
+        "embedding": "Búsqueda y similitud",
+        "knowledge-graph-generation": "Grafo de conocimiento",
+        "reranking": "Comparación (reordenador)",
+        "structured-output": "Respuestas estructuradas",
+        "summarization": "Resúmenes",
+        "text-generation": "Escritura de texto"
+      }
+    },
+    "providers": {
+      "action": {
+        "addKey": "Añadir clave…",
+        "addModel": "Añadir un modelo…",
+        "find": "Buscar modelos",
+        "finding": "Buscando…",
+        "remove": "Quitar",
+        "replaceKey": "Cambiar clave…",
+        "save": "Guardar",
+        "saving": "Guardando…",
+        "signIn": "Iniciar sesión…",
+        "signInAgain": "Iniciar sesión de nuevo",
+        "test": "Probar",
+        "testing": "Probando…"
+      },
+      "form": {
+        "address": "Dirección del servidor",
+        "addressHint": "Para la propia OpenAI, deja la dirección predeterminada.",
+        "key": "Clave de API",
+        "model": "Modelo",
+        "modelHint": "Elige uno de la lista del proveedor o escribe su nombre.",
+        "purpose": "Se usa para",
+        "signInHint": "Abre ChatGPT en el navegador. Solo las tareas de escritura la usan.",
+        "signedIn": "Sesión iniciada. Elige el modelo que usar."
+      },
+      "modelsLabel": "Modelos",
+      "purpose": {
+        "embedding": "Búsqueda",
+        "generation": "Escritura",
+        "reranking": "Comparación"
+      },
+      "removeAsk": "¿Quitar {model}? Los perfiles que lo usan se quedan sin modelo.",
+      "status": {
+        "connected": "Conectada",
+        "keySaved": "Clave guardada, nunca se muestra",
+        "none": "Sin clave",
+        "notConnected": "Sin iniciar sesión"
+      },
+      "testOk": "La conexión funciona"
+    },
+    "routes": {
+      "choose": "Elige un modelo",
+      "disclosure": {
+        "body": "Cuando este modelo decide o juzga, los títulos y las ideas de las notas comparadas y fragmentos de las fuentes se envían a {provider}. Los conserva según sus propios términos de retención, que Memora no controla.",
+        "confirm": "Usar este modelo",
+        "title": "{provider} recibe tu texto"
+      },
+      "empty": "Elige una configuración arriba: define el modelo de cada tarea.",
+      "intro": "La configuración elige estos modelos. Cambiar uno aquí cambia solo esa tarea, y la configuración pasa a Personalizada.",
+      "introCustom": "Cada tarea conserva el modelo que elegiste. Para empezar de nuevo, elige una configuración arriba.",
+      "noModel": "Ningún modelo elegido",
+      "noModelsAvailable": "No hay modelos para elegir. Añade un proveedor o instala un modelo local abajo.",
+      "noRanker": "No hay un reordenador instalado. Las conexiones esperan a uno, salvo que decida el juez generativo.",
+      "partial": "Faltan algunas rutas del juez. Elige un modelo para definirlas todas.",
+      "where": {
+        "local": "En este Mac",
+        "remote": "Proveedor"
+      }
+    },
+    "states": {
+      "errorKept": "No se cambió nada: Memora sigue usando los modelos que ya tenía.",
+      "errorTitle": "No se pudo leer la configuración de IA."
+    },
+    "status": {
+      "applied": "{setup} está aplicada. Cada tarea muestra el resultado de su prueba.",
+      "applying": "Aplicando {setup}…",
+      "testing": "Probando {name}…"
+    },
+    "test": {
+      "button": "Probar",
+      "failed": "La prueba falló",
+      "failedWith": "La prueba falló: {reason}",
+      "none": "Sin reordenador",
+      "passed": "Prueba superada",
+      "passedMs": "Prueba superada en {ms} ms",
+      "passedSeconds": "Prueba superada en {seconds} s",
+      "running": "Probando…",
+      "untested": "Sin probar"
+    },
+    "thisMac": {
+      "detectedOn": "{date}, {time}",
+      "detectedToday": "hoy, {time}",
+      "error": "No se pudo detectar este Mac.",
+      "errorKept": "No se cambió nada: la configuración de arriba funciona como antes.",
+      "fact": {
+        "detected": "Detectado",
+        "disk": "Disco libre",
+        "gpuMemory": "Memoria para la GPU",
+        "graphicsMemory": "Memoria de vídeo",
+        "memory": "Memoria",
+        "memoryUnified": "Memoria unificada"
+      },
+      "intro": "Lo que Memora encontró en este Mac y la configuración que le conviene.",
+      "nothingChanges": "Nada cambia solo: la configuración la eliges tú.",
+      "reason": {
+        "local_memory_too_small": "Este Mac tiene poca memoria para el modelo de escritura local.",
+        "local_quality_unverified": "Local aún no tiene un modelo de escritura validado para este Mac.",
+        "local_requires_apple_silicon": "Local requiere un Mac con Apple silicon.",
+        "local_writer_unavailable": "No hay un modelo de escritura local para este sistema.",
+        "probe_incomplete": "No se pudo detectar todo, así que pueden faltar algunas cifras.",
+        "ranker_slow_on_cpu": "Sin tarjeta gráfica dedicada, comparar notas es lento en este ordenador.",
+        "running_under_rosetta": "Memora se ejecuta traducido (Rosetta). Funciona, pero más lento que la versión nativa."
+      },
+      "recommended": "Recomendada para este Mac: {setup}.",
+      "redetect": "Detectar de nuevo",
+      "redetected": "Detectado de nuevo.",
+      "redetecting": "Detectando…",
+      "tag": "solo informativo",
+      "title": {
+        "intel": "Mac con procesador Intel",
+        "other": "Este ordenador",
+        "silicon": "Mac con Apple silicon",
+        "windows": "Ordenador con Windows"
+      },
+      "why": {
+        "cloud": "Casi todo usa tu proveedor; este ordenador guarda tu biblioteca.",
+        "hybrid": "La búsqueda y la comparación se ejecutan aquí, sin coste; la escritura usa tu proveedor.",
+        "local": "Todo se ejecuta aquí y nada sale de este Mac."
+      }
+    }
+  },
+  "settingsAdvanced": {
+    "decider": {
+      "auto": "Automático",
+      "autoHelp": "Sigue tus modelos: el clasificador cuando hay uno validado y, si no, el juez.",
+      "generative": "Solo juez",
+      "generativeHelp": "El juez decide todas las conexiones: más lento, y envía el texto de las notas fuera si el juez funciona en la nube.",
+      "ranker": "Solo clasificador",
+      "rankerElse": "Clasificador y, si no, juez",
+      "rankerElseHelp": "El clasificador decide, y el juez entra cuando no hay ninguno validado.",
+      "rankerHelp": "Solo decide un clasificador validado; sin él, la correspondencia espera."
+    },
+    "groups": {
+      "diagnosticsIntro": "Para investigar problemas. Aquí aparecen los nombres técnicos de las tareas.",
+      "matchingIntro": "Cada decisión guarda los valores con los que se tomó; un valor nuevo solo vale para decisiones nuevas. Para rehacer las antiguas, usa la Bandeja de entrada.",
+      "processingModels": "Procesamiento y modelos"
+    },
+    "intro": "Rara vez hace falta: los valores por defecto sirven para la mayoría de las bibliotecas. Los valores de correspondencia se midieron; cámbialos solo si sabes por qué.",
+    "layout": {
+      "failed": "No se pudo preparar el cambio. No se movió nada.",
+      "followsNotes": "Igual que las notas ({language})",
+      "hint": "Elegir otro idioma aún no mueve nada: prepara el cambio, que revisas y aplicas en Integraciones.",
+      "noVault": "Elige primero una bóveda de Obsidian; hasta entonces no hay carpetas que nombrar.",
+      "openIntegrations": "Abrir Integraciones",
+      "prepared": "El cambio está listo para revisar. Aplícalo en Integraciones, con los editores de Obsidian cerrados.",
+      "preparing": "Preparando el cambio…"
+    },
+    "matching": {
+      "deleteBody": "Los valores de correspondencia vuelven al conjunto calibrado. Las conexiones ya encontradas no cambian.",
+      "deleteConfirm": "Borrar preajuste",
+      "deleteTitle": "¿Borrar «{name}»?",
+      "differenceItem": "{label} ({current} en lugar de {calibrated})",
+      "differsList": "Diferencia: {list}.",
+      "differsMany": "{count} valores difieren del conjunto calibrado.",
+      "differsNote": "Las conexiones encontradas con estos valores no se midieron.",
+      "differsOne": "{count} valor difiere del conjunto calibrado.",
+      "errorKept": "Tus valores guardados siguen como estaban.",
+      "errorTitle": "No se pudieron leer los preajustes de correspondencia.",
+      "nameInvalid": "Ponle al preajuste un nombre de hasta 100 caracteres.",
+      "nameNew": "Nombre del nuevo preajuste",
+      "nameRename": "Nuevo nombre del preajuste",
+      "nameSave": "Guardar",
+      "off": "desactivado",
+      "on": "activado",
+      "presetCopyName": "{name} (copia)",
+      "presetCreate": "Crear preajuste",
+      "presetCustomNamed": "Personalizado: {name}",
+      "presetDelete": "Borrar",
+      "presetDuplicate": "Duplicar",
+      "presetLimit": "Puedes guardar hasta 50 preajustes.",
+      "presetPrevious": "Ajustes anteriores",
+      "presetRecommended": "Equilibrado (recomendado)",
+      "presetRename": "Renombrar",
+      "restoreCalibrated": "Restaurar los valores calibrados",
+      "subgroups": {
+        "identity": {
+          "intro": "Del grafo de conocimiento: cómo la IA une tipos de relación parecidos y entidades que son la misma.",
+          "title": "Tipos de relación e identidad de entidades"
+        },
+        "notes": {
+          "intro": "Cuánto puede escribir la IA al juzgar las conexiones entre notas.",
+          "title": "Notas"
+        },
+        "sources": {
+          "intro": "Las relaciones unen fuentes enteras; las conexiones, en Conocimiento, unen notas.",
+          "title": "Relaciones entre fuentes"
+        }
+      }
+    },
+    "prompts": {
+      "body": "Abre el editor para leer, cambiar o restaurar un prompt.",
+      "close": "Cerrar los prompts",
+      "open": "Abrir los prompts"
+    },
+    "rootFailed": "No se pudo guardar ese nombre. Usa un nombre de carpeta dentro de la bóveda, sin «..» y sin «/» al principio.",
+    "rootHint": "Un nombre de carpeta dentro de la bóveda, no una ruta.",
+    "saveFailed": "No se pudo guardar. No se cambió nada.",
+    "units": {
+      "characters": "caracteres",
+      "tokens": "tokens",
+      "words": "palabras"
+    }
+  },
+  "diagnostics": {
+    "callLog": {
+      "caption": "Las últimas llamadas de IA",
+      "columns": {
+        "job": "Tarea",
+        "model": "Modelo",
+        "result": "Resultado",
+        "time": "Tiempo",
+        "tokens": "Tokens",
+        "when": "Cuándo"
+      },
+      "countMany": "{count} llamadas registradas",
+      "countOne": "{count} llamada registrada",
+      "emptyBody": "La primera aparecerá aquí en cuanto Memora llame a un modelo.",
+      "emptyTitle": "Aún no hay llamadas de IA registradas",
+      "errorKept": "Los registros siguen guardados; no se borró nada.",
+      "errorTitle": "No se pudo leer el registro de llamadas.",
+      "filterAll": "Todas",
+      "filterFailed": "Solo con error",
+      "filterLabel": "Mostrar",
+      "limitNote": "Mostrando las {count} llamadas más recientes.",
+      "noneFailed": "Ninguna llamada con error.",
+      "prune": "Borrar registros antiguos…",
+      "results": {
+        "canceled": "Cancelada",
+        "failed": "Falló",
+        "interrupted": "Interrumpida",
+        "running": "En curso",
+        "succeeded": "Terminada"
+      },
+      "showMore": "Mostrar más",
+      "title": "Registro de llamadas de IA"
+    },
+    "debug": {
+      "captureBody": "Los prompts y las respuestas completos se quedan en esta base de datos local. Pueden contener el texto entero de tus fuentes y ocupar mucho espacio.",
+      "captureConfirm": "Activar la captura",
+      "captureNeedsDiagnostics": "Activa los diagnósticos de las operaciones para usarlo.",
+      "captureTitle": "¿Guardar prompts y respuestas completos?",
+      "captureWarning": "Los registros pueden contener el texto entero de tus fuentes y ocupar mucho espacio. Desactívalo tras el diagnóstico."
+    },
+    "errorKept": "Los registros siguen guardados; no se borró nada.",
+    "errorTitle": "No se pudo leer el diagnóstico.",
+    "intro": "Para investigar problemas. Aquí aparecen los nombres técnicos de las tareas.",
+    "jobTypes": {
+      "assetStorage": "Guardado de archivos",
+      "atomicNoteGeneration": "Redacción de notas",
+      "atomicNoteMatching": "Conexiones entre notas",
+      "catalogHeader": "Resúmenes para las fichas de libros y artículos",
+      "chunking": "División en fragmentos",
+      "conversion": "Conversión",
+      "embedding": "Índice de búsqueda",
+      "ingestion": "Importación de fuente",
+      "knowledgeGraphGeneration": "Grafo de conocimiento",
+      "localModelDownload": "Descarga de modelo local",
+      "noteEmbedding": "Índice de búsqueda de notas",
+      "obsidianSync": "Sincronización con Obsidian",
+      "obsidianWiki": "Mapas de temas en Obsidian",
+      "other": "Trabajo en segundo plano",
+      "relationComposite": "Preparando libros y artículos para hallar fuentes relacionadas",
+      "relationLabels": "Descripciones de las conexiones",
+      "relationLink": "Vinculando relaciones",
+      "relationPromote": "Relaciones entre fuentes a partir de las notas",
+      "relationRetype": "Tipificando relaciones",
+      "sourceMatching": "Relaciones entre fuentes",
+      "summarization": "Resumen",
+      "topicAreas": "Áreas de temas",
+      "topicAudit": "Auditoría del árbol de temas",
+      "topicBuild": "Construcción del árbol de temas",
+      "topicGate": "Decisión de ubicación en temas",
+      "topicLabelEmbed": "Etiquetas de temas",
+      "topicName": "Nombre de temas",
+      "topicPlace": "Ubicación en temas",
+      "topicRebalance": "Reequilibrio del árbol de temas",
+      "topicSweep": "Revisión del árbol de temas"
+    },
+    "prune": {
+      "confirm": "Borrar registros",
+      "countFailed": "No se pudieron contar los registros. No se borró nada.",
+      "counting": "Contando…",
+      "days": "días",
+      "deletedMany": "{count} registros borrados.",
+      "deletedOne": "{count} registro borrado.",
+      "description": "Lo que se borre aquí no se puede recuperar. La auditoría de las tareas de IA y tu contenido se quedan.",
+      "failed": "No se pudieron borrar los registros. No se quitó nada.",
+      "invalid": "Escribe un número entero de días o meses, de 1 a 3650.",
+      "months": "meses",
+      "nothing": "Nada es más antiguo que eso.",
+      "olderThan": "Más antiguos que",
+      "previewMany": "Se borrarán {count} registros anteriores al {date}.",
+      "previewOne": "Se borrará {count} registro anterior al {date}.",
+      "scope": "Qué borrar",
+      "scopeAll": "Llamadas, registros de operaciones y ejecuciones de similitud",
+      "scopePayloads": "Solo los prompts y las respuestas completos",
+      "title": "¿Borrar registros antiguos?",
+      "unit": "Unidad"
+    },
+    "similarity": {
+      "action": "Borrar ejecuciones…",
+      "body": "Los registros de depuración desaparecen. Ninguna conexión cambia.",
+      "confirm": "Borrar ejecuciones",
+      "deletedMany": "{count} ejecuciones borradas.",
+      "deletedOne": "{count} ejecución borrada.",
+      "failed": "No se pudieron borrar las ejecuciones. No se quitó nada.",
+      "none": "No había ejecuciones que borrar.",
+      "title": "¿Borrar las ejecuciones de depuración de similitud?"
+    },
+    "taskHistory": {
+      "caption": "Tareas terminadas",
+      "clear": "Limpiar el historial de tareas…",
+      "clearBody": "Quita de las listas las ejecuciones terminadas, con error o canceladas. Las tareas activas, las pendientes, la auditoría y los gastos se quedan.",
+      "clearConfirm": "Limpiar historial",
+      "clearFailed": "No se pudo limpiar el historial. No se quitó nada.",
+      "clearTitle": "¿Limpiar el historial de tareas?",
+      "clearedMany": "{count} ejecuciones limpiadas.",
+      "clearedOne": "{count} ejecución limpiada.",
+      "columns": {
+        "duration": "Duración",
+        "job": "Tarea",
+        "result": "Resultado",
+        "when": "Cuándo"
+      },
+      "countMany": "{count} ejecuciones terminadas",
+      "countOne": "{count} ejecución terminada",
+      "emptyBody": "Cada importación u otra tarea aparece aquí cuando termina.",
+      "emptyTitle": "Aún no hay tareas terminadas",
+      "errorKept": "Los registros siguen guardados; no se borró nada.",
+      "errorTitle": "No se pudo leer el historial de tareas.",
+      "outcomes": {
+        "canceled": "Cancelada",
+        "failed": "Falló",
+        "graphIncomplete": "Terminada, sin el grafo",
+        "succeeded": "Terminada"
+      },
+      "title": "Historial de tareas",
+      "waiting": "Aparece cuando la lectura vuelva."
+    },
+    "title": "Diagnóstico",
+    "when": {
+      "yesterday": "ayer {time}"
+    }
   }
 }
