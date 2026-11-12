@@ -4198,9 +4198,7 @@
     },
     "titleBar": {
       "add": "Añadir",
-      "addFile": "Elegir archivo…",
       "addMore": "Más formas de añadir",
-      "addMoreOptions": "Más opciones de importación…",
       "addSource": "Añadir fuente",
       "omniLabel": "Buscar, abrir o preguntar",
       "omniPlaceholder": "Buscar, abrir o preguntar…",
@@ -4426,11 +4424,17 @@
       "empty": "{name} está vacío.",
       "generic": "No se pudo añadir el archivo.",
       "kept": "No se guardó nada y todo lo demás sigue como estaba.",
+      "keptSome": "Los archivos que se pudieron leer se añadieron y todo lo demás sigue como estaba.",
+      "more": "Tampoco se añadieron: {count}.",
+      "noText": "{name} no tiene texto que Memora pueda leer.",
+      "noTextNoName": "Ese archivo no tiene texto que Memora pueda leer.",
       "notAFile": "{name} no es un archivo.",
       "symlink": "{name} es un acceso directo. Suelta el archivo original.",
       "tooLarge": "{name} es demasiado grande para importar.",
+      "tooLargeNoName": "Ese archivo es demasiado grande para importar.",
       "unreadable": "No se pudo leer {name}.",
-      "unsupported": "Memora aún no lee archivos como {name}."
+      "unsupported": "Memora aún no lee archivos como {name}.",
+      "unsupportedNoName": "Memora aún no lee ese tipo de archivo."
     },
     "importPanel": {
       "errors": {
@@ -4441,6 +4445,12 @@
         "action": "Abrir la Biblioteca",
         "body": "Puede que se haya quitado de la Biblioteca. Nada más cambió.",
         "title": "Esta fuente ya no existe."
+      },
+      "leave": {
+        "description": "Has cambiado esta importación y no la has guardado. Sigue para terminarla o descarta lo que has escrito y continúa.",
+        "discard": "Descartar y salir",
+        "keep": "Seguir aquí",
+        "title": "¿Salir sin guardar?"
       },
       "title": "Importación avanzada"
     },

@@ -59,7 +59,7 @@ import { ExploreNavigator, hoistAction } from "./workspace/destinations/explore/
 import { ContextDockContext } from "./workspace/context-dock";
 import { PanelStack, panelRegistry } from "./workspace/PanelStack";
 import { useAddFlow } from "./workspace/add/use-add-flow";
-import { formatView } from "./workspace/route";
+import { showImportPanelActions, showSourceActions } from "./workspace/add/add-navigation";
 import { AddSourceContext } from "./workspace/workspace-bridge";
 import { QuickLookHost } from "./workspace/QuickLook";
 import { toggleQuickLook } from "./workspace/QuickLookModel";
@@ -556,20 +556,11 @@ export function App({
   const addFlow = useAddFlow({
     openSource: (sourceItemId) => {
       setLegacyView(null);
-      dispatch({
-        type: "firstSource",
-        address: formatObjectAddress({ kind: "source", id: sourceItemId })
-      });
+      for (const action of showSourceActions(sourceItemId)) dispatch(action);
     },
     openImportPanel: () => {
       setLegacyView(null);
-      dispatch({ type: "go", destination: "explore" });
-      dispatch({
-        type: "open",
-        address: formatView({ view: "import" }),
-        from: workspace.stacks.explore.focus,
-        mode: "push"
-      });
+      for (const action of showImportPanelActions(workspace.stacks.explore.focus)) dispatch(action);
     }
   });
 

@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { keymap } from "../keymap";
+import { defaultWorkspace, reduce } from "../state";
+import { showImportPanelActions, showSourceActions } from "./add-navigation";
 import { AddFlow, addModeStorageKey } from "./add-flow";
 import { descriptorFromFile, titleFromFileName } from "./add-descriptor";
 import {
@@ -248,9 +250,31 @@ describe("the Add flow", () => {
     const { flow, openSource } = flowOver(api);
     await expect(flow.pickFile()).resolves.toBeUndefined();
     expect(openSource).not.toHaveBeenCalled();
-    expect(flow.getSnapshot().failure).toEqual({ reason: "generic", name: null });
+    // The reason main gives is kept, not flattened into the generic sentence.
+    expect(flow.getSnapshot().failure).toEqual({
+      reason: "noText",
+      name: null,
+      more: 0,
+      saved: false
+    });
     flow.dismissFailure();
     expect(flow.getSnapshot().failure).toBeNull();
+  });
+
+  it("falls back to the generic sentence only for an error with no reason of its own", async () => {
+    const api = fakeApi({ writer: true });
+    api.ingestion.extractFileMetadata.mockRejectedValueOnce(new Error("kaboom"));
+    const { flow } = flowOver(api);
+    await flow.pickFile();
+    expect(flow.getSnapshot().failure).toMatchObject({ reason: "generic", name: null });
+  });
+
+  it("names the file when the import fails after the picker returned it", async () => {
+    const api = fakeApi({ writer: true });
+    api.ingestion.importFile.mockRejectedValueOnce(new Error("errors.common.validationFailed"));
+    const { flow } = flowOver(api);
+    await flow.pickFile();
+    expect(flow.getSnapshot().failure).toMatchObject({ reason: "unreadable", name: "aula-05.pdf" });
   });
 
   it("imports a drop at once: the first Source opens, the others wait their turn", async () => {
@@ -272,7 +296,93 @@ describe("the Add flow", () => {
     await flow.importDropped([{ name: "pacote.zip" }, { name: "b.md" }]);
     expect(api.ingestion.importFile).toHaveBeenCalledTimes(1);
     expect(openSource).toHaveBeenCalledTimes(1);
-    expect(flow.getSnapshot().failure).toEqual({ reason: "unsupported", name: "pacote.zip" });
+    expect(flow.getSnapshot().failure).toEqual({
+      reason: "unsupported",
+      name: "pacote.zip",
+      more: 0,
+      saved: true
+    });
+  });
+
+  it("imports files dropped while the picker's file is still being read, once it is done", async () => {
+    const api = fakeApi({ writer: true });
+    let release: (value: unknown) => void = () => undefined;
+    api.ingestion.extractFileMetadata.mockImplementationOnce(
+      () => new Promise((resolve) => (release = resolve)) as never
+    );
+    const { flow, openSource } = flowOver(api);
+    const picking = flow.pickFile();
+    await vi.waitFor(() => expect(api.ingestion.extractFileMetadata).toHaveBeenCalledTimes(1));
+    await flow.importDropped([{ name: "notas.md" }]);
+    // It waits: the caption counts it and nothing has been prepared yet.
+    expect(flow.getSnapshot().busy?.waiting).toBe(1);
+    expect(api.ingestion.prepareDroppedFiles).not.toHaveBeenCalled();
+    release({
+      fileToken: token,
+      fileName: "aula-05.pdf",
+      mimeType: "application/pdf",
+      draft: draft({ title: "Aula 05" })
+    });
+    await picking;
+    expect(api.ingestion.prepareDroppedFiles).toHaveBeenCalledTimes(1);
+    expect(api.ingestion.importFile).toHaveBeenCalledTimes(2);
+    // The picked file opened; the dropped one waited its turn.
+    expect(openSource).toHaveBeenCalledTimes(1);
+    expect(flow.getSnapshot().busy).toBeNull();
+  });
+
+  it("imports files dropped while an earlier drop runs, then ends the run", async () => {
+    const api = fakeApi({ writer: true });
+    let release: () => void = () => undefined;
+    api.ingestion.importFile.mockImplementationOnce((async (input: unknown) => {
+      await new Promise<void>((resolve) => (release = resolve));
+      return { sourceItemId: sourceId, input };
+    }) as never);
+    const { flow } = flowOver(api);
+    const first = flow.importDropped([{ name: "a.pdf" }]);
+    await vi.waitFor(() => expect(api.ingestion.importFile).toHaveBeenCalledTimes(1));
+    await flow.importDropped([{ name: "b.md" }]);
+    release();
+    await first;
+    expect(api.ingestion.importFile).toHaveBeenCalledTimes(2);
+    expect(flow.getSnapshot().busy).toBeNull();
+  });
+
+  it("tells the first failure of a run, counts the others, and says what was kept", async () => {
+    const api = fakeApi({ writer: true });
+    const refused = (name: string) => ({ status: "refused", name, reason: "unsupported" }) as const;
+    api.ingestion.prepareDroppedFiles
+      .mockImplementationOnce((async () => [refused("a.zip")]) as never)
+      .mockImplementationOnce((async () => [refused("b.zip")]) as never);
+    const { flow } = flowOver(api);
+    await flow.importDropped([{ name: "a.zip" }, { name: "b.zip" }, { name: "c.md" }]);
+    expect(flow.getSnapshot().failure).toEqual({
+      reason: "unsupported",
+      name: "a.zip",
+      more: 1,
+      saved: true
+    });
+  });
+
+  it("holds the notice back until the run ends, so its retry finds the flow free", async () => {
+    const api = fakeApi({ writer: true });
+    api.ingestion.prepareDroppedFiles.mockImplementationOnce((async () => [
+      { status: "refused", name: "a.zip", reason: "unsupported" }
+    ]) as never);
+    let release: () => void = () => undefined;
+    api.ingestion.importFile.mockImplementationOnce((async (input: unknown) => {
+      await new Promise<void>((resolve) => (release = resolve));
+      return { sourceItemId: sourceId, input };
+    }) as never);
+    const { flow } = flowOver(api);
+    const run = flow.importDropped([{ name: "a.zip" }, { name: "b.md" }]);
+    await vi.waitFor(() => expect(api.ingestion.importFile).toHaveBeenCalledTimes(1));
+    expect(flow.getSnapshot().failure).toBeNull();
+    release();
+    await run;
+    expect(flow.getSnapshot().failure).not.toBeNull();
+    await flow.pickFile();
+    expect(api.ingestion.extractFileMetadata).toHaveBeenCalledTimes(1);
   });
 
   it("keeps a failed read of the mode as an error and falls back to a safe default", async () => {
@@ -285,9 +395,34 @@ describe("the Add flow", () => {
     expect(api.ingestion.importFile).toHaveBeenCalledTimes(1);
   });
 
-  it("opens the advanced panel from the link, the note and the more item", () => {
-    const { flow, openImportPanel } = flowOver(fakeApi());
+  it("opens the advanced panel and clears a notice that was showing", async () => {
+    const api = fakeApi({ writer: true });
+    api.ingestion.extractFileMetadata.mockRejectedValueOnce(new Error("kaboom"));
+    const { flow, openImportPanel } = flowOver(api);
+    await flow.pickFile();
+    expect(flow.getSnapshot().failure).not.toBeNull();
     flow.openImportPanel();
     expect(openImportPanel).toHaveBeenCalledTimes(1);
+    expect(flow.getSnapshot().failure).toBeNull();
+  });
+});
+
+describe("what the workspace does for Adicionar", () => {
+  const run = (actions: ReturnType<typeof showSourceActions>) =>
+    actions.reduce((state, action) => reduce(state, action), defaultWorkspace("2026-11-12"));
+
+  it("pushes the new Source onto Explore's stack and shows Explore", () => {
+    const state = run(showSourceActions(sourceId));
+    expect(state.destination).toBe("explore");
+    const stack = state.stacks.explore;
+    expect(stack.panels).toHaveLength(1);
+    expect(stack.panels[0]?.history).toEqual([`memora://source/${sourceId}`]);
+    expect(stack.focus).toBe(0);
+  });
+
+  it("opens the import panel on Explore's stack", () => {
+    const state = run(showImportPanelActions(-1));
+    expect(state.destination).toBe("explore");
+    expect(state.stacks.explore.panels[0]?.history).toEqual(["memora://import"]);
   });
 });

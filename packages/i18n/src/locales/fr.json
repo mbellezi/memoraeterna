@@ -4198,9 +4198,7 @@
     },
     "titleBar": {
       "add": "Ajouter",
-      "addFile": "Choisir un fichier…",
       "addMore": "Autres façons d’ajouter",
-      "addMoreOptions": "Plus d’options d’importation…",
       "addSource": "Ajouter une source",
       "omniLabel": "Chercher, ouvrir ou demander",
       "omniPlaceholder": "Chercher, ouvrir ou demander…",
@@ -4426,11 +4424,17 @@
       "empty": "{name} est vide.",
       "generic": "Le fichier n'a pas pu être ajouté.",
       "kept": "Rien n'a été enregistré et le reste est inchangé.",
+      "keptSome": "Les fichiers lisibles ont été ajoutés et le reste est inchangé.",
+      "more": "Également non ajoutés : {count}.",
+      "noText": "{name} ne contient aucun texte que Memora puisse lire.",
+      "noTextNoName": "Ce fichier ne contient aucun texte que Memora puisse lire.",
       "notAFile": "{name} n'est pas un fichier.",
       "symlink": "{name} est un raccourci. Déposez plutôt le fichier d'origine.",
       "tooLarge": "{name} est trop volumineux pour être importé.",
+      "tooLargeNoName": "Ce fichier est trop volumineux pour être importé.",
       "unreadable": "{name} n'a pas pu être lu.",
-      "unsupported": "Memora ne lit pas encore les fichiers comme {name}."
+      "unsupported": "Memora ne lit pas encore les fichiers comme {name}.",
+      "unsupportedNoName": "Memora ne lit pas encore ce type de fichier."
     },
     "importPanel": {
       "errors": {
@@ -4441,6 +4445,12 @@
         "action": "Ouvrir la Bibliothèque",
         "body": "Elle a peut-être été retirée de la Bibliothèque. Rien d'autre n'a changé.",
         "title": "Cette source n'existe plus."
+      },
+      "leave": {
+        "description": "Vous avez modifié cet import sans l'enregistrer. Continuez pour le terminer, ou abandonnez ce que vous avez saisi et poursuivez.",
+        "discard": "Abandonner et quitter",
+        "keep": "Continuer ici",
+        "title": "Quitter sans enregistrer ?"
       },
       "title": "Importation avancée"
     },

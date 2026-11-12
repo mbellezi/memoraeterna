@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { formatObjectAddress, type ObjectSummary } from "@app/domain";
 import type { Translator } from "@app/i18n";
 
@@ -7,6 +7,7 @@ import { ImportView } from "../../components/ImportView";
 import { Button } from "../../components/ui/button";
 import { EmptyState } from "../../components/ui/empty-state";
 import { ErrorState } from "../../components/ui/error-state";
+import { NoteLeaveDialog, type LeaveCopy } from "../../components/note-page/NoteLeaveDialog";
 import { LoadingState, Skeleton, SkeletonLines } from "../../components/ui/skeleton";
 import type { PanelLoadState } from "../PanelFrame";
 import type { PanelProps } from "../PanelStack";
@@ -93,11 +94,51 @@ function Body({ children }: { children: React.ReactNode }) {
   return <div className="min-w-0 max-w-[57rem]">{children}</div>;
 }
 
-export function Component({ t, address, active, onState, onOpen }: PanelProps) {
+const leaveCopy: LeaveCopy = {
+  title: "addFlow.importPanel.leave.title",
+  description: "addFlow.importPanel.leave.description",
+  keep: "addFlow.importPanel.leave.keep",
+  discard: "addFlow.importPanel.leave.discard"
+};
+
+/**
+ * The wizard holds a long form, so the panel registers a leave guard: a close, a Back or a fold
+ * into a spine asks first while something was entered (`ImportView` says so through
+ * `onDirtyChange`), and never after a save, which replaces the panel on purpose.
+ */
+function useLeaveGuard(onLeaveGuard: PanelProps["onLeaveGuard"]) {
+  const dirty = useRef(false);
+  const [leaving, setLeaving] = useState<{ go: () => void } | null>(null);
+  useEffect(() => {
+    if (!onLeaveGuard) return undefined;
+    onLeaveGuard((go) => {
+      if (dirty.current) setLeaving({ go });
+      else go();
+    });
+    return () => onLeaveGuard(null);
+  }, [onLeaveGuard]);
+  const setDirty = useCallback((next: boolean) => {
+    dirty.current = next;
+  }, []);
+  return {
+    leaving,
+    setDirty,
+    keep: () => setLeaving(null),
+    discard: () => {
+      const go = leaving?.go;
+      dirty.current = false;
+      setLeaving(null);
+      go?.();
+    }
+  };
+}
+
+export function Component({ t, address, active, onState, onOpen, onLeaveGuard }: PanelProps) {
   const sourceId = sourceIdOf(address);
   const { data, retry } = useImportData(sourceId, active);
   const reported = loadStateOf(data);
   useEffect(() => onState(reported), [onState, reported]);
+  const guard = useLeaveGuard(onLeaveGuard);
 
   if (data.status === "loading")
     return (
@@ -138,15 +179,27 @@ export function Component({ t, address, active, onState, onOpen }: PanelProps) {
       </Body>
     );
   return (
-    <ImportView
-      t={t}
-      active={active}
-      metadataEnrichmentEnabled={data.metadataEnrichmentEnabled}
-      {...(data.source ? { editing: data.source } : {})}
-      // A saved source replaces this panel: the person lands on it, with its generation strip.
-      onSaved={(sourceItemId) =>
-        onOpen(formatObjectAddress({ kind: "source", id: sourceItemId }), { replace: true })
-      }
-    />
+    <>
+      <ImportView
+        t={t}
+        active={active}
+        metadataEnrichmentEnabled={data.metadataEnrichmentEnabled}
+        {...(data.source ? { editing: data.source } : {})}
+        onDirtyChange={guard.setDirty}
+        // A saved source replaces this panel: the person lands on it, with its generation strip.
+        onSaved={(sourceItemId) => {
+          guard.setDirty(false);
+          onOpen(formatObjectAddress({ kind: "source", id: sourceItemId }), { replace: true });
+        }}
+      />
+      {guard.leaving ? (
+        <NoteLeaveDialog
+          t={t}
+          copy={leaveCopy}
+          onKeepEditing={guard.keep}
+          onDiscard={guard.discard}
+        />
+      ) : null}
+    </>
   );
 }

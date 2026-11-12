@@ -102,6 +102,19 @@ function refusalOf(error: unknown): DroppedRefusal {
     : "unreadable";
 }
 
+let conversionTail: Promise<unknown> = Promise.resolve();
+
+/**
+ * Runs one file conversion after the ones already waiting, whichever call asked (the picker's
+ * `extractFileMetadata`, a drop, a second drop): the converter is heavy, so two never run at once.
+ * A failed conversion never blocks the next.
+ */
+export function oneConversionAtATime<T>(work: () => Promise<T>): Promise<T> {
+  const run = conversionTail.then(work, work);
+  conversionTail = run.catch(() => undefined);
+  return run;
+}
+
 /**
  * Validates and prepares each path in turn (one conversion at a time: the converter is heavy), one
  * result per path, in order. A path that fails never stops the others.

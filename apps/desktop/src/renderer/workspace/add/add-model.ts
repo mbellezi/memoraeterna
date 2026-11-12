@@ -99,7 +99,7 @@ export const addEntryKeys: Readonly<
 };
 
 /** Why an add failed, for the sentence of the notice: a refusal of the drop, or something else. */
-export type AddFailureReason = DroppedRefusal | "generic";
+export type AddFailureReason = DroppedRefusal | "noText" | "generic";
 
 export const failureKeys: Readonly<Record<AddFailureReason, MessageKey>> = {
   notAFile: "addFlow.failure.notAFile",
@@ -108,8 +108,22 @@ export const failureKeys: Readonly<Record<AddFailureReason, MessageKey>> = {
   tooLarge: "addFlow.failure.tooLarge",
   unsupported: "addFlow.failure.unsupported",
   unreadable: "addFlow.failure.unreadable",
+  noText: "addFlow.failure.noText",
   generic: "addFlow.failure.generic"
 };
+
+/** The sentences for a failure whose file is not known yet (the picker failed before it named one). */
+const nameless: Partial<Record<AddFailureReason, MessageKey>> = {
+  tooLarge: "addFlow.failure.tooLargeNoName",
+  unsupported: "addFlow.failure.unsupportedNoName",
+  noText: "addFlow.failure.noTextNoName"
+};
+
+/** The sentence of a failure: one that carries a name, else its nameless form, else the plain one. */
+export function failureKey(failure: { reason: AddFailureReason; name: string | null }): MessageKey {
+  if (failure.name !== null) return failureKeys[failure.reason];
+  return nameless[failure.reason] ?? failureKeys.generic;
+}
 
 /** Up to three names shown on the drop card, then "and N more". */
 export const dropNamesShown = 3;

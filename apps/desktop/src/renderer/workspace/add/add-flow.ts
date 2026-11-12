@@ -35,8 +35,18 @@ export interface AddFlowOptions {
 
 export interface AddFailure {
   reason: AddFailureReason;
-  /** The file's name when the failure is about one file; the person's own text. */
+  /** The file's name when the failure is about one file and it is known; the person's own text. */
   name: string | null;
+  /** How many other files of the same run failed too (the notice tells the first and counts the rest). */
+  more: number;
+  /** Some file of the same run was added: "nothing was saved" would be false. */
+  saved: boolean;
+}
+
+/** What one run (a pick, or a drop with the files that queued behind it) has met so far. */
+interface Run {
+  failures: Array<Pick<AddFailure, "reason" | "name">>;
+  imported: number;
 }
 
 export interface AddFlowSnapshot {
@@ -52,13 +62,16 @@ export interface AddFlowSnapshot {
 
 export const addModeStorageKey = "memora.add.importMode";
 
-const unknownFailure: AddFailure = { reason: "generic", name: null };
-
-/** The failure a main-process error stands for. */
-function failureOfError(error: unknown, name: string | null): AddFailure {
+/** The failure a main-process error stands for; the reason main gives wins over the generic sentence. */
+export function failureOfError(
+  error: unknown,
+  name: string | null
+): Pick<AddFailure, "reason" | "name"> {
   const message = error instanceof Error ? error.message : "";
   if (message.includes("errors.common.fileTooLarge")) return { reason: "tooLarge", name };
-  return name === null ? unknownFailure : { reason: "unreadable", name };
+  if (message.includes("errors.common.unsupportedFile")) return { reason: "unsupported", name };
+  if (message.includes("errors.ingestion.noText")) return { reason: "noText", name };
+  return name === null ? { reason: "generic", name } : { reason: "unreadable", name };
 }
 
 export class AddFlow {
@@ -70,6 +83,7 @@ export class AddFlow {
   private working = false;
   private queue: DroppedFileHandle[] = [];
   private opened = false;
+  private run: Run = { failures: [], imported: 0 };
 
   constructor(options: AddFlowOptions) {
     this.options = options;
@@ -183,9 +197,8 @@ export class AddFlow {
   /** Cmd-N and Adicionar's main part: the file picker, then the import. Ignored while one runs. */
   readonly pickFile = async (): Promise<void> => {
     if (this.working) return;
-    this.working = true;
-    this.opened = false;
-    this.set({ busy: { name: null, waiting: 0 }, failure: null });
+    this.begin({ name: null, waiting: 0 });
+    let name: string | null = null;
     try {
       await this.ensureReadiness();
       const api = this.options.api();
@@ -194,19 +207,21 @@ export class AddFlow {
         requestId: globalThis.crypto.randomUUID()
       });
       if (!file) return; // The picker was canceled: nothing to say.
-      this.set({ busy: { name: file.fileName, waiting: 0 } });
+      name = file.fileName;
+      this.set({ busy: { name, waiting: this.queue.length } });
       const result = await api.ingestion.importFile({
         fileToken: file.fileToken,
         descriptor: descriptorFromFile(file),
         duplicatePolicy: "ignore",
         processingPlan: planOfMode(this.snapshot.mode)
       });
+      if (result) this.run.imported += 1;
       this.opened = this.open(result);
     } catch (error) {
-      this.set({ failure: failureOfError(error, null) });
+      this.run.failures.push(failureOfError(error, name));
     } finally {
-      this.working = false;
-      this.set({ busy: null });
+      // Files dropped while this ran are not lost: they run next, then the run ends.
+      await this.end();
     }
   };
 
@@ -215,16 +230,34 @@ export class AddFlow {
     if (files.length === 0) return;
     this.queue.push(...files);
     if (this.working) {
+      // The run in progress (a pick or an earlier drop) takes the queue when it is done.
       this.set({
         busy: this.snapshot.busy && { ...this.snapshot.busy, waiting: this.queue.length }
       });
       return;
     }
-    this.working = true;
-    this.opened = false;
-    this.set({ failure: null });
+    this.begin({ name: null, waiting: this.queue.length });
     try {
       await this.ensureReadiness();
+    } finally {
+      await this.end();
+    }
+  };
+
+  /** One run at a time: whoever starts it clears the last notice and owns the queue until `end`. */
+  private begin(busy: NonNullable<AddFlowSnapshot["busy"]>): void {
+    this.working = true;
+    this.opened = false;
+    this.run = { failures: [], imported: 0 };
+    this.set({ busy, failure: null });
+  }
+
+  /**
+   * Takes what waits in the queue, one file at a time, then ends the run. The notice appears here,
+   * once, so it counts every failure of the run and its retry finds the flow free.
+   */
+  private async end(): Promise<void> {
+    try {
       while (this.queue.length > 0) {
         const file = this.queue.shift()!;
         this.set({ busy: { name: file.name, waiting: this.queue.length } });
@@ -232,9 +265,13 @@ export class AddFlow {
       }
     } finally {
       this.working = false;
-      this.set({ busy: null });
+      const [first, ...others] = this.run.failures;
+      this.set({
+        busy: null,
+        failure: first ? { ...first, more: others.length, saved: this.run.imported > 0 } : null
+      });
     }
-  };
+  }
 
   private async importOne(file: DroppedFileHandle): Promise<void> {
     const api = this.options.api();
@@ -242,11 +279,11 @@ export class AddFlow {
       // One file per call: the first Source can open while the next file is still being read.
       const [prepared] = await api.ingestion.prepareDroppedFiles([file]);
       if (!prepared) {
-        this.fail({ reason: "generic", name: file.name });
+        this.run.failures.push({ reason: "generic", name: file.name });
         return;
       }
       if (prepared.status === "refused") {
-        this.fail({ reason: prepared.reason, name: prepared.name || file.name });
+        this.run.failures.push({ reason: prepared.reason, name: prepared.name || file.name });
         return;
       }
       const ready: Extract<DroppedFile, { status: "ready" }> = prepared;
@@ -260,15 +297,11 @@ export class AddFlow {
         duplicatePolicy: "ignore",
         processingPlan: planOfMode(this.snapshot.mode)
       });
+      if (result) this.run.imported += 1;
       if (!this.opened) this.opened = this.open(result);
     } catch (error) {
-      this.fail(failureOfError(error, file.name));
+      this.run.failures.push(failureOfError(error, file.name));
     }
-  }
-
-  /** The first failure of a batch is the one shown; the rest are not told over it. */
-  private fail(failure: AddFailure): void {
-    if (!this.snapshot.failure) this.set({ failure });
   }
 
   private open(result: IngestionResult | null): boolean {

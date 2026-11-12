@@ -7,6 +7,7 @@ import { DroppedFilesSchema } from "../../shared/ipc-drop.js";
 import {
   acceptedDropExtensions,
   importMaxBytes,
+  oneConversionAtATime,
   prepareDroppedFiles,
   validateDroppedPath,
   type DropLstat,
@@ -144,6 +145,26 @@ describe("prepareDroppedFiles", () => {
     };
     await prepareDroppedFiles(["/a/1.pdf", "/a/2.pdf", "/a/3.pdf"], { prepare, lstat: stat({}) });
     expect(peak).toBe(1);
+  });
+
+  it("serializes conversions across calls, and a failure does not block the next", async () => {
+    let running = 0;
+    let peak = 0;
+    const slow = (fail: boolean) => async () => {
+      running += 1;
+      peak = Math.max(peak, running);
+      await new Promise((resolve) => setTimeout(resolve, 2));
+      running -= 1;
+      if (fail) throw new Error("boom");
+      return "ok";
+    };
+    const results = await Promise.allSettled([
+      oneConversionAtATime(slow(false)),
+      oneConversionAtATime(slow(true)),
+      oneConversionAtATime(slow(false))
+    ]);
+    expect(peak).toBe(1);
+    expect(results.map((result) => result.status)).toEqual(["fulfilled", "rejected", "fulfilled"]);
   });
 
   it("names a too-large conversion as too large", async () => {

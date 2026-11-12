@@ -22,7 +22,7 @@ import type { AddFlow, AddFlowSnapshot } from "./add-flow";
 import {
   addEntryKeys,
   addMenuEntries,
-  failureKeys,
+  failureKey,
   importModes,
   isImportMode,
   modeCopy,
@@ -40,6 +40,14 @@ export function addMenuState(
   if (snapshot.failure || snapshot.readiness.status === "error") return "error";
   if (snapshot.busy || snapshot.readiness.status === "loading") return "loading";
   return snapshot.readiness.status === "ready" && !snapshot.readiness.writer ? "empty" : "success";
+}
+
+/** The notice's one plain sentence: the first failure of the run, and how many others there were. */
+function failureMessage(t: Translator, failure: NonNullable<AddFlowSnapshot["failure"]>): string {
+  const first = t(failureKey(failure), { values: { name: failure.name ?? "" } });
+  return failure.more > 0
+    ? `${first} ${t("addFlow.failure.more", { values: { count: failure.more } })}`
+    : first;
 }
 
 const entryIcons: Record<AddMenuEntryId, typeof FileText> = {
@@ -201,9 +209,14 @@ export function AddMenu({
       </div>
       <span role="status" aria-live="polite" className="sr-only">
         {busy
-          ? busy.name
-            ? t("addFlow.busy.reading", { values: { name: busy.name } })
-            : t("addFlow.busy.readingFile")
+          ? [
+              busy.name
+                ? t("addFlow.busy.reading", { values: { name: busy.name } })
+                : t("addFlow.busy.readingFile"),
+              busy.waiting > 0 ? t("addFlow.busy.waiting", { values: { count: busy.waiting } }) : ""
+            ]
+              .filter(Boolean)
+              .join(" ")
           : ""}
       </span>
       {busy && busy.waiting > 0 ? (
@@ -224,8 +237,8 @@ export function AddMenu({
           <ErrorState
             t={t}
             className="max-w-none"
-            message={t(failureKeys[failure.reason], { values: { name: failure.name ?? "" } })}
-            kept={t("addFlow.failure.kept")}
+            message={failureMessage(t, failure)}
+            kept={t(failure.saved ? "addFlow.failure.keptSome" : "addFlow.failure.kept")}
             retryLabel={failure.name === null ? t("shell.actions.retry") : t("addFlow.menu.file")}
             onRetry={() => void flow.pickFile()}
           />

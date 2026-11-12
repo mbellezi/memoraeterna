@@ -4198,9 +4198,7 @@
     },
     "titleBar": {
       "add": "Add",
-      "addFile": "Choose file…",
       "addMore": "More ways to add",
-      "addMoreOptions": "More import options…",
       "addSource": "Add source",
       "omniLabel": "Search, open or ask",
       "omniPlaceholder": "Search, open or ask…",
@@ -4426,11 +4424,17 @@
       "empty": "{name} is empty.",
       "generic": "The file could not be added.",
       "kept": "Nothing was saved, and everything else is as it was.",
+      "keptSome": "The files that could be read were added, and everything else is as it was.",
+      "more": "Also not added: {count}.",
+      "noText": "{name} has no text Memora can read.",
+      "noTextNoName": "That file has no text Memora can read.",
       "notAFile": "{name} is not a file.",
       "symlink": "{name} is a shortcut. Drop the original file instead.",
       "tooLarge": "{name} is too large to import.",
+      "tooLargeNoName": "That file is too large to import.",
       "unreadable": "{name} could not be read.",
-      "unsupported": "Memora does not read files like {name} yet."
+      "unsupported": "Memora does not read files like {name} yet.",
+      "unsupportedNoName": "Memora does not read that kind of file yet."
     },
     "importPanel": {
       "errors": {
@@ -4441,6 +4445,12 @@
         "action": "Open the Library",
         "body": "It may have been removed from the Library. Nothing else changed.",
         "title": "This source no longer exists."
+      },
+      "leave": {
+        "description": "You changed this import and did not save it. Keep working to finish it, or discard what you entered and go on.",
+        "discard": "Discard and go on",
+        "keep": "Keep working",
+        "title": "Leave without saving?"
       },
       "title": "Advanced import"
     },
