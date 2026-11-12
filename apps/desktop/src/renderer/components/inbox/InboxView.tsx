@@ -1,13 +1,16 @@
 import { useId, type CSSProperties, type KeyboardEvent, type ReactNode, type Ref } from "react";
-import { CircleCheck, Keyboard } from "lucide-react";
+import { Keyboard } from "lucide-react";
 import type { ChangeSetRisk, InboxKind, InboxObject, InboxVerb } from "@app/domain";
 import type { Translator } from "@app/i18n";
 
+import { cn } from "../../lib/cn";
 import { Button } from "../ui/button";
+import { EmptyState } from "../ui/empty-state";
 import { ErrorState } from "../ui/error-state";
-import { SkeletonRows } from "../ui/skeleton";
 import { InboxDetail, UndoBanner } from "./InboxDetail";
+import { KeyBar, KeySheet } from "./InboxKeys";
 import { InboxList } from "./InboxList";
+import { InboxLoading } from "./InboxLoading";
 import { keyRows } from "./inbox-keys";
 import { kindIcon } from "./inbox-marks";
 import { kindLabels, kindOrder, riskLabels } from "./inbox-model";
@@ -44,6 +47,11 @@ export interface InboxViewProps {
   compact?: boolean;
   /** The item list's width in px (design record §3: 360, or 300 in the compact tier). */
   listWidth?: number;
+  /**
+   * The destination's 40 px key bar at the foot of the screen (design record §7.4), which also
+   * opens the key sheet; without it a "Keyboard shortcuts" button in the header does.
+   */
+  keyBar?: boolean;
 }
 
 const riskFilters: readonly ChangeSetRisk[] = ["high", "medium", "low"];
@@ -58,7 +66,19 @@ export function InboxView({ rootRef, ...props }: InboxViewProps) {
   const helpId = useId();
   const item = selectedItem(state);
   const counts = state.counts;
+  // A kind with nothing waiting is not offered, unless it is the one being shown.
+  const offeredKinds = kindOrder.filter(
+    (kind) => (counts?.byKind[kind] ?? 0) > 0 || state.filter.kind === kind
+  );
   const empty = state.load.status === "ready" && state.items.length === 0;
+  const loading = state.load.status === "loading";
+  const rows = keyRows(item, loading);
+  const filtered = state.filter.kind !== null || state.filter.risk !== null;
+  // Nothing waits and no filter is set, or the read failed: nothing to filter and no key to press.
+  const idle = (empty && !filtered) || state.load.status === "error";
+  // Many kinds make a second row of chips: past five they fold into the "Tipo" select at any width.
+  // While the counts are read the control is the select too (disabled), so it keeps its shape.
+  const kindsAsSelect = offeredKinds.length > 5 || loading;
   if (props.compact)
     return (
       <div
@@ -70,10 +90,7 @@ export function InboxView({ rootRef, ...props }: InboxViewProps) {
         onKeyDown={props.onKey}
       >
         {state.load.status === "loading" ? (
-          <div role="status" aria-busy="true" className="flex flex-col gap-3">
-            <p className="m-0 text-sm text-muted-foreground">{t("inbox.states.loading")}</p>
-            <SkeletonRows rows={6} />
-          </div>
+          <InboxLoading t={t} compact listWidth={props.listWidth ?? 240} />
         ) : state.load.status === "error" ? (
           <ErrorState
             t={t}
@@ -83,11 +100,14 @@ export function InboxView({ rootRef, ...props }: InboxViewProps) {
             onRetry={props.onRetry}
           />
         ) : empty ? (
-          <div role="status" className="flex flex-col gap-1">
-            <p className="m-0 text-sm font-medium text-foreground">
-              {t("inbox.states.empty.title")}
-            </p>
-            <p className="m-0 text-xs text-muted-foreground">{t("inbox.states.empty.body")}</p>
+          <div role="status">
+            <EmptyState
+              variant="compact"
+              headline={t("inbox.states.empty.title")}
+              className="[&>div]:text-xs"
+            >
+              {t("inbox.states.empty.body")}
+            </EmptyState>
           </div>
         ) : (
           <InboxList
@@ -117,100 +137,114 @@ export function InboxView({ rootRef, ...props }: InboxViewProps) {
       onKeyDown={props.onKey}
     >
       <header className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-sm text-secondary-foreground">{t("inbox.description")}</p>
+        <p className="m-0 text-sm text-secondary-foreground">
+          {counts !== null && counts.total > 0
+            ? counts.total === 1
+              ? t("inbox.summaryOne")
+              : t("inbox.summary", {
+                  values: { count: new Intl.NumberFormat(t.locale).format(counts.total) }
+                })
+            : t("inbox.description")}
+        </p>
         {/* The help floats over the screen, so opening it never pushes the list out of view. */}
-        <div className="relative">
-          <Button
-            type="button"
-            variant="ghost"
-            aria-expanded={state.helpOpen}
-            aria-controls={helpId}
-            aria-keyshortcuts="?"
-            onClick={props.onToggleHelp}
-          >
-            <Keyboard aria-hidden="true" />
-            {t("inbox.keys.toggle")}
-          </Button>
-          {state.helpOpen ? (
-            <section
-              id={helpId}
-              aria-label={t("inbox.keys.title")}
-              className="absolute right-0 top-full z-20 mt-1 flex w-80 max-w-[calc(100vw-3rem)] flex-col gap-2 rounded-lg border border-border-strong bg-surface p-3 shadow-lg"
+        {props.keyBar ? null : (
+          <div className="relative">
+            <Button
+              type="button"
+              variant="ghost"
+              aria-expanded={state.helpOpen}
+              aria-controls={helpId}
+              aria-keyshortcuts="?"
+              onClick={props.onToggleHelp}
             >
-              <h2 className="text-xs font-semibold text-secondary-foreground">
-                {t("inbox.keys.title")}
-              </h2>
-              <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-xs text-foreground">
-                {keyRows(item).map((row) => (
-                  <div key={row.label} className="contents">
-                    <dt className="flex gap-1">
-                      {row.keys.map((key) => (
-                        <kbd
-                          key={key}
-                          className="rounded-sm border border-border-strong bg-soft px-1.5 font-sans font-medium"
-                        >
-                          {key}
-                        </kbd>
-                      ))}
-                    </dt>
-                    <dd>{t(row.label)}</dd>
-                  </div>
-                ))}
-              </dl>
-              <p className="text-xs text-muted-foreground">{t("inbox.keys.note")}</p>
-              <p className="text-xs text-muted-foreground">{t("inbox.keys.money")}</p>
-            </section>
-          ) : null}
-        </div>
+              <Keyboard aria-hidden="true" />
+              {t("inbox.keys.toggle")}
+            </Button>
+            {state.helpOpen ? (
+              <KeySheet t={t} id={helpId} rows={rows} className="right-0 top-full mt-1" />
+            ) : null}
+          </div>
+        )}
       </header>
 
-      <div
-        role="group"
-        aria-label={t("inbox.filters.label")}
-        className="flex flex-wrap items-center gap-2"
-      >
-        <FilterChip
-          pressed={state.filter.kind === null}
-          label={t("inbox.filters.all")}
-          count={counts?.total ?? null}
-          t={t}
-          onClick={() => props.onFilter({ kind: null })}
-        />
-        {kindOrder.map((kind) => {
-          const count = counts?.byKind[kind] ?? 0;
-          // A kind with nothing waiting is not offered, unless it is the one being shown.
-          if (count === 0 && state.filter.kind !== kind) return null;
-          const Icon = kindIcon[kind];
-          return (
-            <FilterChip
-              key={kind}
-              pressed={state.filter.kind === kind}
-              label={t(kindLabels[kind])}
-              count={count}
-              icon={<Icon aria-hidden="true" />}
-              t={t}
-              onClick={() => props.onFilter({ kind })}
-            />
-          );
-        })}
-        <label className="ml-auto flex items-center gap-2 text-xs text-secondary-foreground">
-          {t("inbox.filters.risk.label")}
-          <select
-            value={state.filter.risk ?? ""}
-            onChange={(event) =>
-              props.onFilter({ risk: (event.target.value || null) as ChangeSetRisk | null })
-            }
-            className="min-h-[34px] rounded-lg border border-border-strong bg-surface px-2 text-xs text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+      {idle ? null : (
+        <div className="flex flex-wrap items-center gap-2">
+          {/* The kinds are chips from 1180 px; below it one "Tipo" select holds them, so the bar is one row. */}
+          <div
+            role="group"
+            aria-label={t("inbox.filters.label")}
+            className={cn(
+              "flex min-w-0 flex-wrap items-center gap-2",
+              kindsAsSelect ? "hidden" : "max-[1179px]:hidden"
+            )}
           >
-            <option value="">{t("inbox.filters.risk.any")}</option>
-            {riskFilters.map((risk) => (
-              <option key={risk} value={risk}>
-                {t(riskLabels[risk])}
+            <FilterChip
+              pressed={state.filter.kind === null}
+              label={t("inbox.filters.all")}
+              count={counts?.total ?? null}
+              t={t}
+              onClick={() => props.onFilter({ kind: null })}
+            />
+            {offeredKinds.map((kind) => {
+              const Icon = kindIcon[kind];
+              return (
+                <FilterChip
+                  key={kind}
+                  pressed={state.filter.kind === kind}
+                  label={t(kindLabels[kind])}
+                  count={counts?.byKind[kind] ?? 0}
+                  icon={<Icon aria-hidden="true" />}
+                  t={t}
+                  onClick={() => props.onFilter({ kind })}
+                />
+              );
+            })}
+          </div>
+          <label
+            className={cn(
+              "flex items-center gap-2 text-xs text-secondary-foreground",
+              !kindsAsSelect && "min-[1180px]:hidden"
+            )}
+          >
+            {t("inbox.filters.kind")}
+            <select
+              value={state.filter.kind ?? ""}
+              disabled={loading}
+              onChange={(event) =>
+                props.onFilter({ kind: (event.target.value || null) as InboxKind | null })
+              }
+              className={selectClass}
+            >
+              <option value="">
+                {optionText(t("inbox.filters.all"), counts?.total ?? null, t.locale)}
               </option>
-            ))}
-          </select>
-        </label>
-      </div>
+              {offeredKinds.map((kind) => (
+                <option key={kind} value={kind}>
+                  {optionText(t(kindLabels[kind]), counts?.byKind[kind] ?? 0, t.locale)}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="ml-auto flex items-center gap-2 text-xs text-secondary-foreground">
+            {t("inbox.filters.risk.label")}
+            <select
+              value={state.filter.risk ?? ""}
+              disabled={loading}
+              onChange={(event) =>
+                props.onFilter({ risk: (event.target.value || null) as ChangeSetRisk | null })
+              }
+              className={selectClass}
+            >
+              <option value="">{t("inbox.filters.risk.any")}</option>
+              {riskFilters.map((risk) => (
+                <option key={risk} value={risk}>
+                  {t(riskLabels[risk])}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+      )}
 
       {state.undo ? (
         <UndoBanner t={t} undo={state.undo} onUndo={props.onUndo} onHide={props.onHideUndo} />
@@ -226,11 +260,8 @@ export function InboxView({ rootRef, ...props }: InboxViewProps) {
         {state.announcement ? t(state.announcement, { values: state.announcementParams }) : ""}
       </p>
 
-      {state.load.status === "loading" ? (
-        <div role="status" aria-busy="true" className="flex flex-col gap-3">
-          <p className="m-0 text-sm text-muted-foreground">{t("inbox.states.loading")}</p>
-          <SkeletonRows rows={6} />
-        </div>
+      {loading ? (
+        <InboxLoading t={t} compact={false} listWidth={props.listWidth ?? 320} />
       ) : state.load.status === "error" ? (
         <ErrorState
           t={t}
@@ -240,19 +271,13 @@ export function InboxView({ rootRef, ...props }: InboxViewProps) {
           onRetry={props.onRetry}
         />
       ) : empty ? (
-        <div
-          role="status"
-          className="flex flex-col items-center justify-center gap-1 rounded-lg border border-border bg-surface p-8 text-center"
-        >
-          <CircleCheck className="size-6 text-success" aria-hidden="true" />
-          <p className="text-sm font-medium text-foreground">
-            {state.filter.kind || state.filter.risk
-              ? t("inbox.states.emptyFiltered")
-              : t("inbox.states.empty.title")}
-          </p>
-          {state.filter.kind || state.filter.risk ? null : (
-            <p className="max-w-md text-xs text-muted-foreground">{t("inbox.states.empty.body")}</p>
-          )}
+        <div role="status" className="self-start">
+          <EmptyState
+            className="max-w-xl"
+            headline={filtered ? t("inbox.states.emptyFiltered") : t("inbox.states.empty.title")}
+          >
+            {filtered ? null : t("inbox.states.empty.body")}
+          </EmptyState>
         </div>
       ) : (
         <div
@@ -287,9 +312,30 @@ export function InboxView({ rootRef, ...props }: InboxViewProps) {
           />
         </div>
       )}
+      {props.keyBar && !idle ? (
+        <div className="relative -mx-6 -mb-5 mt-auto max-[1179px]:-mx-4">
+          {state.helpOpen ? (
+            <KeySheet t={t} id={helpId} rows={rows} className="bottom-full right-6 mb-1" />
+          ) : null}
+          <KeyBar
+            t={t}
+            rows={rows}
+            helpOpen={state.helpOpen}
+            helpId={helpId}
+            onToggleHelp={props.onToggleHelp}
+          />
+        </div>
+      ) : null}
     </div>
   );
 }
+
+const selectClass =
+  "min-h-[34px] rounded-lg border border-border-strong bg-surface px-2 text-xs text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:opacity-60";
+
+/** "Conexões sugeridas (2)": a select option cannot hold a styled count. */
+const optionText = (label: string, count: number | null, locale: string): string =>
+  count === null ? label : `${label} (${new Intl.NumberFormat(locale).format(count)})`;
 
 function FilterChip({
   t,

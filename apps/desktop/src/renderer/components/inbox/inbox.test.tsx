@@ -62,7 +62,10 @@ describe("the Inbox screen", () => {
   it("shows a loading state while the first page is read", () => {
     const html = view(initialInboxState());
     expect(html).toContain('role="status"');
-    expect(html).toContain("Loading your Inbox...");
+    expect(html).toContain('aria-busy="true"');
+    // No sentence is drawn: the bars keep the layout, and the status is for screen readers.
+    expect(html).not.toContain("Loading your Inbox...");
+    expect(html).toContain(">Loading<");
     expect(html).not.toContain('role="listbox"');
   });
 
@@ -264,7 +267,7 @@ describe("the Inbox screen", () => {
     expect(html).toContain('aria-current="true"');
     expect(html).not.toContain("<h2");
     expect(html).not.toContain('aria-label="Filters"');
-    expect(view(initialInboxState(), { compact: true })).toContain("Loading your Inbox...");
+    expect(view(initialInboxState(), { compact: true })).toContain('aria-busy="true"');
     expect(view(stateOf([]), { compact: true })).toContain("Nothing needs you");
   });
 
@@ -279,7 +282,8 @@ describe("the Inbox screen", () => {
     expect(view(initialInboxState(), { compact: true })).toContain('aria-busy="true"');
     const empty = view(stateOf([]), { compact: true });
     expect(empty).toContain("Nothing needs you");
-    expect(empty).toContain("text-muted-foreground");
+    // The empty form is the dashed outline of the shared primitive, as in the full form.
+    expect(empty).toContain("border-dashed");
   });
 
   it("gives the item list the width of its tier", () => {
@@ -310,7 +314,12 @@ describe("the Inbox screen", () => {
 
   it("shows a suggestion by both notes and its confidence, offering keep and remove and no dismiss", () => {
     const html = view(stateOf([item("suggestion")]));
-    expect(html).toContain("Suggested connection · medium confidence (64%)");
+    // The headline names what is at stake; the risk line of the detail carries kind and confidence.
+    expect(html).toContain("Keep this connection?");
+    expect(html).toMatch(
+      /Suggested connection<\/span><span[^>]*>medium confidence \(64%\)<\/span>/u
+    );
+    expect(html).not.toContain("Suggested connection · ");
     expect(html).toContain("“Daylight sets the body clock”");
     expect(html).toContain("“Morning light shifts sleep timing”");
     expect(html).toContain("medium confidence (64%)");
@@ -390,4 +399,131 @@ describe("the Inbox screen", () => {
       }
     });
   }
+});
+
+describe("the Inbox destination's key bar, risk groups and verdicts (T142 UX round 1)", () => {
+  const mixed = [
+    item("review"),
+    item("quarantined", { id: "refresh|topic:2" }),
+    item("suggestion"),
+    item("withdrawn"),
+    item("duplicate")
+  ];
+
+  it("draws the 40 px key bar from the keys the selected item offers, and the note beside it", () => {
+    const html = view(stateOf(mixed), { keyBar: true });
+    expect(html).toContain("<footer");
+    expect(html).toContain("h-10");
+    for (const word of ["navigate", "open", "accept", "dismiss", "undo", "shortcuts"])
+      expect(html).toContain(`>${word}<`);
+    // Backspace and e are the sheet's and the bar's only where they are offered: the review item
+    // offers no remove, and nothing offers the names.
+    expect(html).not.toContain(">remove<");
+    expect(html).not.toContain(">edit<");
+    expect(html).toContain("Single-key shortcuts do not work inside text fields.");
+    // The note drops below 1180 px.
+    expect(html).toContain("max-[1179px]:hidden");
+  });
+
+  it("lists remove, not dismiss, in the bar when a connection is selected", () => {
+    const html = view(stateOf(mixed, { type: "select", key: keyOf(mixed[2]!) } as InboxEvent), {
+      keyBar: true
+    });
+    expect(html).toContain(">remove<");
+    expect(html).not.toContain(">dismiss<");
+  });
+
+  it("has no bar in the previous-panel form or without the option, where a button opens the sheet", () => {
+    expect(view(stateOf(mixed), { keyBar: true, compact: true })).not.toContain("<footer");
+    const plain = view(stateOf(mixed));
+    expect(plain).not.toContain("<footer");
+    expect(plain).toContain("Keyboard shortcuts");
+  });
+
+  it("opens the sheet above the bar, built from the same keys", () => {
+    const html = view(stateOf(mixed, { type: "help", open: true } as InboxEvent), { keyBar: true });
+    expect(html).toContain('aria-expanded="true"');
+    expect(html).toContain("bottom-full");
+    expect(html).toContain("Show or hide this help");
+  });
+
+  it("heads each run of risk once and names the risk to a screen reader on every option", () => {
+    const html = view(stateOf(mixed));
+    const headers = html.match(/role="presentation"/gu) ?? [];
+    const risks = new Set(mixed.map((entry) => entry.risk));
+    expect(headers).toHaveLength(risks.size);
+    expect(html.match(/class="sr-only">(High|Medium|Low) risk</gu)).toHaveLength(mixed.length);
+  });
+
+  it("draws the list's keyboard ring inside the selected row, so no parent clips it", () => {
+    const html = view(stateOf(mixed));
+    expect(html).toContain("group-focus-visible:-outline-offset-2");
+    expect(html).not.toMatch(/<ul[^>]*focus-visible:outline-offset-2/u);
+  });
+
+  it("keeps the verdict on a connection unfilled, with a line saying what each verb stores", () => {
+    const html = view(stateOf([item("suggestion")]));
+    expect(html).toContain("The connection stays and counts as your decision.");
+    expect(html).toContain("The connection goes, and the Gardener does not suggest it again.");
+    // Neither verb is the filled (primary) button: a verdict has no safe default.
+    expect(html).not.toMatch(
+      /<button[^>]*border-accent bg-accent text-accent-foreground[^>]*>Keep/u
+    );
+    expect(html).toContain("aria-describedby");
+    // A withdrawn connection comes back when it is kept.
+    expect(view(stateOf([item("withdrawn")]))).toContain(
+      "The connection comes back and counts as your decision."
+    );
+    // A structure proposal keeps its filled Apply and carries no such lines.
+    const review = view(stateOf([item("review")]));
+    expect(review).not.toContain("counts as your decision");
+    expect(review).toMatch(/<button[^>]*border-accent bg-accent[^>]*>Apply/u);
+  });
+
+  it("states the count in the subtitle and folds the kinds into one select below 1180 px", () => {
+    const html = view(stateOf(mixed));
+    expect(html).toContain("5 decisions · riskiest first");
+    expect(html).toContain("min-[1180px]:hidden");
+    expect(html).toContain("max-[1179px]:hidden");
+    expect(view(stateOf([item("review")]))).toContain("1 decision waits for you");
+  });
+
+  it("folds the kinds into the select at any width when too many would fill a second row of chips", () => {
+    const html = view(stateOf(everyKind));
+    expect(html).not.toContain("min-[1180px]:hidden");
+    expect(html).toContain("Type");
+  });
+
+  it("offers neither filters nor keys when the read failed or nothing waits", () => {
+    const failed = view(reduceInbox(initialInboxState(), { type: "loadFailed" }), { keyBar: true });
+    expect(failed).not.toContain("<footer");
+    expect(failed).not.toContain("Any risk");
+    expect(view(stateOf([]), { keyBar: true })).not.toContain("<footer");
+  });
+
+  it("keeps the layout while loading: a list column and a detail sheet, no sentence", () => {
+    const html = view(initialInboxState(), { listWidth: 300 });
+    expect(html).toContain("--inbox-list-w:300px");
+    expect(html).toContain("grid-cols-[var(--inbox-list-w)_minmax(0,1fr)]");
+  });
+
+  it("keeps the type control a select and the key bar to the always-valid keys while loading", () => {
+    const html = view(initialInboxState(), { keyBar: true });
+    // The same control as once the items arrive, at every width, disabled until then.
+    expect(html).toContain("gap-2 hidden");
+    expect(html).toMatch(
+      /<select[^>]*disabled=""[^>]*><option value="" selected="">All<\/option>/u
+    );
+    expect(html).not.toContain("text-secondary-foreground min-[1180px]:hidden");
+    for (const word of ["dismiss", "remove", "accept", "retry"])
+      expect(html).not.toContain(`>${word}<`);
+    expect(html).toContain("undo");
+  });
+
+  it("teaches in the empty state with a dashed outline and the Gardener's promise", () => {
+    const html = view(stateOf([]));
+    expect(html).toContain("border-dashed");
+    expect(html).toContain("Nothing needs you");
+    expect(html).toContain("The Gardener asks here when a change is risky.");
+  });
 });

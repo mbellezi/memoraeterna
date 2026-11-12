@@ -15,8 +15,11 @@ import { branchNotices, groupLinks, outsideTopics } from "./table-model";
  * what the read left out, the lines between topic groups and the topics outside the branch.
  */
 
-/** Chooses another branch: what the lens does when the person picks one in its menu. */
-export type BranchChoose = (scope: BranchScope) => void;
+/**
+ * Chooses another branch: what the lens does when the person picks one. It gets the scope and the
+ * topic's name, so the branch chip names it at once.
+ */
+export type BranchChoose = (scope: BranchScope, title: string) => void;
 
 export type RelationsDisplay = "both" | "table";
 
@@ -184,7 +187,7 @@ export function OutsideTopics({
             <button
               type="button"
               title={t("mapRelationsTable.outside.action", { values: { title: topic.title } })}
-              onClick={() => onChoose({ kind: "topic", id: topic.topicId })}
+              onClick={() => onChoose({ kind: "topic", id: topic.topicId }, topic.title)}
               className={outsideTopicClass}
             >
               <ObjectKindGlyph kind="topic" className="shrink-0 self-center text-object-topic" />

@@ -1,10 +1,15 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { normalizeMemoraLink } from "@app/domain";
 
 import {
   appendObsidianRelations,
   collisionFileName,
   onlyLinksThisNote,
   parseManagedMarkdown,
+  projectionLink,
+  projectionObjectAddress,
+  projectionRelationOpenLine,
   renderObsidianProjection,
   stripObsidianRelations
 } from "./obsidian-projection.js";
@@ -100,5 +105,84 @@ describe("Obsidian projection", () => {
 
     expect(body).toContain("## Relações entre notas");
     expect(stripObsidianRelations(body)).toBe("# Nota principal\n\nCorpo");
+  });
+});
+
+describe("the links the projections write open objects by their canonical address (D10)", () => {
+  const relationId = "5a2b6c1d-7e8f-4a90-8b12-c3d4e5f60718";
+  const topicId = "0d7f2c1e-5a43-4c58-9a0b-3a6f0a6a1b11";
+
+  it("writes a source link in the canonical form, not memora://open/source", () => {
+    const body = appendObsidianRelations("# Note", "en", [
+      {
+        relationType: "supports",
+        title: "Other source",
+        target: "Memora/Atomic/other",
+        appSourceId: sourceId
+      }
+    ]);
+    expect(body).toContain(`- [Other source](memora://source/${sourceId})`);
+    expect(body).not.toContain("memora://open");
+  });
+
+  it("writes a source relation as the relation anchor of its source", () => {
+    expect(projectionObjectAddress("source", sourceId, { relation: relationId })).toBe(
+      `memora://source/${sourceId}#relation=${relationId}`
+    );
+    expect(projectionObjectAddress("source", "not-a-uuid")).toBeNull();
+  });
+
+  it("ends a source-relation page with the canonical relation link, never the legacy form", () => {
+    expect(projectionRelationOpenLine("Open in Memora", sourceId, relationId)).toBe(
+      `[Open in Memora](memora://source/${sourceId}#relation=${relationId})`
+    );
+    expect(projectionRelationOpenLine("Open in Memora", "not-a-uuid", relationId)).toBe(
+      "Open in Memora"
+    );
+    // The wiki projection builds that page line through the helper: no writer holds a legacy link.
+    for (const file of ["obsidian-wiki-projection.ts", "obsidian-topic-projection.ts"]) {
+      const source = readFileSync(new URL(`./${file}`, import.meta.url), "utf8");
+      expect(source, file).not.toContain("memora://open/source");
+      expect(source, file).not.toContain("memora://open/topic");
+    }
+    expect(
+      readFileSync(new URL("./obsidian-wiki-projection.ts", import.meta.url), "utf8")
+    ).toContain("projectionRelationOpenLine(");
+  });
+
+  it("links a page with no file to its object, and keeps a wikilink where the file exists", () => {
+    expect(projectionLink(undefined, "Memory", topicId, "topic")).toBe(
+      `[Memory](memora://topic/${topicId})`
+    );
+    expect(projectionLink(undefined, "A source", sourceId)).toBe(
+      `[A source](memora://source/${sourceId})`
+    );
+    expect(projectionLink(undefined, "A note", sourceId, "note")).toBe(
+      `[A note](memora://note/${sourceId})`
+    );
+    expect(projectionLink("Memora/Wiki/Sources/a.md", "A source", sourceId)).toBe(
+      "[[Memora/Wiki/Sources/a|A source]]"
+    );
+  });
+
+  it("keeps the retired wiki's link for an index page that has no object", () => {
+    expect(projectionLink(undefined, "Catalog", sourceId, "wiki")).toBe(
+      `[Catalog](memora://open/wiki/${sourceId})`
+    );
+  });
+
+  it("writes only addresses that the one reader accepts, canonical for objects", () => {
+    const written = [
+      projectionLink(undefined, "A", sourceId),
+      projectionLink(undefined, "B", topicId, "topic"),
+      projectionLink(undefined, "C", sourceId, "note"),
+      `[D](${projectionObjectAddress("source", sourceId, { relation: relationId })})`
+    ];
+    for (const link of written) {
+      const address = /\((memora:\/\/[^)]+)\)/u.exec(link)?.[1] ?? "";
+      const normalized = normalizeMemoraLink(address);
+      expect(normalized.kind, link).toBe("object");
+      expect("legacy" in normalized, link).toBe(false);
+    }
   });
 });

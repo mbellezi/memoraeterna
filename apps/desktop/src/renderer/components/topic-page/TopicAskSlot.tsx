@@ -1,88 +1,67 @@
-import { useId, useState } from "react";
+import { useId } from "react";
 import { MessageCircle } from "lucide-react";
 import type { Translator } from "@app/i18n";
 
-import { ConsultationDialog } from "../ConsultationDialog";
+import { useObjectLinkContext, type ObjectOpen } from "../../workspace/ObjectLink";
+import { formatView } from "../../workspace/route";
 import { Button } from "../ui/button";
 import type { TopicPageActions } from "./topic-page-model";
 
 export interface TopicAskSlotProps {
   t: Translator;
   topic: { id: string; title: string };
-  /** False while the host view is hidden: the slot loads nothing and holds nothing open. */
-  active: boolean;
-  actions: TopicPageActions;
+  /**
+   * What the side column still passes (the slot used to keep a dialog open and open the cited
+   * source through the page's actions). The Ask panel does both now, so the slot reads neither.
+   */
+  active?: boolean;
+  actions?: TopicPageActions;
+}
+
+/** The address of an Ask about the topic and its subtopics: the Ask panel with the topic as its scope. */
+export function askAboutTopicAddress(topicId: string): string {
+  return formatView({ view: "ask", scope: { kind: "topic", id: topicId } });
+}
+
+export interface TopicAskViewProps {
+  t: Translator;
+  topic: { id: string; title: string };
+  /** Opens the Ask panel beside the page; absent where nothing can open a panel. */
+  onOpen: ObjectOpen | undefined;
 }
 
 /**
- * Where a cited passage of an answer leads from the Topic page: the note when the citation names
- * one, otherwise its source. The page opens objects by ID through the host, so the exact passage
- * anchor is not carried (the source opens at its place in the Library).
+ * "Ask about this topic": a button in the side column that opens the Ask panel beside the page, with
+ * the topic and its subtopics as its scope (the panel writes the scope, takes the words and streams
+ * the answer with citations that carry their passage and span). The slot loads nothing and holds
+ * nothing open: the answer lives in its own panel and its own stored Question. Where the page is not
+ * inside a panel (nothing can open one), the slot is not drawn rather than drawn dead.
  */
-export function openCitedSource(
-  actions: Pick<TopicPageActions, "openNote" | "openSource">
-): (sourceId: string, noteId?: string) => void {
-  return (sourceId, noteId) => (noteId ? actions.openNote(noteId) : actions.openSource(sourceId));
-}
-
-export interface TopicAskViewProps extends TopicAskSlotProps {
-  /** Whether the Ask dialog for this topic is showing. */
-  open: boolean;
-  onOpen: () => void;
-  onClose: () => void;
-}
-
-/**
- * "Ask about this topic": a button in the side column that opens Ask limited to the topic and its
- * subtopics. The dialog is the library's Ask with the topic as its scope, so it covers its own
- * loading, empty, error and answer states; this view loads nothing until the person opens it.
- */
-export function TopicAskView({
-  t,
-  topic,
-  active,
-  actions,
-  open,
-  onOpen,
-  onClose
-}: TopicAskViewProps) {
+export function TopicAskView({ t, topic, onOpen }: TopicAskViewProps) {
   const headingId = useId();
+  if (!onOpen) return null;
   return (
     <section aria-labelledby={headingId} className="flex flex-col gap-2">
       <h2 id={headingId} className="text-sm font-semibold text-secondary-foreground">
         {t("topics.page.ask.heading")}
       </h2>
       <p className="text-sm text-secondary-foreground">{t("topics.page.ask.hint")}</p>
-      <Button type="button" aria-haspopup="dialog" className="self-start" onClick={onOpen}>
+      <Button
+        type="button"
+        className="self-start"
+        onClick={(event) =>
+          onOpen(askAboutTopicAddress(topic.id), event.altKey ? { replace: true } : undefined)
+        }
+      >
         <MessageCircle aria-hidden="true" />
         {t("topics.page.ask.button")}
       </Button>
-      {open ? (
-        <ConsultationDialog
-          t={t}
-          active={active}
-          initialQuestion=""
-          topic={topic}
-          onClose={onClose}
-          onOpenSource={openCitedSource(actions)}
-        />
-      ) : null}
     </section>
   );
 }
 
-/**
- * The slot at the end of the side column. The open dialog belongs to the topic it was opened on:
- * another topic on the same page closes it (its request is canceled as it unmounts).
- */
+/** The slot at the end of the side column: the page's panel opens the Ask beside it. */
 export function TopicAskSlot(props: TopicAskSlotProps) {
-  const [openFor, setOpenFor] = useState<string | null>(null);
-  return (
-    <TopicAskView
-      {...props}
-      open={openFor === props.topic.id}
-      onOpen={() => setOpenFor(props.topic.id)}
-      onClose={() => setOpenFor(null)}
-    />
-  );
+  const context = useObjectLinkContext();
+  return <TopicAskView t={props.t} topic={props.topic} onOpen={context?.onOpen} />;
 }

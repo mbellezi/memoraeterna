@@ -164,9 +164,23 @@ export const surfaces: readonly SurfaceEntry[] = [
   panel("topic", true),
   panel("entity", true),
   panel("question", true),
+  // The Question page while its Ask writes the answer (the stage, the paragraphs as they arrive).
+  entry(
+    "question-live",
+    "panel",
+    "workspace/panels/ask/QuestionPageView.tsx",
+    "workspace/panels/question-live.screen.tsx"
+  ),
   panel("ask"),
   panel("search"),
   panel("import"),
+  // The advanced import on a stored source, scrolled to the end of its form (the footer on the edge).
+  entry(
+    "import-edit",
+    "panel",
+    "workspace/panels/import-scroller.tsx",
+    "workspace/panels/import-edit.screen.tsx"
+  ),
 
   // The context panel and its six tabs (D31).
   entry(

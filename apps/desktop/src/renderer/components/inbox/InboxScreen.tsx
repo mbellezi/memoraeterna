@@ -37,6 +37,8 @@ export interface InboxScreenProps {
   compact?: boolean;
   /** The item list's width in px. */
   listWidth?: number;
+  /** Shows the destination's key bar at the foot (design record §7.4). */
+  keyBar?: boolean;
 }
 
 /** The state the Inbox is in, as the frame names it: nothing waiting is empty, not an error. */
@@ -61,7 +63,8 @@ export function InboxScreen({
   onOpenAddress,
   onState,
   compact = false,
-  listWidth
+  listWidth,
+  keyBar = false
 }: InboxScreenProps) {
   const [controller] = useState(() => new InboxController({ api: () => window.app }));
   const state = useSyncExternalStore(
@@ -211,6 +214,7 @@ export function InboxScreen({
       onOpenSettings={onOpenConnections}
       compact={compact}
       {...(listWidth === undefined ? {} : { listWidth })}
+      keyBar={keyBar}
     />
   );
 }

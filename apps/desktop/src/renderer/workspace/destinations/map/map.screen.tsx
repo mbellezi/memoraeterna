@@ -1,6 +1,7 @@
 import { screenTranslator } from "../../screen-locale";
 import { formatView } from "../../route";
 import type { ScreenModule } from "../../surfaces";
+import { AddSourceContext } from "../../workspace-bridge";
 import { MapRoot } from "./MapRoot";
 import {
   sample,
@@ -68,16 +69,18 @@ export const fixtures: ScreenModule["fixtures"] = {
 
 export function render() {
   return (
-    <div className="h-full min-h-[640px] bg-background">
-      <MapRoot
-        t={t}
-        address={address}
-        mode="full"
-        active
-        onState={noop}
-        onPlace={noop}
-        onOpen={noop}
-      />
-    </div>
+    <AddSourceContext.Provider value={noop}>
+      <div className="h-full min-h-[640px] bg-background">
+        <MapRoot
+          t={t}
+          address={address}
+          mode="full"
+          active
+          onState={noop}
+          onPlace={noop}
+          onOpen={noop}
+        />
+      </div>
+    </AddSourceContext.Provider>
   );
 }

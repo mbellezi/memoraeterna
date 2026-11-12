@@ -11,8 +11,9 @@ import { Kbd } from "../../../../components/ui/kbd";
 import { LoadingState, Skeleton, SkeletonRows } from "../../../../components/ui/skeleton";
 import { ToggleGroup, ToggleGroupItem } from "../../../../components/ui/toggle-group";
 import { useViewportWidth } from "../../../use-workspace";
+import { useAddSource } from "../../../workspace-bridge";
 import { columnWidth } from "../../columns";
-import { buildIcicle, cellTrail, topicCellKey } from "./icicle-layout";
+import { buildIcicle, topicCellKey } from "./icicle-layout";
 import { drawnTrail } from "./map-icicle";
 import { MapChart } from "./MapChart";
 import { MapTable } from "./MapTable";
@@ -91,13 +92,15 @@ export function ShapeView(props: ShapeViewProps) {
       onKeyDown={(event) => onEscape(event, props)}
     >
       <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+        {/* The header's words are the same while the tree is read: only its numbers arrive. */}
         <p className="m-0 text-sm text-secondary-foreground">
           {ready && items > 0 ? mapDescription(t, items, topics) : t("map.shape.descriptionPlain")}
         </p>
-        {ready && items > 0 ? (
+        {(ready && items > 0) || load.status === "loading" ? (
           <ToggleGroup
             label={t("map.display.label")}
             value={props.display}
+            disabled={load.status === "loading"}
             onValueChange={props.onDisplay}
           >
             <ToggleGroupItem value="chart">
@@ -179,12 +182,19 @@ function CompactShape(props: ShapeViewProps & { shape: TopicShape | null }) {
   );
 }
 
-/** The tree is still being read: bars in the shape of the chart and its inspector. */
+/** The weights of the blocks in the three columns of the loading chart: Áreas, Tópicos, Subtópicos. */
+const loadingColumns = [
+  { share: "25%", blocks: [6, 4] },
+  { share: "37.5%", blocks: [3, 2.5, 2, 1.5, 1, 4, 1.5, 1.5] },
+  { share: "37.5%", blocks: [2, 2, 1, 5, 4, 1] }
+] as const;
+
+/** The tree is still being read: the three columns of the chart and the inspector, as bars. */
 function Loading({ t, compact = false }: { t: Translator; compact?: boolean }) {
   if (compact)
     return (
       <LoadingState t={t}>
-        <SkeletonRows rows={8} />
+        <SkeletonRows rows={12} className="-mx-2" />
       </LoadingState>
     );
   return (
@@ -192,7 +202,32 @@ function Loading({ t, compact = false }: { t: Translator; compact?: boolean }) {
       t={t}
       className="@3xl:grid-cols-[minmax(0,1fr)_var(--map-inspector-w)] @3xl:gap-6"
     >
-      <Skeleton className="h-[440px] w-full rounded-lg" />
+      <div className="grid min-w-0 gap-1">
+        <div className="flex">
+          {loadingColumns.map((column, index) => (
+            <div key={index} className="min-w-0 px-2 py-1" style={{ width: column.share }}>
+              <Skeleton className="h-3 w-16" />
+            </div>
+          ))}
+        </div>
+        <div className="flex h-[440px] min-w-0 gap-0.5">
+          {loadingColumns.map((column, index) => (
+            <div
+              key={index}
+              className="flex min-w-0 flex-col gap-0.5"
+              style={{ width: column.share }}
+            >
+              {column.blocks.map((weight, block) => (
+                <Skeleton
+                  key={block}
+                  className="min-h-3 w-full rounded-md"
+                  style={{ flex: `${weight} 1 0` }}
+                />
+              ))}
+            </div>
+          ))}
+        </div>
+      </div>
       <div className="grid content-start gap-3">
         <Skeleton className="h-6 w-2/3" />
         <Skeleton className="h-4 w-full" />
@@ -203,9 +238,24 @@ function Loading({ t, compact = false }: { t: Translator; compact?: boolean }) {
   );
 }
 
+/** No topics yet: what the Map is for and the one thing to do, add a source (the app's own Add). */
 function MapEmpty({ t }: { t: Translator }) {
+  const addSource = useAddSource();
   return (
-    <EmptyState headline={t("map.states.empty")} className="max-w-xl">
+    <EmptyState
+      headline={t("map.states.empty")}
+      className="max-w-xl"
+      action={
+        <Button
+          type="button"
+          variant="primary"
+          disabled={!addSource}
+          onClick={addSource ?? undefined}
+        >
+          {t("map.states.emptyAdd")}
+        </Button>
+      }
+    >
       {t("map.states.emptyBody")}
     </EmptyState>
   );
@@ -265,13 +315,11 @@ function ShapeReady(props: ShapeViewProps & { shape: TopicShape }) {
     () =>
       originKey && layout.byKey.has(originKey)
         ? {
-            chart: new Set(drawnTrail(layout, originKey)),
-            // The root holds everything: marking it says nothing.
-            table: new Set(
-              cellTrail(layout, originKey)
-                .map((cell) => cell.key)
-                .filter((key) => key !== layout.rootKey)
-            )
+            // Only the deepest block the chart draws that holds the origin: the origin itself when it
+            // is drawn, else its nearest ancestor. A chain of marks would say "here" four times.
+            chart: new Set(drawnTrail(layout, originKey).slice(-1)),
+            // The table lists the origin itself, and the root holds everything: it is not marked.
+            table: new Set(originKey === layout.rootKey ? [] : [originKey])
           }
         : { chart: new Set<string>(), table: new Set<string>() },
     [layout, originKey]

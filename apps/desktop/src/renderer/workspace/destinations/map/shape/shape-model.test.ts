@@ -180,7 +180,7 @@ describe("the table alternative", () => {
           new Map([[shapeId(sample.forgetting), 1]])
         )!
       )
-    ).toContain("+1 note in 7 days");
+    ).toContain("+1 note in\u00a07\u00a0days");
   });
 
   it("opens the topic of a row beside the previous-panel table, and nothing for the unsorted row", () => {
@@ -357,10 +357,16 @@ describe("warnings", () => {
 
 describe("what changed today", () => {
   it("reads a change by its origin, with the numbers it carries", () => {
-    expect(changeText(en, sampleChange())).toBe("The structure was rebalanced. Items moved: 8.");
+    expect(changeText(en, sampleChange())).toBe("8 items moved when the structure was rebalanced.");
+    expect(changeText(en, sampleChange({ titleParams: { items: 1 } }))).toBe(
+      "1 item moved when the structure was rebalanced."
+    );
     expect(changeText(en, sampleChange({ titleParams: {} }))).toBe("The structure was rebalanced.");
     expect(changeText(en, sampleChange({ origin: "naming", titleParams: { topics: 4 } }))).toBe(
-      "Topics named: 4."
+      "4 topics were named."
+    );
+    expect(changeText(en, sampleChange({ origin: "naming", titleParams: { topics: 1 } }))).toBe(
+      "1 topic was named."
     );
     expect(changeText(en, sampleChange({ origin: "human" }))).toBe("You changed the structure.");
   });

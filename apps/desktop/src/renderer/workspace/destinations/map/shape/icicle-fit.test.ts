@@ -5,6 +5,7 @@ import {
   fitDiffLabel,
   fitMapLabel,
   keyLetters,
+  mapLabelMinHeight,
   mapNoLabelBelow,
   type MeasureText
 } from "./icicle-fit";
@@ -23,6 +24,21 @@ describe("the Map chart's labels", () => {
     expect(fitMapLabel({ widthPx: 400, heightPx: mapNoLabelBelow, name, count, measure })).toBe(
       "nameCount"
     );
+  });
+
+  it("keeps a label clear of the block's outline: an outlined block needs a line, the outline twice and air", () => {
+    // 16 px of line + 2 x 2 px of outline + 2 px of air.
+    expect(mapLabelMinHeight(0)).toBe(mapNoLabelBelow);
+    expect(mapLabelMinHeight(2)).toBe(22);
+    expect(mapLabelMinHeight(4)).toBe(26);
+    const base = { widthPx: 400, name, count, measure };
+    expect(fitMapLabel({ ...base, heightPx: 21, outlinePx: 2 })).toBe("none");
+    expect(fitMapLabel({ ...base, heightPx: 22, outlinePx: 2 })).toBe("nameCount");
+    expect(fitMapLabel({ ...base, heightPx: 25, outlinePx: 4 })).toBe("none");
+    expect(fitMapLabel({ ...base, heightPx: 26, outlinePx: 4 })).toBe("nameCount");
+    // Two lines need their room inside the outline too.
+    expect(fitMapLabel({ ...base, heightPx: 37, outlinePx: 2 })).toBe("nameCount");
+    expect(fitMapLabel({ ...base, heightPx: 38, outlinePx: 2 })).toBe("stacked");
   });
 
   it("says name and count on one line, and only the name when both do not fit", () => {

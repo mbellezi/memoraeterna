@@ -136,7 +136,7 @@ function WarningItem({
               >
                 {pending && action.kind === "dismiss"
                   ? t("topics.shape.warnings.working")
-                  : t("topics.shape.warnings.dismiss")}
+                  : t("map.warnings.dismiss")}
               </Button>
               <CompareToggle
                 t={t}

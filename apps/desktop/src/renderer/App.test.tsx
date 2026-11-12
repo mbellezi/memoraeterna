@@ -1,6 +1,6 @@
 import { renderToString } from "react-dom/server";
 import { afterEach, describe, expect, expectTypeOf, it, vi } from "vitest";
-import { createTranslator, messages, supportedLanguageCodes } from "@app/i18n";
+import { createTranslator, supportedLanguageCodes } from "@app/i18n";
 import { App } from "./App";
 import { SettingsScopeMenu, type SettingsScope } from "./components/SettingsView";
 import { useDocumentLanguage } from "./lib/document-language";
@@ -79,7 +79,9 @@ describe("App", () => {
       expect(html).toContain(`aria-label="${name}"`);
     expect(html).toContain('data-surface="shell"');
     expect(html).toContain("h-screen");
-    expect(html).toContain("overflow-auto overscroll-contain");
+    // The destinations' own roots scroll in their own box (Explore's root, T141; the old screens'
+    // scroll box has no destination left that renders it here).
+    expect(html).toContain("overflow-auto bg-surface");
   });
 
   it("shows the Activity pill in the header, and no modal stands over a model loading", () => {
@@ -263,10 +265,10 @@ describe("entry points of the removed wiki", () => {
     }
   });
 
-  it("shows the Wiki shell with the empty state, not the old workspace, for the Wiki destination", () => {
+  it("mounts Explore's own root, not the old Wiki screen, for the Explore destination", () => {
     const html = shell("en");
-    expect(html).toContain('aria-labelledby="wiki-placeholder-title"');
-    expect(html).toContain(messages.en.topics.placeholder.openLibrary);
+    expect(html).toContain('data-surface="destination-explore"');
+    expect(html).not.toContain('aria-labelledby="wiki-placeholder-title"');
     // The old workspace's page tree and creation controls are not mounted.
     expect(html).not.toContain("New page");
     expect(html).not.toContain("No AI required");
