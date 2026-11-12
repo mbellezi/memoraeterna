@@ -5707,6 +5707,7 @@
     "caption": "Le stesse connessioni del grafo, una riga per connessione",
     "count": "{count} connessioni",
     "countOne": "1 connessione",
+    "errorMessage": "Non è stato possibile caricare le connessioni di questo ramo.",
     "from": "Da",
     "groupBy": "Raggruppa per",
     "groupByHelp": "Quale livello di sottoargomenti raggruppa gli argomenti dell’elenco",

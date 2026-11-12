@@ -5707,6 +5707,7 @@
     "caption": "Les mêmes connexions que le graphe, une ligne par connexion",
     "count": "{count} connexions",
     "countOne": "1 connexion",
+    "errorMessage": "Les connexions de cette branche n’ont pas pu être chargées.",
     "from": "De",
     "groupBy": "Grouper par",
     "groupByHelp": "Quel niveau de sous-thèmes regroupe les thèmes de la liste",

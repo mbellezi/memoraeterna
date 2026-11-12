@@ -5707,6 +5707,7 @@
     "caption": "Las mismas conexiones del grafo, una fila por conexión",
     "count": "{count} conexiones",
     "countOne": "1 conexión",
+    "errorMessage": "No se pudieron cargar las conexiones de esta rama.",
     "from": "De",
     "groupBy": "Agrupar por",
     "groupByHelp": "Qué nivel de subtemas agrupa los temas de la lista",

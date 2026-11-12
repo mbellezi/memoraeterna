@@ -5707,6 +5707,7 @@
     "caption": "The same connections as the graph, one row per connection",
     "count": "{count} connections",
     "countOne": "1 connection",
+    "errorMessage": "The connections of this branch could not be loaded.",
     "from": "From",
     "groupBy": "Group by",
     "groupByHelp": "Which level of subtopics groups the topics in the list",
