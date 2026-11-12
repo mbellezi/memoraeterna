@@ -1,13 +1,16 @@
-import { useId, type KeyboardEvent, type ReactNode, type Ref } from "react";
-import { CircleCheck, Keyboard, RefreshCw } from "lucide-react";
+import { useId, type CSSProperties, type KeyboardEvent, type ReactNode, type Ref } from "react";
+import { CircleCheck, Keyboard } from "lucide-react";
 import type { ChangeSetRisk, InboxKind, InboxObject, InboxVerb } from "@app/domain";
-import type { MessageKey, Translator } from "@app/i18n";
+import type { Translator } from "@app/i18n";
 
 import { Button } from "../ui/button";
+import { ErrorState } from "../ui/error-state";
+import { SkeletonRows } from "../ui/skeleton";
 import { InboxDetail, UndoBanner } from "./InboxDetail";
 import { InboxList } from "./InboxList";
+import { keyRows } from "./inbox-keys";
 import { kindIcon } from "./inbox-marks";
-import { kindLabels, kindOrder, riskLabels, verbKeys } from "./inbox-model";
+import { kindLabels, kindOrder, riskLabels } from "./inbox-model";
 import { selectedItem, type InboxState } from "./inbox-state";
 
 export interface InboxViewProps {
@@ -34,19 +37,16 @@ export interface InboxViewProps {
   onRetryDiff: () => void;
   onOpenObject: (object: InboxObject) => void;
   onOpenSettings: () => void;
+  /**
+   * The Inbox is the previous panel of a stack (design record §8): its item list alone, the item
+   * that opened the panel beside it marked.
+   */
+  compact?: boolean;
+  /** The item list's width in px (design record §3: 360, or 300 in the compact tier). */
+  listWidth?: number;
 }
 
 const riskFilters: readonly ChangeSetRisk[] = ["high", "medium", "low"];
-
-const helpRows: ReadonlyArray<{ keys: readonly string[]; label: MessageKey }> = [
-  { keys: ["J", "K"], label: "inbox.keys.move" },
-  { keys: ["Enter"], label: "inbox.keys.open" },
-  { keys: [verbKeys.apply], label: "inbox.keys.apply" },
-  { keys: [verbKeys.dismiss], label: "inbox.keys.dismiss" },
-  { keys: [verbKeys.retry], label: "inbox.keys.retry" },
-  { keys: ["U"], label: "inbox.keys.undo" },
-  { keys: ["?"], label: "inbox.keys.help" }
-];
 
 /**
  * The Inbox screen: filters with their counts, the open items by risk and age, the selected item's
@@ -59,13 +59,61 @@ export function InboxView({ rootRef, ...props }: InboxViewProps) {
   const item = selectedItem(state);
   const counts = state.counts;
   const empty = state.load.status === "ready" && state.items.length === 0;
+  if (props.compact)
+    return (
+      <div
+        ref={rootRef}
+        tabIndex={-1}
+        aria-label={t("inbox.title")}
+        role="region"
+        className="flex h-full min-h-0 flex-col gap-2 outline-none"
+        onKeyDown={props.onKey}
+      >
+        {state.load.status === "loading" ? (
+          <div role="status" aria-busy="true" className="flex flex-col gap-3">
+            <p className="m-0 text-sm text-muted-foreground">{t("inbox.states.loading")}</p>
+            <SkeletonRows rows={6} />
+          </div>
+        ) : state.load.status === "error" ? (
+          <ErrorState
+            t={t}
+            message={t("inbox.states.error")}
+            kept={t("inbox.states.errorKept")}
+            retryLabel={t("shell.actions.retry")}
+            onRetry={props.onRetry}
+          />
+        ) : empty ? (
+          <div role="status" className="flex flex-col gap-1">
+            <p className="m-0 text-sm font-medium text-foreground">
+              {t("inbox.states.empty.title")}
+            </p>
+            <p className="m-0 text-xs text-muted-foreground">{t("inbox.states.empty.body")}</p>
+          </div>
+        ) : (
+          <InboxList
+            t={t}
+            items={state.items}
+            selectedKey={state.selectedKey}
+            actions={state.actions}
+            now={state.readAt}
+            idPrefix={props.idPrefix}
+            listRef={props.listRef}
+            hasMore={state.nextCursor !== null}
+            loadingMore={state.loadingMore}
+            moreFailed={state.moreFailed}
+            onSelect={props.onSelect}
+            onLoadMore={props.onLoadMore}
+          />
+        )}
+      </div>
+    );
   return (
     <div
       ref={rootRef}
       tabIndex={-1}
       aria-label={t("inbox.title")}
       role="region"
-      className="flex h-[calc(100vh-7rem)] min-h-96 flex-col gap-3 outline-none"
+      className="flex h-full min-h-96 flex-col gap-3 outline-none"
       onKeyDown={props.onKey}
     >
       <header className="flex flex-wrap items-center justify-between gap-2">
@@ -93,7 +141,7 @@ export function InboxView({ rootRef, ...props }: InboxViewProps) {
                 {t("inbox.keys.title")}
               </h2>
               <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-xs text-foreground">
-                {helpRows.map((row) => (
+                {keyRows(item).map((row) => (
                   <div key={row.label} className="contents">
                     <dt className="flex gap-1">
                       {row.keys.map((key) => (
@@ -179,17 +227,18 @@ export function InboxView({ rootRef, ...props }: InboxViewProps) {
       </p>
 
       {state.load.status === "loading" ? (
-        <p role="status" className="text-sm text-muted-foreground">
-          {t("inbox.states.loading")}
-        </p>
-      ) : state.load.status === "error" ? (
-        <div role="alert" className="flex flex-wrap items-center gap-2 text-sm text-danger">
-          <p>{t("inbox.states.error")}</p>
-          <Button type="button" onClick={props.onRetry}>
-            <RefreshCw aria-hidden="true" />
-            {t("shell.actions.retry")}
-          </Button>
+        <div role="status" aria-busy="true" className="flex flex-col gap-3">
+          <p className="m-0 text-sm text-muted-foreground">{t("inbox.states.loading")}</p>
+          <SkeletonRows rows={6} />
         </div>
+      ) : state.load.status === "error" ? (
+        <ErrorState
+          t={t}
+          message={t("inbox.states.error")}
+          kept={t("inbox.states.errorKept")}
+          retryLabel={t("shell.actions.retry")}
+          onRetry={props.onRetry}
+        />
       ) : empty ? (
         <div
           role="status"
@@ -206,7 +255,10 @@ export function InboxView({ rootRef, ...props }: InboxViewProps) {
           )}
         </div>
       ) : (
-        <div className="grid min-h-0 flex-1 grid-cols-[minmax(15rem,20rem)_minmax(0,1fr)] gap-4">
+        <div
+          className="grid min-h-0 flex-1 grid-cols-[var(--inbox-list-w)_minmax(0,1fr)] gap-4"
+          style={{ "--inbox-list-w": `${props.listWidth ?? 320}px` } as CSSProperties}
+        >
           <InboxList
             t={t}
             items={state.items}

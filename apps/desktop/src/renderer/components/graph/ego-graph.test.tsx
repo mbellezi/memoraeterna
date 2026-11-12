@@ -221,15 +221,22 @@ describe("the relation graph in every interface language", () => {
   });
 });
 
-const sources = import.meta.glob<string>(["./EgoGraph.tsx", "./LineSamples.tsx"], {
-  query: "?raw",
-  import: "default",
-  eager: true
-});
+// The ego graph and the Map › Grafo canvas (T151) draw from the same tokens.
+const sources = import.meta.glob<string>(
+  [
+    "./EgoGraph.tsx",
+    "./LineSamples.tsx",
+    "./labels.ts",
+    "../../workspace/destinations/map/relations/RelationsCanvas.tsx",
+    "../../workspace/destinations/map/relations/RelationsLens.tsx",
+    "../../workspace/destinations/map/relations/branch-sigma.ts"
+  ],
+  { query: "?raw", import: "default", eager: true }
+);
 
 describe("the graph styles", () => {
   it("use tokens only: no raw palette class, hex colour, rgba or arbitrary font size", () => {
-    expect(Object.keys(sources)).toHaveLength(2);
+    expect(Object.keys(sources)).toHaveLength(6);
     for (const [file, source] of Object.entries(sources)) {
       expect(source, file).not.toMatch(
         /\b(slate|gray|zinc|cyan|violet|amber|rose|red|green|blue|emerald|sky)-\d{2,3}\b/u
@@ -241,8 +248,9 @@ describe("the graph styles", () => {
   });
 
   it("never touch the window history or poll", () => {
-    const source = sources["./EgoGraph.tsx"]!;
-    expect(source).not.toContain("window.history");
-    expect(source).not.toContain("setInterval");
+    for (const [file, source] of Object.entries(sources)) {
+      expect(source, file).not.toContain("window.history");
+      expect(source, file).not.toContain("setInterval");
+    }
   });
 });

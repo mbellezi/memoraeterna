@@ -330,7 +330,8 @@
       "emptyFiltered": "Aucun élément ne correspond à ce filtre.",
       "loadMore": "Charger plus",
       "loadingMore": "Chargement de la suite...",
-      "moreFailed": "Impossible de charger d'autres éléments."
+      "moreFailed": "Impossible de charger d'autres éléments.",
+      "errorKept": "Rien n’a été décidé ni modifié."
     },
     "filters": {
       "label": "Filtrer la boîte de réception",
@@ -486,12 +487,14 @@
       "move": "Élément suivant ou précédent",
       "open": "Aller aux détails",
       "apply": "Appliquer ou conserver",
-      "dismiss": "Écarter ou supprimer",
+      "dismiss": "Écarter : sort de la boîte et rien ne change",
       "retry": "Réessayer",
       "undo": "Annuler la dernière décision",
       "help": "Afficher ou masquer cette aide",
       "note": "Ces touches fonctionnent quand la liste ou les détails ont le focus, jamais pendant la saisie ni dans une boîte de dialogue.",
-      "money": "Continuer au-delà de la limite de dépenses se fait avec un bouton, jamais avec une touche."
+      "money": "Continuer au-delà de la limite de dépenses se fait avec un bouton, jamais avec une touche.",
+      "remove": "Retirer une connexion : elle n’est plus jamais suggérée",
+      "edit": "Modifier les noms avant d’appliquer"
     },
     "result": {
       "applied": "Appliqué.",
@@ -534,7 +537,8 @@
         "empty": "Pas encore d'aperçu",
         "divergences": "Là où les nouvelles preuves divergent",
         "divergence": "Paragraphes {existing} et {new} : {summary}"
-      }
+      },
+      "legend": "Petits blocs, par lettre"
     },
     "errors": {
       "invalidCursor": "La liste a changé entre-temps. Rechargez-la.",
@@ -950,7 +954,11 @@
     "nodeCount": "{count} nœuds",
     "edgeCount": "{count} relations",
     "truncated": "Affichage du sous-ensemble le plus pertinent",
-    "lod": { "overview": "Communautés", "hubs": "Principaux hubs", "detail": "Détail complet" },
+    "lod": {
+      "overview": "Communautés",
+      "hubs": "Principaux hubs",
+      "detail": "Détail complet"
+    },
     "community": "Communauté",
     "source": "Source",
     "atomicNote": "Note atomique",
@@ -1117,7 +1125,11 @@
       "title": "Chaque fichier, un flux continu unique",
       "description": "Suivez en direct de la conversion au graphe de connaissances, avec checkpoints, tentatives et erreurs regroupes."
     },
-    "summary": { "active": "Actives", "completed": "Terminees", "attention": "A surveiller" },
+    "summary": {
+      "active": "Actives",
+      "completed": "Terminees",
+      "attention": "A surveiller"
+    },
     "batch": {
       "label": "Lot de traitement",
       "plan": "Plan : {plan}",
@@ -1473,7 +1485,10 @@
   },
   "import": {
     "unspecifiedLanguage": "Non spécifiée",
-    "modes": { "manual": "Contenu manuel", "file": "Fichier local" },
+    "modes": {
+      "manual": "Contenu manuel",
+      "file": "Fichier local"
+    },
     "steps": {
       "type": "Type",
       "origin": "Origine",
@@ -1488,7 +1503,10 @@
       "publications": "Publications",
       "media": "Web, video et fichiers"
     },
-    "badges": { "container": "Conteneur", "child": "Source parente requise" },
+    "badges": {
+      "container": "Conteneur",
+      "child": "Source parente requise"
+    },
     "hierarchyHint": "Ce type peut detecter les chapitres, articles et sections avant le traitement.",
     "fields": {
       "sourceType": "Type de source",
@@ -1587,12 +1605,19 @@
       "containerHint": "Composez les sous-éléments ici ou passez à un document unique. Vous vérifierez la structure détectée avant l’enregistrement.",
       "editingHierarchyHint": "Ceci modifie le document de la source actuelle. Les sous-éléments existants conservent leur contenu et peuvent être modifiés individuellement depuis la bibliothèque.",
       "modeLabel": "Organisation du contenu",
-      "modes": { "subitems": "Composer les sous-éléments", "document": "Document unique" },
+      "modes": {
+        "subitems": "Composer les sous-éléments",
+        "document": "Document unique"
+      },
       "modeDescriptions": {
         "subitems": "Rédigez séparément les chapitres, articles ou sections et organisez leur ordre.",
         "document": "Rédigez ou collez un document Markdown et détectez automatiquement ses titres."
       },
-      "labels": { "chapters": "Chapitres", "articles": "Articles", "sections": "Sections" },
+      "labels": {
+        "chapters": "Chapitres",
+        "articles": "Articles",
+        "sections": "Sections"
+      },
       "placeholders": {
         "chapter": "Titre du chapitre",
         "article": "Titre de l’article",
@@ -1688,7 +1713,10 @@
         "title": "Consultable + organisé",
         "description": "Cree des segments et embeddings pour la recherche."
       },
-      "summary": { "title": "Resume", "description": "Genere un resume concis avec preuves." },
+      "summary": {
+        "title": "Resume",
+        "description": "Genere un resume concis avec preuves."
+      },
       "full_knowledge": {
         "title": "Second cerveau",
         "description": "Génère résumés, notes, graphe et liens."
@@ -1730,7 +1758,11 @@
     "blockingIssues": "Resolvez {count} problemes avant de continuer.",
     "selectAtLeastOne": "Selectionnez au moins un element a creer comme source independante.",
     "ready": "La structure est valide et prete a confirmer.",
-    "confidence": { "high": "Elevee", "medium": "A reviser", "low": "Faible" },
+    "confidence": {
+      "high": "Elevee",
+      "medium": "A reviser",
+      "low": "Faible"
+    },
     "kinds": {
       "part": "Partie",
       "chapter": "Chapitre",
@@ -1868,7 +1900,11 @@
       "empty": "Aucune note generee par l'IA n'attend une relecture facultative.",
       "optional": "Ces notes sont deja utilisees. Les relire est facultatif.",
       "unknownSource": "Source inconnue",
-      "fields": { "title": "Titre", "idea": "Idee principale", "body": "Corps de la note" },
+      "fields": {
+        "title": "Titre",
+        "idea": "Idee principale",
+        "body": "Corps de la note"
+      },
       "actions": {
         "approve": "Approuver",
         "edit": "Modifier",
@@ -2365,7 +2401,9 @@
         "allowRemote": "Autoriser les modeles distants",
         "offlineOnly": "Modeles locaux uniquement"
       },
-      "languages": { "interface": "Meme langue que l'interface" },
+      "languages": {
+        "interface": "Meme langue que l'interface"
+      },
       "oauth": {
         "authentication": "Authentification ChatGPT",
         "connect": "Se connecter avec ChatGPT",
@@ -2743,7 +2781,11 @@
   },
   "markdown": {
     "modeLabel": "Vue de l’éditeur",
-    "modes": { "write": "Écrire", "preview": "Aperçu", "split": "Partagé" },
+    "modes": {
+      "write": "Écrire",
+      "preview": "Aperçu",
+      "split": "Partagé"
+    },
     "previewLabel": "Aperçu Markdown",
     "emptyPreview": "Commencez à écrire pour afficher l’aperçu.",
     "placeholder": "Écrivez en Markdown…",
@@ -4925,5 +4967,152 @@
       "help": "Une seconde copie de chaque original dans un dossier à vous, en dehors de la base de données de Memora.",
       "label": "Garder une copie des fichiers importés"
     }
+  },
+  "map": {
+    "band": {
+      "action": "Retour",
+      "back": "revient à {topic}, où vous étiez.",
+      "whole": "Vous voyez l’arbre entier."
+    },
+    "chart": {
+      "columns": {
+        "areas": "Domaines",
+        "subtopics": "Sous-sujets",
+        "topics": "Sujets"
+      },
+      "deeper": "{count} sujets sont plus profonds : le tableau les liste tous et Entrée agrandit une branche.",
+      "deeperOne": "1 sujet est plus profond : le tableau le liste et Entrée agrandit une branche.",
+      "here": "ici",
+      "label": "Arbre des sujets. Chaque bloc est un bouton qui sélectionne un sujet : les flèches déplacent et Entrée agrandit.",
+      "legend": {
+        "attention": "demande de l’attention",
+        "direct": "notes placées directement dans le sujet",
+        "height": "Hauteur = notes",
+        "here": "ici = contient où vous étiez",
+        "selected": "sélectionné"
+      },
+      "merged": "Les petits blocs sont regroupés ; le tableau liste chacun d’eux.",
+      "moreTopics": "{count} de plus · {notes}"
+    },
+    "count": {
+      "topics": "{count} sujets",
+      "topicsOne": "1 sujet"
+    },
+    "display": {
+      "both": "Graphique et tableau",
+      "label": "Affichage",
+      "table": "Tableau seul"
+    },
+    "inspector": {
+      "next": "Prochaine étape",
+      "nextInbox": "Voir la proposition dans la Boîte de réception",
+      "selected": "Sélectionné",
+      "table": "Les mêmes chiffres en tableau"
+    },
+    "lens": {
+      "label": "Vues de la carte",
+      "relations": "Graphe",
+      "shape": "Arbre"
+    },
+    "relations": {
+      "action": "Voir l’arbre",
+      "body": "Il montrera comment vos sujets sont reliés. D’ici là, l’Arbre montre leur taille et leur santé.",
+      "headline": "Le graphe des connexions arrive bientôt"
+    },
+    "selected": {
+      "growth": "{growth} notes en {days} jours",
+      "growthOne": "{growth} note en {days} jours",
+      "subtopics": "{count} sous-sujets directs",
+      "subtopicsOne": "1 sous-sujet direct"
+    },
+    "shape": {
+      "description": "Taille et santé de l’arbre : {notes} dans {topics}",
+      "descriptionPlain": "Taille et santé de l’arbre."
+    },
+    "states": {
+      "empty": "La carte apparaît quand il y a des sujets.",
+      "emptyBody": "Quand votre première source devient des notes, les sujets naissent d’eux-mêmes et la carte les montre ici.",
+      "error": "La carte n’a pas pu être chargée.",
+      "errorKept": "Vos sources et vos notes sont intactes."
+    },
+    "table": {
+      "caption": "Les mêmes chiffres que le graphique, une ligne par sujet",
+      "growth": "7 jours",
+      "health": "Santé",
+      "notes": "Notes",
+      "topic": "Sujet"
+    },
+    "title": "Carte"
+  },
+  "mapRelations": {
+    "canvas": {
+      "hint": "Les flèches parcourent les notes puis les connexions ; Entrée ouvre la note ; Échap efface.",
+      "label": "Graphe de {scope} : {notes} notes et {relations} connexions.",
+      "openHint": "Cliquez pour ouvrir la note à côté de la Carte."
+    },
+    "controls": {
+      "fit": "Cadrer",
+      "zoomIn": "Zoomer",
+      "zoomOut": "Dézoomer"
+    },
+    "depth": {
+      "help": "Quel niveau de sous-thèmes donne leur couleur aux points",
+      "label": "Couleurs par",
+      "one": "1er niveau",
+      "three": "3e niveau",
+      "two": "2e niveau"
+    },
+    "description": "Connexions entre les notes d’une branche",
+    "edge": {
+      "description": "« {first} » {verb} « {second} ».",
+      "suggested": "Suggérée : pas encore confirmée."
+    },
+    "empty": {
+      "body": "Les connexions apparaissent ici quand des notes de cette branche se relient entre elles. Choisissez une autre branche ou voyez l’Arbre.",
+      "headline": "Pas encore de connexions dans cette branche",
+      "missing": "Cette branche n’est plus dans l’arbre.",
+      "missingBody": "Elle a peut-être été fusionnée avec un autre thème. Choisissez une autre branche ou voyez l’Arbre.",
+      "noTopics": "Le graphe apparaît quand il y a des thèmes.",
+      "noTopicsBody": "Quand la première source devient des notes, les thèmes naissent tout seuls et le graphe montre comment leurs notes se relient.",
+      "tree": "Voir l’Arbre"
+    },
+    "error": {
+      "kept": "Vos notes et connexions sont intactes.",
+      "message": "Impossible de charger le graphe."
+    },
+    "failure": {
+      "context": "Le graphe n’est plus dessiné.",
+      "layout": "Impossible d’organiser le graphe.",
+      "unavailable": "Cette fenêtre ne peut pas dessiner le graphe.",
+      "unavailableBody": "Le tableau présente les mêmes connexions.",
+      "unavailableTree": "L’Arbre présente les thèmes et les notes de cette branche ; chaque note liste ses connexions."
+    },
+    "group": {
+      "description": "{topic}. Notes dans le graphe : {notes}. Connexions avec d’autres thèmes : {count}."
+    },
+    "legend": {
+      "direct": "{topic} (notes directes)",
+      "label": "Légende",
+      "lines": "Ligne = connexion :",
+      "suggested": "pointillés = suggérée",
+      "thickness": "de loin, chaque thème devient une étiquette ; épaisseur = nombre de connexions",
+      "topics": "Couleur du point = thème :",
+      "unplaced": "sans place dans l’arbre"
+    },
+    "node": {
+      "description": "{title}. Thème : {topic}. Connexions : {count}.",
+      "meta": "Thème : {topic} · Connexions : {count}"
+    },
+    "scope": {
+      "above": "Au-dessus",
+      "areas": "Domaines",
+      "beside": "À côté",
+      "inside": "Dedans",
+      "label": "Branche : {title}",
+      "menu": "Choisir la branche",
+      "source": "Source : {title}",
+      "sourceUnnamed": "cette source"
+    },
+    "untitledTopic": "Thème sans nom"
   }
 }

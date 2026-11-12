@@ -16,8 +16,12 @@
  *   --text-*, --accent*, --state-*       4.5:1 on every --surface-* (and on --state-*-soft)
  *   --text-on-solid                      4.5:1 on --accent, --accent-hover and the solid states
  *   --object-*, --stance-*, --border-strong   3:1 on every --surface-* (glyphs and boundaries)
- *   --graph-*                            labels 4.5:1 and glyphs 3:1 on the graph canvas
- * Colour is never the only signal: pair --object-* and --stance-* with a glyph or a label.
+ *   --graph-topic-1..12                  3:1 on every --surface-*, and CIEDE2000 >= 20 between
+ *                                        neighbouring indices (12 wraps to 1)
+ * Graphs read the theme: the canvas is --surface-raised, labels --text-primary, edges --stance-*,
+ * and a note's dot is the colour of its topic group (--graph-topic-*, Map › Grafo only).
+ * Colour is never the only signal: pair --object-*, --stance-* and --graph-topic-* with a glyph,
+ * a word or a legend that names it.
  * Every colour is an opaque hex literal so the check can read it.
  */
 
@@ -71,25 +75,21 @@
   --state-danger-soft: #fbe6e4;
 
   /*
-   * Graph canvas. The graph is dark in both themes, so its colours do not change with the theme:
-   * read them with getComputedStyle on the graph container. --graph-object-* and --graph-stance-*
-   * mirror the dark theme's --object-* and --stance-* (the contrast check enforces it).
+   * Map › Grafo topic colours (D19): node dots and their legend only, never text. Index i of a
+   * topic group (`relations.branch`) is drawn with --graph-topic-<i + 1>.
    */
-  --graph-canvas-center: #202b39;
-  --graph-canvas-edge: #10151d;
-  --graph-label: #cbd5e1;
-  --graph-label-muted: #94a3b8;
-  --graph-object-source: #8bb4f2;
-  --graph-object-note: #a5c862;
-  --graph-object-topic: #e2b25e;
-  --graph-object-question: #b9a3f0;
-  --graph-object-entity: #ee93bd;
-  --graph-stance-supports: #5fd08f;
-  --graph-stance-contradicts: #f58b84;
-  --graph-stance-extends: #7db4ee;
-  --graph-stance-depends-on: #f0a35a;
-  --graph-stance-example-of: #b9a3f0;
-  --graph-stance-related: #9daabd;
+  --graph-topic-1: #3d6f9e;
+  --graph-topic-2: #a0522d;
+  --graph-topic-3: #3f7f4f;
+  --graph-topic-4: #7d5aa6;
+  --graph-topic-5: #7f7020;
+  --graph-topic-6: #5b6878;
+  --graph-topic-7: #4e7a28;
+  --graph-topic-8: #4a5aa8;
+  --graph-topic-9: #7c5634;
+  --graph-topic-10: #8a4a92;
+  --graph-topic-11: #1d7470;
+  --graph-topic-12: #a83a64;
 
   /* Typography: Inter for the interface, Source Serif 4 for reading, both bundled offline. */
   --font-family-ui:
@@ -196,6 +196,19 @@
   --stance-example-of: #b9a3f0;
   --stance-related: #9daabd;
 
+  --graph-topic-1: #8db7e0;
+  --graph-topic-2: #e39b74;
+  --graph-topic-3: #86c79a;
+  --graph-topic-4: #c3a5e6;
+  --graph-topic-5: #d6c27a;
+  --graph-topic-6: #b3c1cf;
+  --graph-topic-7: #b2d684;
+  --graph-topic-8: #a9b4f2;
+  --graph-topic-9: #d8b088;
+  --graph-topic-10: #e2a6de;
+  --graph-topic-11: #6fcfc8;
+  --graph-topic-12: #f09abb;
+
   --state-info: #7db4ee;
   --state-info-soft: #172a40;
   --state-success: #5fd08f;
@@ -245,6 +258,19 @@
     --stance-depends-on: #f0a35a;
     --stance-example-of: #b9a3f0;
     --stance-related: #9daabd;
+
+    --graph-topic-1: #8db7e0;
+    --graph-topic-2: #e39b74;
+    --graph-topic-3: #86c79a;
+    --graph-topic-4: #c3a5e6;
+    --graph-topic-5: #d6c27a;
+    --graph-topic-6: #b3c1cf;
+    --graph-topic-7: #b2d684;
+    --graph-topic-8: #a9b4f2;
+    --graph-topic-9: #d8b088;
+    --graph-topic-10: #e2a6de;
+    --graph-topic-11: #6fcfc8;
+    --graph-topic-12: #f09abb;
 
     --state-info: #7db4ee;
     --state-info-soft: #172a40;

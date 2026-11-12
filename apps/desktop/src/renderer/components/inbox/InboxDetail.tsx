@@ -13,15 +13,10 @@ import {
   itemTitle,
   kindLabels,
   objectName,
-  verbKeys,
   verbLabel
 } from "./inbox-model";
-import {
-  keyCarries,
-  type InboxDiffLoad,
-  type InboxItemAction,
-  type InboxUndo
-} from "./inbox-state";
+import { keyHint } from "./inbox-keys";
+import { type InboxDiffLoad, type InboxItemAction, type InboxUndo } from "./inbox-state";
 import { relationTypeView } from "../../lib/relation-stance";
 
 export interface InboxDetailProps {
@@ -132,28 +127,31 @@ export function InboxDetail({
       ) : null}
 
       <div className="flex flex-wrap items-center gap-2">
-        {item.actions.map((verb) => (
-          <Button
-            key={verb}
-            type="button"
-            variant={verb === "apply" || verb === "retry" ? "primary" : "secondary"}
-            disabled={pending}
-            aria-keyshortcuts={keyCarries(item, verb) ? verbKeys[verb] : undefined}
-            onClick={() => onVerb(verb)}
-          >
-            {pending && action.verb === verb
-              ? t("inbox.detail.working")
-              : verbLabel(t, item.kind, verb, item.variant)}
-            {keyCarries(item, verb) ? (
-              <kbd
-                aria-hidden="true"
-                className="ml-1 rounded-sm border border-border-strong px-1 font-sans text-xs font-medium"
-              >
-                {verbKeys[verb]}
-              </kbd>
-            ) : null}
-          </Button>
-        ))}
+        {item.actions.map((verb) => {
+          const hint = keyHint(item, verb);
+          return (
+            <Button
+              key={verb}
+              type="button"
+              variant={verb === "apply" || verb === "retry" ? "primary" : "secondary"}
+              disabled={pending}
+              aria-keyshortcuts={hint?.shortcut}
+              onClick={() => onVerb(verb)}
+            >
+              {pending && action.verb === verb
+                ? t("inbox.detail.working")
+                : verbLabel(t, item.kind, verb, item.variant)}
+              {hint ? (
+                <kbd
+                  aria-hidden="true"
+                  className="ml-1 rounded-sm border border-border-strong px-1 font-sans text-xs font-medium"
+                >
+                  {hint.label}
+                </kbd>
+              ) : null}
+            </Button>
+          );
+        })}
         {item.kind === "obsidian_conflict" ? (
           <Button type="button" variant="primary" onClick={onOpenSettings}>
             {t("inbox.detail.openSettings")}
