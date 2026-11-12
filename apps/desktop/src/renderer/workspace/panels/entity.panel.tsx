@@ -45,7 +45,11 @@ export function Component({
         api: () => (typeof window === "undefined" ? undefined : window.app?.entities)
       })
   );
-  const load = useSyncExternalStore(controller.subscribe, controller.getSnapshot);
+  const load = useSyncExternalStore(
+    controller.subscribe,
+    controller.getSnapshot,
+    controller.getSnapshot
+  );
 
   useEffect(() => {
     if (id !== null) controller.show(id, active);

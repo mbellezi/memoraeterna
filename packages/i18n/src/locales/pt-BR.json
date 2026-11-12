@@ -3838,7 +3838,7 @@
     "untitled": "Sem título"
   },
   "entityPage": {
-    "aliases": "Outros nomes",
+    "aliases": "Outros nomes:",
     "articleLabel": "Entidade: {name}",
     "coMentioned": {
       "heading": "Costuma aparecer com",

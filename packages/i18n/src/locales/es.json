@@ -3842,7 +3842,7 @@
     "untitled": "Sin título"
   },
   "entityPage": {
-    "aliases": "Otros nombres",
+    "aliases": "Otros nombres:",
     "articleLabel": "Entidad: {name}",
     "coMentioned": {
       "heading": "Suele aparecer con",

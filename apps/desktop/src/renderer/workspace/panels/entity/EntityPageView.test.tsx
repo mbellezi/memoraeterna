@@ -34,6 +34,13 @@ function view(props: Partial<EntityPageViewProps> = {}) {
 }
 
 describe("the entity page", () => {
+  it("takes the punctuation of the other names label from the translation", () => {
+    const strip = (html: string) => html.replace(/<!-- -->/gu, "");
+    expect(strip(view())).toContain("Other names: ");
+    expect(strip(view({ t: createTranslator("fr") }))).toContain("Autres noms : ");
+    expect(strip(view({ t: createTranslator("fr") }))).not.toContain("noms ::");
+  });
+
   it("shows the name, the kind and the counts, the other names and the description", () => {
     const html = view();
     expect(html).toContain("<h1");

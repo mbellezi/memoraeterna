@@ -3840,7 +3840,7 @@
     "untitled": "Sans titre"
   },
   "entityPage": {
-    "aliases": "Autres noms",
+    "aliases": "Autres noms :",
     "articleLabel": "Entité : {name}",
     "coMentioned": {
       "heading": "Apparaît souvent avec",

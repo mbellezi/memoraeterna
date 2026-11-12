@@ -1,4 +1,4 @@
-import { formatObjectAddress, type ObjectRef } from "@app/domain";
+import { formatObjectAddress, GraphEntityTypeSchema, type ObjectRef } from "@app/domain";
 import type { MessageKey, Translator } from "@app/i18n";
 
 import type { EntityMention, EntityPage } from "../../../../shared/ipc-entities";
@@ -10,21 +10,7 @@ import type { EntityMention, EntityPage } from "../../../../shared/ipc-entities"
  */
 
 /** The stored kinds of entity that have a word of their own (`knowledge.graph.entityTypes`). */
-const knownTypes: readonly string[] = [
-  "Collection",
-  "Concept",
-  "Event",
-  "FieldOfStudy",
-  "Organization",
-  "Person",
-  "Place",
-  "Product",
-  "Project",
-  "Publication",
-  "Publisher",
-  "Tag",
-  "Work"
-];
+const knownTypes: readonly string[] = GraphEntityTypeSchema.options;
 
 /** The kind of entity in the person's words; a kind with no word of its own is shown as stored. */
 export function entityTypeLabel(t: Translator, type: string): string {

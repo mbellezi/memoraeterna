@@ -182,6 +182,42 @@ describe("EntityPageController", () => {
       expect(calls).toHaveLength(2);
     });
 
+    it("keeps the mentions that were loaded when the page is read again", async () => {
+      const { controller, calls } = await loaded();
+      controller.loadMore();
+      calls[1]?.resolve(entitySecondPage);
+      await settle();
+      controller.reread();
+      // The list that is shown stays whole while the newer one is read.
+      const shown = controller.getSnapshot();
+      expect(shown.status === "ready" && shown.page.mentions.items).toHaveLength(11);
+      calls[2]?.resolve(entityFirstPage);
+      await settle();
+      expect(calls[3]?.input).toEqual({ id, cursor: "cursor-2" });
+      const middle = controller.getSnapshot();
+      expect(middle.status === "ready" && middle.page.mentions.items).toHaveLength(11);
+      const newer = { ...entitySecondPage, counts: { notes: 12, sources: 4 } };
+      calls[3]?.resolve(newer);
+      await settle();
+      const load = controller.getSnapshot();
+      expect(load.status === "ready" && load.page.mentions.items).toHaveLength(11);
+      expect(load).toMatchObject({ more: "idle", page: { counts: { notes: 12 } } });
+    });
+
+    it("keeps the loaded list when a deeper read fails half way", async () => {
+      const { controller, calls } = await loaded();
+      controller.loadMore();
+      calls[1]?.resolve(entitySecondPage);
+      await settle();
+      controller.reread();
+      calls[2]?.resolve(entityFirstPage);
+      await settle();
+      calls[3]?.reject();
+      await settle();
+      const load = controller.getSnapshot();
+      expect(load.status === "ready" && load.page.mentions.items).toHaveLength(11);
+    });
+
     it("drops an answer that belongs to a page that was read again, and can ask again", async () => {
       const { controller, calls } = await loaded();
       controller.loadMore();

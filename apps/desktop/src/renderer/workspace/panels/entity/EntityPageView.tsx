@@ -411,7 +411,7 @@ function Aliases({ t, names }: { t: Translator; names: string[] }): ReactNode {
   if (names.length === 0) return null;
   return (
     <p className="m-0 text-xs leading-5 text-muted-foreground [text-wrap:pretty]">
-      {t("entityPage.aliases")}:{" "}
+      {t("entityPage.aliases")}{" "}
       <span className="text-secondary-foreground [overflow-wrap:anywhere]">{names.join(", ")}</span>
     </p>
   );

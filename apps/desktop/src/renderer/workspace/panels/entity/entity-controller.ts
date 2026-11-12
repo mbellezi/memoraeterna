@@ -1,4 +1,4 @@
-import type { EntitiesApi } from "../../../../shared/ipc-entities";
+import type { EntitiesApi, EntityPage } from "../../../../shared/ipc-entities";
 import { appendMentions, type EntityLoad } from "./entity-model";
 
 /**
@@ -9,6 +9,9 @@ import { appendMentions, type EntityLoad } from "./entity-model";
  *   failed (a failed load stays visible and retryable);
  * - a read the bus asks for keeps the page that is shown until the new one arrives, and a read that
  *   fails keeps it; the newest answer wins;
+ * - a quiet read goes as deep as the page that is shown: the first page first, then the cursors, until
+ *   the mentions the person had loaded are loaded again, so a change anywhere in the library never
+ *   folds the list back to its first page;
  * - changes that arrive while a read is under way ask for one more read, not one per change;
  * - more mentions are read by the cursor of the page, one request at a time, and an answer that
  *   belongs to an older page is dropped.
@@ -123,6 +126,8 @@ export class EntityPageController {
     const id = this.id;
     if (id === null) return;
     const api = this.deps.api();
+    // A quiet read goes as deep as the mentions the person has already loaded.
+    const depth = quiet && this.load.status === "ready" ? this.load.page.mentions.items.length : 0;
     const generation = ++this.generation;
     this.reading = true;
     const finish = (apply: () => void) => {
@@ -141,8 +146,7 @@ export class EntityPageController {
       });
       return;
     }
-    api
-      .page({ id })
+    readDepth(api, id, depth, () => generation === this.generation)
       .then((page) =>
         finish(() =>
           this.set(page === null ? { status: "missing" } : { status: "ready", page, more: "idle" })
@@ -164,4 +168,31 @@ export class EntityPageController {
     this.load = load;
     for (const listener of [...this.listeners]) listener();
   }
+}
+
+/**
+ * The first page of the entity, then the next pages by their cursors until `depth` mentions are
+ * loaded or the list ends. Stops early when `current` says the answer is no longer wanted; a page
+ * that has gone missing meanwhile makes the whole read null.
+ */
+async function readDepth(
+  api: Pick<EntitiesApi, "page">,
+  id: string,
+  depth: number,
+  current: () => boolean
+): Promise<EntityPage | null> {
+  let page = await api.page({ id });
+  while (
+    page !== null &&
+    current() &&
+    page.mentions.next !== undefined &&
+    page.mentions.items.length < depth
+  ) {
+    const next = await api.page({ id, cursor: page.mentions.next });
+    if (next === null) return null;
+    // A page with nothing new would never reach the depth: stop where the list stands.
+    if (next.mentions.items.length === 0) return appendMentions(page, next);
+    page = appendMentions(page, next);
+  }
+  return page;
 }

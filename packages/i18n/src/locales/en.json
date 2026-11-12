@@ -3835,7 +3835,7 @@
     "untitled": "Untitled"
   },
   "entityPage": {
-    "aliases": "Other names",
+    "aliases": "Other names:",
     "articleLabel": "Entity: {name}",
     "coMentioned": {
       "heading": "Often appears with",
