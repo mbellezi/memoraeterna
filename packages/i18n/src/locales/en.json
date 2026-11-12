@@ -5636,5 +5636,226 @@
       "themeMode": "theme dark light night mode appearance colors color scheme system",
       "uploadCopies": "upload copies keep original files copy folder store imports originals backup of uploads second"
     }
+  },
+  "settingsAdvanced": {
+    "decider": {
+      "auto": "Automatic",
+      "autoHelp": "Follows your models: the ranker when one is validated, otherwise the judge.",
+      "generative": "Judge only",
+      "generativeHelp": "The judge decides every connection: slower, and it sends the notes’ text out if the judge runs in the cloud.",
+      "ranker": "Ranker only",
+      "rankerElse": "Ranker, otherwise judge",
+      "rankerElseHelp": "The ranker decides, and the judge steps in when no ranker is validated.",
+      "rankerHelp": "Only a validated ranker decides; without one, matching waits."
+    },
+    "groups": {
+      "diagnosticsIntro": "For investigating problems. The jobs’ technical names appear here.",
+      "matchingIntro": "Each decision keeps the values it was made with; a new value only applies to new decisions. To redo old ones, use the Inbox."
+    },
+    "intro": "Rarely needed: the defaults suit most libraries. The matching values were measured; change them only if you know why.",
+    "layout": {
+      "failed": "The change could not be prepared. Nothing was moved.",
+      "followsNotes": "Same as the notes ({language})",
+      "hint": "Choosing another language does not move anything yet: it prepares the change, which you review and apply in Integrations.",
+      "noVault": "Choose an Obsidian vault first; until then there are no folders to name.",
+      "openIntegrations": "Open Integrations",
+      "prepared": "The change is ready to review. Apply it in Integrations, with Obsidian’s editors closed.",
+      "preparing": "Preparing the change…"
+    },
+    "matching": {
+      "deleteBody": "The matching values go back to the calibrated set. Connections already found do not change.",
+      "deleteConfirm": "Delete preset",
+      "deleteTitle": "Delete “{name}”?",
+      "differenceItem": "{label} ({current} instead of {calibrated})",
+      "differsList": "Different: {list}.",
+      "differsMany": "{count} values differ from the calibrated set.",
+      "differsNote": "Connections found with these values were not measured.",
+      "differsOne": "{count} value differs from the calibrated set.",
+      "errorKept": "Your saved values stay as they were.",
+      "errorTitle": "The matching presets could not be read.",
+      "nameInvalid": "Give the preset a name of up to 100 characters.",
+      "nameNew": "Name of the new preset",
+      "nameRename": "New name of the preset",
+      "nameSave": "Save",
+      "off": "off",
+      "on": "on",
+      "presetCopyName": "{name} (copy)",
+      "presetCreate": "Create preset",
+      "presetCustomNamed": "Custom: {name}",
+      "presetDelete": "Delete",
+      "presetDuplicate": "Duplicate",
+      "presetLimit": "You can keep up to 50 presets.",
+      "presetPrevious": "Earlier settings",
+      "presetRecommended": "Balanced (recommended)",
+      "presetRename": "Rename",
+      "restoreCalibrated": "Restore the calibrated values",
+      "subgroups": {
+        "identity": {
+          "intro": "From the knowledge graph: how the AI joins similar relation types and entities that are the same.",
+          "title": "Relation types and entity identity"
+        },
+        "notes": {
+          "intro": "How much the AI may write when it judges the connections between notes.",
+          "title": "Notes"
+        },
+        "sources": {
+          "intro": "Relations link whole sources; connections, in Knowledge, link notes.",
+          "title": "Relations between sources"
+        }
+      }
+    },
+    "prompts": {
+      "body": "Open the editor to read, change or restore a prompt.",
+      "close": "Close the prompts",
+      "open": "Open the prompts"
+    },
+    "rootFailed": "That name could not be saved. Use a folder name inside the vault, without “..” and without a leading “/”.",
+    "rootHint": "A folder name inside the vault, not a path.",
+    "saveFailed": "The change could not be saved. Nothing was changed.",
+    "units": {
+      "characters": "characters",
+      "tokens": "tokens",
+      "words": "words"
+    }
+  },
+  "diagnostics": {
+    "callLog": {
+      "caption": "The latest AI calls",
+      "columns": {
+        "job": "Job",
+        "model": "Model",
+        "result": "Result",
+        "time": "Time",
+        "tokens": "Tokens",
+        "when": "When"
+      },
+      "countMany": "{count} calls recorded",
+      "countOne": "{count} call recorded",
+      "emptyBody": "Every call to a model, local or in the cloud, is recorded here with its job, model, time and tokens. It fills as Memora works.",
+      "emptyTitle": "No AI calls recorded yet",
+      "errorKept": "Nothing was changed.",
+      "errorTitle": "The call log could not be read.",
+      "filterAll": "All",
+      "filterFailed": "Failed only",
+      "filterLabel": "Show",
+      "limitNote": "Showing the {count} most recent calls.",
+      "noneFailed": "No failed calls.",
+      "prune": "Delete old records…",
+      "results": {
+        "canceled": "Canceled",
+        "failed": "Failed",
+        "interrupted": "Interrupted",
+        "running": "Running",
+        "succeeded": "Done"
+      },
+      "showMore": "Show more",
+      "title": "AI call log"
+    },
+    "debug": {
+      "captureBody": "The full prompts and responses stay in this local database. They can hold the whole text of your sources and take a lot of space.",
+      "captureConfirm": "Turn capture on",
+      "captureNeedsDiagnostics": "Turn on the operation diagnostics to use this.",
+      "captureTitle": "Keep complete prompts and responses?",
+      "captureWarning": "The logs may hold the whole text of your sources and take a lot of space. Turn this off after the diagnosis."
+    },
+    "errorKept": "Nothing was changed.",
+    "errorTitle": "The diagnostics could not be read.",
+    "intro": "For investigating problems. The jobs’ technical names appear here.",
+    "jobTypes": {
+      "assetStorage": "Saving files",
+      "atomicNoteGeneration": "Note writing",
+      "atomicNoteMatching": "Connections between notes",
+      "catalogHeader": "Summaries for book and paper entries",
+      "chunking": "Splitting into passages",
+      "conversion": "Conversion",
+      "embedding": "Search index",
+      "ingestion": "Source import",
+      "knowledgeGraphGeneration": "Knowledge graph",
+      "localModelDownload": "Local model download",
+      "noteEmbedding": "Note search index",
+      "obsidianSync": "Obsidian sync",
+      "obsidianWiki": "Obsidian topic maps",
+      "other": "Background work",
+      "relationComposite": "Preparing books and papers for related sources",
+      "relationLabels": "Connection descriptions",
+      "relationLink": "Linking relations",
+      "relationPromote": "Relations between sources from notes",
+      "relationRetype": "Typing relations",
+      "sourceMatching": "Relations between sources",
+      "summarization": "Summary",
+      "topicAreas": "Topic areas",
+      "topicAudit": "Topic tree audit",
+      "topicBuild": "Topic tree build",
+      "topicGate": "Topic placement decision",
+      "topicLabelEmbed": "Topic labels",
+      "topicName": "Topic naming",
+      "topicPlace": "Topic placement",
+      "topicRebalance": "Topic tree rebalancing",
+      "topicSweep": "Topic tree check"
+    },
+    "prune": {
+      "confirm": "Delete records",
+      "countFailed": "The records could not be counted. Nothing was deleted.",
+      "counting": "Counting…",
+      "days": "days",
+      "deletedMany": "{count} records deleted.",
+      "deletedOne": "{count} record deleted.",
+      "description": "Older calls leave the log. The AI task audit and your content stay.",
+      "failed": "The records could not be deleted. Nothing was removed.",
+      "invalid": "Type a whole number of days or months, from 1 to 3650.",
+      "months": "months",
+      "nothing": "Nothing is older than that.",
+      "olderThan": "Older than",
+      "previewMany": "{count} records from before {date} will be deleted.",
+      "previewOne": "{count} record from before {date} will be deleted.",
+      "scope": "What to delete",
+      "scopeAll": "Calls and their logs",
+      "scopePayloads": "Only the full prompts and responses",
+      "title": "Delete old records?",
+      "unit": "Unit"
+    },
+    "similarity": {
+      "action": "Delete runs…",
+      "body": "The debug records go away. No connection changes.",
+      "confirm": "Delete runs",
+      "deletedMany": "{count} runs deleted.",
+      "deletedOne": "{count} run deleted.",
+      "failed": "The runs could not be deleted. Nothing was removed.",
+      "none": "There were no runs to delete.",
+      "title": "Delete the similarity debug runs?"
+    },
+    "taskHistory": {
+      "caption": "Finished jobs",
+      "clear": "Clear job history…",
+      "clearBody": "Takes finished, failed and canceled runs off the lists. Active jobs, pending items, the audit and spending stay.",
+      "clearConfirm": "Clear history",
+      "clearFailed": "The history could not be cleared. Nothing was removed.",
+      "clearTitle": "Clear the job history?",
+      "clearedMany": "{count} runs cleared.",
+      "clearedOne": "{count} run cleared.",
+      "columns": {
+        "duration": "Duration",
+        "job": "Job",
+        "result": "Result",
+        "when": "When"
+      },
+      "countMany": "{count} finished runs",
+      "countOne": "{count} finished run",
+      "emptyBody": "Imports and other background work that finished, failed or was canceled appear here. What Memora is doing now is in Activity.",
+      "emptyTitle": "No finished jobs yet",
+      "errorKept": "Nothing was changed.",
+      "errorTitle": "The job history could not be read.",
+      "outcomes": {
+        "canceled": "Canceled",
+        "failed": "Failed",
+        "graphIncomplete": "Done, without the graph",
+        "succeeded": "Done"
+      },
+      "title": "Job history"
+    },
+    "title": "Diagnostics",
+    "when": {
+      "yesterday": "yesterday {time}"
+    }
   }
 }

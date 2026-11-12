@@ -5641,5 +5641,226 @@
       "themeMode": "thème sombre clair nuit mode apparence couleurs schéma système visuel",
       "uploadCopies": "copies importés conserver originaux fichiers copie dossier imports seconde sauvegarde des envois enregistrer"
     }
+  },
+  "settingsAdvanced": {
+    "decider": {
+      "auto": "Automatique",
+      "autoHelp": "Suit vos modèles : le classeur quand il y en a un validé, sinon le juge.",
+      "generative": "Juge seul",
+      "generativeHelp": "Le juge décide de tous les liens : plus lent, et il envoie le texte des notes à l’extérieur si le juge tourne dans le cloud.",
+      "ranker": "Classeur seul",
+      "rankerElse": "Classeur, sinon juge",
+      "rankerElseHelp": "Le classeur décide, et le juge intervient quand aucun classeur n’est validé.",
+      "rankerHelp": "Seul un classeur validé décide ; sans lui, la correspondance attend."
+    },
+    "groups": {
+      "diagnosticsIntro": "Pour étudier les problèmes. Les noms techniques des tâches apparaissent ici.",
+      "matchingIntro": "Chaque décision garde les valeurs avec lesquelles elle a été prise ; une nouvelle valeur ne vaut que pour les nouvelles décisions. Pour refaire les anciennes, utilisez la Boîte de réception."
+    },
+    "intro": "Rarement utile : les valeurs par défaut conviennent à la plupart des bibliothèques. Les valeurs de correspondance ont été mesurées ; ne les changez que si vous savez pourquoi.",
+    "layout": {
+      "failed": "Le changement n’a pas pu être préparé. Rien n’a été déplacé.",
+      "followsNotes": "Comme les notes ({language})",
+      "hint": "Choisir une autre langue ne déplace rien pour l’instant : cela prépare le changement, que vous vérifiez et appliquez dans Intégrations.",
+      "noVault": "Choisissez d’abord un coffre Obsidian ; d’ici là, il n’y a pas de dossiers à nommer.",
+      "openIntegrations": "Ouvrir Intégrations",
+      "prepared": "Le changement est prêt à être vérifié. Appliquez-le dans Intégrations, avec les éditeurs d’Obsidian fermés.",
+      "preparing": "Préparation du changement…"
+    },
+    "matching": {
+      "deleteBody": "Les valeurs de correspondance reviennent au jeu calibré. Les liens déjà trouvés ne changent pas.",
+      "deleteConfirm": "Supprimer le préréglage",
+      "deleteTitle": "Supprimer « {name} » ?",
+      "differenceItem": "{label} ({current} au lieu de {calibrated})",
+      "differsList": "Différence : {list}.",
+      "differsMany": "{count} valeurs diffèrent du jeu calibré.",
+      "differsNote": "Les liens trouvés avec ces valeurs n’ont pas été mesurés.",
+      "differsOne": "{count} valeur diffère du jeu calibré.",
+      "errorKept": "Vos valeurs enregistrées restent telles quelles.",
+      "errorTitle": "Les préréglages de correspondance n’ont pas pu être lus.",
+      "nameInvalid": "Donnez au préréglage un nom de 100 caractères au plus.",
+      "nameNew": "Nom du nouveau préréglage",
+      "nameRename": "Nouveau nom du préréglage",
+      "nameSave": "Enregistrer",
+      "off": "désactivé",
+      "on": "activé",
+      "presetCopyName": "{name} (copie)",
+      "presetCreate": "Créer un préréglage",
+      "presetCustomNamed": "Personnalisé : {name}",
+      "presetDelete": "Supprimer",
+      "presetDuplicate": "Dupliquer",
+      "presetLimit": "Vous pouvez garder jusqu’à 50 préréglages.",
+      "presetPrevious": "Réglages précédents",
+      "presetRecommended": "Équilibré (recommandé)",
+      "presetRename": "Renommer",
+      "restoreCalibrated": "Rétablir les valeurs calibrées",
+      "subgroups": {
+        "identity": {
+          "intro": "Du graphe de connaissances : comment l’IA réunit les types de relations proches et les entités identiques.",
+          "title": "Types de relations et identité des entités"
+        },
+        "notes": {
+          "intro": "Ce que l’IA peut écrire en jugeant les liens entre notes.",
+          "title": "Notes"
+        },
+        "sources": {
+          "intro": "Les relations relient des sources entières ; les liens, dans Connaissances, relient des notes.",
+          "title": "Relations entre sources"
+        }
+      }
+    },
+    "prompts": {
+      "body": "Ouvrez l’éditeur pour lire, modifier ou rétablir un prompt.",
+      "close": "Fermer les prompts",
+      "open": "Ouvrir les prompts"
+    },
+    "rootFailed": "Ce nom n’a pas pu être enregistré. Utilisez un nom de dossier dans le coffre, sans « .. » et sans « / » au début.",
+    "rootHint": "Un nom de dossier dans le coffre, pas un chemin.",
+    "saveFailed": "L’enregistrement a échoué. Rien n’a été modifié.",
+    "units": {
+      "characters": "caractères",
+      "tokens": "jetons",
+      "words": "mots"
+    }
+  },
+  "diagnostics": {
+    "callLog": {
+      "caption": "Les derniers appels d’IA",
+      "columns": {
+        "job": "Tâche",
+        "model": "Modèle",
+        "result": "Résultat",
+        "time": "Durée",
+        "tokens": "Jetons",
+        "when": "Quand"
+      },
+      "countMany": "{count} appels enregistrés",
+      "countOne": "{count} appel enregistré",
+      "emptyBody": "Chaque appel à un modèle, local ou dans le cloud, est enregistré ici avec sa tâche, son modèle, sa durée et ses jetons. La liste se remplit à mesure que Memora travaille.",
+      "emptyTitle": "Aucun appel d’IA enregistré pour l’instant",
+      "errorKept": "Rien n’a été modifié.",
+      "errorTitle": "Le journal des appels n’a pas pu être lu.",
+      "filterAll": "Tous",
+      "filterFailed": "Échecs seulement",
+      "filterLabel": "Afficher",
+      "limitNote": "Affichage des {count} appels les plus récents.",
+      "noneFailed": "Aucun appel en échec.",
+      "prune": "Supprimer les anciens enregistrements…",
+      "results": {
+        "canceled": "Annulé",
+        "failed": "Échec",
+        "interrupted": "Interrompu",
+        "running": "En cours",
+        "succeeded": "Terminé"
+      },
+      "showMore": "Afficher plus",
+      "title": "Journal des appels d’IA"
+    },
+    "debug": {
+      "captureBody": "Les prompts et les réponses complets restent dans cette base de données locale. Ils peuvent contenir tout le texte de vos sources et prendre beaucoup de place.",
+      "captureConfirm": "Activer la capture",
+      "captureNeedsDiagnostics": "Activez les diagnostics des opérations pour l’utiliser.",
+      "captureTitle": "Garder les prompts et les réponses complets ?",
+      "captureWarning": "Les journaux peuvent contenir tout le texte de vos sources et prendre beaucoup de place. Désactivez-le après le diagnostic."
+    },
+    "errorKept": "Rien n’a été modifié.",
+    "errorTitle": "Le diagnostic n’a pas pu être lu.",
+    "intro": "Pour étudier les problèmes. Les noms techniques des tâches apparaissent ici.",
+    "jobTypes": {
+      "assetStorage": "Enregistrement des fichiers",
+      "atomicNoteGeneration": "Rédaction des notes",
+      "atomicNoteMatching": "Liens entre notes",
+      "catalogHeader": "Résumés pour les fiches de livres et d’articles",
+      "chunking": "Découpage en passages",
+      "conversion": "Conversion",
+      "embedding": "Index de recherche",
+      "ingestion": "Import d’une source",
+      "knowledgeGraphGeneration": "Graphe de connaissances",
+      "localModelDownload": "Téléchargement d’un modèle local",
+      "noteEmbedding": "Index de recherche des notes",
+      "obsidianSync": "Synchronisation Obsidian",
+      "obsidianWiki": "Cartes de sujets dans Obsidian",
+      "other": "Travail en arrière-plan",
+      "relationComposite": "Préparation des livres et articles pour trouver des sources liées",
+      "relationLabels": "Descriptions des liens",
+      "relationLink": "Liaison des relations",
+      "relationPromote": "Relations entre sources à partir des notes",
+      "relationRetype": "Typage des relations",
+      "sourceMatching": "Relations entre sources",
+      "summarization": "Résumé",
+      "topicAreas": "Domaines des sujets",
+      "topicAudit": "Audit de l’arbre des sujets",
+      "topicBuild": "Construction de l’arbre des sujets",
+      "topicGate": "Décision de classement dans les sujets",
+      "topicLabelEmbed": "Étiquettes des sujets",
+      "topicName": "Nommage des sujets",
+      "topicPlace": "Classement dans les sujets",
+      "topicRebalance": "Rééquilibrage de l’arbre des sujets",
+      "topicSweep": "Vérification de l’arbre des sujets"
+    },
+    "prune": {
+      "confirm": "Supprimer les enregistrements",
+      "countFailed": "Les enregistrements n’ont pas pu être comptés. Rien n’a été supprimé.",
+      "counting": "Comptage…",
+      "days": "jours",
+      "deletedMany": "{count} enregistrements supprimés.",
+      "deletedOne": "{count} enregistrement supprimé.",
+      "description": "Les appels les plus anciens quittent le journal. L’audit des tâches d’IA et votre contenu restent.",
+      "failed": "Les enregistrements n’ont pas pu être supprimés. Rien n’a été retiré.",
+      "invalid": "Saisissez un nombre entier de jours ou de mois, de 1 à 3650.",
+      "months": "mois",
+      "nothing": "Rien n’est plus ancien que cela.",
+      "olderThan": "Plus anciens que",
+      "previewMany": "{count} enregistrements antérieurs au {date} seront supprimés.",
+      "previewOne": "{count} enregistrement antérieur au {date} sera supprimé.",
+      "scope": "Quoi supprimer",
+      "scopeAll": "Les appels et leurs journaux",
+      "scopePayloads": "Seulement les prompts et les réponses complets",
+      "title": "Supprimer les anciens enregistrements ?",
+      "unit": "Unité"
+    },
+    "similarity": {
+      "action": "Supprimer les exécutions…",
+      "body": "Les enregistrements de débogage disparaissent. Aucun lien ne change.",
+      "confirm": "Supprimer les exécutions",
+      "deletedMany": "{count} exécutions supprimées.",
+      "deletedOne": "{count} exécution supprimée.",
+      "failed": "Les exécutions n’ont pas pu être supprimées. Rien n’a été retiré.",
+      "none": "Il n’y avait aucune exécution à supprimer.",
+      "title": "Supprimer les exécutions de débogage de similarité ?"
+    },
+    "taskHistory": {
+      "caption": "Tâches terminées",
+      "clear": "Effacer l’historique des tâches…",
+      "clearBody": "Retire des listes les exécutions terminées, en échec ou annulées. Les tâches actives, les éléments en attente, l’audit et les dépenses restent.",
+      "clearConfirm": "Effacer l’historique",
+      "clearFailed": "L’historique n’a pas pu être effacé. Rien n’a été retiré.",
+      "clearTitle": "Effacer l’historique des tâches ?",
+      "clearedMany": "{count} exécutions effacées.",
+      "clearedOne": "{count} exécution effacée.",
+      "columns": {
+        "duration": "Durée",
+        "job": "Tâche",
+        "result": "Résultat",
+        "when": "Quand"
+      },
+      "countMany": "{count} exécutions terminées",
+      "countOne": "{count} exécution terminée",
+      "emptyBody": "Les imports et autres travaux en arrière-plan terminés, en échec ou annulés apparaissent ici. Ce que Memora fait en ce moment se trouve dans Activité.",
+      "emptyTitle": "Aucune tâche terminée pour l’instant",
+      "errorKept": "Rien n’a été modifié.",
+      "errorTitle": "L’historique des tâches n’a pas pu être lu.",
+      "outcomes": {
+        "canceled": "Annulée",
+        "failed": "Échec",
+        "graphIncomplete": "Terminée, sans le graphe",
+        "succeeded": "Terminée"
+      },
+      "title": "Historique des tâches"
+    },
+    "title": "Diagnostic",
+    "when": {
+      "yesterday": "hier {time}"
+    }
   }
 }

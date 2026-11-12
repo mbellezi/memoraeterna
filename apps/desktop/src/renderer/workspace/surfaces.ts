@@ -237,6 +237,12 @@ export const surfaces: readonly SurfaceEntry[] = [
   section("integrations", "Integrations"),
   section("privacy", "Privacy"),
   section("advanced", "Advanced"),
+  entry(
+    "settings-diagnostics",
+    "settings",
+    "settings/diagnostics/DiagnosticsSurface.tsx",
+    "settings/diagnostics/diagnostics.screen.tsx"
+  ),
 
   // Screens that exist today and that the shell hosts: they keep their own components until the
   // cards that move them (T141 note and topic, T142 inbox and shape) land.

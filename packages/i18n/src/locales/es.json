@@ -5643,5 +5643,226 @@
       "themeMode": "tema oscuro claro noche modo apariencia colores esquema sistema visual",
       "uploadCopies": "copias subidos guardar originales archivos copia carpeta importaciones segunda seguridad de las subidas"
     }
+  },
+  "settingsAdvanced": {
+    "decider": {
+      "auto": "Automático",
+      "autoHelp": "Sigue tus modelos: el clasificador cuando hay uno validado y, si no, el juez.",
+      "generative": "Solo juez",
+      "generativeHelp": "El juez decide todas las conexiones: más lento, y envía el texto de las notas fuera si el juez funciona en la nube.",
+      "ranker": "Solo clasificador",
+      "rankerElse": "Clasificador y, si no, juez",
+      "rankerElseHelp": "El clasificador decide, y el juez entra cuando no hay ninguno validado.",
+      "rankerHelp": "Solo decide un clasificador validado; sin él, la correspondencia espera."
+    },
+    "groups": {
+      "diagnosticsIntro": "Para investigar problemas. Aquí aparecen los nombres técnicos de las tareas.",
+      "matchingIntro": "Cada decisión guarda los valores con los que se tomó; un valor nuevo solo vale para decisiones nuevas. Para rehacer las antiguas, usa la Bandeja de entrada."
+    },
+    "intro": "Rara vez hace falta: los valores por defecto sirven para la mayoría de las bibliotecas. Los valores de correspondencia se midieron; cámbialos solo si sabes por qué.",
+    "layout": {
+      "failed": "No se pudo preparar el cambio. No se movió nada.",
+      "followsNotes": "Igual que las notas ({language})",
+      "hint": "Elegir otro idioma aún no mueve nada: prepara el cambio, que revisas y aplicas en Integraciones.",
+      "noVault": "Elige primero una bóveda de Obsidian; hasta entonces no hay carpetas que nombrar.",
+      "openIntegrations": "Abrir Integraciones",
+      "prepared": "El cambio está listo para revisar. Aplícalo en Integraciones, con los editores de Obsidian cerrados.",
+      "preparing": "Preparando el cambio…"
+    },
+    "matching": {
+      "deleteBody": "Los valores de correspondencia vuelven al conjunto calibrado. Las conexiones ya encontradas no cambian.",
+      "deleteConfirm": "Borrar preajuste",
+      "deleteTitle": "¿Borrar «{name}»?",
+      "differenceItem": "{label} ({current} en lugar de {calibrated})",
+      "differsList": "Diferencia: {list}.",
+      "differsMany": "{count} valores difieren del conjunto calibrado.",
+      "differsNote": "Las conexiones encontradas con estos valores no se midieron.",
+      "differsOne": "{count} valor difiere del conjunto calibrado.",
+      "errorKept": "Tus valores guardados siguen como estaban.",
+      "errorTitle": "No se pudieron leer los preajustes de correspondencia.",
+      "nameInvalid": "Ponle al preajuste un nombre de hasta 100 caracteres.",
+      "nameNew": "Nombre del nuevo preajuste",
+      "nameRename": "Nuevo nombre del preajuste",
+      "nameSave": "Guardar",
+      "off": "desactivado",
+      "on": "activado",
+      "presetCopyName": "{name} (copia)",
+      "presetCreate": "Crear preajuste",
+      "presetCustomNamed": "Personalizado: {name}",
+      "presetDelete": "Borrar",
+      "presetDuplicate": "Duplicar",
+      "presetLimit": "Puedes guardar hasta 50 preajustes.",
+      "presetPrevious": "Ajustes anteriores",
+      "presetRecommended": "Equilibrado (recomendado)",
+      "presetRename": "Renombrar",
+      "restoreCalibrated": "Restaurar los valores calibrados",
+      "subgroups": {
+        "identity": {
+          "intro": "Del grafo de conocimiento: cómo la IA une tipos de relación parecidos y entidades que son la misma.",
+          "title": "Tipos de relación e identidad de entidades"
+        },
+        "notes": {
+          "intro": "Cuánto puede escribir la IA al juzgar las conexiones entre notas.",
+          "title": "Notas"
+        },
+        "sources": {
+          "intro": "Las relaciones unen fuentes enteras; las conexiones, en Conocimiento, unen notas.",
+          "title": "Relaciones entre fuentes"
+        }
+      }
+    },
+    "prompts": {
+      "body": "Abre el editor para leer, cambiar o restaurar un prompt.",
+      "close": "Cerrar los prompts",
+      "open": "Abrir los prompts"
+    },
+    "rootFailed": "No se pudo guardar ese nombre. Usa un nombre de carpeta dentro de la bóveda, sin «..» y sin «/» al principio.",
+    "rootHint": "Un nombre de carpeta dentro de la bóveda, no una ruta.",
+    "saveFailed": "No se pudo guardar. No se cambió nada.",
+    "units": {
+      "characters": "caracteres",
+      "tokens": "tokens",
+      "words": "palabras"
+    }
+  },
+  "diagnostics": {
+    "callLog": {
+      "caption": "Las últimas llamadas de IA",
+      "columns": {
+        "job": "Tarea",
+        "model": "Modelo",
+        "result": "Resultado",
+        "time": "Tiempo",
+        "tokens": "Tokens",
+        "when": "Cuándo"
+      },
+      "countMany": "{count} llamadas registradas",
+      "countOne": "{count} llamada registrada",
+      "emptyBody": "Cada llamada a un modelo, local o en la nube, se registra aquí con su tarea, modelo, tiempo y tokens. La lista se llena a medida que Memora trabaja.",
+      "emptyTitle": "Aún no hay llamadas de IA registradas",
+      "errorKept": "No se cambió nada.",
+      "errorTitle": "No se pudo leer el registro de llamadas.",
+      "filterAll": "Todas",
+      "filterFailed": "Solo con error",
+      "filterLabel": "Mostrar",
+      "limitNote": "Mostrando las {count} llamadas más recientes.",
+      "noneFailed": "Ninguna llamada con error.",
+      "prune": "Borrar registros antiguos…",
+      "results": {
+        "canceled": "Cancelada",
+        "failed": "Falló",
+        "interrupted": "Interrumpida",
+        "running": "En curso",
+        "succeeded": "Terminada"
+      },
+      "showMore": "Mostrar más",
+      "title": "Registro de llamadas de IA"
+    },
+    "debug": {
+      "captureBody": "Los prompts y las respuestas completos se quedan en esta base de datos local. Pueden contener el texto entero de tus fuentes y ocupar mucho espacio.",
+      "captureConfirm": "Activar la captura",
+      "captureNeedsDiagnostics": "Activa los diagnósticos de las operaciones para usarlo.",
+      "captureTitle": "¿Guardar prompts y respuestas completos?",
+      "captureWarning": "Los registros pueden contener el texto entero de tus fuentes y ocupar mucho espacio. Desactívalo tras el diagnóstico."
+    },
+    "errorKept": "No se cambió nada.",
+    "errorTitle": "No se pudo leer el diagnóstico.",
+    "intro": "Para investigar problemas. Aquí aparecen los nombres técnicos de las tareas.",
+    "jobTypes": {
+      "assetStorage": "Guardado de archivos",
+      "atomicNoteGeneration": "Redacción de notas",
+      "atomicNoteMatching": "Conexiones entre notas",
+      "catalogHeader": "Resúmenes para las fichas de libros y artículos",
+      "chunking": "División en fragmentos",
+      "conversion": "Conversión",
+      "embedding": "Índice de búsqueda",
+      "ingestion": "Importación de fuente",
+      "knowledgeGraphGeneration": "Grafo de conocimiento",
+      "localModelDownload": "Descarga de modelo local",
+      "noteEmbedding": "Índice de búsqueda de notas",
+      "obsidianSync": "Sincronización con Obsidian",
+      "obsidianWiki": "Mapas de temas en Obsidian",
+      "other": "Trabajo en segundo plano",
+      "relationComposite": "Preparando libros y artículos para hallar fuentes relacionadas",
+      "relationLabels": "Descripciones de las conexiones",
+      "relationLink": "Vinculando relaciones",
+      "relationPromote": "Relaciones entre fuentes a partir de las notas",
+      "relationRetype": "Tipificando relaciones",
+      "sourceMatching": "Relaciones entre fuentes",
+      "summarization": "Resumen",
+      "topicAreas": "Áreas de temas",
+      "topicAudit": "Auditoría del árbol de temas",
+      "topicBuild": "Construcción del árbol de temas",
+      "topicGate": "Decisión de ubicación en temas",
+      "topicLabelEmbed": "Etiquetas de temas",
+      "topicName": "Nombre de temas",
+      "topicPlace": "Ubicación en temas",
+      "topicRebalance": "Reequilibrio del árbol de temas",
+      "topicSweep": "Revisión del árbol de temas"
+    },
+    "prune": {
+      "confirm": "Borrar registros",
+      "countFailed": "No se pudieron contar los registros. No se borró nada.",
+      "counting": "Contando…",
+      "days": "días",
+      "deletedMany": "{count} registros borrados.",
+      "deletedOne": "{count} registro borrado.",
+      "description": "Las llamadas más antiguas salen del registro. La auditoría de las tareas de IA y tu contenido se quedan.",
+      "failed": "No se pudieron borrar los registros. No se quitó nada.",
+      "invalid": "Escribe un número entero de días o meses, de 1 a 3650.",
+      "months": "meses",
+      "nothing": "Nada es más antiguo que eso.",
+      "olderThan": "Más antiguos que",
+      "previewMany": "Se borrarán {count} registros anteriores al {date}.",
+      "previewOne": "Se borrará {count} registro anterior al {date}.",
+      "scope": "Qué borrar",
+      "scopeAll": "Las llamadas y sus registros",
+      "scopePayloads": "Solo los prompts y las respuestas completos",
+      "title": "¿Borrar registros antiguos?",
+      "unit": "Unidad"
+    },
+    "similarity": {
+      "action": "Borrar ejecuciones…",
+      "body": "Los registros de depuración desaparecen. Ninguna conexión cambia.",
+      "confirm": "Borrar ejecuciones",
+      "deletedMany": "{count} ejecuciones borradas.",
+      "deletedOne": "{count} ejecución borrada.",
+      "failed": "No se pudieron borrar las ejecuciones. No se quitó nada.",
+      "none": "No había ejecuciones que borrar.",
+      "title": "¿Borrar las ejecuciones de depuración de similitud?"
+    },
+    "taskHistory": {
+      "caption": "Tareas terminadas",
+      "clear": "Limpiar el historial de tareas…",
+      "clearBody": "Quita de las listas las ejecuciones terminadas, con error o canceladas. Las tareas activas, las pendientes, la auditoría y los gastos se quedan.",
+      "clearConfirm": "Limpiar historial",
+      "clearFailed": "No se pudo limpiar el historial. No se quitó nada.",
+      "clearTitle": "¿Limpiar el historial de tareas?",
+      "clearedMany": "{count} ejecuciones limpiadas.",
+      "clearedOne": "{count} ejecución limpiada.",
+      "columns": {
+        "duration": "Duración",
+        "job": "Tarea",
+        "result": "Resultado",
+        "when": "Cuándo"
+      },
+      "countMany": "{count} ejecuciones terminadas",
+      "countOne": "{count} ejecución terminada",
+      "emptyBody": "Aquí aparecen las importaciones y otras tareas en segundo plano que terminaron, fallaron o se cancelaron. Lo que Memora hace ahora está en Actividad.",
+      "emptyTitle": "Aún no hay tareas terminadas",
+      "errorKept": "No se cambió nada.",
+      "errorTitle": "No se pudo leer el historial de tareas.",
+      "outcomes": {
+        "canceled": "Cancelada",
+        "failed": "Falló",
+        "graphIncomplete": "Terminada, sin el grafo",
+        "succeeded": "Terminada"
+      },
+      "title": "Historial de tareas"
+    },
+    "title": "Diagnóstico",
+    "when": {
+      "yesterday": "ayer {time}"
+    }
   }
 }

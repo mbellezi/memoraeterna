@@ -5634,5 +5634,226 @@
       "themeMode": "tema scuro chiaro notte modalità aspetto colori schema sistema visivo",
       "uploadCopies": "copie caricati conservare originali file copia cartella importazioni seconda backup dei caricamenti salvare"
     }
+  },
+  "settingsAdvanced": {
+    "decider": {
+      "auto": "Automatico",
+      "autoHelp": "Segue i tuoi modelli: il ranker quando ce n’è uno validato, altrimenti il giudice.",
+      "generative": "Solo giudice",
+      "generativeHelp": "Il giudice decide ogni collegamento: più lento, e invia il testo delle note all’esterno se il giudice gira nel cloud.",
+      "ranker": "Solo ranker",
+      "rankerElse": "Ranker, altrimenti giudice",
+      "rankerElseHelp": "Decide il ranker, e il giudice interviene quando nessun ranker è validato.",
+      "rankerHelp": "Decide solo un ranker validato; senza, la corrispondenza aspetta."
+    },
+    "groups": {
+      "diagnosticsIntro": "Per indagare sui problemi. Qui compaiono i nomi tecnici delle attività.",
+      "matchingIntro": "Ogni decisione conserva i valori con cui è stata presa; un valore nuovo vale solo per le decisioni nuove. Per rifare quelle vecchie, usa la Posta in arrivo."
+    },
+    "intro": "Raramente necessario: i valori predefiniti vanno bene per la maggior parte delle librerie. I valori di corrispondenza sono stati misurati; cambiali solo se sai perché.",
+    "layout": {
+      "failed": "Non è stato possibile preparare la modifica. Non è stato spostato nulla.",
+      "followsNotes": "Come le note ({language})",
+      "hint": "Scegliere un’altra lingua per ora non sposta nulla: prepara la modifica, che controlli e applichi in Integrazioni.",
+      "noVault": "Scegli prima un vault di Obsidian; fino ad allora non ci sono cartelle da nominare.",
+      "openIntegrations": "Apri Integrazioni",
+      "prepared": "La modifica è pronta da controllare. Applicala in Integrazioni, con gli editor di Obsidian chiusi.",
+      "preparing": "Preparazione della modifica…"
+    },
+    "matching": {
+      "deleteBody": "I valori di corrispondenza tornano all’insieme calibrato. I collegamenti già trovati non cambiano.",
+      "deleteConfirm": "Elimina preimpostazione",
+      "deleteTitle": "Eliminare «{name}»?",
+      "differenceItem": "{label} ({current} invece di {calibrated})",
+      "differsList": "Differenza: {list}.",
+      "differsMany": "{count} valori differiscono dall’insieme calibrato.",
+      "differsNote": "I collegamenti trovati con questi valori non sono stati misurati.",
+      "differsOne": "{count} valore differisce dall’insieme calibrato.",
+      "errorKept": "I tuoi valori salvati restano come erano.",
+      "errorTitle": "Non è stato possibile leggere le preimpostazioni di corrispondenza.",
+      "nameInvalid": "Dai alla preimpostazione un nome di massimo 100 caratteri.",
+      "nameNew": "Nome della nuova preimpostazione",
+      "nameRename": "Nuovo nome della preimpostazione",
+      "nameSave": "Salva",
+      "off": "disattivato",
+      "on": "attivato",
+      "presetCopyName": "{name} (copia)",
+      "presetCreate": "Crea preimpostazione",
+      "presetCustomNamed": "Personalizzata: {name}",
+      "presetDelete": "Elimina",
+      "presetDuplicate": "Duplica",
+      "presetLimit": "Puoi tenere fino a 50 preimpostazioni.",
+      "presetPrevious": "Impostazioni precedenti",
+      "presetRecommended": "Bilanciata (consigliata)",
+      "presetRename": "Rinomina",
+      "restoreCalibrated": "Ripristina i valori calibrati",
+      "subgroups": {
+        "identity": {
+          "intro": "Dal grafo della conoscenza: come l’IA unisce tipi di relazione simili ed entità che sono la stessa.",
+          "title": "Tipi di relazione e identità delle entità"
+        },
+        "notes": {
+          "intro": "Quanto può scrivere l’IA quando giudica i collegamenti tra note.",
+          "title": "Note"
+        },
+        "sources": {
+          "intro": "Le relazioni collegano fonti intere; i collegamenti, in Conoscenza, collegano note.",
+          "title": "Relazioni tra fonti"
+        }
+      }
+    },
+    "prompts": {
+      "body": "Apri l’editor per leggere, cambiare o ripristinare un prompt.",
+      "close": "Chiudi i prompt",
+      "open": "Apri i prompt"
+    },
+    "rootFailed": "Non è stato possibile salvare quel nome. Usa un nome di cartella dentro il vault, senza «..» e senza «/» all’inizio.",
+    "rootHint": "Un nome di cartella dentro il vault, non un percorso.",
+    "saveFailed": "Non è stato possibile salvare. Non è stato modificato nulla.",
+    "units": {
+      "characters": "caratteri",
+      "tokens": "token",
+      "words": "parole"
+    }
+  },
+  "diagnostics": {
+    "callLog": {
+      "caption": "Le ultime chiamate IA",
+      "columns": {
+        "job": "Attività",
+        "model": "Modello",
+        "result": "Esito",
+        "time": "Tempo",
+        "tokens": "Token",
+        "when": "Quando"
+      },
+      "countMany": "{count} chiamate registrate",
+      "countOne": "{count} chiamata registrata",
+      "emptyBody": "Ogni chiamata a un modello, locale o nel cloud, viene registrata qui con la sua attività, il modello, il tempo e i token. L’elenco si riempie mentre Memora lavora.",
+      "emptyTitle": "Nessuna chiamata IA registrata per ora",
+      "errorKept": "Non è stato modificato nulla.",
+      "errorTitle": "Non è stato possibile leggere il registro delle chiamate.",
+      "filterAll": "Tutte",
+      "filterFailed": "Solo non riuscite",
+      "filterLabel": "Mostra",
+      "limitNote": "Si mostrano le {count} chiamate più recenti.",
+      "noneFailed": "Nessuna chiamata non riuscita.",
+      "prune": "Elimina i registri vecchi…",
+      "results": {
+        "canceled": "Annullata",
+        "failed": "Non riuscita",
+        "interrupted": "Interrotta",
+        "running": "In corso",
+        "succeeded": "Conclusa"
+      },
+      "showMore": "Mostra altre",
+      "title": "Registro delle chiamate IA"
+    },
+    "debug": {
+      "captureBody": "I prompt e le risposte complete restano in questo database locale. Possono contenere tutto il testo delle tue fonti e occupare molto spazio.",
+      "captureConfirm": "Attiva la cattura",
+      "captureNeedsDiagnostics": "Attiva la diagnostica delle operazioni per usarla.",
+      "captureTitle": "Conservare prompt e risposte complete?",
+      "captureWarning": "I registri possono contenere tutto il testo delle tue fonti e occupare molto spazio. Disattivala dopo la diagnosi."
+    },
+    "errorKept": "Non è stato modificato nulla.",
+    "errorTitle": "Non è stato possibile leggere la diagnostica.",
+    "intro": "Per indagare sui problemi. Qui compaiono i nomi tecnici delle attività.",
+    "jobTypes": {
+      "assetStorage": "Salvataggio dei file",
+      "atomicNoteGeneration": "Scrittura delle note",
+      "atomicNoteMatching": "Collegamenti tra note",
+      "catalogHeader": "Riassunti per le schede di libri e articoli",
+      "chunking": "Suddivisione in passaggi",
+      "conversion": "Conversione",
+      "embedding": "Indice di ricerca",
+      "ingestion": "Importazione di una fonte",
+      "knowledgeGraphGeneration": "Grafo della conoscenza",
+      "localModelDownload": "Download di un modello locale",
+      "noteEmbedding": "Indice di ricerca delle note",
+      "obsidianSync": "Sincronizzazione Obsidian",
+      "obsidianWiki": "Mappe degli argomenti in Obsidian",
+      "other": "Lavoro in background",
+      "relationComposite": "Preparazione di libri e articoli per trovare fonti correlate",
+      "relationLabels": "Descrizioni dei collegamenti",
+      "relationLink": "Collegamento delle relazioni",
+      "relationPromote": "Relazioni tra fonti dalle note",
+      "relationRetype": "Tipizzazione delle relazioni",
+      "sourceMatching": "Relazioni tra fonti",
+      "summarization": "Riepilogo",
+      "topicAreas": "Aree degli argomenti",
+      "topicAudit": "Verifica dell’albero degli argomenti",
+      "topicBuild": "Costruzione dell’albero degli argomenti",
+      "topicGate": "Decisione di collocazione negli argomenti",
+      "topicLabelEmbed": "Etichette degli argomenti",
+      "topicName": "Denominazione degli argomenti",
+      "topicPlace": "Collocazione negli argomenti",
+      "topicRebalance": "Ribilanciamento dell’albero degli argomenti",
+      "topicSweep": "Controllo dell’albero degli argomenti"
+    },
+    "prune": {
+      "confirm": "Elimina i registri",
+      "countFailed": "Non è stato possibile contare i registri. Non è stato eliminato nulla.",
+      "counting": "Conteggio…",
+      "days": "giorni",
+      "deletedMany": "{count} registri eliminati.",
+      "deletedOne": "{count} registro eliminato.",
+      "description": "Le chiamate più vecchie escono dal registro. L’audit delle attività IA e i tuoi contenuti restano.",
+      "failed": "Non è stato possibile eliminare i registri. Non è stato rimosso nulla.",
+      "invalid": "Scrivi un numero intero di giorni o mesi, da 1 a 3650.",
+      "months": "mesi",
+      "nothing": "Niente è più vecchio di così.",
+      "olderThan": "Più vecchi di",
+      "previewMany": "{count} registri precedenti al {date} verranno eliminati.",
+      "previewOne": "{count} registro precedente al {date} verrà eliminato.",
+      "scope": "Cosa eliminare",
+      "scopeAll": "Le chiamate e i loro registri",
+      "scopePayloads": "Solo i prompt e le risposte complete",
+      "title": "Eliminare i registri vecchi?",
+      "unit": "Unità"
+    },
+    "similarity": {
+      "action": "Elimina le esecuzioni…",
+      "body": "I registri di debug spariscono. Nessun collegamento cambia.",
+      "confirm": "Elimina le esecuzioni",
+      "deletedMany": "{count} esecuzioni eliminate.",
+      "deletedOne": "{count} esecuzione eliminata.",
+      "failed": "Non è stato possibile eliminare le esecuzioni. Non è stato rimosso nulla.",
+      "none": "Non c’erano esecuzioni da eliminare.",
+      "title": "Eliminare le esecuzioni di debug della somiglianza?"
+    },
+    "taskHistory": {
+      "caption": "Attività concluse",
+      "clear": "Svuota la cronologia delle attività…",
+      "clearBody": "Toglie dagli elenchi le esecuzioni concluse, non riuscite o annullate. Le attività in corso, gli elementi in sospeso, l’audit e le spese restano.",
+      "clearConfirm": "Svuota la cronologia",
+      "clearFailed": "Non è stato possibile svuotare la cronologia. Non è stato rimosso nulla.",
+      "clearTitle": "Svuotare la cronologia delle attività?",
+      "clearedMany": "{count} esecuzioni rimosse.",
+      "clearedOne": "{count} esecuzione rimossa.",
+      "columns": {
+        "duration": "Durata",
+        "job": "Attività",
+        "result": "Esito",
+        "when": "Quando"
+      },
+      "countMany": "{count} esecuzioni concluse",
+      "countOne": "{count} esecuzione conclusa",
+      "emptyBody": "Qui compaiono le importazioni e gli altri lavori in background conclusi, non riusciti o annullati. Quello che Memora sta facendo ora è in Attività.",
+      "emptyTitle": "Nessuna attività conclusa per ora",
+      "errorKept": "Non è stato modificato nulla.",
+      "errorTitle": "Non è stato possibile leggere la cronologia delle attività.",
+      "outcomes": {
+        "canceled": "Annullata",
+        "failed": "Non riuscita",
+        "graphIncomplete": "Conclusa, senza il grafo",
+        "succeeded": "Conclusa"
+      },
+      "title": "Cronologia delle attività"
+    },
+    "title": "Diagnostica",
+    "when": {
+      "yesterday": "ieri {time}"
+    }
   }
 }
