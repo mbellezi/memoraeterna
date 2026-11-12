@@ -301,6 +301,7 @@ function SuggestionBox({
         object={{ address: row.address, kind: "note", title: row.title }}
         resolved={resolved}
         meta={connectionMeta(row).map((key) => t(key))}
+        metaStacked
         onOpen={onOpen}
       />
       <div className="mt-1 flex flex-wrap items-center gap-2">

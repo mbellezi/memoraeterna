@@ -160,6 +160,7 @@ export function ContextRow({
   showKind = false,
   path = true,
   meta,
+  metaStacked = false,
   extra,
   onOpen,
   muted = false
@@ -171,6 +172,8 @@ export function ContextRow({
   showKind?: boolean;
   path?: boolean;
   meta?: readonly string[];
+  /** The meta parts one per line. */
+  metaStacked?: boolean;
   /** More under the meta (a snippet). */
   extra?: ReactNode;
   onOpen: (address: string, options?: { replace?: boolean }) => void;
@@ -218,7 +221,7 @@ export function ContextRow({
           {titles.length > 0 ? (
             <PathLine titles={titles} label={t("contextPanel.locate.label")} />
           ) : null}
-          {meta && meta.length > 0 ? <MetaLine parts={meta} /> : null}
+          {meta && meta.length > 0 ? <MetaLine parts={meta} stacked={metaStacked} /> : null}
           {extra}
         </span>
       </span>
@@ -227,7 +230,24 @@ export function ContextRow({
 }
 
 /** A meta line: each part binds to the separator before it, so a line never starts or ends on "·". */
-export function MetaLine({ parts }: { parts: readonly string[] }) {
+export function MetaLine({
+  parts,
+  stacked = false
+}: {
+  parts: readonly string[];
+  /** One part per line, with no separators (a box that would wrap a long line before a "·"). */
+  stacked?: boolean;
+}) {
+  if (stacked)
+    return (
+      <span className="block text-xs leading-5 text-muted-foreground">
+        {parts.map((part, index) => (
+          <span key={`${index}:${part}`} className="block">
+            {part}
+          </span>
+        ))}
+      </span>
+    );
   return (
     <span className="block text-xs leading-5 text-muted-foreground [text-wrap:pretty]">
       {parts.map((part, index) => (
