@@ -71,8 +71,8 @@ function Keys({ t }: { t: Translator }) {
       {rows.map(([key, what]) => (
         <li key={key} className="flex items-center gap-3 border-t border-border py-2 last:border-b">
           <span className="w-16 shrink-0">
-            {/* One size for the three caps: a symbol (↵, ⌘W) draws small at 12 px, so all three step up. */}
-            <Kbd className="h-6 min-w-8 px-1.5 text-[13px]">{key}</Kbd>
+            {/* One size for the three caps: a symbol (↵, ⌘W) draws small at 12 px, so all three step up to 14 px. */}
+            <Kbd className="h-6 min-w-8 px-1.5 text-sm">{key}</Kbd>
           </span>
           <span>{what}</span>
         </li>

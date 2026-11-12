@@ -79,7 +79,9 @@ describe("App", () => {
       expect(html).toContain(`aria-label="${name}"`);
     expect(html).toContain('data-surface="shell"');
     expect(html).toContain("h-screen");
-    expect(html).toContain("overflow-auto overscroll-contain");
+    // The destinations' own roots scroll in their own box (Explore's root, T141; the old screens'
+    // scroll box has no destination left that renders it here).
+    expect(html).toContain("overflow-auto bg-surface");
   });
 
   it("shows the Activity pill in the header, and no modal stands over a model loading", () => {
