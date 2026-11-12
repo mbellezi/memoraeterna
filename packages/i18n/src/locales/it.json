@@ -4714,7 +4714,8 @@
       "keyOpen": "apre accanto",
       "keyPeek": "dà un’occhiata senza aprire",
       "keySpace": "Spazio",
-      "keysLabel": "Tasti"
+      "keysLabel": "Tasti",
+      "unsorted": "In attesa di un posto: {count}"
     },
     "topic": {
       "error": "Impossibile aprire questo argomento.",
@@ -4722,6 +4723,91 @@
       "goneBody": "Potrebbe essere stato unito a un altro argomento o rimosso. Nient’altro è cambiato.",
       "goneHeadline": "Questo argomento non è più nell’albero.",
       "noDirectNotes": "Ancora nessuna nota propria. Le note sono negli argomenti secondari."
+    }
+  },
+  "addFlow": {
+    "busy": {
+      "button": "Lettura…",
+      "reading": "Lettura di {name}…",
+      "readingFile": "Lettura del file…",
+      "waiting": "{count} in attesa"
+    },
+    "drop": {
+      "after": "Dopo aver rilasciato, vai alla prima fonte in Esplora e vedi arrivare le note.",
+      "label": "Rilascia i file per aggiungerli",
+      "modeError": "Non è stato possibile leggere la modalità di importazione, quindi i file entrano come Ricercabile e organizzato.",
+      "modeLabel": "Modalità",
+      "modeNote": "{hint}. Cambiala nel menu Aggiungi.",
+      "noFiles": "Rilascia un file per aggiungerlo",
+      "titleMany": "Rilascia per aggiungere {count} file",
+      "titleOne": "Rilascia per aggiungere 1 file"
+    },
+    "failure": {
+      "close": "Chiudi",
+      "empty": "{name} è vuoto.",
+      "generic": "Non è stato possibile aggiungere il file.",
+      "kept": "Non è stato salvato nulla e il resto è com'era.",
+      "keptSome": "I file leggibili sono stati aggiunti e il resto è com'era.",
+      "more": "Altri non aggiunti: {count}.",
+      "noText": "{name} non contiene testo che Memora possa leggere.",
+      "noTextNoName": "Quel file non contiene testo che Memora possa leggere.",
+      "notAFile": "{name} non è un file.",
+      "shortMany": "File non aggiunti.",
+      "shortOne": "File non aggiunto.",
+      "symlink": "{name} è un collegamento. Rilascia il file originale.",
+      "tooLarge": "{name} è troppo grande per essere importato.",
+      "tooLargeNoName": "Quel file è troppo grande per essere importato.",
+      "unreadable": "Non è stato possibile leggere {name}.",
+      "unsupported": "Memora non legge ancora file come {name}.",
+      "unsupportedNoName": "Memora non legge ancora quel tipo di file."
+    },
+    "importPanel": {
+      "errors": {
+        "kept": "Non è stato modificato nulla.",
+        "open": "Non è stato possibile aprire questa fonte per la modifica."
+      },
+      "gone": {
+        "action": "Apri la Biblioteca",
+        "body": "Potrebbe essere stata rimossa dalla Biblioteca. Nient'altro è cambiato.",
+        "title": "Questa fonte non esiste più."
+      },
+      "leave": {
+        "description": "Hai modificato questa importazione senza salvarla. Continua per completarla oppure scarta quello che hai inserito e vai avanti.",
+        "discard": "Scarta ed esci",
+        "keep": "Continua qui",
+        "title": "Uscire senza salvare?"
+      },
+      "title": "Importazione avanzata"
+    },
+    "menu": {
+      "file": "Scegli un file…",
+      "fileHint": "PDF, EPUB, Word, Markdown e testo",
+      "foot": "Vale per le prossime importazioni; ogni fonte può cambiare dopo. Anche rilasciare file ovunque nella finestra funziona.",
+      "label": "Modi di aggiungere",
+      "link": "Incolla un link",
+      "linkHint": "una pagina web o un video",
+      "modeHeading": "All'importazione",
+      "more": "Altre opzioni di importazione…",
+      "note": "Scrivi una nota",
+      "noteHint": "va in Senza posto finché non ha un argomento"
+    },
+    "modes": {
+      "error": "Non è stato possibile verificare se c'è un modello pronto a scrivere.",
+      "errorKept": "Scegliere un file funziona ancora e importa come Ricercabile e organizzato.",
+      "searchable": {
+        "hint": "passaggi per la ricerca e un posto nell'albero, senza note",
+        "name": "Ricercabile e organizzato"
+      },
+      "secondBrain": {
+        "hint": "note brevi, un posto nell'albero e connessioni",
+        "hintNeedsModel": "note brevi, un posto nell'albero e connessioni · richiede un modello pronto a scrivere",
+        "hintRecommended": "note brevi, un posto nell'albero e connessioni · consigliato: c'è un modello pronto a scrivere",
+        "name": "Secondo cervello"
+      },
+      "storeOnly": {
+        "hint": "il file resta nella Biblioteca, senza IA",
+        "name": "Solo archiviare"
+      }
     }
   },
   "entityPage": {

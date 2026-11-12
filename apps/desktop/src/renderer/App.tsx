@@ -58,6 +58,8 @@ import { ExploreNavigator, hoistAction } from "./workspace/destinations/explore/
 import { ContextDockContext } from "./workspace/context-dock";
 import { contextMode } from "./workspace/layout-config";
 import { PanelStack, panelRegistry } from "./workspace/PanelStack";
+import { useAddFlow } from "./workspace/add/use-add-flow";
+import { showImportPanelActions, showSourceActions } from "./workspace/add/add-navigation";
 import { AddSourceContext } from "./workspace/workspace-bridge";
 import { QuickLookHost } from "./workspace/QuickLook";
 import { PaletteHost } from "./workspace/palette/PaletteHost";
@@ -563,16 +565,28 @@ export function App({
   });
   const openInbox = useStableCallback(() => goToView("inbox"));
 
-  // What a shortcut of the workspace does. Until the Add picker (T150) and the panel stack (T136)
-  // land, Cmd-N opens the old Add content view, and the commands of a stack that is not there yet
-  // do nothing.
+  // Adicionar (D32): the picker, the window's drop and the menu share one flow. The new Source is pushed
+  // onto Explore's stack at once, with no toast; the import panel opens beside the focused panel.
+  const addFlow = useAddFlow({
+    openSource: (sourceItemId) => {
+      setLegacyView(null);
+      for (const action of showSourceActions(sourceItemId)) dispatch(action);
+    },
+    openImportPanel: () => {
+      setLegacyView(null);
+      for (const action of showImportPanelActions(workspace.stacks.explore.focus)) dispatch(action);
+    }
+  });
+
+  // What a shortcut of the workspace does: the commands of a stack that is not there yet do nothing.
   const handleWorkspaceResult = useStableCallback((result: KeymapResult) => {
     switch (result.type) {
       case "openPalette":
         // Cmd-K (T145): a second press closes it.
         return palette.toggle();
       case "newImport":
-        return goToView("import");
+        // Cmd-N and Adicionar: the file picker, then the new Source on Explore's stack (D32, A7).
+        return void addFlow.pickFile();
       case "toggleFocusMode":
         return toggleFocusMode();
       case "quickLook":
@@ -599,7 +613,7 @@ export function App({
     }
   });
 
-  // Home's first run and Explore's empty root offer the same Add as Cmd-N.
+  // Home's first run, Explore's empty root and the empty Library offer the same Add as Cmd-N.
   const addSource = useStableCallback(() => handleWorkspaceResult({ type: "newImport" }));
 
   // An Obsidian conflict of the Inbox is solved in Settings, under Connections.
@@ -768,8 +782,7 @@ export function App({
         onGo={goToPlace}
         onOpenLegacy={setActiveView}
         onOpenPalette={() => handleWorkspaceResult({ type: "openPalette" })}
-        onAdd={() => handleWorkspaceResult({ type: "newImport" })}
-        onAddMore={() => handleWorkspaceResult({ type: "newImport" })}
+        addFlow={addFlow}
         onNavigateActivity={openFromActivity}
         onOpenInbox={openInbox}
         onOpenTopic={openTopic}
@@ -795,7 +808,7 @@ export function App({
                 shown={stackShown}
                 focusMode={focusMode}
                 onToggleFocusMode={toggleFocusMode}
-                onAdd={() => handleWorkspaceResult({ type: "newImport" })}
+                onAdd={addSource}
                 registry={stackRegistry}
                 pin={pin}
               />

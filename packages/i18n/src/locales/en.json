@@ -4714,7 +4714,8 @@
       "keyOpen": "opens beside",
       "keyPeek": "peeks without opening",
       "keySpace": "Space",
-      "keysLabel": "Keys"
+      "keysLabel": "Keys",
+      "unsorted": "Waiting for a place: {count}"
     },
     "topic": {
       "error": "Could not open this topic.",
@@ -4722,6 +4723,91 @@
       "goneBody": "It may have been merged into another topic or removed. Nothing else changed.",
       "goneHeadline": "This topic is no longer in the tree.",
       "noDirectNotes": "No notes of its own yet. The notes are in the subtopics."
+    }
+  },
+  "addFlow": {
+    "busy": {
+      "button": "Reading…",
+      "reading": "Reading {name}…",
+      "readingFile": "Reading the file…",
+      "waiting": "{count} waiting"
+    },
+    "drop": {
+      "after": "After you drop, you go to the first source in Explore and watch the notes arrive.",
+      "label": "Drop files to add them",
+      "modeError": "The import mode could not be read, so the files are saved as Searchable and organized.",
+      "modeLabel": "Mode",
+      "modeNote": "{hint}. Change it in the Add menu.",
+      "noFiles": "Drop a file to add it",
+      "titleMany": "Drop to add {count} files",
+      "titleOne": "Drop to add 1 file"
+    },
+    "failure": {
+      "close": "Close",
+      "empty": "{name} is empty.",
+      "generic": "The file could not be added.",
+      "kept": "Nothing was saved, and everything else is as it was.",
+      "keptSome": "The files that could be read were added, and everything else is as it was.",
+      "more": "Also not added: {count}.",
+      "noText": "{name} has no text Memora can read.",
+      "noTextNoName": "That file has no text Memora can read.",
+      "notAFile": "{name} is not a file.",
+      "shortMany": "Files not added.",
+      "shortOne": "File not added.",
+      "symlink": "{name} is a shortcut. Drop the original file instead.",
+      "tooLarge": "{name} is too large to import.",
+      "tooLargeNoName": "That file is too large to import.",
+      "unreadable": "{name} could not be read.",
+      "unsupported": "Memora does not read files like {name} yet.",
+      "unsupportedNoName": "Memora does not read that kind of file yet."
+    },
+    "importPanel": {
+      "errors": {
+        "kept": "Nothing was changed.",
+        "open": "This source could not be opened for editing."
+      },
+      "gone": {
+        "action": "Open the Library",
+        "body": "It may have been removed from the Library. Nothing else changed.",
+        "title": "This source no longer exists."
+      },
+      "leave": {
+        "description": "You changed this import and did not save it. Keep working to finish it, or discard what you entered and go on.",
+        "discard": "Discard and go on",
+        "keep": "Keep working",
+        "title": "Leave without saving?"
+      },
+      "title": "Advanced import"
+    },
+    "menu": {
+      "file": "Choose a file…",
+      "fileHint": "PDF, EPUB, Word, Markdown and text",
+      "foot": "This applies to the next imports; each source can change later. Dropping files anywhere in the window works too.",
+      "label": "Ways to add",
+      "link": "Paste a link",
+      "linkHint": "a web page or a video",
+      "modeHeading": "When importing",
+      "more": "More import options…",
+      "note": "Write a note",
+      "noteHint": "goes to No place until it gets a topic"
+    },
+    "modes": {
+      "error": "Could not check whether a model is ready to write.",
+      "errorKept": "Choosing a file still works and imports as Searchable and organized.",
+      "searchable": {
+        "hint": "passages for search and a place in the tree, without notes",
+        "name": "Searchable and organized"
+      },
+      "secondBrain": {
+        "hint": "short notes, a place in the tree and connections",
+        "hintNeedsModel": "short notes, a place in the tree and connections · needs a model that is ready to write",
+        "hintRecommended": "short notes, a place in the tree and connections · recommended: a model is ready to write",
+        "name": "Second brain"
+      },
+      "storeOnly": {
+        "hint": "the file stays in the Library, without AI",
+        "name": "Just keep it"
+      }
     }
   },
   "entityPage": {

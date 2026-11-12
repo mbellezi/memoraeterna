@@ -39,6 +39,7 @@ import type { AppMenuCommand } from "./app-menu.js";
 import type { AppEventHandler, AppEventType } from "./app-events.js";
 import { objectsIpcChannels, type ObjectsApi } from "./ipc-objects.js";
 import { questionsChannels, type QuestionsApi } from "./ipc-questions.js";
+import { dropChannels, type PrepareDroppedFiles } from "./ipc-drop.js";
 import { entitiesChannels, type EntitiesApi } from "./ipc-entities.js";
 import { homeChannels, type HomeApi } from "./ipc-home.js";
 import { libraryChannels, type LibraryApi } from "./ipc-library.js";
@@ -265,6 +266,7 @@ export const ipcChannels = {
   ingestionFindDuplicate: "app:ingestion:find-duplicate",
   ingestionCreateContainerSource: "app:ingestion:create-container-source",
   ingestionImportFile: "app:ingestion:import-file",
+  ingestionPrepareDropped: dropChannels.prepare,
   ingestionLookupSources: "app:ingestion:lookup-sources",
   ingestionStructureGet: "app:ingestion:structure:get",
   ingestionStructureSave: "app:ingestion:structure:save",
@@ -2162,6 +2164,8 @@ export interface DesktopApi {
     findDuplicate: (input: DuplicateCheckInput) => Promise<DuplicateCandidate | null>;
     createContainerSource: (input: ContainerSourceInput) => Promise<IngestionResult>;
     importFile: (input: FileImportInput) => Promise<IngestionResult | null>;
+    /** Files dropped on the window, by token: the renderer hands over `File`s and never sees a path (T150). */
+    prepareDroppedFiles: PrepareDroppedFiles;
     lookupSources: (query: string, sourceTypes?: SourceItemType[]) => Promise<SourceSuggestion[]>;
     getStructure: (structureId: string) => Promise<DocumentStructureView | null>;
     saveStructure: (input: StructureSaveInput) => Promise<DocumentStructureView>;

@@ -109,9 +109,10 @@ import {
   monitoringPruneResultSchema
 } from "../shared/monitoring.js";
 import { z } from "zod";
-import { contextBridge, ipcRenderer } from "electron";
+import { contextBridge, ipcRenderer, webUtils } from "electron";
 import { createObjectsApi } from "./objects-api.js";
 import { createQuestionsApi } from "./questions-api.js";
+import { createDropApi } from "./drop-api.js";
 import { createEntitiesApi } from "./entities-api.js";
 import { createHomeApi } from "./home-api.js";
 import { createLibraryApi } from "./library-api.js";
@@ -752,6 +753,8 @@ const api: DesktopApi = {
     }
   },
   ingestion: {
+    // The drop bridge (T150): the preload resolves each `File` to its path; the page never sees one.
+    prepareDroppedFiles: createDropApi(ipcRenderer, (file) => webUtils.getPathForFile(file)),
     async previewUrl(input) {
       return sourceUrlPreviewSchema.parse(
         await ipcRenderer.invoke(

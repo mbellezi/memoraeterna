@@ -167,6 +167,13 @@ export const surfaces: readonly SurfaceEntry[] = [
   panel("ask"),
   panel("search"),
   panel("import"),
+  // The advanced import on a stored source, scrolled to the end of its form (the footer on the edge).
+  entry(
+    "import-edit",
+    "panel",
+    "workspace/panels/import-scroller.tsx",
+    "workspace/panels/import-edit.screen.tsx"
+  ),
 
   // The context panel and its six tabs (D31).
   entry(

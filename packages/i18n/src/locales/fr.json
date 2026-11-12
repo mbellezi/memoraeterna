@@ -4714,7 +4714,8 @@
       "keyOpen": "ouvre à côté",
       "keyPeek": "aperçu sans ouvrir",
       "keySpace": "Espace",
-      "keysLabel": "Touches"
+      "keysLabel": "Touches",
+      "unsorted": "En attente d’une place : {count}"
     },
     "topic": {
       "error": "Impossible d’ouvrir ce sujet.",
@@ -4722,6 +4723,91 @@
       "goneBody": "Il a peut-être été fusionné avec un autre sujet ou supprimé. Rien d’autre n’a changé.",
       "goneHeadline": "Ce sujet n’est plus dans l’arbre.",
       "noDirectNotes": "Pas encore de notes propres. Les notes sont dans les sous-sujets."
+    }
+  },
+  "addFlow": {
+    "busy": {
+      "button": "Lecture…",
+      "reading": "Lecture de {name}…",
+      "readingFile": "Lecture du fichier…",
+      "waiting": "{count} en attente"
+    },
+    "drop": {
+      "after": "Après le dépôt, vous allez à la première source dans Explorer et voyez arriver les notes.",
+      "label": "Déposez des fichiers pour les ajouter",
+      "modeError": "Le mode d'importation n'a pas pu être lu, donc les fichiers entrent en Consultable et organisé.",
+      "modeLabel": "Mode",
+      "modeNote": "{hint}. Changez-le dans le menu Ajouter.",
+      "noFiles": "Déposez un fichier pour l'ajouter",
+      "titleMany": "Déposez pour ajouter {count} fichiers",
+      "titleOne": "Déposez pour ajouter 1 fichier"
+    },
+    "failure": {
+      "close": "Fermer",
+      "empty": "{name} est vide.",
+      "generic": "Le fichier n'a pas pu être ajouté.",
+      "kept": "Rien n'a été enregistré et le reste est inchangé.",
+      "keptSome": "Les fichiers lisibles ont été ajoutés et le reste est inchangé.",
+      "more": "Également non ajoutés : {count}.",
+      "noText": "{name} ne contient aucun texte que Memora puisse lire.",
+      "noTextNoName": "Ce fichier ne contient aucun texte que Memora puisse lire.",
+      "notAFile": "{name} n'est pas un fichier.",
+      "shortMany": "Fichiers non ajoutés.",
+      "shortOne": "Fichier non ajouté.",
+      "symlink": "{name} est un raccourci. Déposez plutôt le fichier d'origine.",
+      "tooLarge": "{name} est trop volumineux pour être importé.",
+      "tooLargeNoName": "Ce fichier est trop volumineux pour être importé.",
+      "unreadable": "{name} n'a pas pu être lu.",
+      "unsupported": "Memora ne lit pas encore les fichiers comme {name}.",
+      "unsupportedNoName": "Memora ne lit pas encore ce type de fichier."
+    },
+    "importPanel": {
+      "errors": {
+        "kept": "Rien n'a été modifié.",
+        "open": "Cette source n'a pas pu être ouverte pour modification."
+      },
+      "gone": {
+        "action": "Ouvrir la Bibliothèque",
+        "body": "Elle a peut-être été retirée de la Bibliothèque. Rien d'autre n'a changé.",
+        "title": "Cette source n'existe plus."
+      },
+      "leave": {
+        "description": "Vous avez modifié cet import sans l'enregistrer. Continuez pour le terminer, ou abandonnez ce que vous avez saisi et poursuivez.",
+        "discard": "Abandonner et quitter",
+        "keep": "Continuer ici",
+        "title": "Quitter sans enregistrer ?"
+      },
+      "title": "Importation avancée"
+    },
+    "menu": {
+      "file": "Choisir un fichier…",
+      "fileHint": "PDF, EPUB, Word, Markdown et texte",
+      "foot": "Cela vaut pour les prochaines importations ; chaque source peut changer ensuite. Déposer des fichiers n'importe où dans la fenêtre fonctionne aussi.",
+      "label": "Façons d'ajouter",
+      "link": "Coller un lien",
+      "linkHint": "une page web ou une vidéo",
+      "modeHeading": "À l'importation",
+      "more": "Plus d'options d'importation…",
+      "note": "Écrire une note",
+      "noteHint": "va dans Sans place jusqu'à avoir un sujet"
+    },
+    "modes": {
+      "error": "Impossible de vérifier si un modèle est prêt à écrire.",
+      "errorKept": "Choisir un fichier fonctionne toujours et importe en Consultable et organisé.",
+      "searchable": {
+        "hint": "passages pour la recherche et une place dans l'arbre, sans notes",
+        "name": "Consultable et organisé"
+      },
+      "secondBrain": {
+        "hint": "notes courtes, une place dans l'arbre et des liens",
+        "hintNeedsModel": "notes courtes, une place dans l'arbre et des liens · demande un modèle prêt à écrire",
+        "hintRecommended": "notes courtes, une place dans l'arbre et des liens · recommandé : un modèle est prêt à écrire",
+        "name": "Second cerveau"
+      },
+      "storeOnly": {
+        "hint": "le fichier reste dans la Bibliothèque, sans IA",
+        "name": "Simplement conserver"
+      }
     }
   },
   "entityPage": {
