@@ -145,9 +145,16 @@ describe("the Ask panel's four states", () => {
   it("steps the send button down after a failed send, so the retry is the one action that says so", () => {
     const sendButton = (html: string) =>
       html.match(/<button[^>]*aria-label="Ask"[^>]*>/u)?.[0] ?? "";
-    const idle = sendButton(draw(snapshot("idle", [])));
+    const labelled = (html: string) =>
+      /<button[^>]*aria-label="Ask"[^>]*>.*?Ask<\/button>/u.test(html);
+    const idleHtml = draw(snapshot("idle", []));
+    const idle = sendButton(idleHtml);
     expect(idle).toContain("border-accent bg-accent text-accent-foreground");
+    expect(labelled(idleHtml)).toBe(true);
     const failed = draw(snapshot("error", []));
+    // Icon only while the failed words are in the field: the retry is the one labelled action.
+    expect(labelled(failed)).toBe(false);
+    expect(sendButton(failed)).toContain('aria-label="Ask"');
     expect(sendButton(failed)).not.toContain("border-accent bg-accent text-accent-foreground");
     expect(sendButton(failed)).toContain("bg-surface");
     // "Tentar de novo" is still there, once.
