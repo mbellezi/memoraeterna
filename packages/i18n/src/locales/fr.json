@@ -5528,6 +5528,7 @@
       "paused": "En pause",
       "pausedNote": "En pause : Memora garde tout et ne synchronise pas tant que vous ne la réactivez pas.",
       "readFailed": "Impossible de lire l’état de la synchronisation.",
+      "runFailed": "La synchronisation n'a pas pu démarrer.",
       "saveFailed": "Impossible de changer la synchronisation. Le choix précédent reste.",
       "statusFailed": "Impossible de voir la dernière synchronisation."
     },

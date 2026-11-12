@@ -5523,6 +5523,7 @@
       "paused": "Paused",
       "pausedNote": "Paused: Memora keeps everything and does not sync until you turn it on again.",
       "readFailed": "Could not read the state of the sync.",
+      "runFailed": "Could not start the sync.",
       "saveFailed": "Could not change the sync. The previous choice stays.",
       "statusFailed": "Could not see the last sync."
     },

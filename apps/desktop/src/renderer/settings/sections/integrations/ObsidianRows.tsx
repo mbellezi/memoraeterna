@@ -119,6 +119,7 @@ export function SyncRow({
   const { t } = settings;
   const [choice, setChoice] = useState<ObsidianSyncMode | null>(null);
   const [failed, setFailed] = useState(false);
+  const [runFailed, setRunFailed] = useState(false);
   const [starting, setStarting] = useState(false);
   const stored: ObsidianSyncMode =
     storage.status === "ready"
@@ -144,10 +145,11 @@ export function SyncRow({
   const line = sync.status === "ready" ? syncLine(t, mode, sync.value, new Date()) : null;
   const runNow = async () => {
     setStarting(true);
+    setRunFailed(false);
     try {
       await window.app.obsidian.startSync();
     } catch {
-      setFailed(true);
+      setRunFailed(true);
     } finally {
       setStarting(false);
     }
@@ -194,6 +196,11 @@ export function SyncRow({
           {failed ? (
             <StatusLine tone="warn" role="status">
               {t("settingsIntegrations.sync.saveFailed")}
+            </StatusLine>
+          ) : null}
+          {runFailed ? (
+            <StatusLine tone="warn" role="status">
+              {t("settingsIntegrations.sync.runFailed")}
             </StatusLine>
           ) : null}
           {mode !== "off" && sync.status === "loading" ? <Skeleton className="h-3.5 w-48" /> : null}

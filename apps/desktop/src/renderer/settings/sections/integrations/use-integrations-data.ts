@@ -8,7 +8,11 @@ import type {
   ObsidianSyncStatus,
   StorageSettings
 } from "../../../../shared/ipc";
-import { followLayout, followWikiStatus } from "../../../components/obsidian-followers";
+import {
+  followEditorialConflicts,
+  followLayout,
+  followWikiStatus
+} from "../../../components/obsidian-followers";
 import { readOnEvents, settingsTouch, watchObsidianSync } from "../../../lib/status-followers";
 
 /**
@@ -104,6 +108,41 @@ export function useWikiStatus(): WikiHandle {
       setRound((value) => value + 1);
     }
   };
+}
+
+export type EditorialRows = Awaited<ReturnType<DesktopApi["obsidian"]["editorialConflicts"]>>;
+
+export interface EditorialHandle {
+  /** The edits the paired Obsidian plugin sent that wait for review; `null` until the first read. */
+  rows: EditorialRows | null;
+  /** True when the last read failed. */
+  failed: boolean;
+  /** Reads once more (after one edit was resolved). */
+  refresh: () => void;
+}
+
+/**
+ * The plugin's edits waiting for review. Read once and after each editorial projection, each sync
+ * that ended and each change of the vault settings (D16): the Obsidian group's "Vault reviews"
+ * line needs the count even while it is closed, so it follows here and not inside the card.
+ */
+export function useEditorialConflicts(): EditorialHandle {
+  const [rows, setRows] = useState<EditorialRows | null>(null);
+  const [failed, setFailed] = useState(false);
+  const [round, setRound] = useState(0);
+  useEffect(
+    () =>
+      followEditorialConflicts(
+        () => window.app,
+        (value) => {
+          setRows(value);
+          setFailed(false);
+        },
+        () => setFailed(true)
+      ),
+    [round]
+  );
+  return { rows, failed, refresh: () => setRound((value) => value + 1) };
 }
 
 export interface LayoutHandle {

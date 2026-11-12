@@ -5530,6 +5530,7 @@
       "paused": "En pausa",
       "pausedNote": "En pausa: Memora guarda todo y no sincroniza hasta que la actives de nuevo.",
       "readFailed": "No se pudo leer el estado de la sincronización.",
+      "runFailed": "No se pudo iniciar la sincronización.",
       "saveFailed": "No se pudo cambiar la sincronización. Sigue la elección anterior.",
       "statusFailed": "No se pudo ver la última sincronización."
     },

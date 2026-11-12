@@ -122,7 +122,14 @@ export function AttachmentsRow({ entry, layout }: { entry: SettingEntryV2; layou
             </StatusLine>
           ) : null}
           {latest ? (
-            <LayoutReview t={t} migration={latest} layout={layout} busy={busy} run={run} />
+            <LayoutReview
+              key={latest.id}
+              t={t}
+              migration={latest}
+              layout={layout}
+              busy={busy}
+              run={run}
+            />
           ) : null}
         </div>
       }
@@ -146,6 +153,13 @@ function LayoutReview({
   const [closed, setClosed] = useState(false);
   const [excluded, setExcluded] = useState<string[]>([]);
   const checkId = useId();
+  // The "editors closed" confirmation and the exclusions belong to one action: every Apply or
+  // Rollback starts from an empty box again, so a vault write is never confirmed by an earlier one.
+  const act = async (work: () => Promise<ObsidianLayoutStatus>) => {
+    setClosed(false);
+    setExcluded([]);
+    await run(work);
+  };
   const step = layoutStep(migration);
   const finished = step === "completed" || step === "rolledBack";
   const canApply = ["preview", "quiescing", "partial", "applying"].includes(migration.status);
@@ -238,7 +252,7 @@ function LayoutReview({
                 variant="primary"
                 disabled={busy || !closed || !layout.active}
                 onClick={() =>
-                  void run(() =>
+                  void act(() =>
                     window.app.obsidian.applyLayout({
                       id: migration.id,
                       excludeIds: excluded,
@@ -254,7 +268,7 @@ function LayoutReview({
               <Button
                 disabled={busy || !closed || !layout.active}
                 onClick={() =>
-                  void run(() =>
+                  void act(() =>
                     window.app.obsidian.rollbackLayout({
                       id: migration.id,
                       excludeIds: [],

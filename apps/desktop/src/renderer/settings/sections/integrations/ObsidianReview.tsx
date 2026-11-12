@@ -15,7 +15,7 @@ import {
 import { cn } from "../../../lib/cn";
 import { ReadProblem, StatusLine } from "../../SettingControls";
 import { useSettings } from "../../settings-context";
-import type { WikiHandle } from "./use-integrations-data";
+import { useEditorialConflicts, type WikiHandle } from "./use-integrations-data";
 
 type Diff = Awaited<ReturnType<typeof window.app.obsidian.wikiDiff>>;
 
@@ -47,6 +47,7 @@ export function ObsidianReview({ handle }: { handle: WikiHandle }) {
   const [error, setError] = useState<MessageKey | null>(null);
   const [opened, setOpened] = useState<boolean | null>(null);
   const bodyId = useId();
+  const editorial = useEditorialConflicts();
 
   if (wiki.status === "loading") return <Skeleton className="mt-3 h-4 w-48" />;
   if (wiki.status === "failed")
@@ -60,7 +61,7 @@ export function ObsidianReview({ handle }: { handle: WikiHandle }) {
   const failed = status.conflicts.filter(isFailedFile);
   const pending = status.conflicts.filter((row) => !isFailedFile(row));
   const retiredKept = status.retired.keptTotal;
-  const waiting = pending.length + failed.length + retiredKept;
+  const waiting = pending.length + failed.length + retiredKept + (editorial.rows?.length ?? 0);
   const open = opened ?? waiting > 0;
   const working = status.job && ["queued", "running", "retrying"].includes(status.job.status);
 
@@ -167,7 +168,7 @@ export function ObsidianReview({ handle }: { handle: WikiHandle }) {
               void act(async () => handle.set(await window.app.obsidian.moveRetiredWiki({ id })))
             }
           />
-          <ObsidianEditorialCard t={t} />
+          <ObsidianEditorialCard t={t} feed={editorial} />
         </div>
       ) : null}
       {diff ? (

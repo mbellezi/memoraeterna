@@ -17,6 +17,10 @@ let storage: () => Promise<unknown>;
 let gateway: () => Promise<unknown>;
 let layout: unknown;
 let describeValues: Record<string, unknown>;
+let editorial: unknown[];
+let applied: unknown;
+let startSync: () => Promise<unknown>;
+let reads: number;
 
 const vaultSettings = {
   obsidianVaultPath: "~/Vault",
@@ -69,14 +73,23 @@ const describeEntries = () =>
 beforeEach(() => {
   vi.useFakeTimers();
   calls = [];
-  storage = () => Promise.resolve(vaultSettings);
-  gateway = () =>
-    Promise.resolve({
+  reads = 0;
+  editorial = [];
+  applied = { config: null, migrations: [] };
+  startSync = () => Promise.resolve({});
+  storage = () => {
+    reads += 1;
+    return Promise.resolve(vaultSettings);
+  };
+  gateway = () => {
+    reads += 1;
+    return Promise.resolve({
       state: "ready",
       host: "127.0.0.1",
       port: 47613,
       baseUrl: "http://127.0.0.1:47613"
     });
+  };
   layout = { config: { version: 2, language: "pt-BR", attachments: "omit" }, migrations: [] };
   describeValues = { bookLookup: "auto", "metadata:google-books": null };
   dom = createTestDom();
@@ -121,24 +134,42 @@ beforeEach(() => {
           finishedAt: new Date().toISOString(),
           error: null
         }),
-      startSync: record("obsidian.startSync", {}),
-      wikiStatus: () =>
-        Promise.resolve({
+      startSync: () => {
+        calls.push(["obsidian.startSync", {}]);
+        return startSync();
+      },
+      wikiStatus: () => {
+        reads += 1;
+        return Promise.resolve({
           active: true,
           job: null,
           delivery: null,
           scope: { sourceIds: ["6f1f8b2e-1c10-4d3a-9a39-3a9c2b1d7e01"], includeDescendants: true },
           conflicts: [],
           retired: { archived: 0, absent: 0, keptTotal: 0, kept: [] }
-        }),
+        });
+      },
       saveWikiScope: record("obsidian.saveWikiScope", {}),
-      layoutStatus: () => Promise.resolve(layout),
+      layoutStatus: () => {
+        reads += 1;
+        return Promise.resolve(layout);
+      },
       previewLayout: (input: unknown) => {
         calls.push(["obsidian.previewLayout", input]);
         return Promise.resolve({ ...(layout as object), migrations: [migration("preview")] });
       },
-      applyLayout: record("obsidian.applyLayout", { config: null, migrations: [] }),
-      editorialConflicts: () => Promise.resolve([])
+      applyLayout: (input: unknown) => {
+        calls.push(["obsidian.applyLayout", input]);
+        return Promise.resolve(applied);
+      },
+      rollbackLayout: (input: unknown) => {
+        calls.push(["obsidian.rollbackLayout", input]);
+        return Promise.resolve(applied);
+      },
+      editorialConflicts: () => {
+        reads += 1;
+        return Promise.resolve(editorial);
+      }
     },
     integrations: {
       getGatewayStatus: () => gateway(),
@@ -290,6 +321,67 @@ describe("Settings › Integrations", () => {
     ]);
   });
 
+  const editorsBox = () =>
+    [...row("obsidian.layout.attachments").querySelectorAll("input[type=checkbox]")].pop() as
+      HTMLInputElement | undefined;
+  const applyButton = () =>
+    button(/Apply/, row("obsidian.layout.attachments")) as HTMLButtonElement;
+  const rollbackButton = () =>
+    button(/Roll back|Rollback/i, row("obsidian.layout.attachments")) as HTMLButtonElement;
+
+  it("asks 'I closed my editors' again for every Apply and Rollback", async () => {
+    applied = { ...(layout as object), migrations: [migration("completed")] };
+    await mount();
+    await click(row("obsidian.layout.attachments").querySelector("[role=switch]")!);
+    await prop(editorsBox()!, "onChange", { target: { checked: true } });
+    await click(applyButton());
+    expect(called("obsidian.applyLayout")).toHaveLength(1);
+    // The migration is applied and can be rolled back, but the old confirmation is gone.
+    expect(rollbackButton()).toBeTruthy();
+    expect(rollbackButton().disabled).toBe(true);
+    expect(editorsBox()!.checked).toBe(false);
+    await prop(editorsBox()!, "onChange", { target: { checked: true } });
+    expect(rollbackButton().disabled).toBe(false);
+    await click(rollbackButton());
+    expect(called("obsidian.rollbackLayout")).toHaveLength(1);
+    expect(editorsBox()!.checked).toBe(false);
+  });
+
+  it("counts the plugin's edits that wait for review, and opens the review for them", async () => {
+    editorial = [
+      {
+        id: "6f1f8b2e-1c10-4d3a-9a39-3a9c2b1d7e77",
+        path: "Notes/edited-in-obsidian.md",
+        receipt: {
+          operationId: "6f1f8b2e-1c10-4d3a-9a39-3a9c2b1d7e78",
+          targetId: "6f1f8b2e-1c10-4d3a-9a39-3a9c2b1d7e79",
+          status: "conflict",
+          revision: "r1",
+          syncVersion: 1,
+          contentHash: "a".repeat(64),
+          projection: "conflict",
+          content: "x",
+          reason: null,
+          comparison: { base: "b", local: "l", app: "a" }
+        }
+      }
+    ];
+    await mount();
+    const text = dom.document.body.textContent ?? "";
+    expect(text).toContain("Vault reviews · 1 waiting");
+    expect(text).not.toContain("nothing waiting");
+    expect(text).toContain("Notes/edited-in-obsidian.md");
+  });
+
+  it("says a failed Sync now by its own sentence, not as a failed change of the mode", async () => {
+    startSync = () => Promise.reject(new Error("unbound"));
+    await mount();
+    await click(button("Sync now"));
+    expect(called("obsidian.startSync")).toHaveLength(1);
+    expect(row("obsidianSync").textContent).toContain("Could not start the sync.");
+    expect(row("obsidianSync").textContent).not.toContain("Could not change the sync");
+  });
+
   it("changes the book lookup through the stored pair, and keeps the Google Books key out of the page after saving it", async () => {
     await mount();
     const select = row("bookLookup").querySelector("select") as HTMLSelectElement;
@@ -349,7 +441,10 @@ describe("Settings › Integrations", () => {
 
   it("starts no timer and speaks pt-BR without English chrome", async () => {
     await mount(ptBR);
+    const before = reads;
     await dom.act(() => void vi.advanceTimersByTime(60_000));
+    // Nothing is read again on a timer: the statuses move only with the bus events.
+    expect(reads).toBe(before);
     expect(called("obsidian.startSync")).toEqual([]);
     const text = dom.document.body.textContent ?? "";
     expect(text).toContain("Sincronizar agora");

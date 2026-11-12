@@ -5526,6 +5526,7 @@
       "paused": "Pausada",
       "pausedNote": "Pausada: o Memora guarda tudo e não sincroniza até você ligar de novo.",
       "readFailed": "Não foi possível ler o estado da sincronização.",
+      "runFailed": "Não foi possível iniciar a sincronização.",
       "saveFailed": "Não foi possível mudar a sincronização. A escolha anterior continua.",
       "statusFailed": "Não foi possível ver a última sincronização."
     },
