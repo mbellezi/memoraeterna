@@ -6047,6 +6047,175 @@
       "uploadCopies": "upload copies keep original files copy folder store imports originals backup of uploads second"
     }
   },
+  "settingsIntegrations": {
+    "books": {
+      "auto": "Automatic: Open Library, then Google Books",
+      "googleBooks": "Google Books only",
+      "keyConfirm": "Save",
+      "keyFailed": "Could not keep the key safely. Try again.",
+      "keyNone": "No key",
+      "keyReplace": "Replace key…",
+      "keySave": "Save key…",
+      "keySaved": "Key saved, encrypted on this Mac",
+      "off": "Off",
+      "openLibrary": "Open Library only",
+      "saveFailed": "Could not change it. The previous choice stays."
+    },
+    "gateway": {
+      "address": "Address",
+      "clientType": "Kind of app",
+      "clients": "Who is paired",
+      "copied": "Copied.",
+      "copy": "Copy",
+      "copyFailed": "Could not copy. Select the text and copy it by hand.",
+      "createPairing": "Create pairing",
+      "displayName": "App name (optional)",
+      "kinds": {
+        "chromeExtension": "Chrome extension",
+        "obsidianPlugin": "Obsidian plugin"
+      },
+      "localOnly": "It answers only paired apps, and only on this Mac.",
+      "metaMany": "{count} apps · connection {state}",
+      "metaNone": "No app · connection {state}",
+      "metaOne": "{count} app · connection {state}",
+      "noClients": "No app is paired yet. Pair the Chrome extension or the Obsidian plugin.",
+      "pair": "Pair an app…",
+      "pairFailed": "Could not create the pairing. Nothing was kept.",
+      "pairNeedsReady": "To pair, the local connection has to be ready.",
+      "pairRestart": "To pair, the local connection has to be ready. It starts when Memora opens; if it stays stopped, close Memora and open it again.",
+      "pairedSince": "Paired {since}",
+      "readFailed": "Could not read the local connection.",
+      "revoke": "Revoke",
+      "revokeAsk": "Revoke the access of {name}? It will have to be paired again.",
+      "revokeFailed": "Could not revoke. Access stays as it was.",
+      "states": {
+        "failed": "failed",
+        "ready": "ready",
+        "starting": "starting",
+        "stopped": "stopped"
+      },
+      "statusLine": "Local connection {state}.",
+      "today": "today",
+      "tokenDone": "I copied it",
+      "tokenTitle": "Pairing code",
+      "tokenWarning": "Copy it now: it shows only this once and is not kept here."
+    },
+    "layout": {
+      "needsSync": "To apply it, the Obsidian sync has to be on.",
+      "readFailed": "Could not read the state of the vault.",
+      "review": "The change is prepared. Check the files, close your editors and apply."
+    },
+    "moreInAdvanced": "Memora’s folder in the vault and the language of the folders are in",
+    "openAdvanced": "Advanced › Obsidian",
+    "review": {
+      "bothSides": "Pages edited on both sides",
+      "hint": "What waits for you after Memora writes to the vault: pages edited on both sides, files that could not be written and edits from the plugin.",
+      "none": "nothing waiting",
+      "plugin": "Plugin edits",
+      "pluginReadFailed": "Could not read the plugin edits.",
+      "title": "Vault reviews",
+      "waitingMany": "{count} waiting",
+      "waitingOne": "{count} waiting",
+      "working": "Updating the vault’s pages…"
+    },
+    "scope": {
+      "all": "All sources",
+      "choose": "Choose sources…",
+      "countMany": "{count} sources chosen",
+      "countOne": "{count} source chosen",
+      "readFailed": "Could not read the vault’s sources.",
+      "save": "Save sources",
+      "saveFailed": "Could not save. The previous choice stays."
+    },
+    "sync": {
+      "failed": "The last sync stopped. Nothing was lost; try again.",
+      "last": "Synced {when}",
+      "needsVault": "Choose the vault folder above to use the sync and the settings below.",
+      "never": "It has not synced yet.",
+      "now": "Sync now",
+      "off": "Off",
+      "on": "On",
+      "paused": "Paused",
+      "pausedNote": "Paused: Memora keeps everything and does not sync until you turn it on again.",
+      "readFailed": "Could not read the state of the sync.",
+      "reviewMany": "{count} waiting for review",
+      "reviewOne": "{count} waiting for review",
+      "runFailed": "Could not start the sync.",
+      "saveFailed": "Could not change the sync. The previous choice stays.",
+      "statusFailed": "Could not see the last sync."
+    },
+    "vault": {
+      "change": "Change folder…",
+      "choose": "Choose folder…",
+      "none": "No vault chosen",
+      "pickFailed": "Could not open the folder picker.",
+      "readFailed": "Could not read the vault folder."
+    },
+    "when": {
+      "other": "{date}, {time}",
+      "today": "today, {time}",
+      "yesterday": "yesterday, {time}"
+    }
+  },
+  "settingsKnowledge": {
+    "autonomy": {
+      "auto": {
+        "description": "Applies and keeps Undo. Anything that touches your edits, or what you pinned, always waits for you.",
+        "label": "Automatic"
+      },
+      "off": {
+        "description": "Nothing is written by AI in the background. Notes still get a place in the tree.",
+        "label": "Off"
+      },
+      "suggest": {
+        "description": "Proposes each change and waits for you to decide in the Inbox.",
+        "label": "Suggest"
+      }
+    },
+    "cap": {
+      "invalid": "Enter an amount from 0 to {max}.",
+      "meter": "This month’s spending against the cap",
+      "spent": "{spent} of {cap} spent this month",
+      "stateExhausted": "The cap is reached. Cloud work waits until next month or until the cap is higher.",
+      "statePaused": "Cloud work is paused near the cap. Continue it from Activity or raise the cap."
+    },
+    "groups": {
+      "scheduleIntro": "Applies to all background work. Imports and your own requests never wait."
+    },
+    "intro": "The Gardener is Memora’s background work: it places notes in the tree, finds connections and keeps the overviews current, always with Undo. Here you decide how far it goes on its own.",
+    "labels": {
+      "doneMany": "{count} descriptions updated",
+      "doneOne": "{count} description updated",
+      "failed": "The descriptions could not be written. The ones already done were kept.",
+      "generateMissing": "Generate the missing ones",
+      "queued": "Waiting in line to write the descriptions.",
+      "readFailed": "Could not see how this job is going.",
+      "rewriteAll": "Rewrite all…",
+      "rewriteAsk": "Rewrite the descriptions of every connection in {language}? The current ones will be replaced.",
+      "rewriteConfirm": "Rewrite",
+      "running": "Writing the descriptions…",
+      "startFailed": "Could not start. Nothing was changed."
+    },
+    "pause": {
+      "action": "Pause now",
+      "default": "Working",
+      "resume": "Resume"
+    },
+    "saving": {
+      "failed": "Could not save. The previous value is back.",
+      "saved": "Saved.",
+      "saving": "Saving…"
+    },
+    "states": {
+      "controlsError": "Could not read the Gardener’s controls.",
+      "controlsKept": "Nothing was changed: it keeps the values that already applied."
+    },
+    "treeShape": {
+      "balanced": "Balanced",
+      "broad": "Broad",
+      "deep": "Deep"
+    }
+  },
   "settingsAi": {
     "blocked": {
       "localRequiresAppleSilicon": "Local needs a Mac with Apple silicon.",

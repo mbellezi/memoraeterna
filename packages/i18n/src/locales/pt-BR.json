@@ -6047,6 +6047,175 @@
       "uploadCopies": "cópias enviados guardar originais arquivos cópia pasta importações segundo backup dos envios salvar"
     }
   },
+  "settingsIntegrations": {
+    "books": {
+      "auto": "Automático: Open Library, depois Google Books",
+      "googleBooks": "Só Google Books",
+      "keyConfirm": "Salvar",
+      "keyFailed": "Não foi possível guardar a chave com segurança. Tente de novo.",
+      "keyNone": "Nenhuma chave",
+      "keyReplace": "Trocar chave…",
+      "keySave": "Salvar chave…",
+      "keySaved": "Chave guardada, criptografada neste Mac",
+      "off": "Desligado",
+      "openLibrary": "Só Open Library",
+      "saveFailed": "Não foi possível mudar. A escolha anterior continua."
+    },
+    "gateway": {
+      "address": "Endereço",
+      "clientType": "Tipo de app",
+      "clients": "Quem está pareado",
+      "copied": "Copiado.",
+      "copy": "Copiar",
+      "copyFailed": "Não foi possível copiar. Selecione o texto e copie à mão.",
+      "createPairing": "Criar pareamento",
+      "displayName": "Nome do app (opcional)",
+      "kinds": {
+        "chromeExtension": "Extensão do Chrome",
+        "obsidianPlugin": "Plugin do Obsidian"
+      },
+      "localOnly": "Só responde a apps pareados, e só neste Mac.",
+      "metaMany": "{count} apps · conexão {state}",
+      "metaNone": "Nenhum app · conexão {state}",
+      "metaOne": "{count} app · conexão {state}",
+      "noClients": "Nenhum app pareado ainda. Pareie a extensão do Chrome ou o plugin do Obsidian.",
+      "pair": "Parear um app…",
+      "pairFailed": "Não foi possível criar o pareamento. Nada foi guardado.",
+      "pairNeedsReady": "Para parear, a conexão local precisa estar pronta.",
+      "pairRestart": "Para parear, a conexão local precisa estar pronta. Ela liga quando o Memora abre; se continuar parada, feche o Memora e abra de novo.",
+      "pairedSince": "Pareado {since}",
+      "readFailed": "Não foi possível ler a conexão local.",
+      "revoke": "Revogar",
+      "revokeAsk": "Revogar o acesso de {name}? Ele precisará ser pareado de novo.",
+      "revokeFailed": "Não foi possível revogar. O acesso continua como estava.",
+      "states": {
+        "failed": "com falha",
+        "ready": "pronta",
+        "starting": "iniciando",
+        "stopped": "parada"
+      },
+      "statusLine": "Conexão local {state}.",
+      "today": "hoje",
+      "tokenDone": "Já copiei",
+      "tokenTitle": "Código de pareamento",
+      "tokenWarning": "Copie agora: ele aparece só desta vez e não fica guardado aqui."
+    },
+    "layout": {
+      "needsSync": "Para aplicar, a sincronização com o Obsidian precisa estar ligada.",
+      "readFailed": "Não foi possível ler o estado do cofre.",
+      "review": "A mudança está preparada. Confira os arquivos, feche os editores e aplique."
+    },
+    "moreInAdvanced": "A pasta do Memora no cofre e o idioma das pastas ficam em",
+    "openAdvanced": "Avançado › Obsidian",
+    "review": {
+      "bothSides": "Páginas editadas dos dois lados",
+      "hint": "O que espera por você depois que o Memora escreve no cofre: páginas editadas dos dois lados, arquivos que não puderam ser gravados e edições do plugin.",
+      "none": "nada esperando",
+      "plugin": "Edições do plugin",
+      "pluginReadFailed": "Não foi possível ler as edições do plugin.",
+      "title": "Revisões no cofre",
+      "waitingMany": "{count} esperando",
+      "waitingOne": "{count} esperando",
+      "working": "Atualizando as páginas do cofre…"
+    },
+    "scope": {
+      "all": "Todas as fontes",
+      "choose": "Escolher fontes…",
+      "countMany": "{count} fontes escolhidas",
+      "countOne": "{count} fonte escolhida",
+      "readFailed": "Não foi possível ler as fontes do cofre.",
+      "save": "Salvar fontes",
+      "saveFailed": "Não foi possível salvar. A escolha anterior continua."
+    },
+    "sync": {
+      "failed": "A última sincronização parou. Nada foi perdido; tente de novo.",
+      "last": "Sincronizado {when}",
+      "needsVault": "Escolha a pasta do cofre acima para usar a sincronização e os ajustes abaixo.",
+      "never": "Ainda não sincronizou.",
+      "now": "Sincronizar agora",
+      "off": "Desligada",
+      "on": "Ligada",
+      "paused": "Pausada",
+      "pausedNote": "Pausada: o Memora guarda tudo e não sincroniza até você ligar de novo.",
+      "readFailed": "Não foi possível ler o estado da sincronização.",
+      "reviewMany": "{count} esperando revisão",
+      "reviewOne": "{count} esperando revisão",
+      "runFailed": "Não foi possível iniciar a sincronização.",
+      "saveFailed": "Não foi possível mudar a sincronização. A escolha anterior continua.",
+      "statusFailed": "Não foi possível ver a última sincronização."
+    },
+    "vault": {
+      "change": "Trocar pasta…",
+      "choose": "Escolher pasta…",
+      "none": "Nenhum cofre escolhido",
+      "pickFailed": "Não foi possível abrir o seletor de pastas.",
+      "readFailed": "Não foi possível ler a pasta do cofre."
+    },
+    "when": {
+      "other": "{date}, {time}",
+      "today": "hoje, {time}",
+      "yesterday": "ontem, {time}"
+    }
+  },
+  "settingsKnowledge": {
+    "autonomy": {
+      "auto": {
+        "description": "Aplica e guarda Desfazer. O que toca suas edições ou o que você fixou sempre espera você.",
+        "label": "Automática"
+      },
+      "off": {
+        "description": "Nada é escrito por IA em segundo plano. As notas ainda ganham lugar na árvore.",
+        "label": "Desligada"
+      },
+      "suggest": {
+        "description": "Propõe cada mudança e espera você decidir na Caixa de entrada.",
+        "label": "Sugerir"
+      }
+    },
+    "cap": {
+      "invalid": "Digite um valor de 0 a {max}.",
+      "meter": "Gasto do mês em relação ao limite",
+      "spent": "{spent} de {cap} gastos neste mês",
+      "stateExhausted": "O limite foi atingido. O trabalho na nuvem espera o próximo mês ou um limite maior.",
+      "statePaused": "O trabalho na nuvem está pausado perto do limite. Continue pela Atividade ou aumente o limite."
+    },
+    "groups": {
+      "scheduleIntro": "Vale para todo o trabalho em segundo plano. Importações e seus pedidos nunca esperam."
+    },
+    "intro": "O Jardineiro é o trabalho em segundo plano do Memora: dá lugar às notas na árvore, encontra conexões e mantém as visões gerais em dia, sempre com Desfazer. Aqui você decide até onde ele vai sozinho.",
+    "labels": {
+      "doneMany": "{count} descrições atualizadas",
+      "doneOne": "{count} descrição atualizada",
+      "failed": "Não foi possível escrever as descrições. As que já estavam prontas foram mantidas.",
+      "generateMissing": "Gerar as que faltam",
+      "queued": "Na fila para escrever as descrições.",
+      "readFailed": "Não foi possível ver como está esse trabalho.",
+      "rewriteAll": "Reescrever todas…",
+      "rewriteAsk": "Reescrever as descrições de todas as conexões em {language}? As atuais serão substituídas.",
+      "rewriteConfirm": "Reescrever",
+      "running": "Escrevendo as descrições…",
+      "startFailed": "Não foi possível começar. Nada foi alterado."
+    },
+    "pause": {
+      "action": "Pausar agora",
+      "default": "Trabalhando",
+      "resume": "Retomar"
+    },
+    "saving": {
+      "failed": "Não foi possível salvar. O valor anterior voltou.",
+      "saved": "Salvo.",
+      "saving": "Salvando…"
+    },
+    "states": {
+      "controlsError": "Não foi possível ler os controles do Jardineiro.",
+      "controlsKept": "Nada foi alterado: ele segue com o que já valia."
+    },
+    "treeShape": {
+      "balanced": "Equilibrada",
+      "broad": "Ampla",
+      "deep": "Profunda"
+    }
+  },
   "settingsAi": {
     "blocked": {
       "localRequiresAppleSilicon": "A Local exige um Mac com Apple silicon.",

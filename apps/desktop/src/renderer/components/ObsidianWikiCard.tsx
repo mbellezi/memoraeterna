@@ -224,10 +224,13 @@ export function ObsidianFailedFiles({ t, failed }: { t: Translator; failed: Conf
 /** Where the paged delivery stands: files delivered of the pass's total, and any that failed. */
 export function DeliveryProgress({
   t,
-  delivery
+  delivery,
+  quiet = false
 }: {
   t: Translator;
   delivery: NonNullable<Status["delivery"]>;
+  /** Muted and small, for a line that sits under a title of its own (Settings › Integrations). */
+  quiet?: boolean;
 }) {
   const values = {
     delivered: delivery.delivered,
@@ -242,7 +245,11 @@ export function DeliveryProgress({
         : "obsidianWiki.deliveryStopped";
   return (
     <div className="grid gap-1" data-testid="obsidian-delivery">
-      <p role="status" aria-live="polite" className="text-sm">
+      <p
+        role="status"
+        aria-live="polite"
+        className={quiet ? "m-0 text-xs text-muted-foreground" : "text-sm"}
+      >
         {t(key, { values })}
         {delivery.failed > 0 && (
           <span className="ml-2 text-danger">{t("obsidianWiki.deliveryFailed", { values })}</span>
@@ -268,7 +275,7 @@ export function DeliveryProgress({
     </div>
   );
 }
-function ProjectionDiff({
+export function ProjectionDiff({
   t,
   diff,
   busy,

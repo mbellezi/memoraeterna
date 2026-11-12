@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { X } from "lucide-react";
 import type { MessageKey } from "@app/i18n";
 const control =
-  "rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 disabled:opacity-40 dark:border-slate-700 dark:bg-slate-900";
+  "rounded-lg border border-border-strong bg-surface px-3 py-2 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-40";
 export function EvidenceScopePicker({
   selected,
   onChange,
@@ -69,7 +69,7 @@ export function EvidenceScopePicker({
           }}
         />
       </label>
-      <p className="text-xs text-slate-500">
+      <p className="text-xs text-muted-foreground">
         {t(hint)} · {selected.length}/100
       </p>
       <div className="flex flex-wrap gap-1">
@@ -77,7 +77,7 @@ export function EvidenceScopePicker({
           <button
             type="button"
             key={id}
-            className="rounded-full bg-cyan-500/10 px-2 py-1 text-xs text-cyan-700 focus-visible:ring-2 dark:text-cyan-300"
+            className="rounded-full bg-accent-soft px-2 py-1 text-xs text-accent focus-visible:ring-2 focus-visible:ring-accent"
             onClick={() => onChange(selected.filter((v) => v !== id))}
           >
             {labels[id] ?? id.slice(0, 8)}{" "}
@@ -86,7 +86,7 @@ export function EvidenceScopePicker({
         ))}
       </div>
       {failed ? (
-        <p role="alert" className="text-sm text-red-600">
+        <p role="status" className="text-sm text-muted-foreground">
           {t("consultation.errors.sources")}{" "}
           <button className={control} onClick={() => setRetry((v) => v + 1)}>
             {t("organization.refresh")}
@@ -97,11 +97,11 @@ export function EvidenceScopePicker({
           {t("organization.loading")}
         </p>
       ) : (
-        <div className="grid max-h-48 gap-1 overflow-auto rounded-lg border border-slate-200 p-2 dark:border-slate-800 sm:grid-cols-2">
+        <div className="grid max-h-48 gap-1 overflow-auto rounded-lg border border-border p-2 sm:grid-cols-2">
           {items.map((item) => (
             <label
               key={item.id}
-              className="flex min-w-0 items-center gap-2 rounded p-2 text-sm hover:bg-slate-100 dark:hover:bg-slate-800"
+              className="flex min-w-0 items-center gap-2 rounded p-2 text-sm hover:bg-surface-hover"
             >
               <input
                 type="checkbox"
@@ -118,7 +118,9 @@ export function EvidenceScopePicker({
               <span className="truncate">{item.title}</span>
             </label>
           ))}
-          {!items.length && <p className="text-sm text-slate-500">{t("consultation.noSources")}</p>}
+          {!items.length && (
+            <p className="text-sm text-muted-foreground">{t("consultation.noSources")}</p>
+          )}
         </div>
       )}
       <div className="flex gap-2">
