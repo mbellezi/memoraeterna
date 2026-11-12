@@ -251,7 +251,9 @@ describe("matching settings v2 migration", () => {
         // Settings › Knowledge › Advanced › Matching (T98): its control, registry row and calibration.
         "MatchingSettingsGroup.tsx",
         "settings-registry.ts",
-        "matching-calibration.ts"
+        "matching-calibration.ts",
+        // Settings v2 › Advanced › Matching (F5 T165): the same control's spec in the new section.
+        "matching-model.ts"
       ]
     };
     const found: string[] = [];
