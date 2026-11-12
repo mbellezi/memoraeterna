@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { InboxKind } from "@app/domain";
 
@@ -15,6 +15,11 @@ import { columnWidth } from "../columns";
  * Obsidian conflict leads to Settings. As the previous panel of the stack it shows its item list
  * alone, the item that opened the panel beside it marked. The root reports its own `data-surface`
  * and `data-state`, as the stack draws no frame around a root.
+ *
+ * A kind in the address is a request ("show me this kind"), not a place: the list takes it once it
+ * is on screen and the root's address goes back to the plain Inbox. So a second Home row for the
+ * same kind is a change of address again and narrows the list again, while a return through the
+ * rail, or a restart, leaves the person's own filter alone.
  */
 
 export const surfaceId = "destination-inbox";
@@ -35,6 +40,14 @@ export function InboxRoot({ t, address, mode, active, onState, onOpen }: PanelPr
   }, [onState, state]);
   const width = useViewportWidth();
   const compact = mode === "compact";
+  const kind = inboxKindOf(address);
+  const open = useRef(onOpen);
+  open.current = onOpen;
+  // The list's own effect (a child's) has applied the kind by now, so the request can be spent.
+  useEffect(() => {
+    if (kind !== undefined && active && !compact)
+      open.current(formatView({ view: "inbox" }), { replace: true });
+  }, [kind, active, compact]);
 
   return (
     <section
@@ -52,7 +65,7 @@ export function InboxRoot({ t, address, mode, active, onState, onOpen }: PanelPr
           active={active}
           compact={compact}
           keyBar={!compact}
-          kind={inboxKindOf(address)}
+          kind={kind}
           listWidth={columnWidth("inboxList", width)}
           onState={reportState}
           onNavigate={() => undefined}

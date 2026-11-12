@@ -12,7 +12,8 @@ import { InboxRoot, inboxKindOf } from "./InboxRoot";
 let dom: TestDom;
 const list = vi.fn(() => Promise.resolve({ items: [], nextCursor: null }));
 
-const props = (address: string): PanelProps =>
+const onOpen = vi.fn();
+const props = (address: string, over: Partial<PanelProps> = {}): PanelProps =>
   ({
     t: createTranslator("en"),
     address,
@@ -20,11 +21,13 @@ const props = (address: string): PanelProps =>
     active: true,
     onState: () => undefined,
     onPlace: () => undefined,
-    onOpen: () => undefined
+    onOpen,
+    ...over
   }) as PanelProps;
 
 beforeEach(() => {
   list.mockClear();
+  onOpen.mockClear();
   dom = createTestDom();
   (dom.window as unknown as { app: unknown }).app = {
     inbox: { list, counts: () => Promise.resolve(emptyInboxCounts()), act: vi.fn() },
@@ -71,5 +74,30 @@ describe("the Inbox root's address", () => {
     await dom.render(<InboxRoot {...props("memora://inbox")} />);
     await settle();
     expect(lastKinds()).toBeUndefined();
+  });
+
+  it("spends the request: the root goes back to the plain Inbox once the kind is on screen", async () => {
+    await dom.render(<InboxRoot {...props("memora://inbox?kind=suggestion")} />);
+    await settle();
+    expect(lastKinds()).toEqual(["suggestion"]);
+    expect(onOpen).toHaveBeenCalledWith("memora://inbox", { replace: true });
+    // The plain address asks for nothing, so a second Home row for the same kind is a change of
+    // address again and narrows the list again.
+    onOpen.mockClear();
+    await dom.render(<InboxRoot {...props("memora://inbox")} />);
+    await dom.render(<InboxRoot {...props("memora://inbox?kind=suggestion")} />);
+    await settle();
+    expect(lastKinds()).toEqual(["suggestion"]);
+    expect(onOpen).toHaveBeenCalledWith("memora://inbox", { replace: true });
+  });
+
+  it("keeps the request while the root is hidden or only the previous panel, and has none to spend for the plain root", async () => {
+    await dom.render(<InboxRoot {...props("memora://inbox?kind=review", { active: false })} />);
+    await settle();
+    await dom.render(<InboxRoot {...props("memora://inbox?kind=review", { mode: "compact" })} />);
+    await settle();
+    await dom.render(<InboxRoot {...props("memora://inbox")} />);
+    await settle();
+    expect(onOpen).not.toHaveBeenCalled();
   });
 });
