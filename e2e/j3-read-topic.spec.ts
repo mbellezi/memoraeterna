@@ -24,11 +24,11 @@ import { expect, test, type Locator, type Page } from "@playwright/test";
 
 import {
   captureStep,
+  followSystemTheme,
   invokeApp,
   journeysWriterConfigId,
   openClone,
   setContentSize,
-  setTheme,
   stepFailures,
   waitForDatabase,
   type MemoraSession
@@ -140,12 +140,11 @@ async function locate(page: Page, target: string): Promise<Located | null> {
   return invokeApp<Located | null>(page, "objects.locate", { address: target });
 }
 
-/** Soft contrast check of a step in both themes; the app is left in the light theme. */
+/** Soft contrast check of a step in both themes; the app is left in the dark theme (scanned last). */
 async function captureAndCheck(session: MemoraSession, spec: string, index: number, step: string) {
   const record = await captureStep(session, spec, index, step);
   // X12: each scan drawn in the theme it was asked for, and no contrast failure in either.
   expect.soft(stepFailures(record), `${step} (X12)`).toEqual([]);
-  await setTheme(session, "light");
 }
 
 /**
@@ -194,6 +193,9 @@ test("J3 read topic: a navigator topic, its member note beside it, back within t
   let db: ProfileDb | null = null;
   try {
     await waitForDatabase(page, 180_000);
+    // Dark is the default (Q39): the app is made to follow the window's scheme, so every scan is drawn
+    // in the theme setTheme asks for and none depends on the default or on what the profile stored.
+    await followSystemTheme(session);
     await setContentSize(session, 1440, 900);
     await expect(page.locator('[data-surface="shell"]').first()).toBeVisible({ timeout: 60_000 });
     db = await openProfileDb(session.userDataDir);
@@ -340,6 +342,9 @@ test("J3 path with 0 clicks (X2): each of the five kinds shows the path of objec
   const report: Record<string, unknown>[] = [];
   try {
     await waitForDatabase(page, 180_000);
+    // Dark is the default (Q39): the app is made to follow the window's scheme, so every scan is drawn
+    // in the theme setTheme asks for and none depends on the default or on what the profile stored.
+    await followSystemTheme(session);
     await setContentSize(session, 1440, 900);
     await expect(page.locator('[data-surface="shell"]').first()).toBeVisible({ timeout: 60_000 });
     db = await openProfileDb(session.userDataDir);

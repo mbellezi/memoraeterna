@@ -10,7 +10,10 @@
 // step 2 (writer, the two models from the seed folder, the Hybrid preset, the class tests) is issued
 // through `window.app`. Step 1 (the languages) is walked in the first-run view itself. No model is
 // downloaded (the seed folder is checked first) and every AI call is served by the cassette
-// `firstrun-hybrid-f4`; a miss fails the journey.
+// `firstrun-hybrid-f4`; a miss fails the journey. Because step 2 does not run in the first-run view,
+// onboarding's own import step (step 3, A6/D9's first-source path) is not reached: the first source
+// goes through the Add flow (Cmd-N), and J1 fails softly on A6 until the Codex sign-in has a DEV seam.
+// The app is made to follow the window's colour scheme before the first scan (dark is the default).
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
@@ -23,6 +26,7 @@ import {
   captureStep,
   cassetteMisses,
   defaultCassette,
+  followSystemTheme,
   firstRunModelIds,
   firstRunRankerEnv,
   goldenSource,
@@ -30,7 +34,6 @@ import {
   launchMemora,
   modelSeedDir,
   setContentSize,
-  setTheme,
   stepFailures,
   waitForDatabase,
   type MemoraSession
@@ -249,7 +252,6 @@ async function captureAndCheck(session: MemoraSession, index: number, step: stri
   const record = await captureStep(session, "j1", index, step);
   // X12: each scan drawn in the theme it was asked for, and no contrast failure in either.
   expect.soft(stepFailures(record), `${step} (X12)`).toEqual([]);
-  await setTheme(session, "light");
 }
 
 test("J1 first run: onboarding, Home as the first-run surface, the first source opens Explore with its Source", async () => {
@@ -274,6 +276,9 @@ test("J1 first run: onboarding, Home as the first-run surface, the first source 
   let report: Record<string, unknown> = {};
   try {
     await waitForDatabase(page, minutes(3));
+    // Dark is the default (Q39): the app is made to follow the window's scheme, so every scan is drawn
+    // in the theme setTheme asks for and none depends on the default or on what the profile stored.
+    await followSystemTheme(session);
     lap("databaseReady");
     db = await openProfileDb(userDataDir);
 
@@ -321,6 +326,24 @@ test("J1 first run: onboarding, Home as the first-run surface, the first source 
     expect(destinations, "X7: the rail's destinations").toBe(5);
     lap("homeFirstRun");
     await captureAndCheck(session, 1, "home-first-run");
+
+    // A6/D9's own path is NOT walked: onboarding's import step (step 3) hands its source to the shell
+    // (`use-first-run.tsx` onFirstSource -> `App.tsx` openFirstSource -> the `firstSource` case of
+    // `workspace/state.ts`). The controller reaches step 3 only after step 2 ran in its own view, and
+    // step 2 needs the ChatGPT / Codex browser sign-in (`ai.connectOpenAiCodex`, a real OAuth round
+    // trip to auth.openai.com), which a journey cannot play and must not call. Until the app has a
+    // DEV seam for that sign-in, J1 fails softly here so it can never be green without A6.
+    expect
+      .soft(
+        false,
+        "A6/D9: onboarding's import step is not walked (step 2's Codex sign-in has no DEV seam); " +
+          "the first source below goes through the ordinary Add flow"
+      )
+      .toBe(true);
+    test.info().annotations.push({
+      type: "A6 not covered",
+      description: "onboarding step 3 needs a DEV seam for the Codex sign-in of step 2"
+    });
 
     // The first source: Cmd-N, the stubbed picker answers it, the Source opens on Explore at once.
     const file = await goldenSource(run.repoRoot, firstSourceKey);

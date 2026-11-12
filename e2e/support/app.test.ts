@@ -18,13 +18,14 @@ import {
   firstRunModelIds,
   firstRunRankerEnv,
   firstRunRankerState,
+  followSystemTheme,
   journeyEnvironment,
   journeysWriterConfigId,
   secondSourceKey,
   setTheme,
   stepFailures
 } from "./app.js";
-import { settleInPage } from "./contrast.js";
+import { readDrawnTheme, settleInPage } from "./contrast.js";
 import { repositoryRoot } from "./profile.js";
 
 describe("journeyEnvironment", () => {
@@ -173,6 +174,43 @@ describe("setTheme", () => {
     calls.length = 0;
     await setTheme(session as never, "light");
     expect(calls.slice(0, 3)).toEqual(["native light", "emulate light", "wait dark=false"]);
+  });
+});
+
+describe("followSystemTheme", () => {
+  const fakeSession = (follows: boolean) => {
+    const calls: string[] = [];
+    let scheme = "light";
+    const session = {
+      electronApp: { evaluate: async () => undefined },
+      page: {
+        emulateMedia: async (options: { colorScheme: string }) => {
+          scheme = options.colorScheme;
+        },
+        waitForFunction: async () => undefined,
+        evaluate: async (run: unknown, input: unknown) => {
+          if (run === readDrawnTheme) return follows ? scheme : "dark";
+          if (run === settleInPage) return 0;
+          const call = input as { path?: string; args?: unknown[] };
+          if (call?.path) calls.push(`${call.path} ${JSON.stringify(call.args)}`);
+          return undefined;
+        }
+      }
+    };
+    return { calls, session };
+  };
+
+  it("sets the app's theme to follow the system, explicitly, and proves both schemes reach the page", async () => {
+    const { calls, session } = fakeSession(true);
+    await followSystemTheme(session as never);
+    expect(calls).toEqual(['settings.updateApp [{"themeMode":"system"}]']);
+  });
+
+  it("stops when the page stays dark after a light switch (the default would have decided it)", async () => {
+    const { session } = fakeSession(false);
+    await expect(followSystemTheme(session as never, 300)).rejects.toThrow(
+      /did not follow the colour scheme to light: it is drawn dark/u
+    );
   });
 });
 

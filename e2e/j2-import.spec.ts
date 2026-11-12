@@ -24,12 +24,12 @@ import {
   captureStep,
   cassetteMisses,
   defaultCassette,
+  followSystemTheme,
   goldenSource,
   invokeApp,
   openClone,
   secondSourceKey,
   setContentSize,
-  setTheme,
   stepFailures,
   waitForDatabase,
   type MemoraSession
@@ -99,7 +99,7 @@ async function jobs(page: Page): Promise<{ at: number; active: number }[]> {
   ]);
 }
 
-/** What the Activity pill's glyph is, by the classes of its drawing (the pill emits no state). */
+/** The glyph the Activity pill draws, as it names it in `data-glyph`; null while there is no pill. */
 async function pillGlyph(page: Page): Promise<string | null> {
   const pill = page.locator('[data-status] [data-fit="pill"]').first();
   if ((await pill.count()) === 0) return null;
@@ -107,12 +107,11 @@ async function pillGlyph(page: Page): Promise<string | null> {
   return pill.getAttribute("data-glyph");
 }
 
-/** One step in both themes, contrast scanned (X12, soft: every step is walked); leaves the light theme. */
+/** One step in both themes, contrast scanned (X12, soft: every step is walked); leaves the dark theme. */
 async function captureAndCheck(session: MemoraSession, index: number, step: string) {
   const record = await captureStep(session, "j2", index, step);
   // X12: each scan drawn in the theme it was asked for, and no contrast failure in either.
   expect.soft(stepFailures(record), `${step} (X12)`).toEqual([]);
-  await setTheme(session, "light");
 }
 
 /** The note rows of the top Source panel that already show their path. */
@@ -165,6 +164,9 @@ test("J2 import to tree: Add through Cmd-N pushes the Source at once and its not
   let report: Record<string, unknown> = {};
   try {
     await waitForDatabase(page, 180_000);
+    // Dark is the default (Q39): the app is made to follow the window's scheme, so every scan is drawn
+    // in the theme setTheme asks for and none depends on the default or on what the profile stored.
+    await followSystemTheme(session);
     await setContentSize(session, 1440, 900);
     await expect(page.locator('[data-surface="shell"]').first()).toBeVisible({ timeout: 60_000 });
     db = await openProfileDb(session.userDataDir);

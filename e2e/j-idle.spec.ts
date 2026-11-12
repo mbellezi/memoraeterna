@@ -25,6 +25,7 @@ import { expect, test, type Page } from "@playwright/test";
 import type { AppEventType } from "../apps/desktop/src/shared/app-events";
 import {
   captureStep,
+  followSystemTheme,
   openClone,
   setContentSize,
   setTheme,
@@ -145,12 +146,17 @@ test("J-idle: 60 s idle in each destination and Settings, no invocation without 
   const reports: WindowReport[] = [];
   try {
     await waitForDatabase(page, 180_000);
+    // Dark is the default (Q39): the app is made to follow the window's scheme, so every scan is drawn
+    // in the theme setTheme asks for and none depends on the default or on what the profile stored.
+    await followSystemTheme(session);
     await setContentSize(session, 1280, 800);
     await expect(page.locator('[data-surface="shell"]').first()).toBeVisible({ timeout: 60_000 });
     // The trace must be on, or the journey proves nothing.
     expect(await readIpcTrace(electronApp), "MEMORA_IPC_TRACE is not recording").not.toBeNull();
     await recordBus(page);
     await installGestureCounter(page);
+    // The positive control below counts the first place's own load: the theme setup is not part of it.
+    expect(await clearIpcTrace(electronApp), "the IPC trace cannot be cleared").toBe(true);
 
     const gestureTimes: number[] = [];
     let index = 0;
@@ -170,6 +176,8 @@ test("J-idle: 60 s idle in each destination and Settings, no invocation without 
         ["success", place.alsoLoaded].includes(state as never),
         `${place.id} rested in "${state}", not a loaded state: its idle window would prove nothing`
       ).toBe(true);
+      // The place is on screen (Settings' frame is mounted hidden while it is not the place).
+      await expect(surface, `${place.id} is not on screen`).toBeVisible();
       if (place.id === "settings") await expect(page.locator(settingsCurrent)).toBeVisible();
 
       const step = await captureStep(session, "j-idle", index, place.id);
@@ -184,8 +192,9 @@ test("J-idle: 60 s idle in each destination and Settings, no invocation without 
           `${place.id} (X12)`
         )
         .toEqual([]);
-      // Back to the system's own theme before the window: the capture left the app in dark.
-      await setTheme(session, "light");
+      // The window rests in the product's default theme, dark (Q39), set explicitly, never left to
+      // whatever the capture scanned last.
+      await setTheme(session, "dark");
       await page.waitForTimeout(settleMs);
 
       // Positive control: the place's own load went through the trace, so a silent window is a real 0.

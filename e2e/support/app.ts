@@ -318,18 +318,21 @@ export async function setTheme(session: Pick<MemoraSession, "electronApp" | "pag
  * and so never depends on the default or on what the profile stored. Then it proves both switches
  * reach the page.
  */
-export async function followSystemTheme(session: Pick<MemoraSession, "electronApp" | "page">) {
+export async function followSystemTheme(
+  session: Pick<MemoraSession, "electronApp" | "page">,
+  timeoutMs = 15_000
+) {
   await invokeApp(session.page, "settings.updateApp", { themeMode: "system" });
   for (const theme of ["light", "dark"] as const) {
     await setTheme(session, theme);
-    const drawn = await waitForDrawnTheme(session.page, theme);
+    const drawn = await waitForDrawnTheme(session.page, theme, timeoutMs);
     if (drawn !== theme)
       throw new Error(`The app did not follow the colour scheme to ${theme}: it is drawn ${drawn}`);
   }
 }
 
 /** Polls the theme the page is drawn in until it is `wanted` or the time is up; returns the last. */
-async function waitForDrawnTheme(page: Page, wanted: Theme, timeoutMs = 15_000): Promise<Theme> {
+async function waitForDrawnTheme(page: Page, wanted: Theme, timeoutMs: number): Promise<Theme> {
   const deadline = Date.now() + timeoutMs;
   for (;;) {
     const drawn = await page.evaluate(readDrawnTheme);
