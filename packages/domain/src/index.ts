@@ -37,6 +37,7 @@ export * from "./object-neighborhood.js";
 export * from "./note-page.js";
 export * from "./relation-explanation.js";
 export * from "./relation-calibration.js";
+export * from "./relation-confidence.js";
 export * from "./relation-pair-text.js";
 export * from "./relations-config.js";
 export * from "./relation-decisions.js";

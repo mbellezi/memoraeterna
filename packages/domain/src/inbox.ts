@@ -27,6 +27,7 @@ export const inboxKinds = [
   "review",
   "quarantined",
   "contradiction",
+  "suggestion",
   "withdrawn",
   "duplicate",
   "obsidian_conflict",
@@ -70,6 +71,8 @@ export const inboxVariants = {
   quarantined: ["place", "rebalance", "audit", "match", "refresh", "derived", "other"],
   /** A suggested `contradicts` relation, or the Divergences an automatic overview patch kept (D17). */
   contradiction: ["relation", "divergence"],
+  /** A suggested relation below the "high" confidence band, or with no probability (D33). */
+  suggestion: ["relation"],
   withdrawn: ["explainer", "typer", "unknown"],
   duplicate: ["vector", "title", "both"],
   obsidian_conflict: ["editorial", "deleted", "projection"],

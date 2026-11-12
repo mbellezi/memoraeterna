@@ -147,6 +147,7 @@ export const inboxCounts = (total: number): InboxCounts => ({
     review: total,
     quarantined: 0,
     contradiction: 0,
+    suggestion: 0,
     withdrawn: 0,
     duplicate: 0,
     obsidian_conflict: 0,

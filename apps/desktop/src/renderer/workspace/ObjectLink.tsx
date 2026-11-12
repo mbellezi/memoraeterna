@@ -2,6 +2,8 @@ import {
   createContext,
   useContext,
   useEffect,
+  useLayoutEffect,
+  useRef,
   useState,
   type ComponentPropsWithoutRef,
   type MouseEvent,
@@ -20,6 +22,7 @@ import { cn } from "../lib/cn";
 import { useObjectChanged } from "../lib/object-events";
 import {
   anchorsPassage,
+  cardPlacement,
   countKey,
   isRelationLink,
   kindWordKeys,
@@ -27,6 +30,7 @@ import {
   previewCounts,
   surfaceState,
   titleOf,
+  type CardPlacement,
   type PreviewState
 } from "./ObjectLinkModel";
 import { previewBatcher, type PreviewBatcher, type PreviewResult } from "./preview-batcher";
@@ -278,7 +282,7 @@ export function ObjectCard({
             ) : null}
             <p
               className={cn(
-                "m-0 line-clamp-3 font-reading text-sm leading-snug text-secondary-foreground [text-wrap:pretty]",
+                "m-0 line-clamp-2 font-reading text-sm leading-snug text-secondary-foreground [text-wrap:pretty]",
                 passage && "italic"
               )}
             >
@@ -337,13 +341,43 @@ export interface ObjectLinkProps extends AnchorProps {
   appearance?: "inline" | "bare";
   /** False for a link that must show no card. */
   preview?: boolean;
-  /** Where the card goes; right of the link by default, flipped where there is no room. */
+  /**
+   * Where the card goes. A link in running text hangs it in the margin beside its text block, on
+   * this side when it has room and on the other when it has not, and shows none when neither does;
+   * a bare link (a crumb) hangs it beside itself.
+   */
   side?: "top" | "right" | "bottom" | "left";
   /** Tests and screens: hold the card open, in place and not in a portal. */
   previewOpen?: boolean;
   portal?: boolean;
   /** Tests: the batcher the card reads through. */
   batcher?: PreviewBatcher;
+}
+
+/** The card is `w-80`; its gap and its least distance from the window edge match the primitive's. */
+const cardWidthRem = 20;
+const cardGapPx = 8;
+
+/**
+ * Where the card of a link in running text hangs: past the text block the link is in, so it never
+ * covers the rest of the sentence. `null` when neither margin holds it.
+ */
+function placeInMargin(anchor: HTMLElement, prefer: "left" | "right"): CardPlacement | null {
+  const viewportWidth = document.documentElement.clientWidth || window.innerWidth;
+  // Without a layout (a test DOM) there is nothing to measure: the card hangs beside the link.
+  if (!(viewportWidth > 0) || typeof anchor.getBoundingClientRect !== "function")
+    return { side: prefer, sideOffset: cardGapPx };
+  const root = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+  const block = anchor.closest("p, li, blockquote, h1, h2, h3, h4, h5, h6, [data-reading-column]");
+  return cardPlacement({
+    link: anchor.getBoundingClientRect(),
+    block: block ? block.getBoundingClientRect() : null,
+    viewportWidth,
+    cardWidth: cardWidthRem * root,
+    gap: cardGapPx,
+    edge: cardGapPx,
+    prefer
+  });
 }
 
 const focusRing =
@@ -373,7 +407,46 @@ export function ObjectLink({
   const onOpen = givenOpen ?? context?.onOpen;
   const [opened, setOpened] = useState(false);
   const open = previewOpen ?? opened;
-  const card = useObjectPreview(address, open && preview, batcher);
+  const anchor = useRef<HTMLAnchorElement>(null);
+  // Where the card hangs, measured when it opens: `undefined` before, `null` when no margin holds it.
+  const [placed, setPlaced] = useState<CardPlacement | { side: typeof side } | null | undefined>(
+    // A server render (tests) has no layout and no effect: the card hangs beside the link.
+    previewOpen && typeof document === "undefined" ? { side } : undefined
+  );
+  useLayoutEffect(() => {
+    if (!open || !preview) return undefined;
+    const element = anchor.current;
+    if (appearance === "bare" || !element) {
+      setPlaced({ side });
+      return undefined;
+    }
+    const measure = () => {
+      const next = placeInMargin(element, side === "left" ? "left" : "right");
+      // The same place keeps the same object, so a re-measure that changes nothing renders nothing.
+      setPlaced((held) =>
+        held && next && "sideOffset" in held && held.side === next.side
+          ? held.sideOffset === next.sideOffset
+            ? held
+            : next
+          : next
+      );
+    };
+    measure();
+    // The text can reflow while the card is open (a font arriving, a panel resizing): the margin follows.
+    let live = true;
+    void document.fonts?.ready.then(() => live && measure());
+    const block = element.closest(
+      "p, li, blockquote, h1, h2, h3, h4, h5, h6, [data-reading-column]"
+    );
+    const observer =
+      typeof ResizeObserver === "undefined" ? null : new ResizeObserver(() => measure());
+    observer?.observe(block ?? element);
+    return () => {
+      live = false;
+      observer?.disconnect();
+    };
+  }, [open, preview, appearance, side]);
+  const card = useObjectPreview(address, open && preview && Boolean(placed), batcher);
 
   const activate = (event: MouseEvent<HTMLAnchorElement>) => {
     // The window never navigates to a `memora://` address: the workspace opens it.
@@ -383,6 +456,7 @@ export function ObjectLink({
 
   const link = (
     <a
+      ref={anchor}
       href={address}
       data-object-link={address}
       data-quick-look={address}
@@ -399,18 +473,24 @@ export function ObjectLink({
     <HoverCard
       open={open}
       onOpenChange={(next) => {
-        if (previewOpen === undefined) setOpened(next);
+        if (previewOpen !== undefined) return;
+        // Closed, the next opening measures again.
+        if (!next) setPlaced(undefined);
+        setOpened(next);
       }}
     >
       <HoverCardTrigger asChild>{link}</HoverCardTrigger>
-      <HoverCardContent
-        side={side}
-        portal={portal}
-        role="group"
-        aria-label={t("preview.card.label")}
-      >
-        <ObjectCard t={t} address={address} preview={card} />
-      </HoverCardContent>
+      {placed ? (
+        <HoverCardContent
+          side={placed.side}
+          sideOffset={"sideOffset" in placed ? placed.sideOffset : undefined}
+          portal={portal}
+          role="group"
+          aria-label={t("preview.card.label")}
+        >
+          <ObjectCard t={t} address={address} preview={card} />
+        </HoverCardContent>
+      ) : null}
     </HoverCard>
   );
 }

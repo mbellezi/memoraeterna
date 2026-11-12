@@ -42,12 +42,12 @@ export function EmptyState({
       {headline ? (
         <p
           className={cn(
-            "m-0 min-w-0 text-foreground [text-wrap:balance]",
+            "m-0 min-w-0 text-foreground",
             page
-              ? "font-reading text-2xl font-semibold"
+              ? "font-reading text-2xl font-semibold [text-wrap:balance]"
               : compact
-                ? "text-sm font-semibold"
-                : "text-base font-semibold"
+                ? "text-sm font-semibold [text-wrap:pretty]"
+                : "text-base font-semibold [text-wrap:pretty]"
           )}
         >
           {headline}

@@ -179,6 +179,9 @@ export function offers(item: InboxItem, verb: InboxVerb): boolean {
  * is a deliberate click, never one key press.
  */
 export function keyCarries(item: InboxItem, verb: InboxVerb): boolean {
+  // A suggestion's `dismiss` is the removal, which D34 gives to Backspace and never to x (x only
+  // leaves an item without deciding), so no X key or keycap stands on it.
+  if (item.kind === "suggestion" && verb === "dismiss") return false;
   return offers(item, verb) && !(item.kind === "budget" && verb === "apply");
 }
 

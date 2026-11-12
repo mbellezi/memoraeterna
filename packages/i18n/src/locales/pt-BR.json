@@ -10,6 +10,168 @@
       "related": "Link relacionado"
     }
   },
+  "home": {
+    "arrived": {
+      "generating": "gerando notas",
+      "link": "Biblioteca",
+      "noPlace": "ainda sem lugar",
+      "progressOf": "{done} de ~{total}",
+      "progressSoFar": "{done} até agora",
+      "title": "Chegou"
+    },
+    "briefing": {
+      "arrivedNoNotesOne": "Chegou {sources}, ainda sem notas;",
+      "arrivedNoNotesOther": "Chegaram {sources}, ainda sem notas;",
+      "arrivedOne": "Chegou {sources} e já gerou {notes};",
+      "arrivedOther": "Chegaram {sources} e já geraram {notes};",
+      "decisionsAmongOne": "{decisions} espera por você: “{title}”.",
+      "decisionsAmongOther": "{decisions} esperam por você, entre elas “{title}”.",
+      "decisionsOne": "{decisions} espera por você.",
+      "decisionsOther": "{decisions} esperam por você.",
+      "gardener": "O {gardener} fez {changes}; revise e desfaça o que quiser.",
+      "generatingOne": "Uma fonte ainda está gerando notas.",
+      "generatingOther": "{count} fontes ainda estão gerando notas.",
+      "label": "O que mudou enquanto você esteve fora",
+      "noneYetOne": "{count} ainda procura lugar na árvore.",
+      "noneYetOther": "{count} ainda procuram lugar na árvore.",
+      "notesOnlyOne": "Chegou {notes};",
+      "notesOnlyOther": "Chegaram {notes};",
+      "placedAll": "todas com lugar na árvore.",
+      "placedOne": "{count} já tem lugar na árvore",
+      "placedOther": "{count} já têm lugar na árvore",
+      "reassurance": "Nada foi apagado. Cada mudança fica no histórico do objeto e, sempre que possível, tem Desfazer.",
+      "unplacedOne": "e {count} ainda procura.",
+      "unplacedOther": "e {count} ainda procuram."
+    },
+    "calm": {
+      "body": "Sem fontes novas, sem mudanças do Jardineiro e nada esperando por você."
+    },
+    "counts": {
+      "changesOne": "{count} mudança",
+      "changesOther": "{count} mudanças",
+      "decisionsOne": "{count} decisão",
+      "decisionsOther": "{count} decisões",
+      "itemsOne": "{count} item",
+      "itemsOther": "{count} itens",
+      "levelsOne": "{count} nível de profundidade",
+      "levelsOther": "{count} níveis de profundidade",
+      "newNotesOne": "{count} nota nova",
+      "newNotesOther": "{count} notas novas",
+      "notesOne": "{count} nota",
+      "notesOther": "{count} notas",
+      "sourcesOne": "{count} fonte",
+      "sourcesOther": "{count} fontes",
+      "topicsOne": "{count} tópico",
+      "topicsOther": "{count} tópicos",
+      "weekNotesOne": "{count} nota nova esta semana",
+      "weekNotesOther": "{count} notas novas esta semana"
+    },
+    "date": {
+      "lastVisit": "{date} · última visita {when}"
+    },
+    "errors": {
+      "unavailable": "O banco de dados ainda não está pronto."
+    },
+    "firstRun": {
+      "add": "Adicionar a primeira fonte",
+      "headline": "Pronto para a primeira fonte",
+      "hint": "Depois, {key} faz o mesmo de qualquer tela.",
+      "lead": "Um PDF, um artigo, um vídeo ou uma nota sua. Em poucos minutos ela vira notas curtas, cada uma com lugar numa árvore de tópicos que se organiza sozinha.",
+      "next": "Depois de escolher, você vai direto para a fonte em Explorar e vê as notas chegando.",
+      "promiseLocal": "Os arquivos ficam no seu Mac. Com um modelo na nuvem, só trechos vão para lá, e só quando a tarefa pede.",
+      "promiseSetup": "Sem configurar nada.",
+      "promiseUndo": "As mudanças podem ser desfeitas.",
+      "promisesTitle": "Combinado",
+      "stepGardener": "O Jardineiro, o trabalho em segundo plano do Memora, arruma a árvore e as conexões",
+      "stepGardenerHint": "você pode revisar o que ele faz",
+      "stepNotes": "Vira notas curtas, uma ideia por nota",
+      "stepPlace": "Cada nota ganha lugar na árvore",
+      "stepRead": "Lida e dividida em trechos",
+      "stepReadHint": "em segundos · a partir daqui já dá para perguntar",
+      "stepsTitle": "O que acontece depois"
+    },
+    "gardener": {
+      "name": "Jardineiro",
+      "tip": "O Jardineiro é o trabalho em segundo plano do Memora: arruma a árvore e as conexões, e você pode revisar o que ele fez."
+    },
+    "gardenerColumn": {
+      "all": "Ver todas",
+      "proposed": "proposta · decida na Caixa de entrada",
+      "title": "O que o Jardineiro fez",
+      "why": "Por quê?"
+    },
+    "greeting": {
+      "afternoon": "Boa tarde.",
+      "away": "Enquanto você esteve fora:",
+      "calm": "Nada mudou desde a sua última visita.",
+      "calmWeek": "Nada de novo nos últimos 7 dias.",
+      "evening": "Boa noite.",
+      "morning": "Bom dia.",
+      "week": "Nos últimos 7 dias:"
+    },
+    "label": "Início",
+    "need": {
+      "impact": {
+        "pathOne": "{count} nota com caminho novo",
+        "pathOther": "{count} notas com caminho novo"
+      },
+      "kinds": {
+        "backlog": "Nova correspondência opcional",
+        "budget": "Limite de gastos",
+        "contradiction": "Contradição",
+        "duplicate": "Duplicata",
+        "obsidianConflict": "Conflito do Obsidian",
+        "quarantined": "Tarefa com falha",
+        "review": "Para revisar",
+        "reviewOverview": "Visão geral",
+        "reviewRelation": "Conexão",
+        "reviewTopic": "Estrutura",
+        "suggestion": "Conexão sugerida",
+        "withdrawn": "Conexão retirada"
+      },
+      "link": "Caixa de entrada",
+      "risk": {
+        "high": "Alto",
+        "low": "Baixo",
+        "medium": "Médio"
+      },
+      "sub": "maior risco primeiro",
+      "title": "Precisa de você"
+    },
+    "questions": {
+      "failed": "não terminou",
+      "link": "Todas as perguntas",
+      "running": "respondendo",
+      "scopeLibrary": "Toda a biblioteca",
+      "scopeTopic": "Um tópico",
+      "sub": "o que você perguntou por último",
+      "title": "Perguntas recentes"
+    },
+    "resume": {
+      "action": "Retomar",
+      "label": "Os painéis que estavam abertos",
+      "panelsOne": "{count} painel em Explorar",
+      "panelsOther": "{count} painéis em Explorar",
+      "title": "Continuar de onde parou"
+    },
+    "shape": {
+      "label": "A forma da sua árvore",
+      "rootTooBig": "grande demais",
+      "seeInMap": "Ver no Mapa",
+      "summary": "{notes} em {topics}",
+      "title": "Sua árvore",
+      "tooBigOne": "{count} tópico grande demais",
+      "tooBigOther": "{count} tópicos grandes demais"
+    },
+    "since": {
+      "visit": "desde a sua última visita",
+      "week": "nos últimos 7 dias"
+    },
+    "states": {
+      "error": "Não deu para carregar o Início.",
+      "errorKept": "Suas fontes e notas continuam como estavam."
+    }
+  },
   "automation": {
     "clearHistory": "Limpar histórico de tarefas",
     "clearHistoryHint": "Retira das listas as execuções concluídas, com falha ou canceladas. Tarefas ativas, programações, pendências, auditoria e consumo de orçamento são preservados.",
@@ -95,7 +257,8 @@
     "drawer": {
       "close": "Fechar atividade",
       "explainer": "o que o Memora faz em segundo plano",
-      "loadFailed": "Não foi possível carregar a atividade."
+      "loadFailed": "Não foi possível carregar a atividade.",
+      "loadFailedKept": "Nada foi alterado. Sua biblioteca está segura."
     },
     "sections": {
       "now": "Agora",
@@ -128,6 +291,7 @@
     "done": {
       "empty": "Nada foi alterado automaticamente ainda.",
       "loadFailed": "Não foi possível carregar as alterações recentes.",
+      "loadFailedKept": "As alterações estão guardadas e poderão ser desfeitas assim que carregarem.",
       "undo": "Desfazer",
       "undoing": "Desfazendo...",
       "undone": "Alteração desfeita.",
@@ -137,6 +301,7 @@
     },
     "budget": {
       "loadFailed": "Não foi possível carregar os medidores de gasto.",
+      "loadFailedKept": "Seus limites e gastos não foram alterados.",
       "state": {
         "open": "Abaixo do limite",
         "paused": "Pausado perto do limite",
@@ -176,10 +341,17 @@
         "any": "Qualquer risco"
       }
     },
+    "confidence": {
+      "high": "confiança alta ({percent})",
+      "medium": "confiança média ({percent})",
+      "low": "confiança baixa ({percent})",
+      "unknown": "confiança desconhecida"
+    },
     "kinds": {
       "review": "Para revisar",
       "quarantined": "Tarefas com falha",
       "contradiction": "Contradições",
+      "suggestion": "Conexões sugeridas",
       "withdrawn": "Conexões retiradas",
       "duplicate": "Duplicatas",
       "obsidianConflict": "Conflitos do Obsidian",
@@ -232,6 +404,11 @@
         "body": "Uma conexão sugerida diz que “{first}” e “{second}” têm posições opostas. Mantenha-a para registrar a contradição ou remova-a.",
         "divergenceTitle": "Novas evidências discordam da visão geral de um tema",
         "divergenceBody": "A visão geral de “{topic}” foi ampliada, e parte das novas evidências discorda do que ela diz. A discordância fica ao lado do texto, nunca misturada a ele. Mantenha-a ali ou descarte este item. Pontos de discordância: {count}."
+      },
+      "suggestion": {
+        "title": "Conexão sugerida · {confidence}",
+        "body": "Sugestão: “{first}” {relation} “{second}”. Mantenha para que conte como decisão sua, ou remova.",
+        "hint": "Nada é apagado: só a conexão muda. Se você a remover, ela não volta a ser sugerida."
       },
       "withdrawn": {
         "title": "Uma conexão foi retirada",
@@ -2456,15 +2633,208 @@
     "removePreset": "Remover este preset?"
   },
   "sourcePage": {
+    "actions": {
+      "generateNotes": "Gerar notas",
+      "openInMap": "Abrir no Mapa"
+    },
+    "connections": {
+      "notes": "Conexões entre as notas desta fonte",
+      "notesEmpty": "Ainda sem conexões. Elas aparecem aqui quando as notas são ligadas.",
+      "sources": "Fontes relacionadas"
+    },
     "content": "Conteúdo",
     "current": "Atual",
+    "details": {
+      "earlier": "Versões anteriores"
+    },
     "edit": "Editar fonte",
     "editContent": "Editar conteúdo",
+    "errors": {
+      "earlier": "Não foi possível abrir essa versão.",
+      "kept": "Os outros painéis continuam abertos e nada foi alterado.",
+      "open": "Não foi possível abrir esta fonte.",
+      "progress": "Não foi possível ler o andamento agora."
+    },
+    "fields": {
+      "abstract": "Resumo do autor",
+      "channel": "Canal",
+      "chapterNumber": "Número do capítulo",
+      "creators": "Autoria",
+      "description": "Descrição",
+      "doi": "DOI",
+      "durationSeconds": "Duração (segundos)",
+      "edition": "Edição",
+      "isbn10": "ISBN-10",
+      "isbn13": "ISBN-13",
+      "issn": "ISSN",
+      "issue": "Número da edição",
+      "keywords": "Palavras-chave",
+      "language": "Idioma",
+      "pageCount": "Número de páginas",
+      "platform": "Plataforma",
+      "publicationDate": "Data de publicação",
+      "publisher": "Editora",
+      "sectionNumber": "Número da seção",
+      "series": "Série",
+      "siteName": "Nome do site",
+      "subjects": "Assuntos",
+      "subtitle": "Subtítulo",
+      "tags": "Etiquetas",
+      "title": "Título",
+      "url": "Endereço original",
+      "venue": "Veículo",
+      "volume": "Volume",
+      "year": "Ano"
+    },
+    "gone": {
+      "action": "Abrir a Biblioteca",
+      "body": "Ela pode ter sido removida. Abra a Biblioteca para ver o que há nela.",
+      "title": "Esta fonte não está mais na biblioteca."
+    },
+    "hint": {
+      "firstSource": "Cada nota aparece aqui com o caminho na árvore, e a árvore nasce à esquerda. Depois, o Jardineiro arruma a árvore e as conexões em segundo plano, sempre com Desfazer.",
+      "key": "Espaço",
+      "notes": "As notas aparecem aqui assim que ficam prontas, já com o caminho na árvore. Clique numa para abri-la ao lado; {key} espia sem abrir."
+    },
     "history": "Histórico",
     "historyHint": "O conteúdo anterior é somente leitura. São listados até 100 documentos recentes; as evidências originais são preservadas.",
+    "meta": {
+      "addedOn": "adicionada em {date}",
+      "addedToday": "adicionada hoje, {time}",
+      "addedYesterday": "adicionada ontem, {time}",
+      "etAl": "{name} et al.",
+      "pages": "{count} páginas",
+      "pagesOne": "1 página",
+      "volume": "{venue}, v. {volume}"
+    },
     "noChildren": "Ainda não há subitens. Adicione o primeiro para começar a compor esta fonte.",
+    "notes": {
+      "countLive": "{count} até agora · as mais novas no alto",
+      "countLiveOne": "1 até agora · as mais novas no alto",
+      "emptyBody": "Quando as notas forem geradas, elas aparecem aqui, cada uma com o caminho na árvore.",
+      "emptyHeadline": "Ainda sem notas desta fonte",
+      "fresh": "agora mesmo",
+      "newestFirst": "as mais novas no alto",
+      "open": "Abrir a nota “{title}” ao lado",
+      "page": "p. {page}",
+      "passage": "trecho {index}",
+      "placing": "Procurando lugar na árvore…",
+      "section": "seção {name}",
+      "seeAll": "Ver as {count} notas",
+      "showMore": "Mostrar mais {count}",
+      "unplaced": "Sem lugar"
+    },
     "overview": "Visão geral",
-    "stale": "O conteúdo mudou. Processe esta fonte para atualizar o resumo."
+    "reader": {
+      "empty": "Esta fonte ainda não tem texto.",
+      "passages": "Trechos ({count})"
+    },
+    "stale": "O conteúdo mudou. Processe esta fonte para atualizar o resumo.",
+    "strip": {
+      "actionFailed": "Não foi possível começar agora. Nada foi alterado.",
+      "cost": {
+        "local": "modelo local, sem custo",
+        "perToken": "cerca de {amount}",
+        "perTokenEstimated": "cerca de {amount}, preço estimado",
+        "subscription": "assinatura, sem cobrança por uso"
+      },
+      "doneIn": "Pronta em {count} min",
+      "doneUnderMinute": "Pronta em menos de 1 minuto",
+      "failedAt": "Não deu para terminar {stage}.",
+      "failedKept": "O que já ficou pronto continua guardado.",
+      "group": "Geração ao vivo",
+      "milestone": "Já dá para {link}: os trechos estão indexados.",
+      "milestoneLink": "perguntar a esta fonte",
+      "needsYou": {
+        "choose": "Escolher o modelo",
+        "kept": "Os trechos já estão buscáveis.",
+        "noRoute": "Falta um modelo para escrever as notas.",
+        "other": "Esta fonte espera por você para continuar."
+      },
+      "paused": "Pausada por você.",
+      "pausedKept": "O que já ficou pronto continua guardado. Retome pela Atividade, no alto da janela.",
+      "remainingHours": "faltam cerca de {count} h",
+      "remainingMinutes": "faltam cerca de {count} min",
+      "ruler": {
+        "caption": "Notas por seção do texto",
+        "done": "pronta",
+        "label": "Notas por seção",
+        "pending": "em espera",
+        "reading": "lendo"
+      },
+      "searchable": "Guardada e pesquisável, sem notas.",
+      "searchableKept": "Dá para perguntar a esta fonte. Gere as notas quando quiser.",
+      "since": "desde {time}",
+      "stages": {
+        "atomicNoteMatching": "as conexões entre notas",
+        "atomicNotes": "as notas",
+        "chunking": "a divisão em trechos",
+        "conversion": "a leitura do arquivo",
+        "embedding": "a indexação dos trechos",
+        "knowledgeGraph": "o grafo de entidades",
+        "sourceMatching": "as conexões entre fontes",
+        "structure": "a leitura da estrutura",
+        "summarization": "o resumo"
+      },
+      "steps": {
+        "chunks": "Trechos",
+        "notes": "Notas",
+        "placed": "Na árvore",
+        "read": "Lida",
+        "relations": "Conexões",
+        "summary": "Resumo"
+      },
+      "stopped": "A geração foi interrompida.",
+      "title": "Gerando conhecimento desta fonte",
+      "values": {
+        "afterNotes": "depois das notas",
+        "notApplicable": "não se aplica neste modo",
+        "notesDone": "{count} notas",
+        "notesDoneOne": "1 nota",
+        "notesOfEstimate": "{count} de ~{estimate}",
+        "notesSoFar": "{count} até agora",
+        "notesSoFarOne": "1 até agora",
+        "pages": "{count} páginas",
+        "pagesOne": "1 página",
+        "placed": "{count} colocadas",
+        "placedOne": "1 colocada",
+        "readDone": "lida",
+        "reading": "lendo",
+        "relationsDone": "{count} conexões",
+        "relationsDoneOne": "1 conexão",
+        "searchable": "{count} buscáveis",
+        "searchableOne": "1 buscável",
+        "searching": "buscando",
+        "summaryDone": "pronto",
+        "waiting": "em espera",
+        "writing": "escrevendo"
+      }
+    },
+    "summary": {
+      "later": "O resumo vem depois das notas.",
+      "none": "Ainda sem resumo.",
+      "title": "Resumo",
+      "writing": "O resumo está sendo escrito."
+    },
+    "tabs": {
+      "connections": "Conexões",
+      "details": "Detalhes",
+      "label": "Seções da fonte",
+      "notes": "Notas"
+    },
+    "types": {
+      "AcademicPaper": "Artigo acadêmico",
+      "Book": "Livro",
+      "BookChapter": "Capítulo de livro",
+      "DailyNote": "Nota diária",
+      "DocumentSection": "Seção de documento",
+      "GenericDocument": "Documento genérico",
+      "PeriodicalIssue": "Edição de periódico",
+      "PersonalNote": "Nota pessoal",
+      "StandaloneArticle": "Artigo avulso",
+      "Video": "Vídeo",
+      "WebArticle": "Artigo da web"
+    }
   },
   "sourceRelations": {
     "openNote": "Ver nota",
@@ -3015,7 +3385,6 @@
         "undone": "Mudança desfeita.",
         "undo": "Desfazer",
         "undoing": "Desfazendo...",
-        "dismiss": "Dispensar",
         "blocked": "Não dá para desfazer agora: uma mudança posterior depende dela.",
         "failed": "Não foi possível desfazer a mudança. Tente novamente."
       }
@@ -3839,72 +4208,6 @@
     "stackLabel": "Painéis abertos",
     "untitled": "Sem título"
   },
-  "preview": {
-    "card": {
-      "empty": "Ainda sem resumo. Abra para ler tudo.",
-      "error": "Não foi possível ler a prévia.",
-      "errorKept": "O link continua funcionando; nada foi alterado.",
-      "goTo": "Vai para",
-      "keys": {
-        "open": "abrir ao lado",
-        "peek": "espiar"
-      },
-      "label": "Prévia",
-      "missing": "Isto não está mais na biblioteca.",
-      "passage": "Trecho",
-      "relation": "Conexão",
-      "status": {
-        "redirected": "Substituído por outro tópico",
-        "retired": "Fora de uso"
-      }
-    },
-    "counts": {
-      "answers": {
-        "one": "{count} resposta",
-        "other": "{count} respostas"
-      },
-      "items": {
-        "one": "{count} item no tópico",
-        "other": "{count} itens no tópico"
-      },
-      "notes": {
-        "one": "{count} nota",
-        "other": "{count} notas"
-      },
-      "passages": {
-        "one": "{count} trecho",
-        "other": "{count} trechos"
-      },
-      "sources": {
-        "one": "{count} fonte",
-        "other": "{count} fontes"
-      },
-      "subtopics": {
-        "one": "{count} subtópico",
-        "other": "{count} subtópicos"
-      }
-    },
-    "quickLook": {
-      "empty": "Ainda sem resumo. Abra ao lado para ler tudo.",
-      "error": "Não foi possível ler este item.",
-      "errorKept": "Nada foi alterado; a lista continua aqui.",
-      "keys": {
-        "close": "fechar",
-        "closes": "fecha",
-        "openHere": "abrir neste painel",
-        "opensBeside": "abre ao lado",
-        "peekNext": "espiar a próxima",
-        "space": "Espaço"
-      },
-      "label": "Espiar",
-      "missing": "Isto não está mais na biblioteca.",
-      "notesMentioning": "Notas que o mencionam",
-      "notesOfSource": "Notas desta fonte",
-      "peeking": "Espiando",
-      "stays": "Tudo continua onde estava; nada foi aberto.",
-      "updated": "última atualização: {date}"
-    }
-  },
   "entityPage": {
     "aliases": "Outros nomes:",
     "articleLabel": "Entidade: {name}",
@@ -4074,6 +4377,409 @@
       "next": "Próxima versão",
       "of": "Versão {version} de {total}",
       "previous": "Versão anterior"
+    }
+  },
+  "preview": {
+    "card": {
+      "empty": "Ainda sem resumo. Abra para ler tudo.",
+      "error": "Não foi possível ler a prévia.",
+      "errorKept": "O link continua funcionando; nada foi alterado.",
+      "goTo": "Vai para",
+      "keys": {
+        "open": "abrir ao lado",
+        "peek": "espiar"
+      },
+      "label": "Prévia",
+      "missing": "Isto não está mais na biblioteca.",
+      "passage": "Trecho",
+      "relation": "Conexão",
+      "status": {
+        "redirected": "Substituído por outro tópico",
+        "retired": "Fora de uso"
+      }
+    },
+    "counts": {
+      "answers": {
+        "one": "{count} resposta",
+        "other": "{count} respostas"
+      },
+      "items": {
+        "one": "{count} item no tópico",
+        "other": "{count} itens no tópico"
+      },
+      "notes": {
+        "one": "{count} nota",
+        "other": "{count} notas"
+      },
+      "passages": {
+        "one": "{count} trecho",
+        "other": "{count} trechos"
+      },
+      "sources": {
+        "one": "{count} fonte",
+        "other": "{count} fontes"
+      },
+      "subtopics": {
+        "one": "{count} subtópico",
+        "other": "{count} subtópicos"
+      }
+    },
+    "quickLook": {
+      "empty": "Ainda sem resumo. Abra ao lado para ler tudo.",
+      "error": "Não foi possível ler este item.",
+      "errorKept": "Nada foi alterado; a lista continua aqui.",
+      "keys": {
+        "close": "fechar",
+        "closes": "fecha",
+        "openHere": "abrir neste painel",
+        "opensBeside": "abre ao lado",
+        "peekNext": "espiar a próxima",
+        "space": "Espaço"
+      },
+      "label": "Espiar",
+      "missing": "Isto não está mais na biblioteca.",
+      "notesMentioning": "Notas que o mencionam",
+      "notesOfSource": "Notas desta fonte",
+      "peeking": "Espiando",
+      "stays": "Tudo continua onde estava; nada foi aberto.",
+      "updated": "última atualização: {date}"
+    }
+  },
+  "settingsRegistry": {
+    "activeMatchingPresetId": {
+      "help": "A Equilibrada é o conjunto calibrado e fica só para leitura. Para editar, crie ou duplique uma predefinição.",
+      "label": "Predefinição de correspondência"
+    },
+    "advancedCallLog": {
+      "help": "Cada chamada a um modelo, local ou na nuvem: trabalho, modelo, tempo e tokens. Só leitura.",
+      "label": "Registro de chamadas de IA"
+    },
+    "advancedPrompts": {
+      "help": "As instruções que o Memora envia aos modelos, por categoria. Editar uma cria uma revisão nova; a anterior fica guardada.",
+      "label": "Prompts"
+    },
+    "advancedSimilarityRuns": {
+      "help": "Comparações gravadas com os diagnósticos ligados. Apagar não muda nenhuma conexão.",
+      "label": "Execuções de depuração de similaridade"
+    },
+    "advancedTaskHistory": {
+      "help": "Execuções concluídas, com falha ou canceladas. O dia a dia fica na Atividade.",
+      "label": "Histórico de trabalhos"
+    },
+    "aiDecisionsOpenaiPlatform": {
+      "help": "Só para o OpenAI Decisions; a escrita usa os provedores acima. Guardada criptografada neste Mac, nunca exibida de novo e enviada só à OpenAI.",
+      "label": "Chave da OpenAI Platform"
+    },
+    "aiModels": {
+      "help": "Catálogo de modelos locais: baixar, importar GGUF, testar e escolher padrões.",
+      "label": "Modelos neste Mac"
+    },
+    "aiPresetV1": {
+      "help": "Escolhida na primeira execução. Trocar substitui o modelo de cada trabalho e testa uma chamada de cada; nada é baixado.",
+      "label": "Onde a IA roda"
+    },
+    "aiProfiles": {
+      "help": "Modelo, temperatura, máximo de tokens e raciocínio de cada perfil. Raramente necessário.",
+      "label": "Perfis e parâmetros"
+    },
+    "aiProviderGoogle": {
+      "help": "Modelos do Google com a sua chave de API.",
+      "label": "Google Gemini"
+    },
+    "aiProviderOpenaiCodex": {
+      "help": "Usa a cota da sua assinatura nos trabalhos que escrevem. A busca ainda pede uma chave de API ou um modelo local.",
+      "label": "Assinatura ChatGPT"
+    },
+    "aiProviderOpenaiCompatible": {
+      "help": "Qualquer serviço que fala a API da OpenAI, com endereço e chave próprios. Para a própria OpenAI, deixe o endereço padrão.",
+      "label": "Compatível com OpenAI"
+    },
+    "aiRouteAnswer": {
+      "help": "Respostas às suas perguntas, a partir da sua biblioteca.",
+      "label": "Respostas"
+    },
+    "aiRouteDecide": {
+      "help": "Mede o quanto notas e tópicos se relacionam. Aqui só entram modelos próprios para isso.",
+      "label": "Classificação"
+    },
+    "aiRouteEmbed": {
+      "help": "Transforma texto em vetores para busca, correspondência e tópicos.",
+      "label": "Busca e semelhança"
+    },
+    "aiRouteJudge": {
+      "help": "Um modelo de escrita que decide as relações entre notas quando não há ranqueador e avalia como as fontes se relacionam.",
+      "label": "Juiz generativo"
+    },
+    "aiRouteWriteFast": {
+      "help": "Resumos, nomes de tópicos e explicações curtas.",
+      "label": "Escrita rápida"
+    },
+    "aiRouteWriteQuality": {
+      "help": "Notas e entidades, escritas a partir das suas fontes.",
+      "label": "Escrita cuidadosa"
+    },
+    "aiThisMac": {
+      "help": "O hardware detectado e a configuração recomendada para ele. Só informação.",
+      "label": "Este Mac"
+    },
+    "atomicNoteMatchingSettingsMaxRerankOutputTokens": {
+      "help": "O máximo de tokens que a IA pode escrever ao posicionar uma nota. Padrão: 4.096.",
+      "label": "Limite de saída por nota"
+    },
+    "bookLookup": {
+      "help": "Completa título, autores e capa pelo ISBN, DOI ou título. Artigos usam o Crossref. Desligado: nenhuma consulta.",
+      "label": "Buscar dados de livros na internet"
+    },
+    "canonicalMatchingSettingsConfirmationBatchSize": {
+      "help": "Quantas identidades vão para a IA numa chamada de confirmação. Padrão: 12.",
+      "label": "Identidades por confirmação"
+    },
+    "canonicalMatchingSettingsConfirmationMaxCharacters": {
+      "help": "O tamanho de texto que uma chamada de confirmação pode ter. Uma identidade maior que isso vai sozinha. Padrão: 12.000.",
+      "label": "Tamanho da confirmação em caracteres"
+    },
+    "canonicalMatchingSettingsEntityCandidateLimit": {
+      "help": "Quantas entidades parecidas a IA compara com cada entidade nova. Padrão: 3.",
+      "label": "Candidatos por entidade"
+    },
+    "canonicalMatchingSettingsRelationTypeCandidateLimit": {
+      "help": "Quantos tipos de relação parecidos a IA compara com cada tipo novo. Padrão: 3.",
+      "label": "Candidatos por tipo de relação"
+    },
+    "contentLanguage": {
+      "help": "Em que língua o Memora escreve notas, resumos, nomes de tópicos e respostas. O que já existe só muda quando for gerado de novo.",
+      "label": "Idioma das notas"
+    },
+    "debugFullCapture": {
+      "help": "Guarda neste banco os prompts e as respostas inteiros, enquanto os diagnósticos estiverem ligados.",
+      "label": "Prompts e respostas completos"
+    },
+    "debugMode": {
+      "help": "Registra etapas, canonização, conexões e similaridade. Ligue para investigar um problema.",
+      "label": "Diagnósticos das operações"
+    },
+    "entityIdentitySimilarityThreshold": {
+      "help": "O quanto duas entidades precisam se parecer para a IA conferir se são a mesma. Mais alto, menos candidatos. Padrão: 0,92.",
+      "label": "Semelhança entre entidades"
+    },
+    "graphWheelZoomSensitivity": {
+      "help": "Velocidade do zoom com a roda do mouse ou o trackpad em Mapa › Grafo.",
+      "label": "Sensibilidade do zoom no Grafo"
+    },
+    "groups": {
+      "advanced": {
+        "connections": "Conexões",
+        "diagnostics": "Diagnóstico",
+        "localModels": "Modelos locais",
+        "map": "Mapa",
+        "matching": "Correspondência",
+        "obsidian": "Obsidian",
+        "processing": "Processamento",
+        "prompts": "Prompts"
+      },
+      "ai": {
+        "decisions": "OpenAI Decisions (opcional)",
+        "models": "Modelos e perfis",
+        "providers": "Provedores e credenciais",
+        "routes": "Modelo de cada trabalho",
+        "setup": "Configuração",
+        "thisMac": "Este Mac"
+      },
+      "general": {
+        "appearance": "Aparência",
+        "language": "Idioma"
+      },
+      "integrations": {
+        "books": "Dados de livros",
+        "local": "Conexão local",
+        "obsidian": "Obsidian"
+      },
+      "knowledge": {
+        "connections": "Conexões",
+        "gardener": "Jardineiro",
+        "schedule": "Quando trabalhar",
+        "tree": "Árvore de tópicos"
+      },
+      "library": {
+        "backup": "Cópias de segurança",
+        "data": "Seus dados",
+        "imports": "Planos de importação",
+        "uploads": "Arquivos enviados"
+      },
+      "privacy": {
+        "history": "Histórico e perguntas",
+        "leaving": "O que sai deste Mac",
+        "logs": "Registros",
+        "reset": "Resetar"
+      }
+    },
+    "integrationsGateway": {
+      "help": "Deixa a extensão do Chrome e o plugin do Obsidian falarem com o Memora neste Mac.",
+      "label": "Apps pareados"
+    },
+    "keepLocalEmbeddingModelsLoaded": {
+      "help": "Depois do primeiro uso, o modelo fica na memória até o app fechar, e as buscas seguintes são mais rápidas. Desligar libera a memória na hora.",
+      "label": "Manter o modelo local de busca carregado"
+    },
+    "knowledgeControlsV1Autonomy": {
+      "help": "Quanto o Jardineiro faz sem perguntar.",
+      "label": "Autonomia"
+    },
+    "knowledgeControlsV1MonthlyCapUsd": {
+      "help": "O Jardineiro para neste valor a cada mês quando usa um modelo pago. Assinaturas, como a do ChatGPT, têm um limite diário de chamadas.",
+      "label": "Limite mensal de gastos na nuvem"
+    },
+    "knowledgeControlsV1OnlyIdle": {
+      "help": "Espera você ficar alguns minutos sem usar o Mac.",
+      "label": "Só com o Mac ocioso"
+    },
+    "knowledgeControlsV1OnlyOnAc": {
+      "help": "Espera enquanto o notebook está na bateria.",
+      "label": "Só na tomada"
+    },
+    "knowledgeControlsV1Paused": {
+      "help": "Para todo o trabalho em segundo plano até você retomar. Importações e seus pedidos continuam.",
+      "label": "Pausar o Jardineiro"
+    },
+    "knowledgeControlsV1TreeShape": {
+      "help": "Ampla tem menos níveis; profunda, mais. Mudar propõe refazer a árvore, e nada se move até você revisar na Caixa de entrada.",
+      "label": "Formato da árvore de tópicos"
+    },
+    "language": {
+      "help": "Menus, botões e mensagens.",
+      "label": "Idioma do app"
+    },
+    "libraryBackup": {
+      "help": "Copia o banco, confere que a cópia restaura e copia os arquivos guardados para uma pasta datada.",
+      "label": "Backup"
+    },
+    "libraryStorage": {
+      "help": "Onde ficam, neste Mac, o banco e os arquivos guardados da sua biblioteca.",
+      "label": "Onde ficam os seus dados"
+    },
+    "localModelsRepositoryTokenRef": {
+      "help": "Opcional: só para baixar modelos de repositórios privados ou restritos.",
+      "label": "Token da Hugging Face"
+    },
+    "managedRoot": {
+      "help": "A pasta, dentro do cofre, onde o Memora escreve seus arquivos. Padrão: Memora.",
+      "label": "Pasta do Memora no cofre"
+    },
+    "metadataGoogleBooks": {
+      "help": "Opcional. Sem chave, as buscas usam o acesso público, com limite menor.",
+      "label": "Chave do Google Books"
+    },
+    "obsidianLayoutAttachments": {
+      "help": "Copia para o cofre os arquivos ligados às fontes. Desligado: o cofre recebe só o texto.",
+      "label": "Copiar os arquivos originais"
+    },
+    "obsidianLayoutLanguage": {
+      "help": "Por padrão, as pastas seguem o idioma das notas. Escolha outro só se quiser os nomes de pasta em outra língua.",
+      "label": "Idioma das pastas do cofre"
+    },
+    "obsidianSync": {
+      "help": "Ligada: o Memora escreve a biblioteca no seu cofre e traz de volta o que você editar lá. Pausada: guarda tudo sem sincronizar.",
+      "label": "Sincronizar com o Obsidian"
+    },
+    "obsidianVaultPath": {
+      "help": "A pasta do cofre onde o Memora escreve. Escolha antes de ligar a sincronização.",
+      "label": "Cofre"
+    },
+    "obsidianWikiIncludeDescendants": {
+      "help": "Leva também os capítulos e as partes de cada fonte escolhida.",
+      "label": "Incluir capítulos e partes"
+    },
+    "obsidianWikiScope": {
+      "help": "Até 100 fontes; as notas e os tópicos delas viram páginas no cofre.",
+      "label": "Fontes que viram páginas"
+    },
+    "privacyCallLog": {
+      "help": "As últimas chamadas a um modelo, local ou na nuvem. Só leitura; o registro completo fica em Avançado.",
+      "label": "Chamadas de IA recentes"
+    },
+    "privacyClearQuestions": {
+      "help": "Apaga as perguntas e respostas guardadas. Fontes e notas ficam.",
+      "label": "Apagar perguntas"
+    },
+    "privacyClearViewHistory": {
+      "help": "Apaga a lista de itens abertos há pouco neste Mac. Ela nunca sai daqui.",
+      "label": "Limpar os Recentes"
+    },
+    "privacyReset": {
+      "help": "Apaga biblioteca, índices de busca, grafos, perguntas, históricos, conexões, preferências e arquivos guardados. Ficam perfis, provedores, rotas e modelos instalados; backups e seus arquivos pessoais não são tocados.",
+      "label": "Resetar tudo"
+    },
+    "privacySummary": {
+      "help": "O que é enviado para fora deste Mac, e para quem, com a sua configuração atual.",
+      "label": "O que sai deste Mac"
+    },
+    "processingPresets": {
+      "help": "Criados e editados ao importar; aqui você renomeia ou apaga.",
+      "label": "Planos de importação salvos"
+    },
+    "relationLabels": {
+      "help": "Gera as que faltam ou reescreve todas no idioma das notas, com o modelo de Escrita rápida.",
+      "label": "Descrições das conexões"
+    },
+    "relationTypeSimilarityThreshold": {
+      "help": "O quanto dois tipos de relação precisam se parecer para a IA conferir se são o mesmo. Mais alto, menos candidatos. Padrão: 0,92.",
+      "label": "Semelhança entre tipos de relação"
+    },
+    "relationsDeciderMode": {
+      "help": "Automático segue os seus modelos: o ranqueador quando há um validado, senão o juiz, se houver.",
+      "label": "Quem decide as relações entre notas"
+    },
+    "relationsDecisions": {
+      "help": "Um decisor na nuvem, pago e mais preciso que o ranqueador local. Só nas configurações Híbrida e Nuvem.",
+      "label": "Decidir as conexões com o OpenAI Decisions"
+    },
+    "sourceRelationSettingsEvidenceChunksPerSource": {
+      "help": "Quantos trechos de cada fonte a IA lê ao comparar um par. Padrão: 2.",
+      "label": "Trechos de evidência por fonte"
+    },
+    "sourceRelationSettingsEvidenceMaxCharacters": {
+      "help": "O maior pedaço de um trecho que a IA lê. Padrão: 800.",
+      "label": "Caracteres por trecho"
+    },
+    "sourceRelationSettingsIncludeWeakTypes": {
+      "help": "Mantém também as conexões vagas “menciona” e “relacionado”. Desligado por padrão.",
+      "label": "Permitir relações fracas"
+    },
+    "sourceRelationSettingsMaxInputTokens": {
+      "help": "O máximo de tokens de entrada que uma fonte e seus capítulos podem usar numa execução. Uma chamada pode passar disso; as seguintes param. Padrão: 60.000.",
+      "label": "Orçamento de entrada"
+    },
+    "sourceRelationSettingsMaxOutputTokens": {
+      "help": "O máximo de tokens que a IA pode escrever ao comparar duas fontes. Padrão: 4.096.",
+      "label": "Limite de saída por par de fontes"
+    },
+    "sourceRelationSettingsMaxRelationsPerPair": {
+      "help": "O máximo de conexões mantidas entre duas fontes. Padrão: 4.",
+      "label": "Relações por par de fontes"
+    },
+    "sourceRelationSettingsMinConfidence": {
+      "help": "Conexões que a evidência sustenta abaixo desta confiança são descartadas. Padrão: 0,85.",
+      "label": "Confiança mínima"
+    },
+    "sourceRelationSettingsMinImportance": {
+      "help": "Conexões que a IA avalia abaixo desta importância são descartadas. Padrão: 0,75.",
+      "label": "Importância mínima"
+    },
+    "sourceRelationSettingsSummaryMaxCharacters": {
+      "help": "Quanto do resumo de cada fonte entra numa comparação. Padrão: 1.000.",
+      "label": "Caracteres de resumo por fonte"
+    },
+    "summaryMinimumWordCount": {
+      "help": "Evita gastar uma chamada de IA com itens pequenos demais. Use 0 para desligar. Padrão: 40.",
+      "label": "Mínimo de palavras para gerar resumo"
+    },
+    "themeMode": {
+      "help": "“Sistema” acompanha o macOS ao longo do dia. Também dá para trocar pelo ⌘K: “> tema”.",
+      "label": "Tema"
+    },
+    "uploadCopies": {
+      "help": "Uma segunda cópia de cada original numa pasta sua, fora do banco do Memora.",
+      "label": "Guardar uma cópia dos arquivos enviados"
     }
   }
 }

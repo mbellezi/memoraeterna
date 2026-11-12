@@ -21,6 +21,7 @@ import { EmptyState } from "./empty-state";
 import { ErrorState } from "./error-state";
 import { HoverCard, HoverCardContent, HoverCardTrigger, hoverCardOpenDelayMs } from "./hover-card";
 import { Kbd } from "./kbd";
+import { PrimitivesSheet } from "./primitives-sheet";
 import { Popover, PopoverContent, PopoverTrigger } from "./popover";
 import { ScrollArea } from "./scroll-area";
 import { Sheet, SheetContent } from "./sheet";
@@ -293,11 +294,45 @@ describe("the four-state building blocks", () => {
     expect(html).toContain('role="alert"');
     expect(html).toContain("The library did not load.");
     expect(html).toContain("Nothing was lost.");
-    expect(html).toContain(">Retry<");
+    expect(html).toContain(">Try again<");
     expect(html).toContain(">Details<");
     expect(html).toContain('aria-expanded="false"');
     // The technical text stays folded until asked for.
     expect(html).not.toContain("ECONNRESET");
+  });
+
+  it("error is quiet: no danger fill or box, a solid triangle, the reading measure", () => {
+    const html = renderToStaticMarkup(
+      <ErrorState t={t} message="It failed." kept="Nothing was lost." onRetry={noop} />
+    );
+    expect(html).not.toContain("bg-danger-soft");
+    expect(html).not.toContain("border-danger");
+    const rootClass = /^<div role="alert" class="([^"]*)"/.exec(html)?.[1] ?? "";
+    expect(rootClass).not.toMatch(/\b(border|bg-|p-\d|rounded)/);
+    // The glyph is the solid triangle (a filled path), not an outline icon.
+    expect(html).toContain('fill="currentColor"');
+    expect(html).not.toContain("lucide");
+    expect(html).toContain("text-danger");
+    expect(html).toContain("max-w-(--measure)");
+    expect(html).toContain('role="alert"');
+  });
+
+  it("error keeps the optional retryLabel so a place can say the retry word its own way", () => {
+    const html = renderToStaticMarkup(
+      <ErrorState t={t} message="It failed." onRetry={noop} retryLabel="Retry" />
+    );
+    expect(html).toContain(">Retry<");
+    expect(html).not.toContain(">Try again<");
+  });
+
+  it("an empty headline balances its lines only on a page", () => {
+    const inline = renderToStaticMarkup(<EmptyState headline="Nothing is placed here yet." />);
+    const page = renderToStaticMarkup(
+      <EmptyState variant="page" headline="Nothing is placed here yet." />
+    );
+    expect(inline).not.toContain("text-wrap:balance");
+    expect(inline).toContain("text-wrap:pretty");
+    expect(page).toContain("text-wrap:balance");
   });
 
   it("error without a retry or details shows the sentence alone", () => {
@@ -378,5 +413,25 @@ describe("tokens only", () => {
       expect(source, path).not.toMatch(/addEventListener\(["']keydown/u);
       expect(source, path).not.toMatch(/metaKey|ctrlKey/u);
     }
+  });
+});
+
+describe("primitives sheet", () => {
+  const html = renderToStaticMarkup(
+    <PrimitivesSheet t={t} load={() => new Promise(() => undefined)} />
+  );
+
+  it("separates the quick-look hints by a gap, so no wrapped line starts or ends with a dot", () => {
+    expect(html).not.toContain('<span aria-hidden="true">\u00b7');
+    expect(html).toMatch(/class="[^"]*\bgap-x-4\b[^"]*"><span>Peeking<\/span><span>/u);
+  });
+
+  it("the quick-look body opens with the kind line and ends with the counts line", () => {
+    expect(html).toContain("Note \u00b7 3 min");
+    expect(html).toContain("2 connections \u00b7 1 source");
+  });
+
+  it("shows an open tooltip sample", () => {
+    expect(html).toContain('role="tooltip"');
   });
 });

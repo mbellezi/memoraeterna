@@ -11,6 +11,7 @@ import {
 } from "@app/domain";
 
 import { currentNoteSql } from "./note-relation-sql.js";
+import { questionCitedNotesSql } from "./questionCitationSql.js";
 import { topicScopeCtes } from "./topicScopeSql.js";
 import type { Queryable } from "./types.js";
 
@@ -299,17 +300,8 @@ with recursive latest as (
    order by a.version desc limit 1
 ),
 cited as (
-  select c.target_id as note_id from question_citations c
-   where c.answer_id = (select id from latest) and c.target_kind = 'note'
-  union
-  select n.id from question_citations c join atomic_notes n on n.evidence_chunk_id = c.target_id
-   where c.answer_id = (select id from latest) and c.target_kind = 'chunk'
-  union
-  select l.atomic_note_id
-    from question_citations c
-    join chunks k on k.id = c.target_id
-    join atomic_note_source_links l on l.source_item_id = k.source_item_id and l.chunk_id = c.target_id
-   where c.answer_id = (select id from latest) and c.target_kind = 'chunk'
+  select distinct f.note_id from (${questionCitedNotesSql}) f
+   where f.answer_id = (select id from latest)
 ),
 live as (
   select n.id from cited join atomic_notes n on n.id = cited.note_id where ${currentNoteSql("n")}

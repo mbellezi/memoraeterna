@@ -108,6 +108,9 @@ describe("quick-look", () => {
     expect(html).toContain("Não foi possível ler este item.");
     expect(html).toContain("Nada foi alterado; a lista continua aqui.");
     expect(html.match(/Tentar de novo/gu)).toHaveLength(1);
+    // The foot keeps Esc but does not say a second time that nothing changed.
+    expect(html).toContain("Esc");
+    expect(html).not.toContain("Tudo continua onde estava");
   });
 
   it("is empty for an object that is gone, and for one with no text yet", () => {

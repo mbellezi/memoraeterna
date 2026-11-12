@@ -10,6 +10,7 @@ import {
   PanelStack,
   panelRegistry,
   registerPanels,
+  SpineText,
   stackView,
   type PanelModule,
   type StackView
@@ -257,6 +258,21 @@ describe("the host", () => {
     // Before `resolveMany` answers, an object spine shows its kind word and a bar, not "Untitled".
     expect(html).toContain("data-pending");
     expect(html).not.toContain("Untitled");
+  });
+
+  it("a spine whose title could not be read keeps its kind word and a quiet dash", () => {
+    const failed = renderToString(<SpineText kindWord="Note" title="" unavailable />);
+    expect(failed).toContain("Note");
+    expect(failed).toContain(
+      '<span aria-hidden="true" class="panel-stack__spine-kind"> \u00b7 \u2014</span>'
+    );
+    // A spine whose title is only not read yet stays the bare kind word, and a read one shows it.
+    expect(
+      renderToString(<SpineText kindWord="Note" title="" unavailable={false} />)
+    ).not.toContain("\u2014");
+    expect(
+      renderToString(<SpineText kindWord="Note" title="Brine" unavailable={false} />)
+    ).toContain("Brine");
   });
 
   it("merges spines beyond the floor into one +N spine at 960 px", () => {

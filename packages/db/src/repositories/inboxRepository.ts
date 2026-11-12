@@ -5,12 +5,18 @@ import {
   inboxKinds,
   inboxReadLimits,
   parseInboxCursor,
+  relationConfidenceBands,
   type ChangeSetRisk,
   type InboxKind,
   type InboxObject
 } from "@app/domain";
 
-import { suggestedNoteRelationSql, withdrawnNoteRelationSql } from "./note-relation-sql.js";
+import {
+  currentNoteEndpointsSql,
+  noteRelationStateSql,
+  suggestedNoteRelationSql,
+  withdrawnNoteRelationSql
+} from "./note-relation-sql.js";
 import type { Queryable } from "./types.js";
 
 /**
@@ -79,6 +85,8 @@ export interface InboxRelationRecord {
   relationType: string | null;
   vetoSource: string | null;
   finalScore: number;
+  /** The calibrated probability; null when an uncalibrated or threshold-only decider wrote it. */
+  probability: number | null;
   sourceNote: { id: string; title: string };
   targetNote: { id: string; title: string };
 }
@@ -89,14 +97,98 @@ const utc = (column: string) =>
   `to_char(${column} at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`;
 
 /**
+ * The suggestion arm's rule (D33), the SQL form of `routesToInbox`: not a contradiction (those are
+ * the contradiction arm's, whatever their confidence), and a probability that is null or below the
+ * typed "high" band.
+ */
+const suggestionRuleSql = `r.relation_type is distinct from 'contradicts'
+  and (r.probability is null or r.probability < ${relationConfidenceBands.high}::real)`;
+
+/**
+ * The Inbox's arms over note relations. `state` is the visibility module's state predicate and
+ * `whole` its full predicate (state and both endpoints current); the count reads `whole`. The page
+ * reads `state` first, in the list's order, and checks the endpoints only on the rows it takes
+ * until the page is full (`pageArm`), so a library with tens of thousands of such relations pays
+ * the per-relation endpoint check for one page of them, not for all.
+ */
+const relationArms: ReadonlyArray<{
+  kind: InboxKind;
+  risk: ChangeSetRisk;
+  state: string;
+  whole: string;
+  rule?: string;
+}> = [
+  {
+    kind: "contradiction",
+    risk: "medium",
+    state: noteRelationStateSql.suggested("r"),
+    whole: suggestedNoteRelationSql("r"),
+    rule: "r.relation_type = 'contradicts'"
+  },
+  {
+    kind: "suggestion",
+    risk: "medium",
+    state: noteRelationStateSql.suggested("r"),
+    whole: suggestedNoteRelationSql("r"),
+    rule: suggestionRuleSql
+  },
+  {
+    kind: "withdrawn",
+    risk: "low",
+    state: noteRelationStateSql.withdrawn("r"),
+    whole: withdrawnNoteRelationSql("r")
+  }
+];
+
+const riskRank = { high: 0, medium: 1, low: 2 } as const satisfies Record<ChangeSetRisk, number>;
+
+/** An arm as the count reads it: every relation the full predicate admits. */
+const countArm = (arm: (typeof relationArms)[number]) => `
+  select '${arm.kind}'::text, r.id::text, '${arm.risk}', r.updated_at
+    from atomic_note_relations r
+   where ${arm.whole}${arm.rule ? ` and ${arm.rule}` : ""}
+     and ($1::text[] is null or '${arm.kind}' = any($1::text[]))`;
+
+/**
+ * An arm as the page reads it: the relations in the list's order (the cursor and the filters
+ * applied on the state alone, which is cheap), then the endpoint check on the rows as they come,
+ * stopping at the page's `$6` rows. `offset 0` keeps the planner from moving the check below the
+ * sort. Cursor, kinds and risk are those of `pageSql`.
+ */
+const pageArm = (arm: (typeof relationArms)[number]) => {
+  const key = `('${arm.kind}:' || r.id::text) collate "C"`;
+  return `
+  (select '${arm.kind}'::text, s.id::text, '${arm.risk}', s.updated_at
+     from (select r.id, r.updated_at, r.source_atomic_note_id, r.target_atomic_note_id
+             from atomic_note_relations r
+            where ${arm.state}${arm.rule ? ` and ${arm.rule}` : ""}
+              and ($1::text[] is null or '${arm.kind}' = any($1::text[]))
+              and ($2::text is null or '${arm.risk}' = $2::text)
+              and ($3::int is null
+                   or (${riskRank[arm.risk]}, r.updated_at, ${key}) > ($3::int, $4::timestamptz, $5::text))
+            order by r.updated_at, ${key}
+           offset 0) s
+    where ${currentNoteEndpointsSql("s")}
+    limit $6::int)`;
+};
+
+/**
  * The open items of every database-backed kind as `(kind, id, risk, at)`; `$1` filters the kinds
  * (null: all). Each branch is the store's own predicate: pending change-sets (all three stores),
  * quarantined subjects that were not dismissed since, suggested `contradicts` relations and the
  * Divergences an automatic overview patch kept (`contradiction`, D17; a Divergence's ID is
- * `divergence:<finding id>`), withdrawn relations (both through the visibility module) and open
- * findings of the Inbox's kinds.
+ * `divergence:<finding id>`), the other suggested relations that are not "high" in confidence or
+ * have no probability (`suggestion`, D33: the rule of `routesToInbox`, the bound from
+ * `relationConfidenceBands`, a number from typed configuration), withdrawn relations (all through
+ * the visibility module) and open findings of the Inbox's kinds. `bounded` is the page's form of
+ * the relation arms (see `pageArm`); the count reads them whole.
  */
-const openItemsSql = `
+const openItemsSql = (bounded: boolean) => {
+  const relation = (kind: InboxKind) => {
+    const arm = relationArms.find((entry) => entry.kind === kind)!;
+    return bounded ? pageArm(arm) : countArm(arm);
+  };
+  return `
   select 'review'::text as kind, (cs.kind || ':' || cs.id::text) as id, cs.risk::text as risk,
          cs.at as at
     from change_sets cs
@@ -109,42 +201,37 @@ const openItemsSql = `
        select 1 from jobs j
         where j.id = o.last_job_id and j.payload ->> 'inboxDismissedAt' is not null
           and (j.payload ->> 'inboxDismissedAt')::timestamptz >= o.quarantined_at)
-  union all
-  select 'contradiction', r.id::text, 'medium', r.updated_at
-    from atomic_note_relations r
-   where r.relation_type = 'contradicts' and ${suggestedNoteRelationSql("r")}
-     and ($1::text[] is null or 'contradiction' = any($1::text[]))
+  union all${relation("contradiction")}
+  union all${relation("suggestion")}
   union all
   select 'contradiction', 'divergence:' || d.id::text, d.risk, d.created_at
     from gardener_findings d
    where d.status = 'open' and d.kind = 'divergence'
      and ($1::text[] is null or 'contradiction' = any($1::text[]))
-  union all
-  select 'withdrawn', w.id::text, 'low', w.updated_at
-    from atomic_note_relations w
-   where ${withdrawnNoteRelationSql("w")}
-     and ($1::text[] is null or 'withdrawn' = any($1::text[]))
+  union all${relation("withdrawn")}
   union all
   select f.kind, f.id::text, f.risk, f.created_at
     from gardener_findings f
    where f.status = 'open' and f.kind in ('duplicate', 'backlog', 'budget')
      and ($1::text[] is null or f.kind = any($1::text[]))`;
+};
 
 /** Risk then age: high first, the oldest first, then the key in byte order (`collate "C"`). */
 const rankSql = `(case items.risk when 'high' then 0 when 'medium' then 1 else 2 end)`;
 const keySql = `(items.kind || ':' || items.id)`;
 
-const pageSql = `
+/** The statements of `page` and `counts`, exported for the EXPLAIN proof (T176). */
+export const pageSql = `
   select items.kind, items.id, items.risk, ${rankSql} as rank, ${utc("items.at")} as at,
          ${keySql} as key
-    from (${openItemsSql}) items
+    from (${openItemsSql(true)}) items
    where ($2::text is null or items.risk = $2::text)
      and ($3::int is null or (${rankSql}, items.at, ${keySql} collate "C")
             > ($3::int, $4::timestamptz, $5::text))
    order by ${rankSql}, items.at, ${keySql} collate "C"
    limit $6::int`;
 
-const countsSql = `select items.kind, items.risk, count(*)::int as n from (${openItemsSql}) items
+export const countsSql = `select items.kind, items.risk, count(*)::int as n from (${openItemsSql(false)}) items
    group by items.kind, items.risk`;
 
 interface PageRow extends QueryResultRow {
@@ -234,13 +321,14 @@ export function createInboxRepository(db: Queryable) {
         relationType: string | null;
         vetoSource: string | null;
         finalScore: number;
+        probability: number | null;
         sourceId: string;
         sourceTitle: string;
         targetId: string;
         targetTitle: string;
       }>(
         `select r.id::text as id, r.relation_type as "relationType", r.veto_source as "vetoSource",
-                r.final_score as "finalScore",
+                r.final_score as "finalScore", r.probability as "probability",
                 s.id::text as "sourceId", left(s.title, $2::int) as "sourceTitle",
                 t.id::text as "targetId", left(t.title, $2::int) as "targetTitle"
            from atomic_note_relations r
@@ -254,6 +342,7 @@ export function createInboxRepository(db: Queryable) {
         relationType: row.relationType,
         vetoSource: row.vetoSource,
         finalScore: Number(row.finalScore),
+        probability: row.probability === null ? null : Number(row.probability),
         sourceNote: { id: row.sourceId, title: row.sourceTitle },
         targetNote: { id: row.targetId, title: row.targetTitle }
       }));

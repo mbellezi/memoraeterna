@@ -112,6 +112,58 @@ export const kindWordKeys: Record<ObjectKind, MessageKey> = {
 };
 
 // ---------------------------------------------------------------------------------------------
+// Where the card hangs (design record §10.1).
+
+/** The sides of a box, in pixels of the viewport. */
+export interface PlaceRect {
+  left: number;
+  right: number;
+}
+
+export interface CardPlacement {
+  side: "left" | "right";
+  /** The distance from the link's own edge to the card: past the text block the link is in. */
+  sideOffset: number;
+}
+
+/**
+ * Where a card for a link in running text goes: in the free space beside the text block the link
+ * belongs to (the note margin, or the side away from the reading column), never over the rest of
+ * its sentence or the lines below. Right of the block when the margin holds the card, else left,
+ * else no card. A link with no block around it hangs beside the link itself.
+ */
+export function cardPlacement({
+  link,
+  block,
+  viewportWidth,
+  cardWidth,
+  gap,
+  edge,
+  prefer = "right"
+}: {
+  link: PlaceRect;
+  block: PlaceRect | null;
+  viewportWidth: number;
+  cardWidth: number;
+  gap: number;
+  /** The least distance the card keeps from the window edge. */
+  edge: number;
+  prefer?: "left" | "right";
+}): CardPlacement | null {
+  const box = block ?? link;
+  const right = {
+    fits: viewportWidth - box.right - edge >= cardWidth + gap,
+    placement: { side: "right", sideOffset: Math.max(0, box.right - link.right) + gap } as const
+  };
+  const left = {
+    fits: box.left - edge >= cardWidth + gap,
+    placement: { side: "left", sideOffset: Math.max(0, link.left - box.left) + gap } as const
+  };
+  const order = prefer === "left" ? [left, right] : [right, left];
+  return order.find((candidate) => candidate.fits)?.placement ?? null;
+}
+
+// ---------------------------------------------------------------------------------------------
 // Markdown: `[text](memora://<kind>/<uuid>[#anchor])` is an object link.
 
 const idSource = "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}";

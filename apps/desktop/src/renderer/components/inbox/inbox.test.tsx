@@ -93,7 +93,7 @@ describe("the Inbox screen", () => {
     const html = view(stateOf(everyKind));
     expect(html).toContain('role="listbox"');
     expect(html).toContain('tabindex="0"');
-    expect(html.match(/role="option"/gu)).toHaveLength(8);
+    expect(html.match(/role="option"/gu)).toHaveLength(inboxKinds.length);
     expect(html).toContain('aria-selected="true"');
     expect(html.match(/aria-selected="true"/gu)).toHaveLength(1);
     expect(html).toContain('aria-activedescendant="inbox-test-option-0"');
@@ -243,6 +243,44 @@ describe("the Inbox screen", () => {
     expect(html).not.toContain("Obsidian conflicts");
     expect(html).toContain('aria-label="All: 3"');
     expect(html).toContain("Any risk");
+  });
+
+  it("lists suggested connections as a kind of their own, with their count", () => {
+    const html = view(
+      stateOf([item("suggestion"), item("suggestion", { id: uuid(86) }), item("duplicate")])
+    );
+    expect(html).toContain('aria-label="Suggested connections: 2"');
+    expect(html).toContain('aria-label="Duplicates: 1"');
+    // A kind with nothing waiting is not offered.
+    expect(view(stateOf([item("duplicate")]))).not.toContain("Suggested connections");
+  });
+
+  it("shows a suggestion by both notes and its confidence, offering keep and remove and no dismiss", () => {
+    const html = view(stateOf([item("suggestion")]));
+    expect(html).toContain("Suggested connection · medium confidence (64%)");
+    expect(html).toContain("“Daylight sets the body clock”");
+    expect(html).toContain("“Morning light shifts sleep timing”");
+    expect(html).toContain("medium confidence (64%)");
+    expect(html).toContain(">Keep<");
+    expect(html).toContain(">Remove<");
+    expect(html).not.toContain(">Dismiss<");
+    expect(html).not.toContain(">Apply<");
+    // The relation is named once, in the sentence, not again in a line of its own.
+    expect(html).toContain("” supports “");
+    expect(html).not.toContain("Connection: ");
+    // Remove carries no X: x only dismisses (D34), and a suggestion has no dismiss.
+    expect(html).not.toContain('aria-keyshortcuts="X"');
+  });
+
+  it("words an unknown confidence with no number (D33, Q37)", () => {
+    const unknown = item("suggestion", { params: { relationType: "supports", probability: null } });
+    const html = view(stateOf([unknown]));
+    expect(html).toContain("unknown confidence");
+    expect(html).not.toMatch(/%\)/u);
+    expect(html).not.toContain("confidence (");
+    const pt = view(stateOf([unknown]), {}, "pt-BR");
+    expect(pt).toContain("confiança desconhecida");
+    expect(pt).not.toMatch(/\d+\s?%/u);
   });
 
   it("offers to load more, and says when more could not be loaded", () => {

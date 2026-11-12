@@ -70,20 +70,28 @@ export interface OmniSearchHit {
   score: number;
 }
 
+/** An arm family the request could have used and did not: the answer is still right, but partial. */
+export type OmniDegraded = "ann" | "fts";
+
 export interface OmniSearchOutcome {
   items: OmniSearchHit[];
-  /** False when the query has no word the full-text arms can look for (only trigram ran). */
+  /** True when a full-text arm ran (false for a query with no word, or kinds that have none). */
   fullText: boolean;
-  /** True when the vector arms ran. */
+  /** True when a vector arm ran. */
   vectors: boolean;
+  /** The arm families that apply to the request's kinds and mode but did not run. */
+  degraded: OmniDegraded[];
 }
 
 export interface OmniSearchStatement {
   text: string;
   values: unknown[];
   arms: readonly { arm: OmniArmName; kind: ObjectKind; table: string }[];
+  /** A full-text arm is in `arms`. */
   fullText: boolean;
+  /** A vector arm is in `arms`. */
   vectors: boolean;
+  degraded: OmniDegraded[];
 }
 
 const vectorDimensions = new Set([256, 768, 1_024]);
@@ -129,7 +137,7 @@ interface ArmSpec {
  * key per matching row (as `currentNoteSql` reads a note's document), so the planner keeps the
  * arm's index as the driver instead of walking every topic of the active tree.
  */
-const liveTopic = (alias: string) =>
+export const liveTopicSql = (alias: string) =>
   `(${alias}.retired_at is null and coalesce((select omni_tree.status = 'active' from topic_trees omni_tree
      where omni_tree.id = ${alias}.tree_id), false))`;
 
@@ -153,7 +161,7 @@ const inScope: Record<ObjectKind | "passage", (alias: string) => string> = {
 };
 
 const visibility: Partial<Record<ObjectKind | "passage", (alias: string) => string>> = {
-  topic: liveTopic,
+  topic: liveTopicSql,
   note: currentNoteSql,
   passage: livePassage
 };
@@ -210,6 +218,9 @@ function fullTextArm(kind: ObjectKind, table: string): ArmSpec {
 const spaceFilter = (context: ArmContext) =>
   `e.model = ${context.embedding!.model} and e.strategy = 'native-v2:' || ${context.embedding!.space}
      and e.provider = ${context.embedding!.provider} and e.runtime = ${context.embedding!.runtime}`;
+
+const isFullTextArm = (spec: ArmSpec) => spec.needs === "fts" || spec.needs === "passage";
+const isVectorArm = (spec: ArmSpec) => spec.needs === "ann";
 
 const arms: readonly ArmSpec[] = [
   trigramArm("title_trgm", "topic", "topics", "f_unaccent(x.title)"),
@@ -323,6 +334,9 @@ export function omniSearchStatement(input: OmniSearchInput): OmniSearchStatement
     dimensions: vector?.vector.length ?? 0
   };
 
+  const applicable = arms.filter(
+    (spec) => kinds.has(spec.kind) && (input.mode === "full" || spec.needs !== "passage")
+  );
   const runs = arms.filter((spec) => {
     if (!kinds.has(spec.kind)) return false;
     if (spec.needs === "trgm") return true;
@@ -366,8 +380,16 @@ select top.kind, top.id, top.passage, top.title, top.arms, ${snippetSql} as snip
       kind,
       table: table === "embeddings" ? `embeddings_${context.dimensions}` : table
     })),
-    fullText: tsquery !== null,
-    vectors: vector !== null
+    fullText: runs.some(isFullTextArm),
+    vectors: runs.some(isVectorArm),
+    // An arm family is missing only where one applies: a request for topics or entities has no
+    // vector arm to miss, and one for entities has no full-text arm.
+    degraded: [
+      ...(input.mode === "full" && applicable.some(isVectorArm) && !runs.some(isVectorArm)
+        ? (["ann"] as const)
+        : []),
+      ...(applicable.some(isFullTextArm) && !runs.some(isFullTextArm) ? (["fts"] as const) : [])
+    ]
   };
 }
 
@@ -409,7 +431,8 @@ export function createOmniSearchRepository(db: Queryable) {
       return {
         items: items.sort(compareOmniHits),
         fullText: statement.fullText,
-        vectors: statement.vectors
+        vectors: statement.vectors,
+        degraded: statement.degraded
       };
     }
   };
