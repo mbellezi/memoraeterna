@@ -3,9 +3,12 @@ import type { Translator } from "@app/i18n";
 import type { SettingEntryV2 } from "../../../../shared/settings-registry";
 import type { AiDecisionsStatus } from "../../../../shared/ipc";
 import { Button } from "../../../components/ui/button";
+import { ErrorState } from "../../../components/ui/error-state";
+import { Skeleton } from "../../../components/ui/skeleton";
 import { SettingRow } from "../../SettingRow";
 import { decisionsLine, formatSpend, formatUsd } from "./ai-model";
 import { AreaNotice, StatusLine, SwitchControl } from "./ai-parts";
+import type { Load } from "./ai-controller";
 import { useRowProps } from "./ai-rows";
 
 /**
@@ -13,11 +16,14 @@ import { useRowProps } from "./ai-rows";
  * why, when the local ranker steps in), what it costs and what it sends. Turning it on asks first,
  * in place, with the disclosure of what leaves this Mac (the note text, to OpenAI, under its
  * retention terms); turning it off needs no question. It is unavailable in Local and Custom, which
- * never send note text out, and says so.
+ * never send note text out, and says so. Until its status is read it is the same row with a bar in
+ * place of the switch (or the plain error and Try again): it is one component, so the element a
+ * person landed on from a link or a search result is not replaced when the status arrives.
  */
 export function DecisionsRow({
   entry,
-  status,
+  load,
+  onRetry,
   asking,
   busy,
   note,
@@ -27,7 +33,8 @@ export function DecisionsRow({
   onCancel
 }: {
   entry: SettingEntryV2;
-  status: AiDecisionsStatus;
+  load: Load<AiDecisionsStatus>;
+  onRetry: () => void;
   asking: boolean;
   busy: boolean;
   /** What the last action came to ("OpenAI Decisions is on."). */
@@ -37,8 +44,29 @@ export function DecisionsRow({
   onConfirm: () => void;
   onCancel: () => void;
 }) {
-  const row = useRowProps(entry);
+  const status = load.status === "ready" ? load.value : null;
+  const row = useRowProps(entry, status === null ? { withReset: false } : {});
   const { t } = row;
+  if (status === null)
+    return (
+      <SettingRow
+        {...row}
+        stack={load.status === "error"}
+        control={
+          load.status === "loading" ? <Skeleton className="h-5 w-9 rounded-full" /> : undefined
+        }
+        note={
+          load.status === "error" ? (
+            <ErrorState
+              t={t}
+              message={t("settingsAi.decisions.errorTitle")}
+              retryLabel={t("shell.actions.retry")}
+              onRetry={onRetry}
+            />
+          ) : undefined
+        }
+      />
+    );
   const line = decisionsLine(t, status);
   const locked = !status.presetAllowed;
   return (

@@ -13,7 +13,7 @@ import { useSettings } from "../../settings-context";
 import { groupLabelOf, groupsOf } from "../../settings-model";
 import { settingsStoreOf } from "../../settings-store";
 import { requestSettingsTarget } from "../../settings-target";
-import { AiSettingsController, type AiSnapshot, type Load } from "./ai-controller";
+import { AiSettingsController, type AiSnapshot } from "./ai-controller";
 import {
   formatUsd,
   modelsSummary,
@@ -169,10 +169,11 @@ export function AiSection() {
         <HfTokenRow entry={entry} snap={snap} controller={controller} notice={notice("models")} />
       );
     if (entry.id === "relations.decisions")
-      return snap.decisions.status === "ready" ? (
+      return (
         <DecisionsRow
           entry={entry}
-          status={snap.decisions.value}
+          load={snap.decisions}
+          onRetry={() => void controller.loadDecisions()}
           asking={snap.decisionsAsking}
           busy={snap.decisionsBusy}
           note={snap.decisionsNote ? t(snap.decisionsNote) : null}
@@ -192,12 +193,6 @@ export function AiSection() {
             )
           }
           onCancel={() => controller.cancelEnableDecisions()}
-        />
-      ) : (
-        <DecisionsPending
-          entry={entry}
-          load={snap.decisions}
-          onRetry={() => void controller.loadDecisions()}
         />
       );
     if (entry.id === "ai:decisions-openai-platform")
@@ -535,39 +530,6 @@ function DecisionsKeyRow({
         const answer = await controller.testDecisionsKey();
         return { ok: answer.ok, text: t(answer.key) };
       }}
-    />
-  );
-}
-
-/** The Decisions switch while its status is read, or when it could not be. */
-function DecisionsPending({
-  entry,
-  load,
-  onRetry
-}: {
-  entry: SettingEntryV2;
-  load: Load<unknown>;
-  onRetry: () => void;
-}) {
-  const row = useRowProps(entry, { withReset: false });
-  const { t } = row;
-  return (
-    <SettingRow
-      {...row}
-      stack={load.status === "error"}
-      control={
-        load.status === "loading" ? <Skeleton className="h-5 w-9 rounded-full" /> : undefined
-      }
-      note={
-        load.status === "error" ? (
-          <ErrorState
-            t={t}
-            message={t("settingsAi.decisions.errorTitle")}
-            retryLabel={t("shell.actions.retry")}
-            onRetry={onRetry}
-          />
-        ) : undefined
-      }
     />
   );
 }
