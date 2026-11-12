@@ -6046,5 +6046,309 @@
       "themeMode": "tema oscuro claro noche modo apariencia colores esquema sistema visual",
       "uploadCopies": "copias subidos guardar originales archivos copia carpeta importaciones segunda seguridad de las subidas"
     }
+  },
+  "settingsAi": {
+    "blocked": {
+      "localRequiresAppleSilicon": "Local requiere un Mac con Apple silicon.",
+      "modelMissing": "{name} necesita {model}, que no está instalado. Instálalo en Modelos en este Mac y vuelve a intentarlo.",
+      "noRemoteProfile": "{name} necesita un modelo de proveedor. Añade un proveedor arriba y vuelve a intentarlo.",
+      "thisJob": "esta tarea",
+      "title": "No se pudo aplicar {setup}."
+    },
+    "cap": {
+      "change": "Cambiar en Conocimiento",
+      "label": "Límite mensual de gasto en la nube: {amount}",
+      "noSpend": "El límite se aplica al Jardinero y está en Conocimiento.",
+      "spent": "{amount} gastados este mes. El límite se aplica al Jardinero y está en Conocimiento."
+    },
+    "confirm": {
+      "apply": "Aplicar y probar",
+      "body": "Esto sustituye el modelo de cada tarea y prueba una llamada de cada una. No se descarga nada.",
+      "bodyLocal": "Aún no hay un modelo de escritura local validado, así que la escritura puede quedar en pausa.",
+      "title": "¿Cambiar a {setup}?"
+    },
+    "credential": {
+      "save": "Guardar"
+    },
+    "decisions": {
+      "calibrated": "Las relaciones por encima de su umbral calibrado se aplican automáticamente; las demás son sugerencias que puedes conservar o quitar.",
+      "confirmApply": "Activar",
+      "confirmBody": "Activarlo envía el texto de las notas a OpenAI como se describe arriba. Puedes desactivarlo en cualquier momento; después no se envía nada.",
+      "confirmTitle": "¿Enviar el texto de las notas a OpenAI?",
+      "errorTitle": "No se pudo leer el estado de OpenAI Decisions.",
+      "fallback": "Activado, pero está decidiendo el clasificador local: {reason}.",
+      "key": {
+        "add": "Guardar clave…",
+        "hint": "Se guarda cifrada en este equipo, no se vuelve a mostrar y solo se envía a OpenAI.",
+        "invalid": "OpenAI rechazó la clave guardada. Guarda una válida.",
+        "label": "Clave de OpenAI Platform",
+        "none": "Sin clave",
+        "replace": "Cambiar clave…",
+        "set": "Clave guardada, nunca se vuelve a mostrar",
+        "test": "Probar clave",
+        "testOk": "OpenAI aceptó la clave.",
+        "testing": "Probando…"
+      },
+      "keySaved": "Se guardó la clave de OpenAI.",
+      "lastFallback": "La última vez decidió el clasificador local en su lugar: {reason}.",
+      "noticeBody": "Mientras esté activado, el título, la idea y los primeros {characters} caracteres del texto de cada nota comparada, y de las notas con las que se compara (incluidas las que ya se compararon antes), se envían a OpenAI (la API Decisions, modelo {model}) con tu propia clave de OpenAI Platform. Por defecto OpenAI no entrena con los datos de la API y puede conservar las solicitudes hasta 30 días para vigilar abusos. Memora no controla esa retención. No se envía nada si está desactivado, en la configuración Local o sin clave.",
+      "noticeCost": "Cuesta unos {price} por millón de tokens de entrada, normalmente un centavo o menos por nota. Memora deja de usarlo por el día al llegar a {cap} y el clasificador local toma el relevo.",
+      "noticeTitle": "El texto de tus notas se envía a OpenAI",
+      "off": "Desactivado: no se envía nada. El reordenador local decide las conexiones.",
+      "ready": "Activado: OpenAI Decisions decide las conexiones.",
+      "reason": {
+        "breaker_open": "OpenAI no responde ahora mismo",
+        "error": "OpenAI devolvió un error inesperado",
+        "invalid_key": "OpenAI rechazó la clave guardada",
+        "network": "no se pudo contactar con OpenAI",
+        "no_key": "no hay ninguna clave de OpenAI guardada",
+        "quota": "tu cuenta de OpenAI no tiene crédito",
+        "spend_cap": "se alcanzó el límite de gasto de hoy"
+      },
+      "spend": "Gastado hoy: {spent} de {cap} ({requests} solicitudes).",
+      "turnedOff": "OpenAI Decisions está desactivado.",
+      "turnedOn": "OpenAI Decisions está activado.",
+      "unavailable": "No está disponible en Local ni en Personalizada, que nunca envían el texto de las notas al exterior.",
+      "uncalibrated": "Todavía no está calibrado, así que cada relación que encuentra es una sugerencia que puedes conservar o quitar."
+    },
+    "errors": {
+      "write": "No se pudo guardar. No se cambió nada."
+    },
+    "intro": "Empieza por la configuración: elige el modelo de cada trabajo de una vez. Híbrida y Nube piden un proveedor, justo debajo. Lo demás es ajuste fino.",
+    "models": {
+      "action": {
+        "download": "Descargar",
+        "import": "Importar archivo GGUF…",
+        "remove": "Quitar",
+        "resume": "Reanudar",
+        "test": "Probar",
+        "useRecommended": "Usar los valores recomendados"
+      },
+      "compat": {
+        "compatible": "Cabe en este Mac",
+        "insufficient_memory": "Memoria insuficiente",
+        "unsupported_platform": "Requiere macOS con Apple silicon"
+      },
+      "empty": "Ningún modelo coincide. Quita un filtro para ver los demás.",
+      "errorKept": "No se cambió nada: los modelos instalados siguen donde están.",
+      "errorTitle": "No se pudo leer la lista de modelos.",
+      "eta": {
+        "minutes": "faltan {minutes} min",
+        "seconds": "faltan {seconds} s"
+      },
+      "filter": {
+        "all": "Todos",
+        "compatible": "Solo los que caben en este Mac",
+        "label": "Mostrar",
+        "ranking": "Comparación",
+        "search": "Búsqueda",
+        "writing": "Escritura"
+      },
+      "license": "Acepto la licencia:",
+      "parameters": "Parámetros",
+      "ranker": {
+        "fallback": "Sin un reordenador validado, las notas que caben en más de un tema inician temas nuevos. Se vuelven a colocar cuando haya uno listo.",
+        "installing": "Este reordenador coloca las notas que caben en más de un tema. Hasta que esté listo, esas notas inician temas nuevos y se vuelven a colocar después.",
+        "pending": "Ejecuta la prueba para validar este reordenador."
+      },
+      "removeAsk": "¿Quitar {model} y sus archivos de este Mac?",
+      "removeBlocked": "En uso por {profiles}. Cambia antes el perfil.",
+      "saveDefaults": "Guardar valores predeterminados",
+      "status": {
+        "downloading": "Descargando",
+        "failed": "Falló",
+        "not_downloaded": "No descargado",
+        "ready": "Instalado",
+        "removing": "Quitando",
+        "verifying": "Verificando"
+      },
+      "summaryMany": "{count} instalados · {size}",
+      "summaryNone": "Ninguno instalado",
+      "summaryOne": "1 instalado · {size}",
+      "testOk": "El modelo se ejecutó en este Mac.",
+      "token": {
+        "add": "Añadir token…",
+        "label": "Token",
+        "none": "Sin token",
+        "replace": "Cambiar token…",
+        "set": "Token guardado, nunca se muestra"
+      }
+    },
+    "preset": {
+      "cloud": {
+        "help": "Casi todo en tu proveedor."
+      },
+      "custom": {
+        "help": "Tú eliges el modelo de cada tarea, justo debajo."
+      },
+      "estimate": "Unos {amount} al mes con una clave de API.",
+      "hybrid": {
+        "help": "Búsqueda y comparación en este Mac; escritura y respuestas en tu proveedor."
+      },
+      "local": {
+        "help": "Todo se ejecuta en este Mac y nada sale de él.",
+        "unavailableMemory": "Este Mac no tiene memoria suficiente para el modelo de escritura local.",
+        "unavailableSilicon": "Requiere un Mac con Apple silicon.",
+        "unavailableSystem": "No hay un modelo de escritura local para este sistema.",
+        "unverified": "Aún sin un modelo de escritura local validado."
+      },
+      "name": {
+        "cloud": "Nube",
+        "custom": "Personalizada",
+        "hybrid": "Híbrida",
+        "local": "Local"
+      },
+      "recommended": "recomendada",
+      "unset": "Aún no has elegido una configuración. Elige dónde se ejecuta la IA: define el modelo de cada tarea."
+    },
+    "profiles": {
+      "close": "Cerrar",
+      "create": "Crear perfil",
+      "customize": "Personalizado",
+      "duplicate": "Duplicar perfil",
+      "edit": "Editar",
+      "empty": "Aún no hay perfiles. Un perfil une un modelo con las tareas que atiende.",
+      "model": "Modelo",
+      "modelDefaults": "Valores del modelo",
+      "name": "Nombre del perfil",
+      "new": "Nuevo perfil…",
+      "remove": "Quitar perfil",
+      "removeAsk": "¿Quitar este perfil y las rutas de sus tareas? Los modelos descargados se conservan.",
+      "resetTask": "Usar los valores del modelo",
+      "save": "Guardar perfil",
+      "selectModel": "Elige un modelo de proveedor o local",
+      "summaryMany": "{count} perfiles",
+      "summaryNone": "Ningún perfil",
+      "summaryOne": "1 perfil",
+      "task": {
+        "atomic-note-generation": "Notas atómicas",
+        "embedding": "Búsqueda y similitud",
+        "knowledge-graph-generation": "Grafo de conocimiento",
+        "reranking": "Comparación (reordenador)",
+        "structured-output": "Respuestas estructuradas",
+        "summarization": "Resúmenes",
+        "text-generation": "Escritura de texto"
+      }
+    },
+    "providers": {
+      "action": {
+        "addKey": "Añadir clave…",
+        "addModel": "Añadir un modelo…",
+        "find": "Buscar modelos",
+        "finding": "Buscando…",
+        "remove": "Quitar",
+        "replaceKey": "Cambiar clave…",
+        "save": "Guardar",
+        "saving": "Guardando…",
+        "signIn": "Iniciar sesión…",
+        "signInAgain": "Iniciar sesión de nuevo",
+        "test": "Probar",
+        "testing": "Probando…"
+      },
+      "form": {
+        "address": "Dirección del servidor",
+        "addressHint": "Para la propia OpenAI, deja la dirección predeterminada.",
+        "key": "Clave de API",
+        "model": "Modelo",
+        "modelHint": "Elige uno de la lista del proveedor o escribe su nombre.",
+        "purpose": "Se usa para",
+        "signInHint": "Abre ChatGPT en el navegador. Solo las tareas de escritura la usan.",
+        "signedIn": "Sesión iniciada. Elige el modelo que usar."
+      },
+      "modelsLabel": "Modelos",
+      "purpose": {
+        "embedding": "Búsqueda",
+        "generation": "Escritura",
+        "reranking": "Comparación"
+      },
+      "removeAsk": "¿Quitar {model}? Los perfiles que lo usan se quedan sin modelo.",
+      "status": {
+        "connected": "Conectada",
+        "keySaved": "Clave guardada, nunca se muestra",
+        "none": "Sin clave",
+        "notConnected": "Sin iniciar sesión"
+      },
+      "testOk": "La conexión funciona"
+    },
+    "routes": {
+      "choose": "Elige un modelo",
+      "disclosure": {
+        "body": "Cuando este modelo decide o juzga, los títulos y las ideas de las notas comparadas y fragmentos de las fuentes se envían a {provider}. Los conserva según sus propios términos de retención, que Memora no controla.",
+        "confirm": "Usar este modelo",
+        "title": "{provider} recibe tu texto"
+      },
+      "empty": "Elige una configuración arriba: define el modelo de cada tarea.",
+      "intro": "La configuración elige estos modelos. Cambiar uno aquí cambia solo esa tarea, y la configuración pasa a Personalizada.",
+      "introCustom": "Cada tarea conserva el modelo que elegiste. Para empezar de nuevo, elige una configuración arriba.",
+      "noModel": "Ningún modelo elegido",
+      "noModelsAvailable": "No hay modelos para elegir. Añade un proveedor o instala un modelo local abajo.",
+      "noRanker": "No hay un reordenador instalado. Las conexiones esperan a uno, salvo que decida el juez generativo.",
+      "partial": "Faltan algunas rutas del juez. Elige un modelo para definirlas todas.",
+      "where": {
+        "local": "En este Mac",
+        "remote": "Proveedor"
+      }
+    },
+    "states": {
+      "errorKept": "No se cambió nada: Memora sigue usando los modelos que ya tenía.",
+      "errorTitle": "No se pudo leer la configuración de IA."
+    },
+    "status": {
+      "applied": "{setup} está aplicada. Cada tarea muestra el resultado de su prueba.",
+      "applying": "Aplicando {setup}…",
+      "testing": "Probando {name}…"
+    },
+    "test": {
+      "button": "Probar",
+      "failed": "La prueba falló",
+      "failedWith": "La prueba falló: {reason}",
+      "none": "Sin reordenador",
+      "passed": "Prueba superada",
+      "passedMs": "Prueba superada en {ms} ms",
+      "passedSeconds": "Prueba superada en {seconds} s",
+      "running": "Probando…",
+      "untested": "Sin probar"
+    },
+    "thisMac": {
+      "detectedOn": "{date}, {time}",
+      "detectedToday": "hoy, {time}",
+      "error": "No se pudo detectar este Mac.",
+      "errorKept": "No se cambió nada: la configuración de arriba funciona como antes.",
+      "fact": {
+        "detected": "Detectado",
+        "disk": "Disco libre",
+        "gpuMemory": "Memoria para la GPU",
+        "graphicsMemory": "Memoria de vídeo",
+        "memory": "Memoria",
+        "memoryUnified": "Memoria unificada"
+      },
+      "intro": "Lo que Memora encontró en este Mac y la configuración que le conviene.",
+      "nothingChanges": "Nada cambia solo: la configuración la eliges tú.",
+      "reason": {
+        "local_memory_too_small": "Este Mac tiene poca memoria para el modelo de escritura local.",
+        "local_quality_unverified": "Local aún no tiene un modelo de escritura validado para este Mac.",
+        "local_requires_apple_silicon": "Local requiere un Mac con Apple silicon.",
+        "local_writer_unavailable": "No hay un modelo de escritura local para este sistema.",
+        "probe_incomplete": "No se pudo detectar todo, así que pueden faltar algunas cifras.",
+        "ranker_slow_on_cpu": "Sin tarjeta gráfica dedicada, comparar notas es lento en este ordenador.",
+        "running_under_rosetta": "Memora se ejecuta traducido (Rosetta). Funciona, pero más lento que la versión nativa."
+      },
+      "recommended": "Recomendada para este Mac: {setup}.",
+      "redetect": "Detectar de nuevo",
+      "redetected": "Detectado de nuevo.",
+      "redetecting": "Detectando…",
+      "tag": "solo informativo",
+      "title": {
+        "intel": "Mac con procesador Intel",
+        "other": "Este ordenador",
+        "silicon": "Mac con Apple silicon",
+        "windows": "Ordenador con Windows"
+      },
+      "why": {
+        "cloud": "Casi todo usa tu proveedor; este ordenador guarda tu biblioteca.",
+        "hybrid": "La búsqueda y la comparación se ejecutan aquí, sin coste; la escritura usa tu proveedor.",
+        "local": "Todo se ejecuta aquí y nada sale de este Mac."
+      }
+    }
   }
 }

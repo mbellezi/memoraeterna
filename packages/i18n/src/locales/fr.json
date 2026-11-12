@@ -6046,5 +6046,309 @@
       "themeMode": "thème sombre clair nuit mode apparence couleurs schéma système visuel",
       "uploadCopies": "copies importés conserver originaux fichiers copie dossier imports seconde sauvegarde des envois enregistrer"
     }
+  },
+  "settingsAi": {
+    "blocked": {
+      "localRequiresAppleSilicon": "Local demande un Mac avec puce Apple.",
+      "modelMissing": "{name} a besoin de {model}, qui n’est pas installé. Installez-le dans Modèles sur ce Mac, puis réessayez.",
+      "noRemoteProfile": "{name} a besoin d’un modèle de fournisseur. Ajoutez un fournisseur ci-dessus, puis réessayez.",
+      "thisJob": "cette tâche",
+      "title": "Impossible d’appliquer {setup}."
+    },
+    "cap": {
+      "change": "Modifier dans Connaissances",
+      "label": "Plafond mensuel de dépenses dans le cloud : {amount}",
+      "noSpend": "Le plafond vaut pour le Jardinier et se règle dans Connaissances.",
+      "spent": "{amount} dépensés ce mois-ci. Le plafond vaut pour le Jardinier et se règle dans Connaissances."
+    },
+    "confirm": {
+      "apply": "Appliquer et tester",
+      "body": "Cela remplace le modèle de chaque tâche et teste un appel de chacune. Rien n’est téléchargé.",
+      "bodyLocal": "Il n’y a pas encore de modèle d’écriture local validé : l’écriture peut rester en attente.",
+      "title": "Passer à {setup} ?"
+    },
+    "credential": {
+      "save": "Enregistrer"
+    },
+    "decisions": {
+      "calibrated": "Les relations au-dessus de son seuil calibré sont appliquées automatiquement ; les autres sont des suggestions que vous pouvez garder ou supprimer.",
+      "confirmApply": "Activer",
+      "confirmBody": "L'activer envoie le texte des notes à OpenAI comme décrit ci-dessus. Vous pouvez le désactiver à tout moment ; rien n'est envoyé ensuite.",
+      "confirmTitle": "Envoyer le texte des notes à OpenAI ?",
+      "errorTitle": "Impossible de lire l’état d’OpenAI Decisions.",
+      "fallback": "Activé, mais le classeur local décide : {reason}.",
+      "key": {
+        "add": "Enregistrer la clé…",
+        "hint": "Elle est stockée chiffrée sur cet ordinateur, jamais réaffichée et envoyée uniquement à OpenAI.",
+        "invalid": "OpenAI a refusé la clé enregistrée. Enregistrez-en une valide.",
+        "label": "Clé OpenAI Platform",
+        "none": "Aucune clé",
+        "replace": "Remplacer la clé…",
+        "set": "Clé enregistrée, jamais ré-affichée",
+        "test": "Tester la clé",
+        "testOk": "OpenAI a accepté la clé.",
+        "testing": "Test en cours…"
+      },
+      "keySaved": "La clé OpenAI a été enregistrée.",
+      "lastFallback": "La dernière fois, le classeur local a décidé à sa place : {reason}.",
+      "noticeBody": "Tant qu'il est activé, le titre, l'idée et les {characters} premiers caractères du texte de chaque note comparée, et des notes avec lesquelles elle est comparée (y compris celles comparées auparavant), sont envoyés à OpenAI (l'API Decisions, modèle {model}) avec votre propre clé OpenAI Platform. Par défaut, OpenAI n'entraîne pas ses modèles sur les données de l'API et peut conserver les requêtes jusqu'à 30 jours pour surveiller les abus. Memora ne contrôle pas cette conservation. Rien n'est envoyé s'il est désactivé, dans la configuration Locale ou sans clé.",
+      "noticeCost": "Il coûte environ {price} par million de jetons d'entrée, typiquement un centime ou moins par note. Memora cesse de l'utiliser pour la journée à {cap}, et le classeur local prend le relais.",
+      "noticeTitle": "Le texte de vos notes est envoyé à OpenAI",
+      "off": "Désactivé : rien n’est envoyé. Le reclasseur local décide des liens.",
+      "ready": "Activé : OpenAI Decisions décide des liens.",
+      "reason": {
+        "breaker_open": "OpenAI ne répond pas en ce moment",
+        "error": "OpenAI a renvoyé une erreur inattendue",
+        "invalid_key": "OpenAI a refusé la clé enregistrée",
+        "network": "OpenAI est injoignable",
+        "no_key": "aucune clé OpenAI n'est enregistrée",
+        "quota": "votre compte OpenAI n'a plus de crédit",
+        "spend_cap": "la limite de dépense du jour est atteinte"
+      },
+      "spend": "Dépensé aujourd'hui : {spent} sur {cap} ({requests} requêtes).",
+      "turnedOff": "OpenAI Decisions est désactivé.",
+      "turnedOn": "OpenAI Decisions est activé.",
+      "unavailable": "Indisponible en Local ou Personnalisée, qui n’envoient jamais le texte des notes à l’extérieur.",
+      "uncalibrated": "Il n'est pas encore calibré : chaque relation qu'il trouve est donc une suggestion que vous pouvez garder ou supprimer."
+    },
+    "errors": {
+      "write": "Impossible d’enregistrer. Rien n’a changé."
+    },
+    "intro": "Commencez par la configuration : elle choisit d’un coup le modèle de chaque tâche. Hybride et Cloud demandent un fournisseur, juste en dessous. Le reste est du réglage fin.",
+    "models": {
+      "action": {
+        "download": "Télécharger",
+        "import": "Importer un fichier GGUF…",
+        "remove": "Retirer",
+        "resume": "Reprendre",
+        "test": "Tester",
+        "useRecommended": "Utiliser les valeurs recommandées"
+      },
+      "compat": {
+        "compatible": "Tient sur ce Mac",
+        "insufficient_memory": "Mémoire insuffisante",
+        "unsupported_platform": "Demande macOS avec puce Apple"
+      },
+      "empty": "Aucun modèle ne correspond. Retirez un filtre pour voir les autres.",
+      "errorKept": "Rien n’a changé : les modèles installés restent en place.",
+      "errorTitle": "Impossible de lire la liste des modèles.",
+      "eta": {
+        "minutes": "{minutes} min restantes",
+        "seconds": "{seconds} s restantes"
+      },
+      "filter": {
+        "all": "Tous",
+        "compatible": "Seulement ceux qui tiennent sur ce Mac",
+        "label": "Afficher",
+        "ranking": "Comparaison",
+        "search": "Recherche",
+        "writing": "Écriture"
+      },
+      "license": "J’accepte la licence :",
+      "parameters": "Paramètres",
+      "ranker": {
+        "fallback": "Sans reclasseur validé, les notes qui conviennent à plusieurs sujets ouvrent de nouveaux sujets. Elles sont replacées dès qu’un reclasseur est prêt.",
+        "installing": "Ce reclasseur place les notes qui conviennent à plusieurs sujets. Tant qu’il n’est pas prêt, elles ouvrent de nouveaux sujets et sont replacées ensuite.",
+        "pending": "Lancez le test pour valider ce reclasseur."
+      },
+      "removeAsk": "Retirer {model} et ses fichiers de ce Mac ?",
+      "removeBlocked": "Utilisé par {profiles}. Changez d’abord le profil.",
+      "saveDefaults": "Enregistrer les valeurs par défaut",
+      "status": {
+        "downloading": "Téléchargement",
+        "failed": "Échec",
+        "not_downloaded": "Non téléchargé",
+        "ready": "Installé",
+        "removing": "Suppression",
+        "verifying": "Vérification"
+      },
+      "summaryMany": "{count} installés · {size}",
+      "summaryNone": "Aucun installé",
+      "summaryOne": "1 installé · {size}",
+      "testOk": "Le modèle a tourné sur ce Mac.",
+      "token": {
+        "add": "Ajouter un jeton…",
+        "label": "Jeton",
+        "none": "Aucun jeton",
+        "replace": "Remplacer le jeton…",
+        "set": "Jeton enregistré, jamais affiché"
+      }
+    },
+    "preset": {
+      "cloud": {
+        "help": "Presque tout chez votre fournisseur."
+      },
+      "custom": {
+        "help": "Vous choisissez le modèle de chaque tâche, juste en dessous."
+      },
+      "estimate": "Environ {amount} par mois avec une clé d’API.",
+      "hybrid": {
+        "help": "Recherche et comparaison sur ce Mac ; écriture et réponses chez votre fournisseur."
+      },
+      "local": {
+        "help": "Tout tourne sur ce Mac et rien n’en sort.",
+        "unavailableMemory": "Ce Mac n’a pas assez de mémoire pour le modèle d’écriture local.",
+        "unavailableSilicon": "Demande un Mac avec puce Apple.",
+        "unavailableSystem": "Il n’existe pas de modèle d’écriture local pour ce système.",
+        "unverified": "Pas encore de modèle d’écriture local validé."
+      },
+      "name": {
+        "cloud": "Cloud",
+        "custom": "Personnalisée",
+        "hybrid": "Hybride",
+        "local": "Local"
+      },
+      "recommended": "recommandée",
+      "unset": "Aucune configuration choisie pour l’instant. Choisissez où l’IA tourne : elle fixe le modèle de chaque tâche."
+    },
+    "profiles": {
+      "close": "Fermer",
+      "create": "Créer le profil",
+      "customize": "Personnalisé",
+      "duplicate": "Dupliquer le profil",
+      "edit": "Modifier",
+      "empty": "Pas encore de profils. Un profil relie un modèle aux tâches qu’il sert.",
+      "model": "Modèle",
+      "modelDefaults": "Valeurs du modèle",
+      "name": "Nom du profil",
+      "new": "Nouveau profil…",
+      "remove": "Supprimer le profil",
+      "removeAsk": "Supprimer ce profil et les routes de ses tâches ? Les modèles téléchargés sont conservés.",
+      "resetTask": "Utiliser les valeurs du modèle",
+      "save": "Enregistrer le profil",
+      "selectModel": "Choisissez un modèle de fournisseur ou local",
+      "summaryMany": "{count} profils",
+      "summaryNone": "Aucun profil",
+      "summaryOne": "1 profil",
+      "task": {
+        "atomic-note-generation": "Notes atomiques",
+        "embedding": "Recherche et similarité",
+        "knowledge-graph-generation": "Graphe de connaissances",
+        "reranking": "Comparaison (reclasseur)",
+        "structured-output": "Réponses structurées",
+        "summarization": "Résumés",
+        "text-generation": "Rédaction de texte"
+      }
+    },
+    "providers": {
+      "action": {
+        "addKey": "Ajouter une clé…",
+        "addModel": "Ajouter un modèle…",
+        "find": "Chercher des modèles",
+        "finding": "Recherche…",
+        "remove": "Retirer",
+        "replaceKey": "Remplacer la clé…",
+        "save": "Enregistrer",
+        "saving": "Enregistrement…",
+        "signIn": "Se connecter…",
+        "signInAgain": "Se reconnecter",
+        "test": "Tester",
+        "testing": "Test en cours…"
+      },
+      "form": {
+        "address": "Adresse du serveur",
+        "addressHint": "Pour OpenAI elle-même, gardez l’adresse par défaut.",
+        "key": "Clé d’API",
+        "model": "Modèle",
+        "modelHint": "Choisissez-en un dans la liste du fournisseur ou saisissez son nom.",
+        "purpose": "Utilisé pour",
+        "signInHint": "Ouvre ChatGPT dans le navigateur. Seules les tâches d’écriture l’utilisent.",
+        "signedIn": "Connecté. Choisissez le modèle à utiliser."
+      },
+      "modelsLabel": "Modèles",
+      "purpose": {
+        "embedding": "Recherche",
+        "generation": "Écriture",
+        "reranking": "Comparaison"
+      },
+      "removeAsk": "Retirer {model} ? Les profils qui l’utilisent perdent leur modèle.",
+      "status": {
+        "connected": "Connecté",
+        "keySaved": "Clé enregistrée, jamais affichée",
+        "none": "Aucune clé",
+        "notConnected": "Non connecté"
+      },
+      "testOk": "La connexion fonctionne"
+    },
+    "routes": {
+      "choose": "Choisissez un modèle",
+      "disclosure": {
+        "body": "Lorsque ce modèle décide ou juge, les titres et les idées des notes comparées et des extraits des sources sont envoyés à {provider}. Il les conserve selon ses propres conditions de rétention, que Memora ne contrôle pas.",
+        "confirm": "Utiliser ce modèle",
+        "title": "{provider} reçoit votre texte"
+      },
+      "empty": "Choisissez une configuration ci-dessus : elle fixe le modèle de chaque tâche.",
+      "intro": "La configuration choisit ces modèles. En changer un ici ne change que cette tâche, et la configuration devient Personnalisée.",
+      "introCustom": "Chaque tâche garde le modèle choisi. Pour repartir de zéro, choisissez une configuration ci-dessus.",
+      "noModel": "Aucun modèle choisi",
+      "noModelsAvailable": "Aucun modèle à choisir. Ajoutez un fournisseur ou installez un modèle local ci-dessous.",
+      "noRanker": "Aucun reclasseur installé. Les liens attendent qu’il y en ait un, sauf si le juge génératif décide.",
+      "partial": "Il manque des routes du juge. Choisissez un modèle pour les définir toutes.",
+      "where": {
+        "local": "Sur ce Mac",
+        "remote": "Fournisseur"
+      }
+    },
+    "states": {
+      "errorKept": "Rien n’a changé : Memora continue d’utiliser les modèles qu’il avait.",
+      "errorTitle": "Impossible de lire la configuration de l’IA."
+    },
+    "status": {
+      "applied": "{setup} est appliquée. Chaque tâche montre le résultat de son test.",
+      "applying": "Application de {setup}…",
+      "testing": "Test de {name}…"
+    },
+    "test": {
+      "button": "Tester",
+      "failed": "Le test a échoué",
+      "failedWith": "Le test a échoué : {reason}",
+      "none": "Pas de reclasseur",
+      "passed": "Test réussi",
+      "passedMs": "Test réussi en {ms} ms",
+      "passedSeconds": "Test réussi en {seconds} s",
+      "running": "Test en cours…",
+      "untested": "Non testé"
+    },
+    "thisMac": {
+      "detectedOn": "{date}, {time}",
+      "detectedToday": "aujourd’hui, {time}",
+      "error": "Impossible de détecter ce Mac.",
+      "errorKept": "Rien n’a changé : la configuration ci-dessus fonctionne comme avant.",
+      "fact": {
+        "detected": "Détecté",
+        "disk": "Disque libre",
+        "gpuMemory": "Mémoire pour le GPU",
+        "graphicsMemory": "Mémoire vidéo",
+        "memory": "Mémoire",
+        "memoryUnified": "Mémoire unifiée"
+      },
+      "intro": "Ce que Memora a trouvé sur ce Mac et la configuration qui lui convient.",
+      "nothingChanges": "Rien ne change tout seul : c’est vous qui choisissez la configuration.",
+      "reason": {
+        "local_memory_too_small": "Ce Mac a peu de mémoire pour le modèle d’écriture local.",
+        "local_quality_unverified": "Local n’a pas encore de modèle d’écriture validé pour ce Mac.",
+        "local_requires_apple_silicon": "Local demande un Mac avec puce Apple.",
+        "local_writer_unavailable": "Il n’existe pas de modèle d’écriture local pour ce système.",
+        "probe_incomplete": "Tout n’a pas pu être détecté ; certains chiffres peuvent manquer.",
+        "ranker_slow_on_cpu": "Sans carte graphique dédiée, la comparaison des notes est lente sur cet ordinateur.",
+        "running_under_rosetta": "Memora tourne en mode traduit (Rosetta). Cela fonctionne, mais plus lentement que la version native."
+      },
+      "recommended": "Recommandée pour ce Mac : {setup}.",
+      "redetect": "Détecter à nouveau",
+      "redetected": "Détecté à nouveau.",
+      "redetecting": "Détection…",
+      "tag": "à titre d’information",
+      "title": {
+        "intel": "Mac avec processeur Intel",
+        "other": "Cet ordinateur",
+        "silicon": "Mac avec puce Apple",
+        "windows": "Ordinateur Windows"
+      },
+      "why": {
+        "cloud": "Presque tout passe par votre fournisseur ; cet ordinateur garde votre bibliothèque.",
+        "hybrid": "La recherche et la comparaison tournent ici, sans frais ; l’écriture passe par votre fournisseur.",
+        "local": "Tout tourne ici et rien ne sort de ce Mac."
+      }
+    }
   }
 }

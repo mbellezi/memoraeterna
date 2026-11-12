@@ -6046,5 +6046,309 @@
       "themeMode": "theme dark light night mode appearance colors color scheme system",
       "uploadCopies": "upload copies keep original files copy folder store imports originals backup of uploads second"
     }
+  },
+  "settingsAi": {
+    "blocked": {
+      "localRequiresAppleSilicon": "Local needs a Mac with Apple silicon.",
+      "modelMissing": "{name} needs {model}, which is not installed. Install it in Models on this Mac, then try again.",
+      "noRemoteProfile": "{name} needs a provider model. Add a provider above, then try again.",
+      "thisJob": "this job",
+      "title": "Could not apply {setup}."
+    },
+    "cap": {
+      "change": "Change in Knowledge",
+      "label": "Monthly cloud spending limit: {amount}",
+      "noSpend": "The limit applies to the Gardener and lives in Knowledge.",
+      "spent": "{amount} spent this month. The limit applies to the Gardener and lives in Knowledge."
+    },
+    "confirm": {
+      "apply": "Apply and test",
+      "body": "This replaces the model of every job and tests one call of each. Nothing is downloaded.",
+      "bodyLocal": "There is no validated local writing model yet, so writing may stay on hold.",
+      "title": "Switch to {setup}?"
+    },
+    "credential": {
+      "save": "Save"
+    },
+    "decisions": {
+      "calibrated": "Relations above its calibrated threshold are applied automatically; the others are suggestions you can keep or remove.",
+      "confirmApply": "Turn on",
+      "confirmBody": "Turning this on sends note text to OpenAI as described above. You can turn it off at any time; nothing is sent after that.",
+      "confirmTitle": "Send note text to OpenAI?",
+      "errorTitle": "Could not read the OpenAI Decisions status.",
+      "fallback": "On, but the local ranker is deciding: {reason}.",
+      "key": {
+        "add": "Save key…",
+        "hint": "It is stored encrypted on this computer, never shown again and sent only to OpenAI.",
+        "invalid": "OpenAI refused the saved key. Save a valid one.",
+        "label": "OpenAI Platform key",
+        "none": "No key",
+        "replace": "Replace key…",
+        "set": "Key saved, never shown again",
+        "test": "Test key",
+        "testOk": "OpenAI accepted the key.",
+        "testing": "Testing…"
+      },
+      "keySaved": "The OpenAI key was saved.",
+      "lastFallback": "The last time, the local ranker decided instead: {reason}.",
+      "noticeBody": "While this is on, the title, the idea statement and the first {characters} characters of the text of each note being compared, and of the notes it is compared with (including those it was compared with before), are sent to OpenAI (the Decisions API, model {model}) with your own OpenAI Platform key. By default OpenAI does not train on API data, and it may keep requests for up to 30 days to monitor abuse. Memora does not control that retention. Nothing is sent while this is off, in the Local setup, or without a key.",
+      "noticeCost": "It costs about {price} per million input tokens, typically a cent or less per note. Memora stops using it for the day at {cap}, and the local ranker takes over.",
+      "noticeTitle": "Your note text is sent to OpenAI",
+      "off": "Off: nothing is sent. The local ranker decides the relations.",
+      "ready": "On: OpenAI Decisions decides the relations.",
+      "reason": {
+        "breaker_open": "OpenAI is not responding right now",
+        "error": "OpenAI returned an unexpected error",
+        "invalid_key": "OpenAI refused the saved key",
+        "network": "OpenAI could not be reached",
+        "no_key": "no OpenAI key is saved",
+        "quota": "your OpenAI account has no credit left",
+        "spend_cap": "today's spending limit was reached"
+      },
+      "spend": "Spent today: {spent} of {cap} ({requests} requests).",
+      "turnedOff": "OpenAI Decisions is off.",
+      "turnedOn": "OpenAI Decisions is on.",
+      "unavailable": "Not available in Local or Custom, which never send note text out.",
+      "uncalibrated": "It is not calibrated yet, so every relation it finds is a suggestion you can keep or remove."
+    },
+    "errors": {
+      "write": "Could not save. Nothing was changed."
+    },
+    "intro": "Start with the setup: it picks the model for every job at once. Hybrid and Cloud need a provider, just below. Everything else is fine-tuning.",
+    "models": {
+      "action": {
+        "download": "Download",
+        "import": "Import GGUF file…",
+        "remove": "Remove",
+        "resume": "Resume",
+        "test": "Test",
+        "useRecommended": "Use the recommended values"
+      },
+      "compat": {
+        "compatible": "Fits this Mac",
+        "insufficient_memory": "Not enough memory",
+        "unsupported_platform": "Needs macOS on Apple silicon"
+      },
+      "empty": "No model matches. Clear a filter to see the others.",
+      "errorKept": "Nothing was changed: installed models stay where they are.",
+      "errorTitle": "Could not read the model list.",
+      "eta": {
+        "minutes": "{minutes} min left",
+        "seconds": "{seconds} s left"
+      },
+      "filter": {
+        "all": "All",
+        "compatible": "Only models that fit this Mac",
+        "label": "Show",
+        "ranking": "Comparison",
+        "search": "Search",
+        "writing": "Writing"
+      },
+      "license": "I accept the license:",
+      "parameters": "Parameters",
+      "ranker": {
+        "fallback": "Without a validated ranker, notes that fit more than one topic start new topics. They are placed again once a ranker is ready.",
+        "installing": "This ranker places notes that fit more than one topic. Until it is ready, those notes start new topics and are placed again afterwards.",
+        "pending": "Run the test to validate this ranker."
+      },
+      "removeAsk": "Remove {model} and its files from this Mac?",
+      "removeBlocked": "In use by {profiles}. Change the profile first.",
+      "saveDefaults": "Save defaults",
+      "status": {
+        "downloading": "Downloading",
+        "failed": "Failed",
+        "not_downloaded": "Not downloaded",
+        "ready": "Installed",
+        "removing": "Removing",
+        "verifying": "Verifying"
+      },
+      "summaryMany": "{count} installed · {size}",
+      "summaryNone": "None installed",
+      "summaryOne": "1 installed · {size}",
+      "testOk": "The model ran on this Mac.",
+      "token": {
+        "add": "Add token…",
+        "label": "Token",
+        "none": "No token",
+        "replace": "Replace token…",
+        "set": "Token saved, never shown"
+      }
+    },
+    "preset": {
+      "cloud": {
+        "help": "Almost everything on your provider."
+      },
+      "custom": {
+        "help": "You choose the model of each job, right below."
+      },
+      "estimate": "About {amount} a month with an API key.",
+      "hybrid": {
+        "help": "Search and comparison on this Mac; writing and answers on your provider."
+      },
+      "local": {
+        "help": "Everything runs on this Mac and nothing leaves it.",
+        "unavailableMemory": "This Mac does not have enough memory for the local writing model.",
+        "unavailableSilicon": "Needs a Mac with Apple silicon.",
+        "unavailableSystem": "No local writing model exists for this system.",
+        "unverified": "No validated local writing model yet."
+      },
+      "name": {
+        "cloud": "Cloud",
+        "custom": "Custom",
+        "hybrid": "Hybrid",
+        "local": "Local"
+      },
+      "recommended": "recommended",
+      "unset": "No setup chosen yet. Choose where the AI runs: it picks the model of every job."
+    },
+    "profiles": {
+      "close": "Close",
+      "create": "Create profile",
+      "customize": "Customized",
+      "duplicate": "Duplicate profile",
+      "edit": "Edit",
+      "empty": "No profiles yet. A profile ties a model to the jobs it serves.",
+      "model": "Model",
+      "modelDefaults": "Model defaults",
+      "name": "Profile name",
+      "new": "New profile…",
+      "remove": "Remove profile",
+      "removeAsk": "Remove this profile and its job routes? Downloaded models are kept.",
+      "resetTask": "Use model defaults",
+      "save": "Save profile",
+      "selectModel": "Choose a provider or local model",
+      "summaryMany": "{count} profiles",
+      "summaryNone": "No profiles",
+      "summaryOne": "1 profile",
+      "task": {
+        "atomic-note-generation": "Atomic notes",
+        "embedding": "Search and similarity",
+        "knowledge-graph-generation": "Knowledge graph",
+        "reranking": "Comparison (ranker)",
+        "structured-output": "Structured answers",
+        "summarization": "Summaries",
+        "text-generation": "Text writing"
+      }
+    },
+    "providers": {
+      "action": {
+        "addKey": "Add key…",
+        "addModel": "Add a model…",
+        "find": "Find models",
+        "finding": "Finding…",
+        "remove": "Remove",
+        "replaceKey": "Replace key…",
+        "save": "Save",
+        "saving": "Saving…",
+        "signIn": "Sign in…",
+        "signInAgain": "Sign in again",
+        "test": "Test",
+        "testing": "Testing…"
+      },
+      "form": {
+        "address": "Server address",
+        "addressHint": "For OpenAI itself, leave the default address.",
+        "key": "API key",
+        "model": "Model",
+        "modelHint": "Pick one the provider lists, or type its name.",
+        "purpose": "Used for",
+        "signInHint": "Opens ChatGPT in your browser. Only the writing jobs use it.",
+        "signedIn": "Signed in. Choose the model to use."
+      },
+      "modelsLabel": "Models",
+      "purpose": {
+        "embedding": "Search",
+        "generation": "Writing",
+        "reranking": "Comparison"
+      },
+      "removeAsk": "Remove {model}? Profiles that use it lose their model.",
+      "status": {
+        "connected": "Connected",
+        "keySaved": "Key saved, never shown",
+        "none": "No key",
+        "notConnected": "Not signed in"
+      },
+      "testOk": "Connection works"
+    },
+    "routes": {
+      "choose": "Choose a model",
+      "disclosure": {
+        "body": "When this model decides or judges, the titles and ideas of the notes being compared, and excerpts of the sources, are sent to {provider}. It keeps them under its own retention terms, which Memora does not control.",
+        "confirm": "Use this model",
+        "title": "{provider} receives your text"
+      },
+      "empty": "Choose a setup above: it picks the model of each job.",
+      "intro": "The setup chooses these models. Changing one here changes only that job, and the setup becomes Custom.",
+      "introCustom": "Each job keeps the model you chose. To start over, pick a setup above.",
+      "noModel": "No model chosen",
+      "noModelsAvailable": "No models to choose from. Add a provider or install a local model below.",
+      "noRanker": "No ranker installed yet. Relations wait for one unless the generative judge decides.",
+      "partial": "Some routes of the judge are missing. Choose a model to set them all.",
+      "where": {
+        "local": "On this Mac",
+        "remote": "Provider"
+      }
+    },
+    "states": {
+      "errorKept": "Nothing was changed: Memora keeps using the models it already had.",
+      "errorTitle": "Could not read the AI setup."
+    },
+    "status": {
+      "applied": "{setup} is applied. Each job shows its test result.",
+      "applying": "Applying {setup}…",
+      "testing": "Testing {name}…"
+    },
+    "test": {
+      "button": "Test",
+      "failed": "Test failed",
+      "failedWith": "Test failed: {reason}",
+      "none": "No ranker",
+      "passed": "Test passed",
+      "passedMs": "Test passed in {ms} ms",
+      "passedSeconds": "Test passed in {seconds} s",
+      "running": "Testing…",
+      "untested": "Not tested"
+    },
+    "thisMac": {
+      "detectedOn": "{date}, {time}",
+      "detectedToday": "today, {time}",
+      "error": "Could not detect this Mac.",
+      "errorKept": "Nothing was changed: the setup above works as before.",
+      "fact": {
+        "detected": "Detected",
+        "disk": "Free disk",
+        "gpuMemory": "Memory for the GPU",
+        "graphicsMemory": "Graphics memory",
+        "memory": "Memory",
+        "memoryUnified": "Unified memory"
+      },
+      "intro": "What Memora found on this Mac, and the setup that fits it.",
+      "nothingChanges": "Nothing changes by itself: you choose the setup.",
+      "reason": {
+        "local_memory_too_small": "This Mac has little memory for the local writing model.",
+        "local_quality_unverified": "Local does not have a validated writing model for this Mac yet.",
+        "local_requires_apple_silicon": "Local needs a Mac with Apple silicon.",
+        "local_writer_unavailable": "No local writing model exists for this system.",
+        "probe_incomplete": "Not everything could be detected, so some figures may be missing.",
+        "ranker_slow_on_cpu": "Without a dedicated graphics card, comparing notes is slow on this computer.",
+        "running_under_rosetta": "Memora is running translated (Rosetta). It works, but slower than the native version."
+      },
+      "recommended": "Recommended for this Mac: {setup}.",
+      "redetect": "Detect again",
+      "redetected": "Detected again.",
+      "redetecting": "Detecting…",
+      "tag": "information only",
+      "title": {
+        "intel": "Mac with an Intel processor",
+        "other": "This computer",
+        "silicon": "Mac with Apple silicon",
+        "windows": "Windows computer"
+      },
+      "why": {
+        "cloud": "Almost everything uses your provider; this computer keeps your library.",
+        "hybrid": "Search and comparison run here at no cost; writing uses your provider.",
+        "local": "Everything runs here and nothing leaves this Mac."
+      }
+    }
   }
 }
