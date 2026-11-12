@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { settingsRegistryV2 } from "../../../../shared/settings-registry";
 import { describeFixture } from "./section-screen";
+import { fixtures as screenFixtures } from "./general.screen";
 import {
   contentLanguageOptions,
   languageName,
@@ -156,5 +157,17 @@ describe("General, drawn from the registry", () => {
   it("reads again nothing of its own: the values come from settings.describe alone", async () => {
     h = await mountSection({ section: "general" });
     expect(h.calls.map((call) => call.path)).toEqual(["settings.describe"]);
+  });
+
+  it("shows the default theme on its screen: dark chosen, no changed marker on that row", () => {
+    const described = screenFixtures.success?.["settings.describe"] as ReturnType<
+      typeof describeFixture
+    >;
+    const theme = described.entries.find((entry) => entry.id === "themeMode");
+    expect(theme).toMatchObject({ value: "dark", default: "dark", changed: false });
+    // The row that carries the marker on that screen is the notes language.
+    expect(described.entries.filter((entry) => entry.changed).map((entry) => entry.id)).toEqual([
+      "contentLanguage"
+    ]);
   });
 });
