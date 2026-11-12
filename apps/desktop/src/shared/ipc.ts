@@ -39,6 +39,7 @@ import type { AppMenuCommand } from "./app-menu.js";
 import type { AppEventHandler, AppEventType } from "./app-events.js";
 import { objectsIpcChannels, type ObjectsApi } from "./ipc-objects.js";
 import { questionsChannels, type QuestionsApi } from "./ipc-questions.js";
+import { changesObjectChannels, type ChangesObjectApi } from "./ipc-changes-object.js";
 import { dropChannels, type PrepareDroppedFiles } from "./ipc-drop.js";
 import { entitiesChannels, type EntitiesApi } from "./ipc-entities.js";
 import { homeChannels, type HomeApi } from "./ipc-home.js";
@@ -184,6 +185,7 @@ export const ipcChannels = {
   entitiesPage: entitiesChannels.page,
   relationsBranch: relationsBranchChannels.branch,
   topicsHistory: topicsHistoryChannels.topicsHistory,
+  changesForObject: changesObjectChannels.forObject,
   settingsDescribe: settingsDescribeChannels.describe,
   settingsReset: settingsDescribeChannels.reset,
   notesPage: "app:notes:page",
@@ -2046,6 +2048,8 @@ export interface DesktopApi {
     review: (input: ChangesReviewInput) => Promise<ChangesReviewResult>;
     /** A bounded before and after (the icicle diff and its table); null when it is gone. */
     diff: (input: ChangesDiffInput) => Promise<ChangesDiff | null>;
+    /** The change-sets that touched one object, newest first, at most twenty (the History tab). */
+    forObject: ChangesObjectApi["forObject"];
   };
   /**
    * The Inbox (F4 D29): the one place for human judgment, a read model over the stores. Items come
