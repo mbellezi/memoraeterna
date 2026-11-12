@@ -68,6 +68,19 @@ const descriptions = {
   library: "contextPanel.ask.description.library"
 } as const satisfies Record<AskVariant, MessageKey>;
 
+/**
+ * What an Ask tab with no earlier question says, by what it asks: a source, a topic (a note asks the
+ * topic it is in) or the library (an entity, a question and a note with no place ask it).
+ */
+const emptyWords = {
+  source: "contextPanel.ask.empty.source",
+  topic: "contextPanel.ask.empty.topic",
+  note: "contextPanel.ask.empty.topic",
+  noteUnplaced: "contextPanel.ask.empty.library",
+  entity: "contextPanel.ask.empty.library",
+  library: "contextPanel.ask.empty.library"
+} as const satisfies Record<AskVariant, MessageKey>;
+
 /** The heading and the one line that says what the answer will use. */
 export function AskHeading({ t, target }: { t: Translator; target: AskTarget }) {
   const untitled = t("panelFrame.ribbon.untitled");
@@ -236,7 +249,7 @@ export function AskView(props: AskViewProps) {
                 />
               )
             ) : rows.length === 0 ? (
-              <ContextEmpty>{t("contextPanel.ask.empty")}</ContextEmpty>
+              <ContextEmpty>{t(emptyWords[scope.target.variant])}</ContextEmpty>
             ) : (
               <section aria-label={t("contextPanel.ask.earlier.label")}>
                 <GroupHeading>{t("contextPanel.ask.earlier.heading")}</GroupHeading>

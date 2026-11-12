@@ -92,7 +92,7 @@ export interface BranchModel {
   unplaced: number;
   /** The stances drawn, in legend order. */
   stances: RelationBranchStance[];
-  /** One stored type per stance drawn, for the legend's glyph and word. */
+  /** One stored type per stance drawn: the first an edge of that stance carries. */
   stanceTypes: Partial<Record<RelationBranchStance, string>>;
   hasSuggestions: boolean;
   /** Notes or relations were left out by the read's limits. */

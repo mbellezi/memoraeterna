@@ -134,6 +134,43 @@ export function composite(top: Rgba, bottom: Rgb): Rgb {
   };
 }
 
+/**
+ * The paint of one shape inside an icon (see `collectInPage`): the computed `fill` and `stroke`
+ * (colour strings, or `none`), the paint opacities, the shape's own opacity and its box area.
+ */
+export interface ShapePaint {
+  /** The element name (`path`, `circle`, `line`…). */
+  tag: string;
+  fill: string;
+  stroke: string;
+  fillOpacity: number;
+  strokeOpacity: number;
+  opacity: number;
+  area: number;
+}
+
+/** The box facts of one element that could hide what it holds (see `isClippedAway`). */
+export interface ClipBox {
+  width: number;
+  height: number;
+  overflow: string;
+  clip: string;
+  clipPath: string;
+}
+
+/**
+ * Whether the element clips everything it holds away: a box of one pixel or less that cuts its
+ * overflow, `clip: rect(0, 0, 0, 0)`, or `clip-path: inset(50%)` or more. This is the screen-reader-
+ * only pattern (`sr-only`): the text exists for assistive technology and is not seen, so it has
+ * no contrast to judge.
+ */
+export function isClippedAway(box: ClipBox): boolean {
+  const collapsed = box.width <= 1 && box.height <= 1 && box.overflow !== "visible";
+  const clippedRect = /^rect\(\s*0(px)?[\s,]+0(px)?[\s,]+0(px)?[\s,]+0(px)?\s*\)$/u.test(box.clip);
+  const clippedPath = /^inset\(\s*(50|100)%\s*\)$/u.test(box.clipPath);
+  return collapsed || clippedRect || clippedPath;
+}
+
 /** What the page reports for one text, input or icon (see `collectInPage`). */
 export interface ContrastSample {
   kind: "text" | "glyph";
@@ -150,6 +187,23 @@ export interface ContrastSample {
   opacities: number[];
   fontSizePx: number;
   fontWeight: number;
+  /**
+   * A transition or a finite animation is running on the element or an ancestor, so the computed
+   * colours are somewhere between two states and say nothing about either.
+   */
+  animating?: boolean;
+  /**
+   * The elements from the sample's up to the root that could clip it away: a collapsed box, a
+   * `clip` or a `clip-path`. Judged by `isClippedAway`.
+   */
+  boxes?: ClipBox[];
+  /**
+   * An icon: the paint of each shape drawn inside it. The icons of `solid-glyphs.tsx` and the line
+   * samples put the paint on their children (`fill="currentColor"`), so the root's own `fill` is the
+   * default black and says nothing about what the person sees; `color` is the root's paint, kept as
+   * the fallback for an icon with no painted shape.
+   */
+  shapes?: ShapePaint[];
 }
 
 export interface ContrastFinding {
@@ -164,8 +218,32 @@ export interface ContrastFinding {
 
 export interface ContrastResult {
   checked: number;
+  /** Samples a person cannot see (clipped away, as a screen-reader-only text is): not judged. */
+  hidden: number;
   failures: ContrastFinding[];
   unverifiable: { text: string; path: string; reason: string }[];
+  /** The theme the page was drawn in when it was scanned (see `readDrawnTheme`), when known. */
+  drawnTheme?: DrawnTheme;
+}
+
+export type DrawnTheme = "light" | "dark";
+
+/**
+ * Runs in the page: the theme the document is drawn in. The app's own theme setting puts a `dark` or
+ * `light` class on the root and that wins; only a root with neither follows the OS colour scheme. A
+ * journey switches the OS scheme, which moves the page only when the setting is "system".
+ */
+export function readDrawnTheme(): DrawnTheme {
+  const classes = document.documentElement.classList;
+  if (classes.contains("dark")) return "dark";
+  if (classes.contains("light")) return "light";
+  return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+}
+
+/** A sentence when the page was drawn in another theme than the scan was asked for, else null. */
+export function themeMismatch(asked: DrawnTheme, drawn: DrawnTheme | undefined): string | null {
+  if (drawn === undefined || drawn === asked) return null;
+  return `the page was drawn in ${drawn}, not ${asked}: the theme setting is not "system", so the colour-scheme switch did not reach it`;
 }
 
 /** AA for this sample: 3:1 for glyphs and large text, 4.5:1 otherwise. */
@@ -175,39 +253,134 @@ export function requiredRatio(sample: Pick<ContrastSample, "kind" | "fontSizePx"
   return large ? glyphMinimum : textMinimum;
 }
 
+const unpainted = (paint: string) => paint === "" || paint === "none" || paint === "transparent";
+
+/**
+ * The colour a person reads an icon in: the fill of its largest filled shape (a solid glyph's disc
+ * or triangle; the cut-out strokes drawn on it are not its colour), else the stroke of its largest
+ * stroked shape (an outline icon), else the root's own paint. Paint and shape opacities apply. Null
+ * when the paint cannot be read (a gradient, an unknown colour form).
+ */
+export function glyphForeground(
+  shapes: readonly ShapePaint[] | undefined,
+  rootPaint: string
+): Rgba | null {
+  const largest = (candidates: readonly ShapePaint[]) =>
+    candidates.reduce((best, shape) => (shape.area > best.area ? shape : best));
+  // A line has no interior: its computed `fill` is the default black and nothing is drawn with it.
+  const filled = (shapes ?? []).filter(
+    (shape) =>
+      shape.tag !== "line" && !unpainted(shape.fill) && shape.fillOpacity * shape.opacity > 0
+  );
+  const stroked = (shapes ?? []).filter(
+    (shape) => !unpainted(shape.stroke) && shape.strokeOpacity * shape.opacity > 0
+  );
+  let paint = rootPaint;
+  let alpha = 1;
+  if (filled.length > 0) {
+    const shape = largest(filled);
+    paint = shape.fill;
+    alpha = shape.fillOpacity * shape.opacity;
+  } else if (stroked.length > 0) {
+    const shape = largest(stroked);
+    paint = shape.stroke;
+    alpha = shape.strokeOpacity * shape.opacity;
+  }
+  const colour = parseCssColor(paint);
+  return colour && { ...colour, a: colour.a * alpha };
+}
+
 const css = (colour: Rgb) =>
   `rgb(${Math.round(colour.r)}, ${Math.round(colour.g)}, ${Math.round(colour.b)})`;
 
+/** A colour with premultiplied channels (0-255 scaled by alpha) and its alpha. */
+interface Premultiplied {
+  r: number;
+  g: number;
+  b: number;
+  a: number;
+}
+
+const premultiply = (colour: Rgba): Premultiplied => ({
+  r: colour.r * colour.a,
+  g: colour.g * colour.a,
+  b: colour.b * colour.a,
+  a: colour.a
+});
+
+const over = (top: Premultiplied, bottom: Premultiplied): Premultiplied => ({
+  r: top.r + bottom.r * (1 - top.a),
+  g: top.g + bottom.g * (1 - top.a),
+  b: top.b + bottom.b * (1 - top.a),
+  a: top.a + bottom.a * (1 - top.a)
+});
+
 /**
- * The effective colours of a sample: the background composed from the nearest opaque layer (the
- * window's white when none is) down to the element, and the foreground over it. Null with a reason
- * when that cannot be known.
+ * What one pixel of the element looks like over the window's white, drawn the way the browser does:
+ * each element paints its own background, then what it holds (the next element in, or the paint
+ * itself at the sample's own element), and its `opacity` fades that whole group, so a faded ancestor
+ * fades the opaque panel and the text inside it together and toward what lies behind it.
+ */
+function renderPixel(
+  layers: readonly Rgba[],
+  opacities: readonly number[],
+  paint: Rgba | null
+): Rgb {
+  let group: Premultiplied | null = null;
+  layers.forEach((layer, index) => {
+    let buffer = premultiply(layer);
+    if (index === 0 && paint) buffer = over(premultiply(paint), buffer);
+    if (group) buffer = over(group, buffer);
+    const opacity = opacities[index] ?? 1;
+    group = {
+      r: buffer.r * opacity,
+      g: buffer.g * opacity,
+      b: buffer.b * opacity,
+      a: buffer.a * opacity
+    };
+  });
+  const pixel = over(group ?? { r: 0, g: 0, b: 0, a: 0 }, premultiply(white));
+  return { r: pixel.r, g: pixel.g, b: pixel.b };
+}
+
+/**
+ * The effective colours of a sample: the background and the foreground as the person sees them,
+ * the layers of every ancestor (tints, translucent fills, opacity) composed over the window's white.
+ * Null with a reason when that cannot be known.
  */
 export function effectiveColours(
   sample: ContrastSample
 ): { foreground: Rgb; background: Rgb } | { reason: string } {
-  const foreground = parseCssColor(sample.color);
+  const foreground =
+    sample.kind === "glyph"
+      ? glyphForeground(sample.shapes, sample.color)
+      : parseCssColor(sample.color);
   const layers = sample.backgrounds.map(parseCssColor);
   if (!foreground || layers.some((layer) => layer === null))
     return { reason: `unparsed colour (${[sample.color, ...sample.backgrounds].join(" | ")})` };
-  const alphaOf = (index: number) => (layers[index] as Rgba).a * (sample.opacities[index] ?? 1);
-  let start = layers.findIndex((_layer, index) => alphaOf(index) >= 0.999);
+  if (sample.animating) return { reason: "colour in transition" };
+  const painted = layers as Rgba[];
+  // How much of a layer shows: its own alpha, faded by the opacity of its element and every ancestor.
+  const shown = (index: number) =>
+    (painted[index] as Rgba).a *
+    sample.opacities.slice(index).reduce((product, value) => product * value, 1);
+  // A background image decides the colour only down to the nearest layer that hides what is behind.
+  const start = painted.findIndex((_layer, index) => shown(index) >= 0.999);
   if (sample.images.slice(0, start === -1 ? undefined : start + 1).some(Boolean))
     return { reason: "background image under the element" };
-  let background: Rgb = start === -1 ? white : (layers[start] as Rgba);
-  if (start === -1) start = layers.length;
-  for (let index = start - 1; index >= 0; index -= 1)
-    background = composite({ ...(layers[index] as Rgba), a: alphaOf(index) }, background);
-  const opacity = sample.opacities.slice(0, start).reduce((product, value) => product * value, 1);
   return {
-    foreground: composite({ ...foreground, a: foreground.a * opacity }, background),
-    background
+    foreground: renderPixel(painted, sample.opacities, foreground),
+    background: renderPixel(painted, sample.opacities, null)
   };
 }
 
 export function evaluateSamples(samples: readonly ContrastSample[]): ContrastResult {
-  const result: ContrastResult = { checked: 0, failures: [], unverifiable: [] };
+  const result: ContrastResult = { checked: 0, hidden: 0, failures: [], unverifiable: [] };
   for (const sample of samples) {
+    if (sample.boxes?.some(isClippedAway)) {
+      result.hidden += 1;
+      continue;
+    }
     const colours = effectiveColours(sample);
     if ("reason" in colours) {
       result.unverifiable.push({ text: sample.text, path: sample.path, reason: colours.reason });
@@ -252,8 +425,20 @@ export function collectInPage(limit: number): ContrastSample[] {
       return false;
     return inView(element.getBoundingClientRect());
   };
-  const exempt = (element: Element) =>
-    element.closest(':disabled, [aria-disabled="true"], [inert]') !== null;
+  // Inactive controls are exempt (WCAG 1.4.3 and 1.4.11): a disabled control or fieldset, anything
+  // inside an element marked inactive (`aria-disabled`, Radix's `data-disabled`) or inert, and the
+  // label of a disabled control. cmdk writes `data-disabled="false"` on every enabled item, so
+  // that value does not mark anything inactive.
+  const exempt = (element: Element) => {
+    if (
+      element.closest(
+        ':disabled, [aria-disabled="true"], [data-disabled]:not([data-disabled="false"]), [inert]'
+      ) !== null
+    )
+      return true;
+    const control = (element.closest("label") as HTMLLabelElement | null)?.control;
+    return control instanceof HTMLElement && control.matches(":disabled");
+  };
   const pathOf = (element: Element) => {
     const parts: string[] = [];
     for (let node: Element | null = element; node && parts.length < 4; node = node.parentElement) {
@@ -269,11 +454,31 @@ export function collectInPage(limit: number): ContrastSample[] {
     const backgrounds: string[] = [];
     const images: boolean[] = [];
     const opacities: number[] = [];
+    const boxes: ClipBox[] = [];
+    let animating = false;
     for (let node: Element | null = element; node; node = node.parentElement) {
       const style = getComputedStyle(node);
+      for (const animation of node.getAnimations()) {
+        const end = animation.effect?.getComputedTiming().endTime;
+        if (animation.playState === "running" && typeof end === "number" && Number.isFinite(end))
+          animating = true;
+      }
       backgrounds.push(style.backgroundColor);
       images.push(style.backgroundImage !== "none" && style.backgroundImage !== "");
       opacities.push(Number(style.opacity));
+      const rect = node.getBoundingClientRect();
+      if (
+        (rect.width <= 1 && rect.height <= 1) ||
+        (style.clip !== "auto" && style.clip !== "") ||
+        style.clipPath !== "none"
+      )
+        boxes.push({
+          width: rect.width,
+          height: rect.height,
+          overflow: style.overflow,
+          clip: style.clip,
+          clipPath: style.clipPath
+        });
     }
     const style = getComputedStyle(element);
     samples.push({
@@ -285,7 +490,9 @@ export function collectInPage(limit: number): ContrastSample[] {
       images,
       opacities,
       fontSizePx: Number.parseFloat(style.fontSize),
-      fontWeight: Number(style.fontWeight) || 400
+      fontWeight: Number(style.fontWeight) || 400,
+      boxes,
+      animating
     });
   };
   const seen = new Set<Element>();
@@ -322,18 +529,90 @@ export function collectInPage(limit: number): ContrastSample[] {
     const style = getComputedStyle(icon);
     const stroke = style.stroke;
     const color = stroke && stroke !== "none" && stroke !== "transparent" ? stroke : style.fill;
-    if (!color || color === "none") continue;
+    const shapes: ShapePaint[] = [];
+    for (const shape of Array.from(
+      icon.querySelectorAll("path, circle, rect, ellipse, line, polyline, polygon")
+    )) {
+      const paint = getComputedStyle(shape);
+      let area = 0;
+      try {
+        const box = (shape as SVGGraphicsElement).getBBox();
+        // A line has no area; one pixel of height keeps it comparable with the shapes beside it.
+        area = Math.max(box.width, 1) * Math.max(box.height, 1);
+      } catch {
+        // A shape that is not rendered has no box and nothing to judge.
+      }
+      shapes.push({
+        tag: shape.tagName.toLowerCase(),
+        fill: paint.fill,
+        stroke: paint.stroke,
+        fillOpacity: Number(paint.fillOpacity),
+        strokeOpacity: Number(paint.strokeOpacity),
+        opacity: Number(paint.opacity),
+        area
+      });
+    }
+    const drawn = (paint: string) => paint !== "" && paint !== "none";
+    if (!drawn(color) && !shapes.some((shape) => drawn(shape.fill) || drawn(shape.stroke)))
+      continue;
     const label =
       icon.getAttribute("aria-label") ??
       icon.closest("[aria-label]")?.getAttribute("aria-label") ??
       "icon";
     add(icon, "glyph", label, color);
+    const added = samples[samples.length - 1];
+    if (added) added.shapes = shapes;
   }
   return samples;
 }
 
-/** The scan of the page as it is now (the caller sets the theme and waits for it first). */
+/**
+ * Runs in the page: waits until every transition and finite animation has ended (a theme switch
+ * starts a 120 ms colour transition on each button, and the scan would read the colours halfway
+ * between the two themes), then two frames for the last paint. A moving ring or pulse never ends and
+ * is not waited for. Returns how many were still running at the deadline.
+ */
+export async function settleInPage(timeoutMs: number): Promise<number> {
+  const running = () =>
+    document.getAnimations().filter((animation) => {
+      const end = animation.effect?.getComputedTiming().endTime;
+      return (
+        (animation.playState === "running" || animation.pending) &&
+        typeof end === "number" &&
+        Number.isFinite(end)
+      );
+    });
+  const deadline = performance.now() + timeoutMs;
+  for (
+    let pending = running();
+    pending.length > 0 && performance.now() < deadline;
+    pending = running()
+  )
+    await Promise.race([
+      Promise.allSettled(pending.map((animation) => animation.finished)),
+      new Promise((done) => setTimeout(done, Math.max(0, deadline - performance.now())))
+    ]);
+  // Two frames, or a quarter of a second in a window that draws none.
+  await new Promise<void>((done) => {
+    let frames = 0;
+    const tick = () => (++frames >= 2 ? done() : requestAnimationFrame(tick));
+    requestAnimationFrame(tick);
+    setTimeout(done, 250);
+  });
+  return running().length;
+}
+
+/** Lets the page's transitions and animations finish (see `settleInPage`). */
+export async function settleAnimations(page: Page, timeoutMs = 2_000): Promise<void> {
+  await page.evaluate(settleInPage, timeoutMs);
+}
+
+/**
+ * The scan of the page as it is now (the caller sets the theme and waits for it first). The page is
+ * settled first, and a colour that is still in transition is listed as unverifiable, never judged.
+ */
 export async function scanContrast(page: Page, limit = 4_000): Promise<ContrastResult> {
+  await settleAnimations(page);
   const samples = await page.evaluate(collectInPage, limit);
-  return evaluateSamples(samples);
+  return { ...evaluateSamples(samples), drawnTheme: await page.evaluate(readDrawnTheme) };
 }

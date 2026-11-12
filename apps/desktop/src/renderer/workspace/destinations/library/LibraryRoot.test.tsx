@@ -353,6 +353,30 @@ describe("loading, empty and error", () => {
     expect(html).toContain("inert");
   });
 
+  it("keeps the rows at full contrast while a new query's page is on its way, and says it is busy", () => {
+    // The design has no opacity on text: rows at 60% read at 3.7:1 or less in light (2.5:1 for the quiet ones).
+    const loaded = ready<LibraryRow, LibraryFacets>([row(1), row(2)], { facets, total: 2 });
+    const stale = render({ sources: data({ ...loaded, stale: true }) });
+    expect(stale).toContain('aria-busy="true"');
+    expect(stale).not.toContain("opacity-");
+    const settled = render({ sources: data(loaded) });
+    expect(settled).not.toContain("aria-busy");
+  });
+
+  it("marks the dimmed filter field as inactive as a whole, so its glyph and key hint are exempt from contrast", () => {
+    const failed = render({
+      sources: data({
+        ...(initialPagedState as PagedState<LibraryRow, LibraryFacets>),
+        status: "error"
+      })
+    });
+    expect(failed).toContain('data-disabled=""');
+    const working = render({
+      sources: data(ready<LibraryRow, LibraryFacets>([row(1)], { total: 1, facets }))
+    });
+    expect(working).not.toContain("data-disabled");
+  });
+
   it("says a filter matched nothing and offers to clear it", () => {
     const html = render({
       query: { text: "zzz" },

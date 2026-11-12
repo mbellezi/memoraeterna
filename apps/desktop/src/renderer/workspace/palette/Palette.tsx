@@ -370,17 +370,26 @@ function PreviewPane({
   t,
   address,
   loading,
+  askRow,
   batcher
 }: {
   t: Translator;
   address: string | null;
   /** The search has not answered: the column keeps its place with the shape of a preview. */
   loading: boolean;
+  /** The highlighted row is "Ask the library", which has no object to preview. */
+  askRow: boolean;
   batcher?: PreviewBatcher;
 }) {
   const preview = useObjectPreview(address ?? "", address !== null, batcher);
   const body = (() => {
-    if (address === null && !loading) return null;
+    // Nothing to preview: one muted line says why, so the column is never a blank slab.
+    if (address === null && !loading)
+      return (
+        <p className="m-0 text-sm text-muted-foreground [text-wrap:pretty]">
+          {t(askRow ? "palette.preview.ask" : "palette.preview.none")}
+        </p>
+      );
     const { state } = preview;
     if (address === null || state.status === "loading")
       return (
@@ -414,7 +423,7 @@ function PreviewPane({
       t(countKey(entry), { values: { count: entry.count } })
     );
     return (
-      <div className={cn("grid min-w-0 gap-3", !preview.current && "opacity-60")}>
+      <div aria-busy={preview.current ? undefined : true} className="grid min-w-0 gap-3">
         <p className="m-0 flex items-center gap-2 text-sm text-secondary-foreground">
           <ObjectKindGlyph kind={kind} size={16} className={objectKindTextClass[kind]} />
           <span className="font-medium">{t(kindWordKeys[kind])}</span>
@@ -465,41 +474,60 @@ function PreviewPane({
   );
 }
 
-function FootKeys({ t, count }: { t: Translator; count: ReactNode }) {
+/**
+ * The keys under the list. They name only what the highlighted row can do: on the ask row Enter
+ * asks, and "todos os resultados" and "espiar" appear only when there are results to open or peek.
+ */
+function FootKeys({
+  t,
+  count,
+  askRow,
+  hasResults
+}: {
+  t: Translator;
+  count: ReactNode;
+  askRow: boolean;
+  hasResults: boolean;
+}) {
   const labels = [
     t("palette.foot.choose"),
     t("palette.foot.beside"),
     t("palette.foot.here"),
     t("palette.foot.all"),
     t("palette.foot.peek"),
+    t("palette.foot.ask"),
     t("palette.foot.shortBeside"),
     t("palette.foot.shortHere"),
     t("palette.foot.shortAll")
   ].join("|");
   // Fullest form first; a form that does not fit drops a whole clause or shortens, never a word.
   const { box, content, level } = useOverflowLevel<HTMLDivElement, HTMLDivElement>(3, labels);
-  const items: Array<{ keys: string[]; label: string }> =
-    level === 0
-      ? [
-          { keys: ["↑", "↓"], label: t("palette.foot.choose") },
-          { keys: ["↵"], label: t("palette.foot.beside") },
-          { keys: ["⌥↵"], label: t("palette.foot.here") },
-          { keys: ["⇧↵"], label: t("palette.foot.all") },
-          { keys: ["⌘Y"], label: t("palette.foot.peek") }
-        ]
-      : level === 1
-        ? [
-            { keys: ["↵"], label: t("palette.foot.beside") },
-            { keys: ["⌥↵"], label: t("palette.foot.here") },
-            { keys: ["⇧↵"], label: t("palette.foot.all") },
-            { keys: ["⌘Y"], label: t("palette.foot.peek") }
-          ]
-        : [
-            { keys: ["↵"], label: t("palette.foot.shortBeside") },
-            { keys: ["⌥↵"], label: t("palette.foot.shortHere") },
-            { keys: ["⇧↵"], label: t("palette.foot.shortAll") },
-            { keys: ["⌘Y"], label: t("palette.foot.peek") }
-          ];
+  type FootItem = { keys: string[]; label: string };
+  const choose: FootItem = { keys: ["↑", "↓"], label: t("palette.foot.choose") };
+  const enter: FootItem = {
+    keys: ["↵"],
+    label: askRow
+      ? t("palette.foot.ask")
+      : level === 2
+        ? t("palette.foot.shortBeside")
+        : t("palette.foot.beside")
+  };
+  const here: FootItem = {
+    keys: ["⌥↵"],
+    label: level === 2 ? t("palette.foot.shortHere") : t("palette.foot.here")
+  };
+  const all: FootItem = {
+    keys: ["⇧↵"],
+    label: level === 2 ? t("palette.foot.shortAll") : t("palette.foot.all")
+  };
+  const peek: FootItem = { keys: ["⌘Y"], label: t("palette.foot.peek") };
+  const items: FootItem[] = [
+    ...(level === 0 ? [choose] : []),
+    enter,
+    here,
+    ...(hasResults ? [all] : []),
+    ...(hasResults && !askRow ? [peek] : [])
+  ];
   return (
     <div
       aria-label={t("palette.foot.label")}
@@ -761,11 +789,12 @@ export function Palette({
               t={t}
               address={paneAddress}
               loading={dataState === "loading"}
+              askRow={activeRow?.type === "ask"}
               {...(batcher ? { batcher } : {})}
             />
           ) : null}
         </div>
-        <FootKeys t={t} count={count} />
+        <FootKeys t={t} count={count} askRow={activeRow?.type === "ask"} hasResults={objectRows} />
       </Command>
     </div>
   );

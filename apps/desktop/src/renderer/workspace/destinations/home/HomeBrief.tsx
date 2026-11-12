@@ -1,9 +1,10 @@
 import type { ReactNode } from "react";
 import { ShieldCheck } from "lucide-react";
+import type { InboxItem } from "@app/domain";
 import type { Translator } from "@app/i18n";
 
 import { ObjectKindGlyph, objectKindTextClass } from "../../../components/glyphs";
-import { itemTitle } from "../../../components/inbox/inbox-model";
+import { itemTitle, objectName } from "../../../components/inbox/inbox-model";
 import { Button } from "../../../components/ui/button";
 import { Kbd } from "../../../components/ui/kbd";
 import { Tooltip } from "../../../components/ui/tooltip";
@@ -154,7 +155,7 @@ function clauseText(t: Translator, clause: BriefingClause, actions: BriefActions
         )
       });
     case "decisions": {
-      const title = clause.top ? itemTitle(t, clause.top) : null;
+      const title = clause.top ? briefTitle(t, clause.top) : null;
       const key =
         title === null
           ? pluralKey(
@@ -183,6 +184,17 @@ function clauseText(t: Translator, clause: BriefingClause, actions: BriefActions
       );
     }
   }
+}
+
+/**
+ * What the briefing quotes of the decision it names: its title, except for a suggested connection,
+ * whose title ("Manter esta conexão?") is the same for every one: the two notes it joins say more.
+ * The sentence puts its own quotes around it.
+ */
+function briefTitle(t: Translator, item: InboxItem): string {
+  if (item.kind === "suggestion" && item.objects.length > 0)
+    return item.objects.map((object) => objectName(t, object)).join(" · ");
+  return itemTitle(t, item);
 }
 
 /** The briefing: the true clauses in one paragraph, linked counts in accent. */

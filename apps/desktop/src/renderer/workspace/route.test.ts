@@ -63,6 +63,7 @@ describe("parseAddress", () => {
         `memora://ask?scope=${encodeURIComponent(`memora://source/${id}`)}&q=Why%3F`,
         { view: "ask", question: "Why?", scope: { kind: "source", id } }
       ],
+      ["memora://ask?draft=Lactobacillus", { view: "ask", draft: "Lactobacillus" }],
       ["memora://import", { view: "import" }],
       [`memora://import?source=${id}`, { view: "import", sourceId: id }]
     ];
@@ -109,6 +110,10 @@ describe("parseAddress", () => {
       "memora://search?q=a&kinds=relation",
       `memora://search?q=${"a".repeat(routeLimits.maxTextLength + 1)}`,
       "memora://ask?q=a&q=b",
+      "memora://ask?q=a&draft=b",
+      "memora://ask?draft=a&draft=b",
+      "memora://ask?draft=",
+      `memora://ask?draft=${"a".repeat(routeLimits.maxTextLength + 1)}`,
       "memora://ask?scope=memora%3A%2F%2Fsource%2Fnope",
       "memora://import?source=nope",
       `memora://import/${id}`
@@ -150,6 +155,7 @@ describe("formatView", () => {
     { view: "ask" },
     { view: "ask", question: "What changed?\nAnd why?" },
     { view: "ask", question: "Scoped", scope: { kind: "topic", id: topic } },
+    { view: "ask", draft: "Lactobacillus", scope: { kind: "topic", id: topic } },
     { view: "import" },
     { view: "import", sourceId: id }
   ];
@@ -182,6 +188,11 @@ describe("formatView", () => {
     );
     expect(() =>
       formatView({ view: "ask", question: "a".repeat(routeLimits.maxTextLength + 1) })
+    ).toThrow(TypeError);
+    // Words that are asked at once and words that only fill the field never come together.
+    expect(() => formatView({ view: "ask", question: "a", draft: "b" })).toThrow(TypeError);
+    expect(() =>
+      formatView({ view: "ask", draft: "a".repeat(routeLimits.maxTextLength + 1) })
     ).toThrow(TypeError);
   });
 });

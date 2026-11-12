@@ -63,6 +63,24 @@ describe("the Ask and Question panels register by file", () => {
     expect(onState).toHaveBeenCalledWith("loading");
   });
 
+  it("asks at once for words in the address, and only fills the field for a draft (an entity's name)", () => {
+    const askSpy = vi.fn(() => new Promise(() => undefined));
+    vi.stubGlobal("window", {
+      app: { questions: { ask: askSpy, list: () => new Promise(() => undefined) } }
+    });
+    try {
+      const draft = renderToString(
+        <ask.Component {...props("memora://ask?draft=Lactobacillus")} />
+      );
+      expect(askSpy).not.toHaveBeenCalled();
+      expect(draft).toContain("Lactobacillus</textarea>");
+      renderToString(<ask.Component {...props("memora://ask?q=Lactobacillus")} />);
+      expect(askSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("starts the Ask panel in the state its recent list is in", () => {
     const onState = vi.fn();
     renderToString(<ask.Component {...props("memora://ask", vi.fn(), onState)} />);
@@ -122,6 +140,25 @@ describe("the Ask panel's four states", () => {
     expect(html).toContain("Your words are still in the field.");
     expect(html).toContain("Why do fermented foods keep?");
     expect(html).not.toContain("Nothing asked yet.");
+  });
+
+  it("steps the send button down after a failed send, so the retry is the one action that says so", () => {
+    const sendButton = (html: string) =>
+      html.match(/<button[^>]*aria-label="Ask"[^>]*>/u)?.[0] ?? "";
+    const labelled = (html: string) =>
+      /<button[^>]*aria-label="Ask"[^>]*>.*?Ask<\/button>/u.test(html);
+    const idleHtml = draw(snapshot("idle", []));
+    const idle = sendButton(idleHtml);
+    expect(idle).toContain("border-accent bg-accent text-accent-foreground");
+    expect(labelled(idleHtml)).toBe(true);
+    const failed = draw(snapshot("error", []));
+    // Icon only while the failed words are in the field: the retry is the one labelled action.
+    expect(labelled(failed)).toBe(false);
+    expect(sendButton(failed)).toContain('aria-label="Ask"');
+    expect(sendButton(failed)).not.toContain("border-accent bg-accent text-accent-foreground");
+    expect(sendButton(failed)).toContain("bg-surface");
+    // "Tentar de novo" is still there, once.
+    expect(failed.match(/Retry/gu)).toHaveLength(1);
   });
 
   it("refuses a scope that is not the library, a topic or a source, before anything is sent", () => {

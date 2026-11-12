@@ -123,11 +123,14 @@ describe("quick-look", () => {
     expect(bare).toContain("Food microbiology, chapter 3");
   });
 
-  it("dims what it shows while the next row's read is on its way (peeking with ↓)", () => {
-    expect(sheet({ status: "ready", item: source() }, { current: false })).toContain("opacity-60");
-    expect(sheet({ status: "ready", item: source() }, { current: true })).not.toContain(
-      "opacity-60"
-    );
+  it("says it is busy while the next row's read is on its way (peeking with ↓), and keeps the text at full contrast", () => {
+    // The design has no opacity on text: a dimmed summary reads below 4.5:1 (3.7:1 in light).
+    const busy = sheet({ status: "ready", item: source() }, { current: false });
+    expect(busy).toContain('aria-busy="true"');
+    expect(busy).not.toContain("opacity-");
+    const settled = sheet({ status: "ready", item: source() }, { current: true });
+    expect(settled).not.toContain("aria-busy");
+    expect(settled).not.toContain("opacity-");
   });
 
   it("names an entity's notes as the ones that mention it", () => {

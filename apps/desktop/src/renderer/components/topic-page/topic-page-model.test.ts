@@ -17,6 +17,7 @@ import {
   nextAnnouncement,
   noteSourceLine,
   relationsLabel,
+  redirectTarget,
   samePageContent,
   stanceRows,
   topicPageLoadDecision,
@@ -397,5 +398,25 @@ describe("the copy of the page", () => {
   it("stays inside the bounds of the contract it renders", () => {
     expect(topicReadLimits.centralNotesDefault).toBe(6);
     expect(topicReadLimits.itemsPageDefault).toBe(50);
+  });
+});
+
+describe("a merged topic opens at its successor's id (F5 W3FU G2)", () => {
+  const retired = topicFixtureId(77);
+  const moved = topicPage({ redirectedFrom: retired });
+
+  it("targets the page's topic when it was asked for under the retired id", () => {
+    expect(redirectTarget({ page: moved, requestedId: retired, done: null })).toBe(moved.topic.id);
+  });
+
+  it("targets it once: the id already redirected from has no target again", () => {
+    expect(redirectTarget({ page: moved, requestedId: retired, done: retired })).toBeNull();
+  });
+
+  it("never targets a page that was not redirected, nor one that already shows the id asked for", () => {
+    const plain = topicPage();
+    expect(redirectTarget({ page: plain, requestedId: plain.topic.id, done: null })).toBeNull();
+    expect(redirectTarget({ page: plain, requestedId: retired, done: null })).toBeNull();
+    expect(redirectTarget({ page: moved, requestedId: moved.topic.id, done: null })).toBeNull();
   });
 });

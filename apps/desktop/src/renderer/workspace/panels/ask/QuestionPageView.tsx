@@ -84,14 +84,14 @@ export function QuestionPageView(props: QuestionPageViewProps) {
       </LoadingState>
     );
 
-  // One cause shows one failure: the previous panel reads the same Question, so it says it quietly
-  // and the retry lives on the top panel.
+  // One cause shows one failure: the previous panel reads the same Question, so it says one neutral
+  // word (as the Note and the Topic do) and the sentence and the retry live on the top panel.
   if (load.status === "error" && compact)
-    return (
-      <p role="status" className="m-0 text-xs text-muted-foreground">
-        {t("askPanel.compact.error")}
-      </p>
-    );
+    return <p className="m-0 text-sm text-muted-foreground">{t("explore.compactError")}</p>;
+
+  // A gone Question says the same neutral word in the previous panel.
+  if (load.status === "missing" && compact)
+    return <p className="m-0 text-sm text-muted-foreground">{t("explore.compactGone")}</p>;
 
   if (load.status === "error")
     return (
@@ -108,22 +108,18 @@ export function QuestionPageView(props: QuestionPageViewProps) {
   if (load.status === "missing")
     return (
       <EmptyState
-        variant={compact ? "compact" : "inline"}
+        variant="inline"
         className="max-w-(--measure)"
         headline={t("askPanel.missing.headline")}
         // The way out: the stored Questions are where an answer that is still there lives.
-        {...(compact
-          ? {}
-          : {
-              action: (
-                <Button
-                  variant="secondary"
-                  onClick={() => props.onOpen(formatView({ view: "library", tab: "questions" }))}
-                >
-                  {t("askPanel.missing.action")}
-                </Button>
-              )
-            })}
+        action={
+          <Button
+            variant="secondary"
+            onClick={() => props.onOpen(formatView({ view: "library", tab: "questions" }))}
+          >
+            {t("askPanel.missing.action")}
+          </Button>
+        }
       >
         {t("askPanel.missing.body")}
       </EmptyState>

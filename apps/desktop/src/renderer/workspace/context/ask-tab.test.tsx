@@ -81,8 +81,20 @@ describe("the Ask tab's four states", () => {
   it("empty teaches what is kept and where", () => {
     const html = view(pt);
     expect(html).toContain('data-state="empty"');
-    expect(html).toContain("Nada perguntado sobre isto ainda.");
-    expect(html).toContain("Biblioteca › Perguntas");
+    expect(html).not.toContain("sobre isto");
+    expect(html).toContain("Nenhuma pergunta sobre esta fonte ainda.");
+    expect(html).toContain("Escreva acima; cada pergunta fica em Biblioteca › Perguntas");
+    // Each scope names what it asks: a topic (a note asks the one it is in) and the library.
+    const topic = view(pt, {
+      kind: "topic",
+      scope: { status: "ready", target: target("topic", { kind: "topic", topicId: uuid(4) }) }
+    });
+    expect(topic).toContain("Nenhuma pergunta sobre este tópico ainda.");
+    const library = view(pt, {
+      kind: "entity",
+      scope: { status: "ready", target: target("entity", { kind: "library" }) }
+    });
+    expect(library).toContain("Nenhuma pergunta sobre a biblioteca ainda.");
   });
 
   it("success lists the earlier questions, dated, each opening its page", () => {
@@ -425,7 +437,7 @@ describe("the Ask tab asks the scope of the object in focus", () => {
     expect(app.questions.list).toHaveBeenNthCalledWith(1, { limit: 50 });
     expect(app.questions.list).toHaveBeenNthCalledWith(2, { limit: 50, cursor: "c1" });
     expect(dom.host.textContent).toContain("What does the passage 7 say?");
-    expect(dom.host.textContent).not.toContain("Nothing asked about this yet");
+    expect(dom.host.textContent).not.toContain("No question about this topic yet");
   });
 
   it("reads the list again when a Question is asked elsewhere", async () => {

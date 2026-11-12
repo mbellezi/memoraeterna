@@ -87,6 +87,11 @@ export interface RelationsLensProps {
   onOpenNote: (noteId: string) => void;
   /** Shows the Map's Tree tab. */
   onShowTree: () => void;
+  /**
+   * A branch was picked (the chip's menu, "Fora do ramo"): the host writes it into the address, so
+   * a note that opens beside the Map does not lose it. `chosen` stays only as the optimistic value.
+   */
+  onScopeChange?: ((scope: BranchScope) => void) | undefined;
   onState?: (state: PanelLoadState) => void;
   /** The canvas's layout engine (the worker by default). */
   createLayout?: BranchLayoutFactory;
@@ -123,6 +128,7 @@ export function RelationsLens({
   scope,
   onOpenNote,
   onShowTree,
+  onScopeChange,
   onState,
   createLayout,
   frame
@@ -262,6 +268,7 @@ export function RelationsLens({
   const pick = (next: BranchScope, title: string) => {
     setSelected(null);
     setChosen(next);
+    onScopeChange?.(next);
     setKnown({
       key: `${next.kind}:${next.id}`,
       label: t("mapRelations.scope.label", { values: { title } }),
@@ -274,6 +281,13 @@ export function RelationsLens({
   // Without the canvas nothing is coloured: the same control groups the topics of the list.
   const depthLabelKey = canvasShown ? "mapRelations.depth.label" : "mapRelationsTable.groupBy";
   const depthHelpKey = canvasShown ? "mapRelations.depth.help" : "mapRelationsTable.groupByHelp";
+  // With no branch on screen (a failure, a gone scope, no topics) or nothing connected in it, the
+  // depth has nothing to colour or group: the control rests instead of promising a change.
+  const depthRests =
+    load.status === "error" ||
+    load.status === "missing" ||
+    load.status === "noTopics" ||
+    (model !== null && !hasConnections(model));
   const aside = model ? (
     <RelationsAside
       t={t}
@@ -307,6 +321,7 @@ export function RelationsLens({
               label={t(depthLabelKey)}
               aria-describedby={helpId}
               title={t(depthHelpKey)}
+              disabled={depthRests}
               value={String(depth) as "1" | "2" | "3"}
               onValueChange={(value) => {
                 setSelected(null);
@@ -330,7 +345,8 @@ export function RelationsLens({
             model={model}
             label={modelLabel ?? pending?.label ?? null}
             title={model?.scopeTitle ?? pending?.title ?? null}
-            failed={load.status !== "loading"}
+            loading={load.status === "loading"}
+            noTopics={load.status === "noTopics"}
             wanted={wanted}
             active={active}
             onPick={pick}
@@ -343,7 +359,7 @@ export function RelationsLens({
       {load.status === "error" ? (
         <ErrorState
           t={t}
-          message={t("mapRelations.error.message")}
+          message={t(canvasShown ? "mapRelations.error.message" : "mapRelationsTable.errorMessage")}
           kept={t("mapRelations.error.kept")}
           retryLabel={t("shell.actions.retry")}
           onRetry={() => setAttempt((value) => value + 1)}
@@ -496,7 +512,8 @@ export function RelationsLegend({ t, model }: { t: Translator; model: BranchMode
           >
             <StanceGlyph stance={stance} size={12} />
             <span className="text-secondary-foreground">
-              {t(relationTypeView(model.stanceTypes[stance] ?? "related").wordKey)}
+              {/* The legend names the stance, as every connection legend does. */}
+              {t(relationTypeView(stance).wordKey)}
             </span>
           </li>
         ))}
@@ -558,7 +575,8 @@ function BranchPicker({
   model,
   label,
   title,
-  failed,
+  loading,
+  noTopics,
   wanted,
   active,
   onPick
@@ -568,8 +586,10 @@ function BranchPicker({
   /** The branch's name; null while it is not known yet. */
   label: string | null;
   title: string | null;
-  /** The read failed or found nothing: an unknown name is a still bar, not a shimmering one. */
-  failed: boolean;
+  /** The first read is under way: the chip waits, with a shimmering bar for the name. */
+  loading: boolean;
+  /** The tree has no topic: there is no branch to choose. */
+  noTopics: boolean;
   wanted: BranchScope | null;
   active: boolean;
   onPick: (scope: BranchScope, title: string) => void;
@@ -627,17 +647,19 @@ function BranchPicker({
           variant="secondary"
           className="max-w-[min(22rem,100%)]"
           aria-label={label ? `${label}. ${menu}` : menu}
-          disabled={!model}
+          // A failed or empty read leaves the menu open: choosing another branch is a way out.
+          disabled={loading || noTopics}
         >
           <ObjectKindGlyph kind="topic" className="shrink-0 text-object-topic" />
           {label ? (
             <span className="min-w-0 truncate" title={title ?? undefined}>
               {label}
             </span>
-          ) : failed ? (
-            <span aria-hidden="true" className="h-3 w-28 rounded-sm bg-soft" />
-          ) : (
+          ) : loading ? (
             <Skeleton className="w-28" />
+          ) : (
+            // No name is known and the read did not give one: the chip says what it is for.
+            <span className="min-w-0 truncate">{menu}</span>
           )}
           <ChevronDown aria-hidden="true" />
         </Button>

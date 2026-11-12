@@ -255,6 +255,23 @@ describe("toggle group", () => {
     expect(html.match(/aria-pressed="false"/g)).toHaveLength(1);
     expect(html.match(/data-radix-collection-item/g)).toHaveLength(2);
   });
+
+  it("gives the pressed look to an enabled segment only: a disabled control rests", () => {
+    const html = renderToStaticMarkup(
+      <ToggleGroup label="Depth" value="1" disabled onValueChange={noop}>
+        <ToggleGroupItem value="1">1</ToggleGroupItem>
+        <ToggleGroupItem value="2">2</ToggleGroupItem>
+      </ToggleGroup>
+    );
+    expect(html.match(/ disabled=""/g)).toHaveLength(2);
+    const classes = [...html.matchAll(/class="([^"]*)"/g)].flatMap((match) =>
+      (match[1] ?? "").split(/\s+/u)
+    );
+    const pressed = classes.filter((name) => name.includes("data-[state=on]"));
+    expect(pressed.length).toBeGreaterThan(0);
+    // `enabled:` keeps the look off a `:disabled` button, whatever the stylesheet's order.
+    expect(pressed.every((name) => name.startsWith("enabled:"))).toBe(true);
+  });
 });
 
 describe("the four-state building blocks", () => {
