@@ -3961,7 +3961,7 @@
       "legend": "Formas de conexión",
       "openMap": "Abrir en el Mapa › Grafo",
       "showList": "Ver como lista",
-      "unavailable": "Este equipo no puede dibujar el grafo. La lista en Conexiones trae la misma información."
+      "unavailable": "Este equipo no puede dibujar el grafo."
     },
     "headings": {
       "connections": {

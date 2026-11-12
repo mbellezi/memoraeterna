@@ -3952,7 +3952,7 @@
       "legend": "Forme di connessione",
       "openMap": "Apri nella Mappa › Grafo",
       "showList": "Vedi come elenco",
-      "unavailable": "Questo computer non riesce a disegnare il grafo. L'elenco in Connessioni ha le stesse informazioni."
+      "unavailable": "Questo computer non riesce a disegnare il grafo."
     },
     "headings": {
       "connections": {

@@ -3959,7 +3959,7 @@
       "legend": "Formes de connexion",
       "openMap": "Ouvrir dans la Carte › Graphe",
       "showList": "Voir sous forme de liste",
-      "unavailable": "Cet ordinateur ne peut pas dessiner le graphe. La liste dans Connexions donne la même information."
+      "unavailable": "Cet ordinateur ne peut pas dessiner le graphe."
     },
     "headings": {
       "connections": {

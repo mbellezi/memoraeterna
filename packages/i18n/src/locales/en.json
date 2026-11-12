@@ -3954,7 +3954,7 @@
       "legend": "Kinds of connection",
       "openMap": "Open in the Map › Graph",
       "showList": "See as a list",
-      "unavailable": "This computer cannot draw the graph. The list in Connections has the same information."
+      "unavailable": "This computer cannot draw the graph."
     },
     "headings": {
       "connections": {

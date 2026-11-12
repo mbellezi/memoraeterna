@@ -62,6 +62,7 @@ import { Shell } from "./workspace/Shell";
 import { hasNavigator, hostedViewIds, legacyHostFor } from "./workspace/shell-model";
 import type { WorkspaceState } from "./workspace/state";
 import type { KeymapResult } from "./workspace/keymap";
+import { useContextPanel } from "./workspace/use-context-panel";
 import { useViewportWidth, useWorkspace } from "./workspace/use-workspace";
 import * as legacyPanel from "./workspace/views/legacy.panel";
 import {
@@ -213,6 +214,15 @@ export function App({
   const storageSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { toasts, push: pushToast, dismiss: dismissToast } = useToasts();
   const t = useMemo(() => createTranslator(appSettings.language), [appSettings.language]);
+  // F5 T143: the context panel beside the stack, which follows the focused panel's object.
+  const contextHost = useContextPanel({
+    t,
+    workspace,
+    dispatch,
+    viewportWidth,
+    stackShown: legacyView === null && workspace.destination !== "settings",
+    focusMode
+  });
   const isDarkMode = useResolvedTheme(appSettings.themeMode) === "dark";
   // The preference the startup screen of the next launch starts from; the boot defaults are not stored.
   useEffect(() => {
@@ -571,7 +581,14 @@ export function App({
         return toggleFocusMode();
       case "quickLook":
       case "cycleRegion":
+        return;
       case "contextTab":
+        // ⌥1-⌥6 choose a tab of the context panel (T143).
+        contextHost.command(result);
+        return;
+      case "toggleContext":
+        // ⌘⇧\ hides the docked panel, and opens or closes the strip's overlay below 1280 px.
+        if (!contextHost.command(result)) dispatch(result);
         return;
       case "go":
         return goToPlace(result.destination);
@@ -753,6 +770,7 @@ export function App({
         onNavigateActivity={openFromActivity}
         onOpenInbox={openInbox}
         onOpenTopic={openTopic}
+        context={contextHost.element}
       >
         <LegacyViewsContext.Provider value={legacyViews}>
           <PanelStack
@@ -760,8 +778,7 @@ export function App({
             workspace={workspace}
             dispatch={dispatch}
             viewportWidth={viewportWidth}
-            // The context panel joins the layout with its card (T143); until then nothing docks.
-            chrome={{ navigator: showNavigator, context: false }}
+            chrome={{ navigator: showNavigator, context: contextHost.present }}
             shown={stackShown}
             focusMode={focusMode}
             onToggleFocusMode={toggleFocusMode}
