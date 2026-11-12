@@ -64,8 +64,11 @@ export function InboxDetail({
   const Icon = kindIcon[item.kind];
   const hint = itemHint(t, item);
   const pending = action?.status === "pending";
+  // A suggestion's sentence already names the relation, so its own line would say it twice.
   const relationType =
-    typeof item.params.relationType === "string" ? item.params.relationType : null;
+    item.kind !== "suggestion" && typeof item.params.relationType === "string"
+      ? item.params.relationType
+      : null;
   return (
     <section
       ref={regionRef}

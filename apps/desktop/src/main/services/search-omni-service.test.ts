@@ -196,6 +196,49 @@ describe("search.omni", () => {
     }
   });
 
+  it("embeds only for kinds that have a vector arm, and names no arm that kind never had", async () => {
+    for (const kinds of [["topic"], ["entity"], ["question"], ["topic", "entity"]] as const) {
+      const runDefaultTask = vi.fn(embedded);
+      const { service } = setup({ embedder: runDefaultTask as never });
+      const result = await service.omni({ query: "kefir", mode: "full", kinds, requestId: "r" });
+      expect(runDefaultTask, kinds.join()).not.toHaveBeenCalled();
+      expect(result.degraded, kinds.join()).toEqual([]);
+    }
+    for (const kinds of [["note"], ["source"], ["topic", "note"]] as const) {
+      const runDefaultTask = vi.fn(embedded);
+      const { service } = setup({ embedder: runDefaultTask as never });
+      await service.omni({ query: "kefir", mode: "full", kinds, requestId: "r" });
+      expect(runDefaultTask, kinds.join()).toHaveBeenCalledTimes(1);
+    }
+    // Notes without a model still say the vectors did not run.
+    const { service } = setup();
+    const notes = await service.omni({
+      query: "kefir",
+      mode: "full",
+      kinds: ["note"],
+      requestId: "r"
+    });
+    expect(notes.degraded).toEqual(["ann"]);
+  });
+
+  it("names full text missing only where a full-text arm applies to the kinds asked for", async () => {
+    const { service } = setup();
+    const entities = await service.omni({
+      query: "?!",
+      mode: "quick",
+      kinds: ["entity"],
+      requestId: "r"
+    });
+    expect(entities.degraded).toEqual([]);
+    const topics = await service.omni({
+      query: "?!",
+      mode: "quick",
+      kinds: ["topic"],
+      requestId: "r"
+    });
+    expect(topics.degraded).toEqual(["fts"]);
+  });
+
   it("says full text did not run for a query with no word", async () => {
     const { service, statements } = setup();
     const quick = await service.omni({ query: "?!", mode: "quick", requestId: "r" });

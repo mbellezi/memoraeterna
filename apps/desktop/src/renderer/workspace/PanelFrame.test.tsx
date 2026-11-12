@@ -110,7 +110,7 @@ describe("the panel frame", () => {
 });
 
 describe("the path ribbon", () => {
-  const ref = (kind: "topic" | "source" | "note", n: number, title: string) => ({
+  const ref = (kind: "topic" | "source" | "note" | "entity", n: number, title: string) => ({
     kind,
     id: uuid(n),
     title
@@ -157,7 +157,11 @@ describe("the path ribbon", () => {
     expect(foldMiddle(["a", "b"], 5)).toEqual(["a", "b"]);
   });
 
-  const ribbon = (address: string, read: Located, props: { place?: "tentativeSource" } = {}) =>
+  const ribbon = (
+    address: string,
+    read: Located,
+    props: { place?: "tentativeSource" | "mostCited" } = {}
+  ) =>
     renderToString(
       <PathRibbonView
         t={pt}
@@ -202,6 +206,67 @@ describe("the path ribbon", () => {
     );
     expect(html).toContain('data-ribbon-state="tentative"');
     expect(html).toContain("Lugar provável:");
+  });
+
+  it("says an entity's place is where it is most cited, before the path", () => {
+    const read = located([
+      ref("topic", 1, ""),
+      ref("topic", 2, "Life sciences"),
+      ref("entity", 5, "Lactobacillus")
+    ]);
+    const html = ribbon(
+      `memora://entity/${read.primaryPath[2]?.id}`,
+      { status: "ready", located: read },
+      { place: "mostCited" }
+    );
+    expect(html).toContain("Mais citada em");
+    expect(html).not.toContain("Lugar provável:");
+    expect(html).toContain('data-ribbon-state="placed"');
+    expect(ribbon(noteAddress, { status: "ready", located: read })).not.toContain("Mais citada em");
+  });
+
+  it("says an entity cited under no topic is not cited yet, with no place to choose", () => {
+    const loose = located([ref("entity", 5, "Lactobacillus")]);
+    const html = renderToString(
+      <PathRibbonView
+        t={pt}
+        address={`memora://entity/${uuid(5)}`}
+        place="mostCited"
+        onOpen={noop}
+        onChoosePlace={noop}
+        located={{ status: "ready", located: loose }}
+        onRetry={noop}
+      />
+    );
+    expect(html).toContain("Ainda não citada em nenhum tópico");
+    expect(html).not.toContain("Sem lugar");
+    expect(html).not.toContain("Escolher lugar");
+  });
+
+  it("leaves the other places of an entity to the top panel's ribbon", () => {
+    const read = {
+      ...located([
+        ref("topic", 1, ""),
+        ref("topic", 2, "Life sciences"),
+        ref("entity", 5, "Lactobacillus")
+      ]),
+      alsoIn: [ref("topic", 6, "Immunology")],
+      counts: { alsoIn: 2, citedBy: 0, notes: 0, passages: 0, children: 0 }
+    } as ObjectLocateResult;
+    const draw = (compact: boolean) =>
+      renderToString(
+        <PathRibbonView
+          t={pt}
+          address={`memora://entity/${uuid(5)}`}
+          place="mostCited"
+          compact={compact}
+          onOpen={noop}
+          located={{ status: "ready", located: read }}
+          onRetry={noop}
+        />
+      );
+    expect(draw(false)).toContain("também em");
+    expect(draw(true)).not.toContain("também em");
   });
 
   it("lays the crumbs on the glyph's own line, so a short path never folds under it", () => {

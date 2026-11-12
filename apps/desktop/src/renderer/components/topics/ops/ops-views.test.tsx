@@ -7,7 +7,6 @@ import { FloatingMenu, nextEnabled, type MenuItem } from "./FloatingMenu";
 import { InlineTitleEditor } from "./InlineTitleEditor";
 import { TopicMoveDialog } from "./TopicMoveDialog";
 import { TopicNameDialog } from "./TopicNameDialog";
-import { TopicUndoToast } from "./TopicUndoToast";
 import {
   actionRowOf,
   actionsLabelKey,
@@ -18,7 +17,6 @@ import {
   topicMenuItems
 } from "./nav-ops";
 import { opsErrorText } from "./topic-ops";
-import type { ShownNotice } from "./topic-notice-center";
 import { TopicPickerController } from "./topic-picker";
 import type { LeafRow, NavRow, PlaceEntry, PlaceRow, TopicRow } from "../topic-navigation";
 import { noteLeaf, sourceLeaf } from "../topic-fixtures";
@@ -26,85 +24,6 @@ import { noteLeaf, sourceLeaf } from "../topic-fixtures";
 const en = createTranslator("en");
 const noop = () => undefined;
 const plain = (html: string) => html.replaceAll("<!-- -->", "");
-
-const notice = (overrides: Partial<ShownNotice> = {}): ShownNotice => ({
-  id: 1,
-  key: "topics.ops.toast.renamed",
-  title: "Memory",
-  parent: null,
-  changeSetId: id(50),
-  state: "idle",
-  ...overrides
-});
-
-const toast = (value: ShownNotice | null, t = en) =>
-  plain(
-    renderToString(
-      <TopicUndoToast t={t} notice={value} onUndo={noop} onDismiss={noop} onHold={noop} />
-    )
-  );
-
-describe("the notice that follows a change", () => {
-  it("keeps a polite live region on the page even with nothing to say", () => {
-    const html = toast(null);
-    expect(html).toContain('role="status"');
-    expect(html).toContain('aria-live="polite"');
-    expect(html).not.toContain("<button");
-  });
-
-  it("says what happened and offers Undo and Dismiss, reachable by keyboard", () => {
-    const html = toast(notice());
-    expect(html).toContain("Renamed to Memory.");
-    expect(html).toMatch(/<button[^>]*aria-keyshortcuts="U"[^>]*>.*Undo<\/button>/s);
-    expect(html).toContain('aria-label="Dismiss"');
-    expect(html).not.toContain("tabindex");
-  });
-
-  it("names both topics of a move, and says 'Unnamed topic' for one without a name", () => {
-    const html = toast(
-      notice({ key: "topics.ops.toast.moved", title: null, parent: "Open science" })
-    );
-    expect(html).toContain("Moved Unnamed topic under Open science.");
-  });
-
-  it("shows the states of an undo: working, blocked, failed, and done with nothing to undo", () => {
-    expect(toast(notice({ state: "pending" }))).toMatch(
-      /<button[^>]*disabled=""[^>]*>.*Undoing\.\.\./s
-    );
-    const blocked = toast(notice({ state: "blocked" }));
-    expect(blocked).toContain("a later change depends on it");
-    expect(blocked).not.toContain("Undo</button>");
-    const failed = toast(notice({ state: "failed" }));
-    expect(failed).toContain("The change could not be undone. Try again.");
-    expect(failed).toContain("Undo</button>");
-    const done = toast(
-      notice({ key: "topics.ops.toast.undone", changeSetId: null, state: "none", title: null })
-    );
-    expect(done).toContain("Change undone.");
-    expect(done).not.toContain("Undo</button>");
-  });
-
-  it("is written in every language, with no missing message", () => {
-    for (const locale of supportedLanguageCodes) {
-      const t = createTranslator(locale);
-      for (const key of [
-        "topics.ops.toast.renamed",
-        "topics.ops.toast.moved",
-        "topics.ops.toast.created",
-        "topics.ops.toast.pinned",
-        "topics.ops.toast.unpinned",
-        "topics.ops.toast.placed",
-        "topics.ops.toast.alsoPlaced",
-        "topics.ops.toast.undone"
-      ] as const) {
-        const html = toast(notice({ key, title: "Alpha", parent: "Beta" }), t);
-        expect(html, `${locale} ${key}`).not.toContain("[[missing");
-        expect(html, `${locale} ${key}`).not.toContain("{title}");
-        expect(html, `${locale} ${key}`).not.toContain("{parent}");
-      }
-    }
-  });
-});
 
 describe("the title editor and the dialogs", () => {
   it("renders the editor as a labelled text field with the name selected for editing", () => {

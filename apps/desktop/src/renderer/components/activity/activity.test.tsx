@@ -304,14 +304,23 @@ describe("the Activity drawer", () => {
     );
     // One plain sentence and one retry for the whole drawer: the sections below do not repeat it.
     expect(html.match(/role="alert"/gu)).toHaveLength(1);
-    expect(html.match(/>Retry</gu)).toHaveLength(1);
+    // The same grammar as every other failed view: a solid triangle and the shared retry word.
+    expect(html.match(/>Try again</gu)).toHaveLength(1);
+    expect(html).not.toContain(">Retry<");
+    expect(html.match(/M10\.3 3\.7/gu)).toHaveLength(1);
     expect(html).toContain("Activity could not be loaded.");
     expect(html).not.toContain("Recent changes could not be loaded.");
+    // The failure says in one muted line what is kept, once.
+    expect(html).toContain("Nothing was changed. Your library is safe.");
+    expect(html.match(/text-muted-foreground">Nothing was changed/gu)).toHaveLength(1);
     // A read that fails by itself while the status answered keeps its own line and retry.
     const alone = drawer(answered({ budget: { status: "error" }, done: { status: "error" } }));
-    expect(alone.match(/>Retry</gu)).toHaveLength(2);
+    expect(alone.match(/>Try again</gu)).toHaveLength(2);
+    expect(alone.match(/M10\.3 3\.7/gu)).toHaveLength(2);
     expect(alone).toContain("Recent changes could not be loaded.");
     expect(alone).toContain("The spending meters could not be loaded.");
+    expect(alone).toContain("The changes are stored and can still be undone once they load.");
+    expect(alone).toContain("Your limits and spending are unchanged.");
   });
 
   it("leaves out the Waiting and Needs you sections while they have nothing to say", () => {
@@ -460,6 +469,22 @@ describe("the Activity drawer", () => {
     expect(html).not.toContain("00000000-0000");
   });
 
+  it("puts a change's time on its own muted line under its title, never inside the title", () => {
+    const html = drawer(answered({ done: ready([changeSet(1)]) }));
+    expect(html).toContain('<p class="text-sm text-foreground">Placed 12 items in topics</p>');
+    expect(html).toMatch(
+      /Placed 12 items in topics<\/p><p class="text-xs text-muted-foreground">[^<]+<\/p>/u
+    );
+    expect(html).not.toMatch(/Placed 12 items in topics[^<]* · /u);
+  });
+
+  it("keeps Undo on the title's line, flush with the column's right edge", () => {
+    const html = drawer(answered({ done: ready([changeSet(1)]) }));
+    // Baseline-aligned with the title (not start-aligned), the button's padding pulled back.
+    expect(html).toMatch(/class="flex items-baseline justify-between gap-3"/u);
+    expect(html).toMatch(/<button[^>]*class="[^"]*-my-1 -mr-1 /u);
+  });
+
   it("shows the result of an undo beside the change", () => {
     const one = changeSet(1);
     const html = drawer(
@@ -522,6 +547,17 @@ describe("the Activity drawer", () => {
         onOpenInbox: vi.fn()
       });
       expect(html, locale).not.toMatch(/\[\[missing|\{\w+\}/u);
+    }
+    const failed = activitySnapshot({
+      open: true,
+      status: ready(idleStatus),
+      budget: { status: "error" },
+      done: { status: "error" }
+    });
+    for (const locale of supportedLanguageCodes) {
+      const html = drawer(failed, { t: createTranslator(locale) });
+      expect(html, locale).not.toMatch(/\[\[missing|\{\w+\}/u);
+      expect(html.match(/text-muted-foreground">[^<]*<\/p><\/div>/gu), locale).toHaveLength(2);
     }
     const french = drawer(snapshot, { t: createTranslator("fr") });
     expect(french).toContain("Activité");

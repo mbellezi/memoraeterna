@@ -10,6 +10,168 @@
       "related": "Link relacionado"
     }
   },
+  "home": {
+    "arrived": {
+      "generating": "gerando notas",
+      "link": "Biblioteca",
+      "noPlace": "ainda sem lugar",
+      "progressOf": "{done} de ~{total}",
+      "progressSoFar": "{done} até agora",
+      "title": "Chegou"
+    },
+    "briefing": {
+      "arrivedNoNotesOne": "Chegou {sources}, ainda sem notas;",
+      "arrivedNoNotesOther": "Chegaram {sources}, ainda sem notas;",
+      "arrivedOne": "Chegou {sources} e já gerou {notes};",
+      "arrivedOther": "Chegaram {sources} e já geraram {notes};",
+      "decisionsAmongOne": "{decisions} espera por você: “{title}”.",
+      "decisionsAmongOther": "{decisions} esperam por você, entre elas “{title}”.",
+      "decisionsOne": "{decisions} espera por você.",
+      "decisionsOther": "{decisions} esperam por você.",
+      "gardener": "O {gardener} fez {changes}; revise e desfaça o que quiser.",
+      "generatingOne": "Uma fonte ainda está gerando notas.",
+      "generatingOther": "{count} fontes ainda estão gerando notas.",
+      "label": "O que mudou enquanto você esteve fora",
+      "noneYetOne": "{count} ainda procura lugar na árvore.",
+      "noneYetOther": "{count} ainda procuram lugar na árvore.",
+      "notesOnlyOne": "Chegou {notes};",
+      "notesOnlyOther": "Chegaram {notes};",
+      "placedAll": "todas com lugar na árvore.",
+      "placedOne": "{count} já tem lugar na árvore",
+      "placedOther": "{count} já têm lugar na árvore",
+      "reassurance": "Nada foi apagado. Cada mudança fica no histórico do objeto e, sempre que possível, tem Desfazer.",
+      "unplacedOne": "e {count} ainda procura.",
+      "unplacedOther": "e {count} ainda procuram."
+    },
+    "calm": {
+      "body": "Sem fontes novas, sem mudanças do Jardineiro e nada esperando por você."
+    },
+    "counts": {
+      "changesOne": "{count} mudança",
+      "changesOther": "{count} mudanças",
+      "decisionsOne": "{count} decisão",
+      "decisionsOther": "{count} decisões",
+      "itemsOne": "{count} item",
+      "itemsOther": "{count} itens",
+      "levelsOne": "{count} nível de profundidade",
+      "levelsOther": "{count} níveis de profundidade",
+      "newNotesOne": "{count} nota nova",
+      "newNotesOther": "{count} notas novas",
+      "notesOne": "{count} nota",
+      "notesOther": "{count} notas",
+      "sourcesOne": "{count} fonte",
+      "sourcesOther": "{count} fontes",
+      "topicsOne": "{count} tópico",
+      "topicsOther": "{count} tópicos",
+      "weekNotesOne": "{count} nota nova esta semana",
+      "weekNotesOther": "{count} notas novas esta semana"
+    },
+    "date": {
+      "lastVisit": "{date} · última visita {when}"
+    },
+    "errors": {
+      "unavailable": "O banco de dados ainda não está pronto."
+    },
+    "firstRun": {
+      "add": "Adicionar a primeira fonte",
+      "headline": "Pronto para a primeira fonte",
+      "hint": "Depois, {key} faz o mesmo de qualquer tela.",
+      "lead": "Um PDF, um artigo, um vídeo ou uma nota sua. Em poucos minutos ela vira notas curtas, cada uma com lugar numa árvore de tópicos que se organiza sozinha.",
+      "next": "Depois de escolher, você vai direto para a fonte em Explorar e vê as notas chegando.",
+      "promiseLocal": "Os arquivos ficam no seu Mac. Com um modelo na nuvem, só trechos vão para lá, e só quando a tarefa pede.",
+      "promiseSetup": "Sem configurar nada.",
+      "promiseUndo": "As mudanças podem ser desfeitas.",
+      "promisesTitle": "Combinado",
+      "stepGardener": "O Jardineiro, o trabalho em segundo plano do Memora, arruma a árvore e as conexões",
+      "stepGardenerHint": "você pode revisar o que ele faz",
+      "stepNotes": "Vira notas curtas, uma ideia por nota",
+      "stepPlace": "Cada nota ganha lugar na árvore",
+      "stepRead": "Lida e dividida em trechos",
+      "stepReadHint": "em segundos · a partir daqui já dá para perguntar",
+      "stepsTitle": "O que acontece depois"
+    },
+    "gardener": {
+      "name": "Jardineiro",
+      "tip": "O Jardineiro é o trabalho em segundo plano do Memora: arruma a árvore e as conexões, e você pode revisar o que ele fez."
+    },
+    "gardenerColumn": {
+      "all": "Ver todas",
+      "proposed": "proposta · decida na Caixa de entrada",
+      "title": "O que o Jardineiro fez",
+      "why": "Por quê?"
+    },
+    "greeting": {
+      "afternoon": "Boa tarde.",
+      "away": "Enquanto você esteve fora:",
+      "calm": "Nada mudou desde a sua última visita.",
+      "calmWeek": "Nada de novo nos últimos 7 dias.",
+      "evening": "Boa noite.",
+      "morning": "Bom dia.",
+      "week": "Nos últimos 7 dias:"
+    },
+    "label": "Início",
+    "need": {
+      "impact": {
+        "pathOne": "{count} nota com caminho novo",
+        "pathOther": "{count} notas com caminho novo"
+      },
+      "kinds": {
+        "backlog": "Nova correspondência opcional",
+        "budget": "Limite de gastos",
+        "contradiction": "Contradição",
+        "duplicate": "Duplicata",
+        "obsidianConflict": "Conflito do Obsidian",
+        "quarantined": "Tarefa com falha",
+        "review": "Para revisar",
+        "reviewOverview": "Visão geral",
+        "reviewRelation": "Conexão",
+        "reviewTopic": "Estrutura",
+        "suggestion": "Conexão sugerida",
+        "withdrawn": "Conexão retirada"
+      },
+      "link": "Caixa de entrada",
+      "risk": {
+        "high": "Alto",
+        "low": "Baixo",
+        "medium": "Médio"
+      },
+      "sub": "maior risco primeiro",
+      "title": "Precisa de você"
+    },
+    "questions": {
+      "failed": "não terminou",
+      "link": "Todas as perguntas",
+      "running": "respondendo",
+      "scopeLibrary": "Toda a biblioteca",
+      "scopeTopic": "Um tópico",
+      "sub": "o que você perguntou por último",
+      "title": "Perguntas recentes"
+    },
+    "resume": {
+      "action": "Retomar",
+      "label": "Os painéis que estavam abertos",
+      "panelsOne": "{count} painel em Explorar",
+      "panelsOther": "{count} painéis em Explorar",
+      "title": "Continuar de onde parou"
+    },
+    "shape": {
+      "label": "A forma da sua árvore",
+      "rootTooBig": "grande demais",
+      "seeInMap": "Ver no Mapa",
+      "summary": "{notes} em {topics}",
+      "title": "Sua árvore",
+      "tooBigOne": "{count} tópico grande demais",
+      "tooBigOther": "{count} tópicos grandes demais"
+    },
+    "since": {
+      "visit": "desde a sua última visita",
+      "week": "nos últimos 7 dias"
+    },
+    "states": {
+      "error": "Não deu para carregar o Início.",
+      "errorKept": "Suas fontes e notas continuam como estavam."
+    }
+  },
   "automation": {
     "clearHistory": "Limpar histórico de tarefas",
     "clearHistoryHint": "Retira das listas as execuções concluídas, com falha ou canceladas. Tarefas ativas, programações, pendências, auditoria e consumo de orçamento são preservados.",
@@ -95,7 +257,8 @@
     "drawer": {
       "close": "Fechar atividade",
       "explainer": "o que o Memora faz em segundo plano",
-      "loadFailed": "Não foi possível carregar a atividade."
+      "loadFailed": "Não foi possível carregar a atividade.",
+      "loadFailedKept": "Nada foi alterado. Sua biblioteca está segura."
     },
     "sections": {
       "now": "Agora",
@@ -128,6 +291,7 @@
     "done": {
       "empty": "Nada foi alterado automaticamente ainda.",
       "loadFailed": "Não foi possível carregar as alterações recentes.",
+      "loadFailedKept": "As alterações estão guardadas e poderão ser desfeitas assim que carregarem.",
       "undo": "Desfazer",
       "undoing": "Desfazendo...",
       "undone": "Alteração desfeita.",
@@ -137,6 +301,7 @@
     },
     "budget": {
       "loadFailed": "Não foi possível carregar os medidores de gasto.",
+      "loadFailedKept": "Seus limites e gastos não foram alterados.",
       "state": {
         "open": "Abaixo do limite",
         "paused": "Pausado perto do limite",
@@ -242,8 +407,8 @@
         "divergenceBody": "A visão geral de “{topic}” foi ampliada, e parte das novas evidências discorda do que ela diz. A discordância fica ao lado do texto, nunca misturada a ele. Mantenha-a ali ou descarte este item. Pontos de discordância: {count}."
       },
       "suggestion": {
-        "title": "Uma conexão sugerida espera sua confirmação",
-        "body": "Foi sugerida uma conexão entre “{first}” e “{second}”: {confidence}. Mantenha a conexão para que conte como decisão sua ou remova a conexão.",
+        "title": "Conexão sugerida · {confidence}",
+        "body": "Sugestão: “{first}” {relation} “{second}”. Mantenha para que conte como decisão sua, ou remova.",
         "hint": "Nada é apagado: só a conexão muda. Se você a remover, ela não volta a ser sugerida."
       },
       "withdrawn": {
@@ -3031,7 +3196,6 @@
         "undone": "Mudança desfeita.",
         "undo": "Desfazer",
         "undoing": "Desfazendo...",
-        "dismiss": "Dispensar",
         "blocked": "Não dá para desfazer agora: uma mudança posterior depende dela.",
         "failed": "Não foi possível desfazer a mudança. Tente novamente."
       }
@@ -3840,6 +4004,8 @@
       "expand": "Mostrar o caminho inteiro",
       "label": "Lugar na árvore",
       "loading": "Procurando lugar na árvore…",
+      "mostCited": "Mais citada em",
+      "mostCitedNone": "Ainda não citada em nenhum tópico",
       "placedByCitations": "colocada pelas citações",
       "retry": "Tentar de novo",
       "tentative": "Lugar provável:",
@@ -3851,6 +4017,56 @@
     },
     "stackLabel": "Painéis abertos",
     "untitled": "Sem título"
+  },
+  "entityPage": {
+    "aliases": "Outros nomes:",
+    "articleLabel": "Entidade: {name}",
+    "coMentioned": {
+      "heading": "Costuma aparecer com",
+      "sharedMany": "{count} notas em comum",
+      "sharedOne": "{count} nota em comum"
+    },
+    "empty": {
+      "ask": "Perguntar sobre {name}",
+      "body": "As notas que citarem este nome aparecem aqui assim que forem escritas.",
+      "headline": "Ainda sem menções diretas."
+    },
+    "error": {
+      "compact": "Não foi possível abrir.",
+      "kept": "Suas notas e fontes continuam como estavam.",
+      "message": "Não foi possível abrir esta entidade."
+    },
+    "mentions": {
+      "heading": "Menções",
+      "listLabel": "Notas que citam esta entidade",
+      "moreFailed": "Não foi possível carregar mais menções.",
+      "moreLoading": "Carregando mais menções",
+      "moreMany": "Mostrar mais {count} notas",
+      "moreOne": "Mostrar mais {count} nota",
+      "summaryMany": "{count} notas, por tópico",
+      "summaryOne": "{count} nota, por tópico",
+      "unplaced": "Sem lugar",
+      "untitledTopic": "Tópico sem nome"
+    },
+    "meta": {
+      "mentionsMany": "citada em {count} notas",
+      "mentionsOne": "citada em {count} nota",
+      "sourcesMany": "{count} fontes",
+      "sourcesOne": "{count} fonte"
+    },
+    "missing": {
+      "body": "Ela pode ter sido juntada a outra entidade. Busque pelo nome para encontrá-la.",
+      "headline": "Esta entidade não está mais na biblioteca."
+    },
+    "sources": {
+      "heading": "Fontes",
+      "partial": "Fontes das menções já carregadas. Mostre mais menções para ver as demais."
+    },
+    "topics": {
+      "heading": "Tópicos",
+      "more": "e mais {count}",
+      "mostCited": "mais citada"
+    }
   },
   "map": {
     "band": {

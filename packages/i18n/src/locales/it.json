@@ -10,6 +10,168 @@
       "related": "Collegamento correlato"
     }
   },
+  "home": {
+    "arrived": {
+      "generating": "generazione delle note",
+      "link": "Libreria",
+      "noPlace": "ancora senza posto",
+      "progressOf": "{done} di ~{total}",
+      "progressSoFar": "{done} finora",
+      "title": "Arrivato"
+    },
+    "briefing": {
+      "arrivedNoNotesOne": "È arrivata {sources}, ancora senza note;",
+      "arrivedNoNotesOther": "Sono arrivate {sources}, ancora senza note;",
+      "arrivedOne": "È arrivata {sources} e ha già prodotto {notes};",
+      "arrivedOther": "Sono arrivate {sources} e hanno già prodotto {notes};",
+      "decisionsAmongOne": "{decisions} ti aspetta: «{title}».",
+      "decisionsAmongOther": "{decisions} ti aspettano, tra cui «{title}».",
+      "decisionsOne": "{decisions} ti aspetta.",
+      "decisionsOther": "{decisions} ti aspettano.",
+      "gardener": "Il {gardener} ha fatto {changes}; rivedile e annulla ciò che vuoi.",
+      "generatingOne": "Una fonte sta ancora generando note.",
+      "generatingOther": "{count} fonti stanno ancora generando note.",
+      "label": "Cosa è cambiato mentre eri via",
+      "noneYetOne": "{count} cerca ancora un posto nell’albero.",
+      "noneYetOther": "{count} cercano ancora un posto nell’albero.",
+      "notesOnlyOne": "È arrivata {notes};",
+      "notesOnlyOther": "Sono arrivate {notes};",
+      "placedAll": "tutte hanno un posto nell’albero.",
+      "placedOne": "{count} ha già un posto nell’albero",
+      "placedOther": "{count} hanno già un posto nell’albero",
+      "reassurance": "Nulla è stato cancellato. Ogni modifica resta nella cronologia dell’oggetto e, quando possibile, si può annullare.",
+      "unplacedOne": "e {count} lo sta ancora cercando.",
+      "unplacedOther": "e {count} lo stanno ancora cercando."
+    },
+    "calm": {
+      "body": "Nessuna fonte nuova, nessuna modifica del Giardiniere e nulla in attesa di te."
+    },
+    "counts": {
+      "changesOne": "{count} modifica",
+      "changesOther": "{count} modifiche",
+      "decisionsOne": "{count} decisione",
+      "decisionsOther": "{count} decisioni",
+      "itemsOne": "{count} elemento",
+      "itemsOther": "{count} elementi",
+      "levelsOne": "{count} livello di profondità",
+      "levelsOther": "{count} livelli di profondità",
+      "newNotesOne": "{count} nuova nota",
+      "newNotesOther": "{count} nuove note",
+      "notesOne": "{count} nota",
+      "notesOther": "{count} note",
+      "sourcesOne": "{count} fonte",
+      "sourcesOther": "{count} fonti",
+      "topicsOne": "{count} argomento",
+      "topicsOther": "{count} argomenti",
+      "weekNotesOne": "{count} nuova nota questa settimana",
+      "weekNotesOther": "{count} nuove note questa settimana"
+    },
+    "date": {
+      "lastVisit": "{date} · ultima visita {when}"
+    },
+    "errors": {
+      "unavailable": "Il database non è ancora pronto."
+    },
+    "firstRun": {
+      "add": "Aggiungi la prima fonte",
+      "headline": "Pronto per la prima fonte",
+      "hint": "Poi, {key} fa lo stesso da qualsiasi schermata.",
+      "lead": "Un PDF, un articolo, un video o una tua nota. In pochi minuti diventa una serie di note brevi, ciascuna con un posto in un albero di argomenti che si organizza da solo.",
+      "next": "Dopo la scelta vai direttamente alla fonte in Esplora e vedi arrivare le note.",
+      "promiseLocal": "I tuoi file restano sul Mac. Con un modello nel cloud partono solo brani, e solo quando il compito lo richiede.",
+      "promiseSetup": "Niente da configurare.",
+      "promiseUndo": "Le modifiche si possono annullare.",
+      "promisesTitle": "Intesi",
+      "stepGardener": "Il Giardiniere, il lavoro in background di Memora, riordina l’albero e le connessioni",
+      "stepGardenerHint": "puoi rivedere ciò che fa",
+      "stepNotes": "Diventa una serie di note brevi, un’idea per nota",
+      "stepPlace": "Ogni nota ottiene un posto nell’albero",
+      "stepRead": "Letta e divisa in brani",
+      "stepReadHint": "in pochi secondi · da qui puoi già fare domande",
+      "stepsTitle": "Cosa succede dopo"
+    },
+    "gardener": {
+      "name": "Giardiniere",
+      "tip": "Il Giardiniere è il lavoro in background di Memora: riordina l’albero e le connessioni, e puoi rivedere ciò che ha fatto."
+    },
+    "gardenerColumn": {
+      "all": "Vedi tutte",
+      "proposed": "proposta · decidi nella Posta in arrivo",
+      "title": "Cosa ha fatto il Giardiniere",
+      "why": "Perché?"
+    },
+    "greeting": {
+      "afternoon": "Buon pomeriggio.",
+      "away": "Mentre eri via:",
+      "calm": "Nulla è cambiato dalla tua ultima visita.",
+      "calmWeek": "Nulla di nuovo negli ultimi 7 giorni.",
+      "evening": "Buonasera.",
+      "morning": "Buongiorno.",
+      "week": "Negli ultimi 7 giorni:"
+    },
+    "label": "Home",
+    "need": {
+      "impact": {
+        "pathOne": "{count} nota con un nuovo percorso",
+        "pathOther": "{count} note con un nuovo percorso"
+      },
+      "kinds": {
+        "backlog": "Nuova corrispondenza facoltativa",
+        "budget": "Limite di spesa",
+        "contradiction": "Contraddizione",
+        "duplicate": "Duplicato",
+        "obsidianConflict": "Conflitto di Obsidian",
+        "quarantined": "Attività non riuscita",
+        "review": "Da rivedere",
+        "reviewOverview": "Panoramica",
+        "reviewRelation": "Collegamento",
+        "reviewTopic": "Struttura",
+        "suggestion": "Collegamento suggerito",
+        "withdrawn": "Collegamento ritirato"
+      },
+      "link": "Posta in arrivo",
+      "risk": {
+        "high": "Alto",
+        "low": "Basso",
+        "medium": "Medio"
+      },
+      "sub": "prima il rischio più alto",
+      "title": "Ha bisogno di te"
+    },
+    "questions": {
+      "failed": "non completata",
+      "link": "Tutte le domande",
+      "running": "risposta in corso",
+      "scopeLibrary": "Tutta la libreria",
+      "scopeTopic": "Un argomento",
+      "sub": "le tue ultime domande",
+      "title": "Domande recenti"
+    },
+    "resume": {
+      "action": "Riprendi",
+      "label": "I pannelli che erano aperti",
+      "panelsOne": "{count} pannello in Esplora",
+      "panelsOther": "{count} pannelli in Esplora",
+      "title": "Riprendi da dove avevi lasciato"
+    },
+    "shape": {
+      "label": "La forma del tuo albero",
+      "rootTooBig": "troppo grande",
+      "seeInMap": "Vedi nella Mappa",
+      "summary": "{notes} in {topics}",
+      "title": "Il tuo albero",
+      "tooBigOne": "{count} argomento troppo grande",
+      "tooBigOther": "{count} argomenti troppo grandi"
+    },
+    "since": {
+      "visit": "dalla tua ultima visita",
+      "week": "negli ultimi 7 giorni"
+    },
+    "states": {
+      "error": "Impossibile caricare la Home.",
+      "errorKept": "Le tue fonti e le tue note sono intatte."
+    }
+  },
   "automation": {
     "clearHistory": "Pulisci cronologia delle attività",
     "clearHistoryHint": "Rimuove dagli elenchi le esecuzioni completate, fallite o annullate. Conserva attività in corso, pianificazioni, problemi in sospeso, audit e consumo del budget.",
@@ -95,7 +257,8 @@
     "drawer": {
       "close": "Chiudi attività",
       "explainer": "cosa fa Memora in background",
-      "loadFailed": "Impossibile caricare l’attività."
+      "loadFailed": "Impossibile caricare l’attività.",
+      "loadFailedKept": "Non è stato modificato nulla. La tua libreria è al sicuro."
     },
     "sections": {
       "now": "Adesso",
@@ -128,6 +291,7 @@
     "done": {
       "empty": "Non è ancora stato modificato nulla in automatico.",
       "loadFailed": "Impossibile caricare le modifiche recenti.",
+      "loadFailedKept": "Le modifiche sono salvate e potrai annullarle quando saranno caricate.",
       "undo": "Annulla",
       "undoing": "Annullamento...",
       "undone": "Modifica annullata.",
@@ -137,6 +301,7 @@
     },
     "budget": {
       "loadFailed": "Impossibile caricare i contatori di spesa.",
+      "loadFailedKept": "I tuoi limiti e le tue spese non sono cambiati.",
       "state": {
         "open": "Entro il limite",
         "paused": "In pausa vicino al limite",
@@ -242,8 +407,8 @@
         "divergenceBody": "La panoramica di “{topic}” è stata ampliata e alcune nuove evidenze non concordano con ciò che dice. Il disaccordo resta accanto al testo, mai fuso con esso. Mantienilo lì oppure scarta questo elemento. Punti di disaccordo: {count}."
       },
       "suggestion": {
-        "title": "Un collegamento suggerito attende la tua conferma",
-        "body": "È stato suggerito un collegamento tra “{first}” e “{second}”: {confidence}. Mantienilo perché conti come una tua decisione, oppure rimuovilo.",
+        "title": "Collegamento suggerito · {confidence}",
+        "body": "Suggerimento: “{first}” {relation} “{second}”. Mantienilo perché conti come una tua decisione, oppure rimuovilo.",
         "hint": "Non viene cancellato nulla: cambia solo il collegamento. Se lo rimuovi, non verrà più suggerito."
       },
       "withdrawn": {
@@ -3026,7 +3191,6 @@
         "undone": "Modifica annullata.",
         "undo": "Annulla",
         "undoing": "Annullamento...",
-        "dismiss": "Chiudi",
         "blocked": "Non si può annullare ora: una modifica successiva ne dipende.",
         "failed": "Non è stato possibile annullare la modifica. Riprova."
       }
@@ -3835,6 +3999,8 @@
       "expand": "Mostra il percorso completo",
       "label": "Posizione nell’albero",
       "loading": "Ricerca della posizione nell’albero…",
+      "mostCited": "La più citata in",
+      "mostCitedNone": "Ancora non citata in nessun argomento",
       "placedByCitations": "collocata dalle citazioni",
       "retry": "Riprova",
       "tentative": "Posizione probabile:",
@@ -3846,6 +4012,56 @@
     },
     "stackLabel": "Pannelli aperti",
     "untitled": "Senza titolo"
+  },
+  "entityPage": {
+    "aliases": "Altri nomi:",
+    "articleLabel": "Entità: {name}",
+    "coMentioned": {
+      "heading": "Compare spesso con",
+      "sharedMany": "{count} note in comune",
+      "sharedOne": "{count} nota in comune"
+    },
+    "empty": {
+      "ask": "Chiedi di {name}",
+      "body": "Le note che citeranno questo nome compariranno qui appena saranno scritte.",
+      "headline": "Ancora nessuna menzione diretta."
+    },
+    "error": {
+      "compact": "Impossibile aprire.",
+      "kept": "Le tue note e le tue fonti sono rimaste come erano.",
+      "message": "Impossibile aprire questa entità."
+    },
+    "mentions": {
+      "heading": "Menzioni",
+      "listLabel": "Note che citano questa entità",
+      "moreFailed": "Impossibile caricare altre menzioni.",
+      "moreLoading": "Caricamento di altre menzioni",
+      "moreMany": "Mostra {count} note in più",
+      "moreOne": "Mostra {count} nota in più",
+      "summaryMany": "{count} note, per argomento",
+      "summaryOne": "{count} nota, per argomento",
+      "unplaced": "Senza posizione",
+      "untitledTopic": "Argomento senza nome"
+    },
+    "meta": {
+      "mentionsMany": "citata in {count} note",
+      "mentionsOne": "citata in {count} nota",
+      "sourcesMany": "{count} fonti",
+      "sourcesOne": "{count} fonte"
+    },
+    "missing": {
+      "body": "Potrebbe essere stata unita a un’altra entità. Cerca il suo nome per ritrovarla.",
+      "headline": "Questa entità non è più nella libreria."
+    },
+    "sources": {
+      "heading": "Fonti",
+      "partial": "Fonti delle menzioni caricate finora. Mostra altre menzioni per vedere il resto."
+    },
+    "topics": {
+      "heading": "Argomenti",
+      "more": "e altri {count}",
+      "mostCited": "la più citata"
+    }
   },
   "map": {
     "band": {

@@ -9,6 +9,7 @@ import {
 } from "@app/domain";
 import type { MessageKey, Translator } from "@app/i18n";
 
+import { relationTypeView } from "../../lib/relation-stance";
 import { changeSetTitle } from "../activity/change-title";
 
 /**
@@ -178,7 +179,10 @@ export function itemTitle(t: Translator, item: InboxItem): string {
           : "inbox.items.contradiction.title"
       );
     case "suggestion":
-      return t("inbox.items.suggestion.title");
+      // The confidence is the fact that puts a suggestion here, so the list row carries it.
+      return t("inbox.items.suggestion.title", {
+        values: { confidence: confidenceText(t, probabilityOf(item)) }
+      });
     case "withdrawn":
       return t("inbox.items.withdrawn.title");
     case "duplicate":
@@ -231,7 +235,11 @@ export function itemBody(t: Translator, item: InboxItem): string {
       return t("inbox.items.contradiction.body", { values: { first, second } });
     case "suggestion":
       return t("inbox.items.suggestion.body", {
-        values: { first, second, confidence: confidenceText(t, probabilityOf(item)) }
+        values: {
+          first,
+          second,
+          relation: t(relationTypeView(text(item.params.relationType)).verbKey)
+        }
       });
     case "withdrawn":
       return t(

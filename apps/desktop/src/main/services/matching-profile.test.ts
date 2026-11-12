@@ -112,6 +112,34 @@ describe("scratch profile path", () => {
     expect(await readdir(defaultData)).toEqual([]);
   });
 
+  it("refuses the default userData by its own check when the scratch check passes", async () => {
+    // A home inside the scratch root puts the default userData where the scratch check accepts it,
+    // so only the default-userData refusal stands between it and a run.
+    const home = await folder(workspace, ".cache", "f5", "scratch", "home");
+    const defaultData = await folder(defaultUserDataPath(home));
+    expect(await isScratchProfilePath(defaultData, workspace)).toBe(true);
+    const error = await readMatchingProfile({
+      userDataPath: defaultData,
+      workspaceRoot: workspace,
+      runner: "pilot",
+      home
+    }).catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(MatchingProfileError);
+    expect((error as MatchingProfileError).code).toBe(notScratchProfileCode);
+    expect((error as MatchingProfileError).message).toContain("never the default userData");
+    // The same folder under a home elsewhere is an ordinary scratch profile.
+    const other = await folder(outside, "other-home");
+    await expect(
+      readMatchingProfile({
+        userDataPath: defaultData,
+        workspaceRoot: workspace,
+        runner: "pilot",
+        home: other
+      })
+    ).resolves.toMatchObject({ profilePath: defaultData });
+    expect(await readdir(defaultData)).toEqual([]);
+  });
+
   it("refuses the default userData path and a relative path", async () => {
     await folder(workspace, ".cache", "profiles", "env-f");
     expect(

@@ -110,14 +110,16 @@ interface CoMentionRow extends QueryResultRow {
 
 const nilUuid = "00000000-0000-0000-0000-000000000000";
 
-/** The sort key of a mention, in the order mentions are listed. */
+/**
+ * The sort key of a mention, in the order mentions are listed, as a cursor carries it: ids and
+ * counts only. The two titles in the ordering are read again from `topicId` and `noteId` by the
+ * statement, so a cursor never grows with a long title and always fits the `next` bound.
+ */
 interface MentionKey {
   unplaced: boolean;
   /** Minus the topic's notes: the densest topic sorts first in an ascending key. */
   negativeTopicNotes: number;
-  topicTitle: string;
   topicId: string;
-  noteTitle: string;
   noteId: string;
 }
 
@@ -125,14 +127,7 @@ const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{1
 
 export function encodeMentionCursor(key: MentionKey): string {
   return Buffer.from(
-    JSON.stringify([
-      key.unplaced,
-      key.negativeTopicNotes,
-      key.topicTitle,
-      key.topicId,
-      key.noteTitle,
-      key.noteId
-    ]),
+    JSON.stringify([key.unplaced, key.negativeTopicNotes, key.topicId, key.noteId]),
     "utf8"
   ).toString("base64url");
 }
@@ -141,10 +136,8 @@ export function encodeMentionCursor(key: MentionKey): string {
 export function decodeMentionCursor(cursor: string): MentionKey | null {
   try {
     const parsed: unknown = JSON.parse(Buffer.from(cursor, "base64url").toString("utf8"));
-    if (!Array.isArray(parsed) || parsed.length !== 6) return null;
-    const [unplaced, negativeTopicNotes, topicTitle, topicId, noteTitle, noteId] = parsed as [
-      unknown,
-      unknown,
+    if (!Array.isArray(parsed) || parsed.length !== 4) return null;
+    const [unplaced, negativeTopicNotes, topicId, noteId] = parsed as [
       unknown,
       unknown,
       unknown,
@@ -154,15 +147,13 @@ export function decodeMentionCursor(cursor: string): MentionKey | null {
       typeof unplaced !== "boolean" ||
       typeof negativeTopicNotes !== "number" ||
       !Number.isInteger(negativeTopicNotes) ||
-      typeof topicTitle !== "string" ||
       typeof topicId !== "string" ||
       !uuidPattern.test(topicId) ||
-      typeof noteTitle !== "string" ||
       typeof noteId !== "string" ||
       !uuidPattern.test(noteId)
     )
       return null;
-    return { unplaced, negativeTopicNotes, topicTitle, topicId, noteTitle, noteId };
+    return { unplaced, negativeTopicNotes, topicId, noteId };
   } catch {
     return null;
   }
@@ -199,9 +190,11 @@ with ${mentionsCte}
 select count(*)::int as notes, count(distinct source_id)::int as sources from mentions`;
 
 /**
- * One page of mentions after the key `$2..$7` (all null for the first page). The row comparison
- * runs on the same sort key as the ORDER BY, so the page boundary is exact. $8 is the page size
- * plus one, which tells whether another page follows.
+ * One page of mentions after the key `$2..$5` (all null for the first page): whether it is
+ * unplaced, minus its topic's notes, its topic and its note. The two titles of the key are read
+ * from those ids here (a topic or note that is gone reads as an empty title), so the cursor carries
+ * no free text. The row comparison runs on the same sort key as the ORDER BY, so the page boundary
+ * is exact. $6 is the page size plus one, which tells whether another page follows.
  */
 const mentionsSql = `
 with ${mentionsCte},
@@ -220,10 +213,12 @@ select o.note_id as "noteId", o.note_title as title, o.source_id as "sourceId", 
      where $2::boolean is null
         or (page.unplaced, page.negative_topic_notes, page.topic_title, coalesce(page.topic_id, '${nilUuid}'::uuid),
             page.note_title, page.note_id)
-           > ($2::boolean, $3::int, $4::text, $5::uuid, $6::text, $7::uuid)
+           > ($2::boolean, $3::int,
+              coalesce((select kt.title from topics kt where kt.id = $4::uuid), ''), $4::uuid,
+              coalesce((select kn.title from atomic_notes kn where kn.id = $5::uuid), ''), $5::uuid)
      order by page.unplaced, page.negative_topic_notes, page.topic_title,
               coalesce(page.topic_id, '${nilUuid}'::uuid), page.note_title, page.note_id
-     limit $8::int
+     limit $6::int
   ) o
   left join source_items s on s.id = o.source_id
  order by o.unplaced, o.negative_topic_notes, o.topic_title,
@@ -279,9 +274,7 @@ export function createEntityPageRepository(db: Queryable) {
         input.id,
         key?.unplaced ?? null,
         key?.negativeTopicNotes ?? null,
-        key?.topicTitle ?? null,
         key?.topicId ?? null,
-        key?.noteTitle ?? null,
         key?.noteId ?? null,
         entityMentionsPageLimit + 1
       ];
@@ -311,9 +304,7 @@ export function createEntityPageRepository(db: Queryable) {
         mentions.next = encodeMentionCursor({
           unplaced: last.topicId === null,
           negativeTopicNotes: last.topicId === null ? 0 : -Number(last.topicNotes),
-          topicTitle: last.topicTitle,
           topicId: last.topicId ?? nilUuid,
-          noteTitle: last.title,
           noteId: last.noteId
         });
 

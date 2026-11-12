@@ -220,13 +220,15 @@ export class QuestionsService {
   /** One Question with its answer versions, oldest first; null when there is no such Question. */
   public async get(raw: unknown): Promise<QuestionView | null> {
     const { id } = QuestionsIdInputSchema.parse(raw);
+    const before = this.writingIds();
     const record = await this.repository().get(id);
-    return record ? this.view(record) : null;
+    return record ? this.view(record, before) : null;
   }
 
   /** The Questions, newest first; a cursor this service did not issue is refused with a message key. */
   public async list(raw: unknown): Promise<QuestionsListResult> {
     const input = QuestionsListInputSchema.parse(raw ?? {});
+    const before = this.writingIds();
     let page: Awaited<ReturnType<QuestionsStore["list"]>>;
     try {
       page = await this.repository().list(input);
@@ -240,7 +242,7 @@ export class QuestionsService {
         text: item.text,
         language: item.language,
         scope: item.scope,
-        status: this.statusOf(item.id, item.status),
+        status: this.statusOf(item.id, item.status, before),
         createdAt: item.createdAt.toISOString(),
         updatedAt: item.updatedAt.toISOString(),
         answerCount: item.answerCount
@@ -316,13 +318,29 @@ export class QuestionsService {
     }
   }
 
-  /** What the Question is now: a stored `running` that no Ask writes was cut short. */
-  private statusOf(id: string, stored: QuestionRecord["status"]): QuestionRecord["status"] {
-    return stored === "running" && !this.isWriting(id) ? "failed" : stored;
+  /** The Questions an Ask of this process is writing now, as a snapshot a read takes before it starts. */
+  private writingIds(): ReadonlySet<string> {
+    const ids = new Set(this.starting);
+    for (const ask of this.active.values()) ids.add(ask.questionId);
+    return ids;
   }
 
-  private view(record: QuestionRecord): QuestionView {
-    const status = this.statusOf(record.id, record.status);
+  /**
+   * What the Question is now: a stored `running` that no Ask writes was cut short. A read takes its
+   * snapshot of the writing Asks before it asks the store, so an Ask that finishes while the read is
+   * in flight (the read still holds `running`) is not taken for a cut-short one; an Ask that begins
+   * during the read is seen by the live check.
+   */
+  private statusOf(
+    id: string,
+    stored: QuestionRecord["status"],
+    before: ReadonlySet<string>
+  ): QuestionRecord["status"] {
+    return stored === "running" && !before.has(id) && !this.isWriting(id) ? "failed" : stored;
+  }
+
+  private view(record: QuestionRecord, before: ReadonlySet<string>): QuestionView {
+    const status = this.statusOf(record.id, record.status, before);
     const errorKey =
       status === "failed"
         ? record.status === "failed"

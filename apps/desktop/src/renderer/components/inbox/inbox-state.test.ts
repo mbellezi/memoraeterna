@@ -194,6 +194,9 @@ describe("carrying a verb out", () => {
     expect(offers(budget, "apply")).toBe(true);
     expect(keyCarries(budget, "apply")).toBe(false);
     expect(keyCarries(budget, "dismiss")).toBe(true);
+    // A suggestion's removal is not carried by x (D34); its keep is carried by a.
+    expect(keyCarries(item("suggestion"), "apply")).toBe(true);
+    expect(keyCarries(item("suggestion"), "dismiss")).toBe(false);
   });
 });
 

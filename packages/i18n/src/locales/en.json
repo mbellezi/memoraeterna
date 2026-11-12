@@ -10,6 +10,168 @@
       "related": "Related link"
     }
   },
+  "home": {
+    "arrived": {
+      "generating": "generating notes",
+      "link": "Library",
+      "noPlace": "no place yet",
+      "progressOf": "{done} of ~{total}",
+      "progressSoFar": "{done} so far",
+      "title": "Arrived"
+    },
+    "briefing": {
+      "arrivedNoNotesOne": "{sources} arrived, with no notes yet;",
+      "arrivedNoNotesOther": "{sources} arrived, with no notes yet;",
+      "arrivedOne": "{sources} arrived and has already produced {notes};",
+      "arrivedOther": "{sources} arrived and have already produced {notes};",
+      "decisionsAmongOne": "{decisions} is waiting for you: “{title}”.",
+      "decisionsAmongOther": "{decisions} are waiting for you, among them “{title}”.",
+      "decisionsOne": "{decisions} is waiting for you.",
+      "decisionsOther": "{decisions} are waiting for you.",
+      "gardener": "The {gardener} made {changes}; review them and undo what you like.",
+      "generatingOne": "One source is still generating notes.",
+      "generatingOther": "{count} sources are still generating notes.",
+      "label": "What changed while you were away",
+      "noneYetOne": "{count} is still looking for a place in the tree.",
+      "noneYetOther": "{count} are still looking for a place in the tree.",
+      "notesOnlyOne": "{notes} arrived;",
+      "notesOnlyOther": "{notes} arrived;",
+      "placedAll": "all of them have a place in the tree.",
+      "placedOne": "{count} already has a place in the tree",
+      "placedOther": "{count} already have a place in the tree",
+      "reassurance": "Nothing was deleted. Every change stays in the object’s history and, where possible, can be undone.",
+      "unplacedOne": "and {count} is still looking.",
+      "unplacedOther": "and {count} are still looking."
+    },
+    "calm": {
+      "body": "No new sources, nothing changed by the Gardener and nothing waiting for you."
+    },
+    "counts": {
+      "changesOne": "{count} change",
+      "changesOther": "{count} changes",
+      "decisionsOne": "{count} decision",
+      "decisionsOther": "{count} decisions",
+      "itemsOne": "{count} item",
+      "itemsOther": "{count} items",
+      "levelsOne": "{count} level deep",
+      "levelsOther": "{count} levels deep",
+      "newNotesOne": "{count} new note",
+      "newNotesOther": "{count} new notes",
+      "notesOne": "{count} note",
+      "notesOther": "{count} notes",
+      "sourcesOne": "{count} source",
+      "sourcesOther": "{count} sources",
+      "topicsOne": "{count} topic",
+      "topicsOther": "{count} topics",
+      "weekNotesOne": "{count} new note this week",
+      "weekNotesOther": "{count} new notes this week"
+    },
+    "date": {
+      "lastVisit": "{date} · last visit {when}"
+    },
+    "errors": {
+      "unavailable": "The database is not ready."
+    },
+    "firstRun": {
+      "add": "Add your first source",
+      "headline": "Ready for your first source",
+      "hint": "Afterwards, {key} does the same from any screen.",
+      "lead": "A PDF, an article, a video or a note of your own. In a few minutes it becomes short notes, each with a place in a tree of topics that organizes itself.",
+      "next": "After you choose, you go straight to the source in Explore and watch the notes arrive.",
+      "promiseLocal": "Your files stay on your Mac. With a cloud model, only excerpts are sent, and only when a task needs them.",
+      "promiseSetup": "Nothing to set up.",
+      "promiseUndo": "Changes can be undone.",
+      "promisesTitle": "Agreed",
+      "stepGardener": "The Gardener, Memora’s background work, tidies the tree and the connections",
+      "stepGardenerHint": "you can review what it does",
+      "stepNotes": "Becomes short notes, one idea each",
+      "stepPlace": "Each note gets a place in the tree",
+      "stepRead": "Read and split into passages",
+      "stepReadHint": "in seconds · from here on you can already ask",
+      "stepsTitle": "What happens next"
+    },
+    "gardener": {
+      "name": "Gardener",
+      "tip": "The Gardener is Memora’s background work: it tidies the tree and the connections, and you can review what it did."
+    },
+    "gardenerColumn": {
+      "all": "See all",
+      "proposed": "proposal · decide in the Inbox",
+      "title": "What the Gardener did",
+      "why": "Why?"
+    },
+    "greeting": {
+      "afternoon": "Good afternoon.",
+      "away": "While you were away:",
+      "calm": "Nothing has changed since your last visit.",
+      "calmWeek": "Nothing new in the last 7 days.",
+      "evening": "Good evening.",
+      "morning": "Good morning.",
+      "week": "In the last 7 days:"
+    },
+    "label": "Home",
+    "need": {
+      "impact": {
+        "pathOne": "{count} note with a new path",
+        "pathOther": "{count} notes with a new path"
+      },
+      "kinds": {
+        "backlog": "Optional re-match",
+        "budget": "Spending limit",
+        "contradiction": "Contradiction",
+        "duplicate": "Duplicate",
+        "obsidianConflict": "Obsidian conflict",
+        "quarantined": "Failed task",
+        "review": "To review",
+        "reviewOverview": "Overview",
+        "reviewRelation": "Connection",
+        "reviewTopic": "Structure",
+        "suggestion": "Suggested connection",
+        "withdrawn": "Withdrawn connection"
+      },
+      "link": "Inbox",
+      "risk": {
+        "high": "High",
+        "low": "Low",
+        "medium": "Medium"
+      },
+      "sub": "highest risk first",
+      "title": "Needs you"
+    },
+    "questions": {
+      "failed": "did not finish",
+      "link": "All questions",
+      "running": "answering",
+      "scopeLibrary": "Whole library",
+      "scopeTopic": "One topic",
+      "sub": "what you asked last",
+      "title": "Recent questions"
+    },
+    "resume": {
+      "action": "Resume",
+      "label": "The panels that were open",
+      "panelsOne": "{count} panel in Explore",
+      "panelsOther": "{count} panels in Explore",
+      "title": "Continue where you left off"
+    },
+    "shape": {
+      "label": "The shape of your tree",
+      "rootTooBig": "too large",
+      "seeInMap": "See in Map",
+      "summary": "{notes} in {topics}",
+      "title": "Your tree",
+      "tooBigOne": "{count} topic too large",
+      "tooBigOther": "{count} topics too large"
+    },
+    "since": {
+      "visit": "since your last visit",
+      "week": "in the last 7 days"
+    },
+    "states": {
+      "error": "Could not load Home.",
+      "errorKept": "Your sources and notes are untouched."
+    }
+  },
   "automation": {
     "clearHistory": "Clear task history",
     "clearHistoryHint": "Removes completed, failed or canceled runs from the lists. Active tasks, schedules, unresolved work, audit and budget usage are preserved.",
@@ -95,7 +257,8 @@
     "drawer": {
       "close": "Close activity",
       "explainer": "what Memora does in the background",
-      "loadFailed": "Activity could not be loaded."
+      "loadFailed": "Activity could not be loaded.",
+      "loadFailedKept": "Nothing was changed. Your library is safe."
     },
     "sections": {
       "now": "Now",
@@ -128,6 +291,7 @@
     "done": {
       "empty": "Nothing was changed automatically yet.",
       "loadFailed": "Recent changes could not be loaded.",
+      "loadFailedKept": "The changes are stored and can still be undone once they load.",
       "undo": "Undo",
       "undoing": "Undoing...",
       "undone": "Change undone.",
@@ -137,6 +301,7 @@
     },
     "budget": {
       "loadFailed": "The spending meters could not be loaded.",
+      "loadFailedKept": "Your limits and spending are unchanged.",
       "state": {
         "open": "Under the limit",
         "paused": "Paused near the limit",
@@ -242,8 +407,8 @@
         "divergenceBody": "The overview of “{topic}” was extended, and some new evidence disagrees with what it says. The disagreement is kept beside the text, never merged into it. Keep it there, or dismiss this. Points of disagreement: {count}."
       },
       "suggestion": {
-        "title": "A suggested connection needs your confirmation",
-        "body": "A connection was suggested between “{first}” and “{second}”: {confidence}. Keep it to make it your decision, or remove it.",
+        "title": "Suggested connection · {confidence}",
+        "body": "Suggestion: “{first}” {relation} “{second}”. Keep it to make it your decision, or remove it.",
         "hint": "Nothing is deleted: only the connection changes. If you remove it, it is not suggested again."
       },
       "withdrawn": {
@@ -3028,7 +3193,6 @@
         "undone": "Change undone.",
         "undo": "Undo",
         "undoing": "Undoing...",
-        "dismiss": "Dismiss",
         "blocked": "It cannot be undone now: a later change depends on it.",
         "failed": "The change could not be undone. Try again."
       }
@@ -3727,7 +3891,7 @@
     "close": "Close",
     "details": "Details",
     "loading": "Loading",
-    "retry": "Retry"
+    "retry": "Try again"
   },
   "workspace": {
     "destinations": {
@@ -3837,6 +4001,8 @@
       "expand": "Show the whole path",
       "label": "Place in the tree",
       "loading": "Finding the place in the tree…",
+      "mostCited": "Most cited in",
+      "mostCitedNone": "Not cited under any topic yet",
       "placedByCitations": "placed by the citations",
       "retry": "Try again",
       "tentative": "Likely place:",
@@ -3848,6 +4014,56 @@
     },
     "stackLabel": "Open panels",
     "untitled": "Untitled"
+  },
+  "entityPage": {
+    "aliases": "Other names:",
+    "articleLabel": "Entity: {name}",
+    "coMentioned": {
+      "heading": "Often appears with",
+      "sharedMany": "{count} notes in common",
+      "sharedOne": "{count} note in common"
+    },
+    "empty": {
+      "ask": "Ask about {name}",
+      "body": "Notes that cite this name appear here as soon as they are written.",
+      "headline": "No direct mentions yet."
+    },
+    "error": {
+      "compact": "Could not open.",
+      "kept": "Your notes and sources are as they were.",
+      "message": "This entity could not be opened."
+    },
+    "mentions": {
+      "heading": "Mentions",
+      "listLabel": "Notes that cite this entity",
+      "moreFailed": "More mentions could not be loaded.",
+      "moreLoading": "Loading more mentions",
+      "moreMany": "Show {count} more notes",
+      "moreOne": "Show {count} more note",
+      "summaryMany": "{count} notes, by topic",
+      "summaryOne": "{count} note, by topic",
+      "unplaced": "No place",
+      "untitledTopic": "Untitled topic"
+    },
+    "meta": {
+      "mentionsMany": "cited in {count} notes",
+      "mentionsOne": "cited in {count} note",
+      "sourcesMany": "{count} sources",
+      "sourcesOne": "{count} source"
+    },
+    "missing": {
+      "body": "It may have been merged into another entity. Search for its name to find it.",
+      "headline": "This entity is no longer in the library."
+    },
+    "sources": {
+      "heading": "Sources",
+      "partial": "Sources of the mentions loaded so far. Show more mentions to see the rest."
+    },
+    "topics": {
+      "heading": "Topics",
+      "more": "and {count} more",
+      "mostCited": "most cited"
+    }
   },
   "map": {
     "band": {

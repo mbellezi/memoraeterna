@@ -30,7 +30,8 @@ export interface RibbonSegment {
 }
 
 /** How the place is known: placed, tentative while a source or an answer is still being made. */
-export type RibbonPlace = "placed" | "tentativeSource" | "tentativeQuestion" | "byCitations";
+export type RibbonPlace =
+  "placed" | "tentativeSource" | "tentativeQuestion" | "byCitations" | "mostCited";
 
 const topicAddress = (ref: ObjectRef) => formatObjectAddress({ kind: "topic", id: ref.id });
 
@@ -268,8 +269,15 @@ export function PathRibbonView({
         className={shell}
       >
         <ObjectKindGlyph kind="topic" size={14} className="mt-[3px] text-muted-foreground" />
-        <span>{t("panelFrame.ribbon.unsorted")}</span>
-        {onChoosePlace ? (
+        {/* An entity is not placed by anyone: with no note under a topic, it says so, with no task. */}
+        {place === "mostCited" ? (
+          <span className="min-w-0 flex-1 basis-0 text-muted-foreground">
+            {t("panelFrame.ribbon.mostCitedNone")}
+          </span>
+        ) : (
+          <span>{t("panelFrame.ribbon.unsorted")}</span>
+        )}
+        {onChoosePlace && place !== "mostCited" ? (
           <>
             <span aria-hidden="true" className="text-muted-foreground">
               ·
@@ -357,7 +365,8 @@ export function PathRibbonView({
 
   const others = located.status === "ready" ? (located.located?.alsoIn ?? []) : [];
   const otherCount = located.status === "ready" ? (located.located?.counts.alsoIn ?? 0) : 0;
-  const first = others[0];
+  // The previous panel keeps to the place itself: where else an entity is cited is the top panel's.
+  const first = compact && place === "mostCited" ? undefined : others[0];
   const clause =
     place === "tentativeSource"
       ? t("panelFrame.ribbon.tentativeSource")
@@ -385,6 +394,9 @@ export function PathRibbonView({
         />
         {tentative ? (
           <span className="text-muted-foreground">{t("panelFrame.ribbon.tentative")}</span>
+        ) : place === "mostCited" ? (
+          // An entity sits where most of its notes are: its ribbon says so before the path.
+          <span className="text-muted-foreground">{t("panelFrame.ribbon.mostCited")}</span>
         ) : null}
         {/* The crumbs are items of the glyph's own line: a box around them would be one flex item
             as wide as the whole path, and would drop to a line of its own under the glyph. */}
