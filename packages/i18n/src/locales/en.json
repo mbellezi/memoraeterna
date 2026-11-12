@@ -4980,6 +4980,10 @@
       "topics": "topics",
       "topicsLabel": "Topics only"
     },
+    "preview": {
+      "ask": "A question opens a panel that answers with your sources.",
+      "none": "Pick a result to see it here."
+    },
     "results": {
       "compactLabel": "Results for “{query}”",
       "countFirst": "The first {count} results",

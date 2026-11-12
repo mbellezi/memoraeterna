@@ -4980,6 +4980,10 @@
       "topics": "argomenti",
       "topicsLabel": "Solo argomenti"
     },
+    "preview": {
+      "ask": "Una domanda apre un pannello che risponde con le tue fonti.",
+      "none": "Scegli un risultato per vederlo qui."
+    },
     "results": {
       "compactLabel": "Risultati per “{query}”",
       "countFirst": "I primi {count} risultati",

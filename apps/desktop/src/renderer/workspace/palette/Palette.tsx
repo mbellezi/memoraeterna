@@ -370,17 +370,26 @@ function PreviewPane({
   t,
   address,
   loading,
+  askRow,
   batcher
 }: {
   t: Translator;
   address: string | null;
   /** The search has not answered: the column keeps its place with the shape of a preview. */
   loading: boolean;
+  /** The highlighted row is "Ask the library", which has no object to preview. */
+  askRow: boolean;
   batcher?: PreviewBatcher;
 }) {
   const preview = useObjectPreview(address ?? "", address !== null, batcher);
   const body = (() => {
-    if (address === null && !loading) return null;
+    // Nothing to preview: one muted line says why, so the column is never a blank slab.
+    if (address === null && !loading)
+      return (
+        <p className="m-0 text-sm text-muted-foreground [text-wrap:pretty]">
+          {t(askRow ? "palette.preview.ask" : "palette.preview.none")}
+        </p>
+      );
     const { state } = preview;
     if (address === null || state.status === "loading")
       return (
@@ -761,6 +770,7 @@ export function Palette({
               t={t}
               address={paneAddress}
               loading={dataState === "loading"}
+              askRow={activeRow?.type === "ask"}
               {...(batcher ? { batcher } : {})}
             />
           ) : null}

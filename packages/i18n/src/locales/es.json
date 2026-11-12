@@ -4980,6 +4980,10 @@
       "topics": "temas",
       "topicsLabel": "Solo temas"
     },
+    "preview": {
+      "ask": "Una pregunta abre un panel que responde con tus fuentes.",
+      "none": "Elige un resultado para verlo aquí."
+    },
     "results": {
       "compactLabel": "Resultados para “{query}”",
       "countFirst": "Los primeros {count} resultados",
