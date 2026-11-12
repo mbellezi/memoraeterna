@@ -338,12 +338,13 @@ export const confidenceKey = (word: RelationConfidenceWord): MessageKey => confi
  * The meta line of a row as message keys (who decided, how sure, and for a suggestion what to do
  * next). A kept relation says the person kept it; an automatic one the Gardener and, when the
  * decider calibrated a probability, the word for it. A suggestion always has a word, and "unknown"
- * when there is no probability (Q37); it says "também na Caixa de entrada" when the Inbox holds it
- * too (D33) and "decida quando quiser" when it only lives here.
+ * when there is no probability (Q37); its box heading already says it is a suggestion, so the meta
+ * does not. `suggestionRouting` adds "também na Caixa de entrada" when the Inbox holds it too (D33)
+ * and "decida quando quiser" when it only lives here.
  */
 export function connectionMeta(row: ConnectionRow): MessageKey[] {
   if (row.state === "suggested")
-    return ["contextPanel.connections.meta.gardenerSuggested", confidenceKeys[row.confidence]];
+    return ["contextPanel.connections.meta.gardener", confidenceKeys[row.confidence]];
   if (row.state === "kept") return ["contextPanel.connections.meta.byYou"];
   const parts: MessageKey[] = ["contextPanel.connections.meta.gardener"];
   if (row.probability !== null) parts.push(confidenceKeys[row.confidence]);

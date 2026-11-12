@@ -4259,6 +4259,12 @@
         "gardenerSuggested": "suggerimento del Giardiniere",
         "inCommon": "{notes} in comune"
       },
+      "question": {
+        "below": "la nota qui sotto",
+        "linked": "{heading}?",
+        "otherSubject": "{verb} {object}?",
+        "thisSubject": "{subject} {verb} {object}?"
+      },
       "suggestionTag": "suggerimento",
       "suggestionsLabel": "Connessioni suggerite"
     },
@@ -4305,6 +4311,7 @@
       "open": "Apri il brano di {source}",
       "preserved": "brano conservato da una fonte eliminata",
       "provenance": "Chi l'ha scritta",
+      "seeConnections": "Vedi le connessioni",
       "stale": "potrebbe non essere aggiornata",
       "unavailable": "questo brano non è più nella libreria"
     },
@@ -4362,7 +4369,7 @@
       },
       "graph": {
         "note": {
-          "description": "La nota e le più forti collegate a essa. L'elenco in Connessioni ha le stesse informazioni.",
+          "description": "Questa nota e le note più collegate a essa. L'elenco in Connessioni ha lo stesso contenuto.",
           "title": "Grafo di questa nota"
         },
         "other": {

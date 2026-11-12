@@ -171,10 +171,23 @@ describe("the connections list", () => {
     expect(failed).toContain("Tentar de novo");
   });
 
+  it("asks the suggestion as a question with a quiet tag and a two-line meta", () => {
+    const html = connections(paged(fixtureRelations as unknown as NotePageRelation[]));
+    // The other note would support this one: "Apoia esta nota?", then the tag that says it is a suggestion.
+    expect(html).toContain("Apoia esta nota?");
+    expect(html).toContain("sugestão");
+    // The meta repeats nothing the heading says, and carries the routing words in the same run.
+    expect(html).not.toContain("sugestão do Jardineiro");
+    expect(html).toContain("Jardineiro");
+    expect(html).toContain("confiança média");
+    expect(html).toContain("também na Caixa de entrada");
+  });
+
   it("speaks English when the person does", () => {
     const html = connections(paged(fixtureRelations as unknown as NotePageRelation[]), en);
-    expect(html).toContain("Support this note");
+    expect(html).toContain("Notes that support this one");
     expect(html).toContain("also in the Inbox");
+    expect(html).toContain("Supports this note?");
   });
 });
 
@@ -182,8 +195,8 @@ describe("a meta line", () => {
   it("draws each separator inside the item it leads, so no wrapped line starts or ends on one", () => {
     const html = renderToString(<MetaLine parts={["a", "b", "c"]} />);
     // The row is clipped and pulled left by one separator's width; every item carries its own dot.
-    expect(html).toContain("overflow-hidden");
-    expect(html).toContain("-ml-3");
+    expect(html).toContain("overflow-clip");
+    expect(html).toContain("-ml-4");
     expect(html.match(/before:content-/g)).toHaveLength(3);
     // The dot is drawn by the stylesheet, never written as text that could end a line.
     expect(html).not.toMatch(/>\s*·/);
@@ -290,6 +303,21 @@ describe("evidence", () => {
     expect(view({ status: "loading" })).toContain('data-state="loading"');
     expect(view({ status: "error" })).toContain("Não foi possível carregar a evidência.");
     expect(view(ready(page([])))).toContain('data-state="empty"');
+  });
+
+  it("offers the connections from an empty note, when the panel can switch tabs", () => {
+    const view = (onTab?: () => void) =>
+      renderToString(
+        <NoteEvidenceView
+          t={pt}
+          read={ready(page([]))}
+          onOpen={noop}
+          onRetry={noop}
+          {...(onTab ? { onTab } : {})}
+        />
+      );
+    expect(view(noop)).toContain("Ver as conexões");
+    expect(view()).not.toContain("Ver as conexões");
   });
 
   it("shows a source's passages with who cites them", () => {
@@ -499,8 +527,38 @@ describe("the graph tab", () => {
     );
     expect(html).toContain('data-state="empty"');
     expect(html).toContain("Ainda não há nada para desenhar");
+    // With no way to link a note the tab sends the person to the list instead.
     expect(html).toContain("Ver como lista");
+    expect(html).not.toContain("Ligar a outra nota");
     expect(html).not.toContain("notas ·");
+  });
+
+  it("offers to link the note when nothing is drawn and the panel can start a link", () => {
+    const html = renderToString(
+      <NoteGraphView
+        t={pt}
+        load={{
+          status: "ready",
+          answer: {
+            focus: uuid(22),
+            depth: 1,
+            nodes: [],
+            edges: [],
+            neighbourTotal: 0,
+            truncated: false
+          }
+        }}
+        webgl
+        onDepth={noop}
+        onRetry={noop}
+        onOpenNote={noop}
+        onUnavailable={noop}
+        onShowList={noop}
+        onLink={noop}
+      />
+    );
+    expect(html).toContain("Ligar a outra nota");
+    expect(html).not.toContain("Ver como lista");
   });
 
   it("loads and fails like the other tabs", () => {
@@ -561,6 +619,13 @@ describe("the locate header", () => {
     expect(html).toContain("Life sciences");
     expect(html).toContain("também em");
     expect(html).toContain("e mais 2");
+    expect(html).toContain("citado pela visão geral de");
+  });
+
+  it("writes its crumbs and the objects it names as inline links, so a line wraps at a word", () => {
+    const html = renderToString(<LocateLines t={pt} located={located()} onOpen={noop} />);
+    expect(html).not.toContain("<button");
+    expect(html).toContain('href="memora://topic/');
     expect(html).toContain("citado pela visão geral de");
   });
 

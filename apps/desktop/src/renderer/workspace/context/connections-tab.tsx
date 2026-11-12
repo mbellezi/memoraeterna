@@ -16,6 +16,7 @@ import {
   connectionTotal,
   countText,
   groupConnections,
+  groupHeadingKey,
   isShownSourceRelation,
   sourceConnectionRow,
   suggestionRouting,
@@ -69,24 +70,35 @@ export { ConnectionsTab as Component };
 // ---------------------------------------------------------------------------
 // A note
 
-/** How a suggestion reads: who is the subject and what it does to the other note. */
-function suggestionSentence(t: Translator, row: ConnectionRow): string {
+/**
+ * The question a suggestion's box asks, which the person answers with Keep or Remove: "Apoia esta
+ * nota?" when the other note would be the subject (the row below it names that note), "Esta nota
+ * apoia a nota abaixo?" when this note would be, and "Ligadas por apoio?" when the pair has no
+ * direction. A symmetric type reads the first way.
+ */
+function suggestionQuestion(t: Translator, row: ConnectionRow): string {
   const sentence = relationSentence({
     type: row.type,
     direction: row.direction,
     directionSource: row.directionSource
   });
-  const subject =
-    sentence.subject === "this"
-      ? t("notePage.card.thisNoteSubject")
-      : t("notePage.card.direction.otherSubject");
-  const object =
-    sentence.object === "this"
-      ? t("notePage.card.thisNoteObject")
-      : t("notePage.card.direction.otherObject");
-  return sentence.key === "notePage.card.sentence"
-    ? t(sentence.key, { values: { subject, verb: t(sentence.verbKey), object } })
-    : t(sentence.key, { values: { subject, object, word: t(sentence.wordKey) } });
+  const upper = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
+  if (sentence.key === "notePage.card.undirected")
+    return t("contextPanel.connections.question.linked", {
+      values: { heading: t(groupHeadingKey(row.stance, "linked")) }
+    });
+  const directed = relationTypeView(row.type).directed;
+  if (sentence.subject === "this" && directed)
+    return t("contextPanel.connections.question.thisSubject", {
+      values: {
+        subject: t("notePage.card.thisNoteSubject"),
+        verb: t(sentence.verbKey),
+        object: t("contextPanel.connections.question.below")
+      }
+    });
+  return t("contextPanel.connections.question.otherSubject", {
+    values: { verb: upper(t(sentence.verbKey)), object: t("notePage.card.thisNoteObject") }
+  });
 }
 
 export interface ReviewState {
@@ -314,18 +326,18 @@ function SuggestionBox({
         <span className="mt-[3px] flex-none">
           <StanceGlyph stance={row.stance} size={16} />
         </span>
-        <span className="min-w-0 [text-wrap:pretty]">{suggestionSentence(t, row)}</span>
+        <span className="min-w-0 [text-wrap:pretty]">
+          {suggestionQuestion(t, row)}
+          <span className="ml-2 text-xs leading-5 font-normal text-muted-foreground">
+            {t("contextPanel.connections.suggestionTag")}
+          </span>
+        </span>
       </h3>
       <ContextRow
         t={t}
         object={{ address: row.address, kind: "note", title: row.title }}
         resolved={resolved}
-        meta={connectionMeta(row).map((key) => t(key))}
-        extra={
-          <span className="block text-xs leading-5 text-muted-foreground">
-            {t(suggestionRouting(row))}
-          </span>
-        }
+        meta={[...connectionMeta(row), suggestionRouting(row)].map((key) => t(key))}
         onOpen={onOpen}
       />
       <div className="mt-1 flex flex-wrap items-center gap-2">

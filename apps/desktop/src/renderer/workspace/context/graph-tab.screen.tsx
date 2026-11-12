@@ -22,6 +22,7 @@ export function render() {
         active
         onOpen={noop}
         onTab={noop}
+        onLink={noop}
       />
     </ContextColumn>
   );

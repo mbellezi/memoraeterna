@@ -25,6 +25,7 @@ import {
 import type { PanelLoadState } from "../PanelFrame";
 import {
   ContextEmpty,
+  ContextLink,
   ContextError,
   ContextFrame,
   ContextHeading,
@@ -131,6 +132,7 @@ function EvidenceShell({
   detail,
   read,
   emptyText,
+  emptyAction,
   onRetry,
   state,
   children
@@ -142,6 +144,8 @@ function EvidenceShell({
   detail?: string | undefined;
   read: Read<unknown>;
   emptyText: string;
+  /** What an empty tab offers next, when something does. */
+  emptyAction?: ReactNode;
   onRetry: () => void;
   state: PanelLoadState;
   children: ReactNode;
@@ -154,7 +158,7 @@ function EvidenceShell({
       ) : read.status === "error" ? (
         <ContextError t={t} message="contextPanel.errors.evidence" kept={kind} onRetry={onRetry} />
       ) : state === "empty" ? (
-        <ContextEmpty>{emptyText}</ContextEmpty>
+        <ContextEmpty action={emptyAction}>{emptyText}</ContextEmpty>
       ) : (
         children
       )}
@@ -182,12 +186,15 @@ export function NoteEvidenceView({
   t,
   read,
   onOpen,
-  onRetry
+  onRetry,
+  onTab
 }: {
   t: Translator;
   read: Read<NoteEvidenceRead>;
   onOpen: ContextTabProps["onOpen"];
   onRetry: () => void;
+  /** Switches the panel's tab; the empty tab offers the note's connections through it. */
+  onTab?: ContextTabProps["onTab"];
 }) {
   const items = read.status === "ready" ? read.value.evidence.items : [];
   const state: PanelLoadState = listState(
@@ -206,6 +213,13 @@ export function NoteEvidenceView({
       }
       read={read}
       emptyText={t("contextPanel.evidence.empty.note")}
+      emptyAction={
+        onTab ? (
+          <ContextLink onClick={() => onTab("connections")}>
+            {t("contextPanel.evidence.seeConnections")}
+          </ContextLink>
+        ) : undefined
+      }
       onRetry={onRetry}
       state={state}
     >
@@ -259,7 +273,7 @@ function ProvenanceText({ t, page }: { t: Translator; page: NoteEvidenceRead }) 
 }
 
 function NoteEvidence(props: ContextTabProps) {
-  const { t, id, address, active, onOpen, onState, onCount } = props;
+  const { t, id, address, active, onOpen, onTab, onState, onCount } = props;
   const { read, retry } = useContextRead<NoteEvidenceRead | null>({
     key: `note:${id}`,
     active,
@@ -282,7 +296,15 @@ function NoteEvidence(props: ContextTabProps) {
     onState
   );
   useReportedCount(view.status === "ready" ? view.value.evidence.total : null, onCount);
-  return <NoteEvidenceView t={t} read={view} onOpen={onOpen} onRetry={retry} />;
+  return (
+    <NoteEvidenceView
+      t={t}
+      read={view}
+      onOpen={onOpen}
+      onRetry={retry}
+      {...(onTab ? { onTab } : {})}
+    />
+  );
 }
 
 // ---------------------------------------------------------------------------

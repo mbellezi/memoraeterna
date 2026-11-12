@@ -228,7 +228,7 @@ describe("a note's connections", () => {
     ]);
     expect(groups[0]?.rows.map((row) => row.title)).toEqual(["Note 2", "Note 3"]);
     expect(suggestions.map((row) => row.title)).toEqual(["Note 6"]);
-    expect(en(groups[0]!.headingKey)).toBe("Support this note");
+    expect(en(groups[0]!.headingKey)).toBe("Notes that support this one");
     expect(pt(groups[0]!.headingKey)).toBe("Apoiam esta nota");
     expect(pt(groups[1]!.headingKey)).toBe("Esta nota estende");
   });
@@ -287,13 +287,13 @@ describe("a note's connections", () => {
         relation(1, { type: "supports", state: "suggested", probability: 0.64 })
       );
       expect(low.routesToInbox).toBe(true);
-      expect(words(low)).toEqual(["sugestão do Jardineiro", "confiança média"]);
+      expect(words(low)).toEqual(["Jardineiro", "confiança média"]);
       expect(pt(suggestionRouting(low))).toBe("também na Caixa de entrada");
       const high = connectionRow(
         relation(1, { type: "supports", state: "suggested", probability: 0.92 })
       );
       expect(high.routesToInbox).toBe(false);
-      expect(words(high)).toEqual(["sugestão do Jardineiro", "confiança alta"]);
+      expect(words(high)).toEqual(["Jardineiro", "confiança alta"]);
       expect(pt(suggestionRouting(high))).toBe("decida quando quiser");
     });
 

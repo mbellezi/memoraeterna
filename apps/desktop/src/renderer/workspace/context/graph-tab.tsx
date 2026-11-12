@@ -1,5 +1,5 @@
 import { useEffect, useReducer, useState } from "react";
-import { Network } from "lucide-react";
+import { Link2, Network } from "lucide-react";
 import type { ObjectNeighborhood } from "@app/domain";
 import type { Translator } from "@app/i18n";
 
@@ -61,7 +61,8 @@ export function NoteGraphView({
   onRetry,
   onOpenNote,
   onUnavailable,
-  onShowList
+  onShowList,
+  onLink
 }: {
   t: Translator;
   load: Load;
@@ -73,6 +74,8 @@ export function NoteGraphView({
   onOpenNote: (noteId: string) => void;
   onUnavailable: () => void;
   onShowList: () => void;
+  /** Starts linking this note to another: what an empty graph offers (the same as an empty Connections). */
+  onLink?: () => void;
 }) {
   const state = graphState(load);
   return (
@@ -86,7 +89,14 @@ export function NoteGraphView({
       ) : state === "empty" ? (
         <ContextEmpty
           action={
-            <ContextLink onClick={onShowList}>{t("contextPanel.graph.showList")}</ContextLink>
+            onLink ? (
+              <Button variant="secondary" onClick={onLink}>
+                <Link2 aria-hidden="true" />
+                {t("contextPanel.connections.link")}
+              </Button>
+            ) : (
+              <ContextLink onClick={onShowList}>{t("contextPanel.graph.showList")}</ContextLink>
+            )
           }
         >
           {t("contextPanel.graph.empty")}
@@ -115,7 +125,7 @@ export function NoteGraphView({
 }
 
 function NoteGraph(props: ContextTabProps) {
-  const { t, id, address, active, onOpen, onTab, onState, onCount } = props;
+  const { t, id, address, active, onOpen, onTab, onLink, onState, onCount } = props;
   const [webgl, setWebgl] = useState(() => isWebGLAvailable());
   const [state, dispatch] = useReducer(readReducer, initialReadState);
   const [revision, setRevision] = useState(0);
@@ -162,6 +172,7 @@ function NoteGraph(props: ContextTabProps) {
       onOpenNote={(noteId) => onOpen(`memora://note/${noteId}`)}
       onUnavailable={() => setWebgl(false)}
       onShowList={() => onTab?.("connections")}
+      {...(onLink ? { onLink: () => onLink(address) } : {})}
     />
   );
 }

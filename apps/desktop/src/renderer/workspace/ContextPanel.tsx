@@ -36,6 +36,7 @@ import {
 } from "./context-model";
 import type { ContextTabProps } from "./context/context-parts";
 import { useLocate } from "./context/context-reads";
+import { ObjectLink } from "./ObjectLink";
 import type { PanelLoadState } from "./PanelFrame";
 import { ribbonSegments } from "./PathRibbon";
 import type { ContextTabId } from "./state";
@@ -214,8 +215,15 @@ export function ContextTabs({
 // ---------------------------------------------------------------------------
 // The locate header
 
+/**
+ * A crumb is an inline link, not a box: a line of crumbs and words wraps at a word boundary, and a
+ * long title never jumps to a line of its own. The retry stays a button (it is an action).
+ */
+const crumbLink =
+  "[overflow-wrap:anywhere] underline-offset-[3px] hover:text-accent hover:underline";
 const crumbButton = cn(
-  "max-w-full rounded-sm text-left [overflow-wrap:anywhere] underline-offset-[3px] hover:text-accent hover:underline",
+  "max-w-full rounded-sm text-left",
+  crumbLink,
   "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
 );
 
@@ -261,16 +269,18 @@ export function LocateLines({
             {shown.map((segment, index) => (
               <Fragment key={segment.id}>
                 {index > 0 ? <span aria-hidden="true"> › </span> : null}
-                <button
-                  type="button"
-                  onClick={() => onOpen(segment.address)}
+                <ObjectLink
+                  address={segment.address}
+                  onOpen={onOpen}
+                  preview={false}
+                  appearance="bare"
                   className={cn(
-                    crumbButton,
+                    crumbLink,
                     index === shown.length - 1 && "font-medium text-foreground"
                   )}
                 >
                   {segment.title || untitled}
-                </button>
+                </ObjectLink>
               </Fragment>
             ))}
           </span>
@@ -279,13 +289,15 @@ export function LocateLines({
       {alsoIn ? (
         <p className="m-0 pl-4 text-muted-foreground [text-wrap:pretty]">
           {t("contextPanel.locate.alsoIn")}{" "}
-          <button
-            type="button"
-            onClick={() => onOpen(`memora://topic/${alsoIn.id}`)}
-            className={cn(crumbButton, "text-secondary-foreground")}
+          <ObjectLink
+            address={`memora://topic/${alsoIn.id}`}
+            onOpen={onOpen}
+            preview={false}
+            appearance="bare"
+            className={cn(crumbLink, "text-secondary-foreground")}
           >
             {alsoIn.title || untitled}
-          </button>
+          </ObjectLink>
           {alsoMore > 0 ? (
             <> {t("contextPanel.locate.andMore", { values: { count: alsoMore } })}</>
           ) : null}
@@ -301,13 +313,15 @@ export function LocateLines({
           {cited.map((ref, index) => (
             <Fragment key={ref.id}>
               {index > 0 ? ", " : null}
-              <button
-                type="button"
-                onClick={() => onOpen(`memora://${ref.kind}/${ref.id}`)}
-                className={cn(crumbButton, "text-secondary-foreground")}
+              <ObjectLink
+                address={`memora://${ref.kind}/${ref.id}`}
+                onOpen={onOpen}
+                preview={false}
+                appearance="bare"
+                className={cn(crumbLink, "text-secondary-foreground")}
               >
                 {ref.title || untitled}
-              </button>
+              </ObjectLink>
             </Fragment>
           ))}
           {citedMore > 0 ? (

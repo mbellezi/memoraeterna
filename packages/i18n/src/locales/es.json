@@ -4268,6 +4268,12 @@
         "gardenerSuggested": "sugerencia del Jardinero",
         "inCommon": "{notes} en común"
       },
+      "question": {
+        "below": "la nota de abajo",
+        "linked": "¿{heading}?",
+        "otherSubject": "¿{verb} {object}?",
+        "thisSubject": "¿{subject} {verb} {object}?"
+      },
       "suggestionTag": "sugerencia",
       "suggestionsLabel": "Conexiones sugeridas"
     },
@@ -4314,6 +4320,7 @@
       "open": "Abrir el pasaje de {source}",
       "preserved": "pasaje conservado de una fuente borrada",
       "provenance": "Quién la escribió",
+      "seeConnections": "Ver las conexiones",
       "stale": "puede estar desactualizada",
       "unavailable": "este pasaje ya no está en la biblioteca"
     },
@@ -4371,7 +4378,7 @@
       },
       "graph": {
         "note": {
-          "description": "La nota y las más fuertes enlazadas con ella. La lista en Conexiones trae la misma información.",
+          "description": "Esta nota y las notas más enlazadas con ella. La lista en Conexiones trae lo mismo.",
           "title": "Grafo de esta nota"
         },
         "other": {

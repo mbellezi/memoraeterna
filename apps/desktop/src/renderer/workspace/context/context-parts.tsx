@@ -237,7 +237,8 @@ export function ContextRow({
 /**
  * Items side by side with a muted "·" before each one after the first. The separator is drawn inside
  * the left padding of the item it leads, and the row's negative margin pulls the first item of every
- * line out of the clipped box, so a line never starts or ends on "·" however it wraps.
+ * line out of the clipped box, so a line never starts or ends on "·" however it wraps. The clip keeps
+ * a 4 px margin (smaller than the separator column) so a focus ring around a link is not cut.
  */
 export function SeparatedRow({
   items,
@@ -247,12 +248,12 @@ export function SeparatedRow({
   className?: string;
 }) {
   return (
-    <span className={cn("block overflow-hidden", className)}>
-      <span className="-ml-3 flex flex-wrap items-baseline">
+    <span className={cn("block overflow-clip [overflow-clip-margin:4px]", className)}>
+      <span className="-ml-4 flex flex-wrap items-baseline">
         {items.map((item, index) => (
           <span
             key={index}
-            className="relative pl-3 before:absolute before:left-0 before:w-3 before:text-center before:text-muted-foreground before:content-['·']"
+            className="relative pl-4 before:absolute before:left-0 before:w-4 before:text-center before:text-muted-foreground before:content-['·']"
           >
             {item}
           </span>
@@ -311,12 +312,14 @@ export function GroupHeading({
   return (
     <h3 className={cn("m-0 mb-1 flex min-w-0 items-start gap-2 text-sm font-semibold", tone)}>
       {glyph ? <span className="mt-[3px] flex-none">{glyph}</span> : null}
-      <span className="min-w-0 [text-wrap:pretty]">{children}</span>
-      {count === undefined ? null : (
-        <span className="flex-none text-xs leading-5 font-normal text-muted-foreground tabular-nums">
-          {count}
-        </span>
-      )}
+      <span className="min-w-0 [text-wrap:pretty]">
+        {children}
+        {count === undefined ? null : (
+          <span className="ml-2 text-xs leading-5 font-normal text-muted-foreground tabular-nums">
+            {count}
+          </span>
+        )}
+      </span>
     </h3>
   );
 }

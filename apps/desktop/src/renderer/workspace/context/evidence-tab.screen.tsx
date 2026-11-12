@@ -21,6 +21,7 @@ export function render() {
         id={focusedNote.id}
         active
         onOpen={noop}
+        onTab={noop}
       />
     </ContextColumn>
   );

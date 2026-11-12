@@ -4226,19 +4226,19 @@
       },
       "groups": {
         "contradicts": "Contradicts this note",
-        "dependsOnIn": "Depend on this note",
+        "dependsOnIn": "Notes that depend on this one",
         "dependsOnLinked": "Linked by dependence",
         "dependsOnOut": "This note depends on",
-        "exampleOfIn": "Are examples of this note",
+        "exampleOfIn": "Examples of this note",
         "exampleOfLinked": "Linked by example",
         "exampleOfOut": "This note is an example of",
-        "extendsIn": "Extend this note",
+        "extendsIn": "Notes that extend this one",
         "extendsLinked": "Linked by extension",
         "extendsOut": "This note extends",
-        "relatedIn": "Clarify this note",
+        "relatedIn": "Notes that clarify this one",
         "relatedMutual": "Related to this note",
         "relatedOut": "This note clarifies",
-        "supportsIn": "Support this note",
+        "supportsIn": "Notes that support this one",
         "supportsLinked": "Linked by support",
         "supportsOut": "This note supports"
       },
@@ -4260,6 +4260,12 @@
         "gardener": "Gardener",
         "gardenerSuggested": "suggested by the Gardener",
         "inCommon": "{notes} in common"
+      },
+      "question": {
+        "below": "the note below",
+        "linked": "{heading}?",
+        "otherSubject": "{verb} {object}?",
+        "thisSubject": "{subject} {verb} {object}?"
       },
       "suggestionTag": "suggestion",
       "suggestionsLabel": "Suggested connections"
@@ -4307,6 +4313,7 @@
       "open": "Open the passage of {source}",
       "preserved": "passage kept from a deleted source",
       "provenance": "Who wrote it",
+      "seeConnections": "See the connections",
       "stale": "may be out of date",
       "unavailable": "this passage is no longer in the library"
     },
@@ -4364,7 +4371,7 @@
       },
       "graph": {
         "note": {
-          "description": "The note and the strongest notes linked to it. The list in Connections has the same information.",
+          "description": "This note and the notes most linked to it. The list in Connections has the same information.",
           "title": "Graph of this note"
         },
         "other": {
