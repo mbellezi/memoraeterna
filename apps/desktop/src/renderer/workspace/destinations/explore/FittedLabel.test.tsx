@@ -7,10 +7,12 @@ import { id, nodeSummary } from "../../../components/topics/topic-fixtures";
 import {
   branchDataFromTree,
   emptyBranch,
+  navOverscan,
   rootBranchKey,
-  topicRows
+  topicRows,
+  windowIndexes
 } from "../../../components/topics/topic-navigation";
-import { cachedMeasure, FittedLabel } from "./FittedLabel";
+import { cachedMeasure, FittedLabel, fitInto, labelFitStats, WrappedLabel } from "./FittedLabel";
 import { fitLabel } from "./label-fit";
 
 const tree = (count: number) => {
@@ -90,6 +92,78 @@ describe("a tree of about 3,000 topics", () => {
     expect(fitted).toBeLessThanOrEqual(60);
     expect(html).toContain("capítulo 0");
     expect(html).not.toContain("capítulo 2999");
+  });
+});
+
+describe("the cost of fitting a tree of about 3,000 topics", () => {
+  it("measures strings only for the rows of its window, a small constant each", () => {
+    const rows = topicRows(tree(3000), new Set());
+    const drawn = windowIndexes(rows.length, { first: 0, end: 40 }, navOverscan);
+    expect(drawn.length).toBeLessThan(100);
+    const font = "normal 400 14px sans-serif";
+    const titles = rows.map((row) => (row.type === "topic" ? (row.node.title ?? "") : ""));
+    const before = labelFitStats.measured;
+    for (const index of drawn) fitInto(titles[index]!, font, 14, 120);
+    const window = labelFitStats.measured - before;
+    // A word-boundary fit tries a handful of forms for one label: never one per character.
+    expect(window).toBeGreaterThan(0);
+    expect(window).toBeLessThanOrEqual(drawn.length * 12);
+    // The same widths again come from the cache: nothing is measured twice.
+    for (const index of drawn) fitInto(titles[index]!, font, 14, 120);
+    expect(labelFitStats.measured - before).toBe(window);
+    // Fitting every row would cost about the whole tree: the window is what bounds it.
+    const whole = labelFitStats.measured;
+    for (const title of titles) fitInto(title, font, 14, 120);
+    expect(labelFitStats.measured - whole).toBeGreaterThan(window * 10);
+  });
+});
+
+describe("the open row and its ancestors", () => {
+  it("draw their whole name on up to two lines, the others are cut at word boundaries", () => {
+    const rows = topicRows(tree(5), new Set());
+    const html = renderToString(
+      <TopicNavTree
+        t={createTranslator("pt-BR")}
+        rows={rows}
+        labelledBy="x"
+        windowed
+        selectedTopicId={id(11)}
+        onToggle={() => undefined}
+        onActivate={() => undefined}
+      />
+    );
+    expect(html.match(/data-wrap-label=""/gu)).toHaveLength(1);
+    expect(html.match(/data-fit-label=""/gu)).toHaveLength(4);
+    expect(html).toContain(
+      '<span class="sr-only">Microbiologia dos alimentos fermentados, capítulo 1</span>'
+    );
+  });
+
+  it("show their count in the compact tier, the other rows only on hover and focus", () => {
+    const rows = topicRows(tree(3), new Set());
+    const draw = (quietCounts: boolean) =>
+      renderToString(
+        <TopicNavTree
+          t={createTranslator("pt-BR")}
+          rows={rows}
+          labelledBy="x"
+          selectedTopicId={id(11)}
+          quietCounts={quietCounts}
+          onToggle={() => undefined}
+          onActivate={() => undefined}
+        />
+      );
+    const onDemand = (html: string) =>
+      html.match(/pointer-events-none absolute inset-y-0 right-2/gu)?.length ?? 0;
+    // Three rows, one open: the open row keeps its count in the row, the two others show theirs on demand.
+    expect(onDemand(draw(true))).toBe(2);
+    expect(onDemand(draw(false))).toBe(0);
+  });
+
+  it("wrap whole words: the rendered label keeps the full text", () => {
+    const html = renderToString(<WrappedLabel text="Fermentação láctica de hortaliças" />);
+    expect(html).toContain('data-wrap-label=""');
+    expect(html).toContain("Fermentação láctica de hortaliças");
   });
 });
 

@@ -411,7 +411,9 @@ export function PanelStack({
     return keys;
   };
   const probeNow = useRef(drawnKeys);
-  probeNow.current = drawnKeys;
+  useEffect(() => {
+    probeNow.current = drawnKeys;
+  });
   useEffect(() => setDrawnProbe((state) => probeNow.current(state)), []);
   const { summaries, status: titlesStatus } = useSummaries(
     activeStack ? activeStack.panels.map(addressOf) : [],

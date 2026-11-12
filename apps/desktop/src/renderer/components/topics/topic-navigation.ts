@@ -450,6 +450,61 @@ export function viewportRows(top: number, height: number, count: number): RowVie
   return { first, end };
 }
 
+/** A line of a row's name that wraps (the open row and its ancestors). */
+export const navLineHeight = 20;
+/** Rows drawn beyond the ones in view, so a fast scroll does not show blanks. */
+export const navOverscan = 10;
+/** The most rows that can wrap at once: the open row and its ancestors (the tree is 7 deep). */
+export const navMaxWrapped = 9;
+
+/**
+ * The rows that must show their whole name: the open topic and every ancestor of it in the list
+ * (the nearest earlier row of each lower level), never cut by a width (design record 5.3). A row
+ * that is not a topic cannot be open, so a list without the open topic has none.
+ */
+export function openPathKeys(
+  rows: readonly NavRow[],
+  selectedTopicId: string | null
+): ReadonlySet<string> {
+  const keys = new Set<string>();
+  if (selectedTopicId === null) return keys;
+  rows.forEach((row, index) => {
+    const open =
+      (row.type === "topic" && row.node.id === selectedTopicId) ||
+      (row.type === "place" && row.place.kind === "topic" && row.place.id === selectedTopicId);
+    if (!open) return;
+    keys.add(row.key);
+    let level = row.level;
+    for (let at = index - 1; at >= 0 && level > 1; at -= 1) {
+      const earlier = rows[at]!;
+      if (earlier.level < level) {
+        keys.add(earlier.key);
+        level = earlier.level;
+      }
+    }
+  });
+  return keys;
+}
+
+/**
+ * Where each row of a windowed list sits, and the list's height: a row is `navRowHeight` tall plus
+ * one `navLineHeight` for every extra line its name wraps to (`lines` is the line count of the rows
+ * that wrap; any other row has one). The window still counts rows by `navRowHeight`, which puts a
+ * row at most `navMaxWrapped * navLineHeight` px early, and the overscan covers that.
+ */
+export function rowTops(
+  rows: readonly NavRow[],
+  lines: (row: NavRow) => number
+): { tops: number[]; height: number } {
+  const tops: number[] = [];
+  let top = 0;
+  for (const row of rows) {
+    tops.push(top);
+    top += navRowHeight + (Math.max(1, lines(row)) - 1) * navLineHeight;
+  }
+  return { tops, height: top };
+}
+
 /**
  * The row indexes to render: the viewport with an overscan on both sides, and the rows that must
  * exist whatever the scroll (the one holding focus, so the tab stop never disappears).

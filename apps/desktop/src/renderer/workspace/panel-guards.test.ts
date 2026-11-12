@@ -1,12 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import {
-  guardDispatch,
-  guardsAtRisk,
-  panelKey,
-  setDrawnProbe,
-  setPanelGuard
-} from "./panel-guards";
+import { guardedMove, guardsAtRisk, panelKey, setDrawnProbe, setPanelGuard } from "./panel-guards";
 import { stackView } from "./PanelStack";
 import { defaultWorkspace, reduce, type WorkspaceAction, type WorkspaceState } from "./state";
 
@@ -113,26 +107,21 @@ describe("a move that would unmount a panel with unsaved work asks first", () =>
     off = probeAt(960, true);
     const base = explore(note(1));
     const guard = guarded(keyOf(base, 0));
-    const current = { current: base };
-    const dispatch = vi.fn();
-    const move = guardDispatch(current, dispatch);
-    move(open(base, note(2)));
+    const proceed = vi.fn();
+    guardedMove(base, open(base, note(2)), proceed);
     expect(guard).toHaveBeenCalledOnce();
-    expect(dispatch).not.toHaveBeenCalled();
-    // Keep editing: the guard never calls `go`, so nothing was dispatched.
+    // Keep editing: the guard never calls `go`, so nothing runs.
+    expect(proceed).not.toHaveBeenCalled();
     guard.mockImplementationOnce((go: () => void) => go());
-    move(open(base, note(2)));
-    expect(dispatch).toHaveBeenCalledOnce();
-    // The state of the moment follows the move, so one that follows in the same tick reads it.
-    expect(current.current.stacks.explore.panels).toHaveLength(2);
+    guardedMove(base, open(base, note(2)), proceed);
+    expect(proceed).toHaveBeenCalledOnce();
   });
 
-  it("dispatches at once when no guard is at risk", () => {
+  it("runs the move at once when no guard is at risk", () => {
     const base = explore(note(1));
-    const dispatch = vi.fn();
-    const current = { current: base };
-    guardDispatch(current, dispatch)({ type: "close", panel: 0 });
-    expect(dispatch).toHaveBeenCalledOnce();
+    const proceed = vi.fn();
+    guardedMove(base, { type: "close", panel: 0 }, proceed);
+    expect(proceed).toHaveBeenCalledOnce();
   });
 
   it("asks several panels one after the other when one move would lose them all", () => {
@@ -150,8 +139,8 @@ describe("a move that would unmount a panel with unsaved work asks first", () =>
       go();
     });
     const dispatch = vi.fn(() => order.push("dispatch"));
-    // Closing the focused panel of a two-panel stack with back at index 0 loses only that panel.
-    guardDispatch({ current: base }, dispatch)({ type: "close", panel: 1 });
+    // Closing the second panel loses only that panel: only its guard is asked.
+    guardedMove(base, { type: "close", panel: 1 }, dispatch);
     expect(order).toEqual(["second", "dispatch"]);
   });
 });

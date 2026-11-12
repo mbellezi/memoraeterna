@@ -3,7 +3,7 @@ import { useCallback, useEffect, useReducer, useRef, useState, type Dispatch } f
 import { closePanelPriority, subscribeClosePanel } from "../lib/close-panel";
 import { subscribeWindowNavigation } from "../lib/window-navigation";
 import { createWorkspaceSaver, loadWorkspace } from "./persist";
-import { guardDispatch } from "./panel-guards";
+import { guardedMove } from "./panel-guards";
 import { reduce, type WorkspaceAction, type WorkspaceState } from "./state";
 
 /**
@@ -60,7 +60,13 @@ export function useWorkspace(options: { commands?: boolean } = {}): Workspace {
     latest.current = workspace;
   }, [workspace]);
   // Every move asks the panels that would lose unsaved work first (panel-guards.ts).
-  const [dispatch] = useState(() => guardDispatch(latest, rawDispatch));
+  const dispatch = useCallback<Dispatch<WorkspaceAction>>((action) => {
+    guardedMove(latest.current, action, () => {
+      // A move that follows in the same tick (a link's "go", then "open") reads this one's result.
+      latest.current = reduce(latest.current, action);
+      rawDispatch(action);
+    });
+  }, []);
   useEffect(() => {
     if (!commands) return undefined;
     const offClose = subscribeClosePanel(() => {

@@ -1,7 +1,7 @@
-import { useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useLayoutEffect, useRef, useState, useSyncExternalStore, type RefObject } from "react";
 
 import { cn } from "../../../lib/cn";
-import { fitLabel, type Measure } from "./label-fit";
+import { fitLabel, fitLines, type Measure } from "./label-fit";
 
 /**
  * A list label that never ends inside a word (design record 5.3): it is cut at word boundaries,
@@ -9,7 +9,9 @@ import { fitLabel, type Measure } from "./label-fit";
  * of 3,000 topics draws a window, so it fits a window). The widths of strings are measured once per
  * font and kept; the labels are fitted again when the row is resized, when the fonts finish
  * loading and when the theme changes. The full text stays in the row's accessible name and the
- * caller gives the tooltip. The CSS tail ellipsis is the last resort for a single long word.
+ * caller gives the tooltip. The CSS tail ellipsis is the last resort for a single long word. A row
+ * that must show its name (the open row and its ancestors) uses {@link WrappedLabel}: whole words
+ * on at most two lines.
  */
 
 // ---------------------------------------------------------------------------
@@ -113,6 +115,39 @@ function fontOf(node: Element): { font: string; size: number } {
   };
 }
 
+/** The label fitted into `width` for a font; the strings it measures are counted in the stats. */
+export function fitInto(text: string, font: string, size: number, width: number) {
+  return fitLabel(text, measureFor(font, size), width);
+}
+
+/** The label wrapped into at most `maxLines` lines of `width` for a font. */
+export function wrapInto(
+  text: string,
+  font: string,
+  size: number,
+  width: number,
+  maxLines: number
+) {
+  return fitLines(text, measureFor(font, size), width, maxLines);
+}
+
+/** The width a box gives its text, followed without a timer. */
+function useBoxWidth(box: RefObject<HTMLElement | null>): number {
+  const [width, setWidth] = useState(0);
+  useLayoutEffect(() => {
+    const node = box.current;
+    if (!node || typeof ResizeObserver === "undefined") return undefined;
+    // The observer reports the width when it starts to watch, and on every resize after it.
+    const observer = new ResizeObserver(([entry]) => {
+      const next = Math.floor(entry?.contentRect.width ?? node.clientWidth);
+      setWidth((current) => (current === next ? current : next));
+    });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [box]);
+  return width;
+}
+
 export interface FittedLabelProps {
   text: string;
   className?: string;
@@ -122,27 +157,13 @@ export function FittedLabel({ text, className }: FittedLabelProps) {
   const box = useRef<HTMLSpanElement>(null);
   const stamp = useSyncExternalStore(subscribe, snapshot, snapshot);
   const [shown, setShown] = useState(text);
-  const [width, setWidth] = useState(0);
-
-  // The width the row gives the label, followed without a timer.
-  useLayoutEffect(() => {
-    const node = box.current;
-    if (!node) return undefined;
-    setWidth(node.clientWidth);
-    if (typeof ResizeObserver === "undefined") return undefined;
-    const observer = new ResizeObserver(([entry]) => {
-      const next = Math.floor(entry?.contentRect.width ?? node.clientWidth);
-      setWidth((current) => (current === next ? current : next));
-    });
-    observer.observe(node);
-    return () => observer.disconnect();
-  }, []);
+  const width = useBoxWidth(box);
 
   useLayoutEffect(() => {
     const node = box.current;
     if (!node) return;
     const { font, size } = fontOf(node);
-    const fitted = fitLabel(text, measureFor(font, size), width);
+    const fitted = fitInto(text, font, size, width);
     setShown((current) => (current === fitted.text ? current : fitted.text));
     // The epoch is read so a change of fonts or theme fits the label again.
   }, [text, width, stamp]);
@@ -154,6 +175,60 @@ export function FittedLabel({ text, className }: FittedLabelProps) {
       className={cn("min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap", className)}
     >
       <span aria-hidden="true">{shown}</span>
+      <span className="sr-only">{text}</span>
+    </span>
+  );
+}
+
+export interface WrappedLabelProps {
+  text: string;
+  className?: string;
+  /** Lines at most; the last one ends after its last whole word when the text needs more. */
+  maxLines?: number;
+  /** Told how many lines are drawn, so the row can be as tall as its name. */
+  onLines?: ((lines: number) => void) | undefined;
+}
+
+/**
+ * A label that is never cut by its width: whole words on at most `maxLines` lines (the open row of
+ * the navigator and its ancestors, which must show their name). A word longer than a line sits on
+ * a line of its own and is cut by that line's tail ellipsis, the last resort.
+ */
+export function WrappedLabel({ text, className, maxLines = 2, onLines }: WrappedLabelProps) {
+  const box = useRef<HTMLSpanElement>(null);
+  const stamp = useSyncExternalStore(subscribe, snapshot, snapshot);
+  const [lines, setLines] = useState<readonly string[]>([text]);
+  const width = useBoxWidth(box);
+
+  useLayoutEffect(() => {
+    const node = box.current;
+    if (!node) return;
+    const { font, size } = fontOf(node);
+    const wrapped = wrapInto(text, font, size, width, maxLines).lines;
+    setLines((current) =>
+      current.length === wrapped.length && current.every((line, at) => line === wrapped[at])
+        ? current
+        : wrapped
+    );
+  }, [text, width, stamp, maxLines]);
+
+  useLayoutEffect(() => {
+    onLines?.(lines.length);
+  }, [lines, onLines]);
+
+  return (
+    <span
+      ref={box}
+      data-wrap-label=""
+      className={cn("min-w-0 flex-1 overflow-hidden leading-5", className)}
+    >
+      <span aria-hidden="true">
+        {lines.map((line, at) => (
+          <span key={at} className="block overflow-hidden text-ellipsis whitespace-nowrap">
+            {line}
+          </span>
+        ))}
+      </span>
       <span className="sr-only">{text}</span>
     </span>
   );

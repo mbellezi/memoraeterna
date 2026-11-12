@@ -3,6 +3,7 @@ import { ChevronsDownUp, FolderPlus, LoaderCircle, MessageCircle, RefreshCw } fr
 import { formatObjectAddress } from "@app/domain";
 import type { MessageKey, Translator } from "@app/i18n";
 import { ChevronLeft } from "lucide-react";
+import { WrappedLabel } from "../../workspace/destinations/explore/FittedLabel";
 import { Button } from "../ui/button";
 import { FloatingMenu, type MenuAnchor } from "./ops/FloatingMenu";
 import {
@@ -78,6 +79,8 @@ export interface TopicNavigatorViewProps {
   ops?: NavigatorOps | undefined;
   /** The tree shows only this branch ("Show only this branch"); the whole tree comes back with `onExit`. */
   hoist?: { id: string; onExit: () => void } | undefined;
+  /** Compact windows (960-1179 px): a row's count shows on hover, focus and the open row only. */
+  quietCounts?: boolean | undefined;
 }
 
 function Section({
@@ -131,7 +134,8 @@ export function TopicNavigatorView({
   onConfirmReembed,
   onCancelReembed,
   ops,
-  hoist
+  hoist,
+  quietCounts = false
 }: TopicNavigatorViewProps) {
   const { branches, expanded, places } = snapshot;
   const hoistId = hoist?.id ?? null;
@@ -150,7 +154,7 @@ export function TopicNavigatorView({
   const state = hoistId === null ? rootState(root) : root?.data ? "tree" : rootState(root);
   const total = root?.data?.parent.items;
   const format = (value: number) => new Intl.NumberFormat(t.locale).format(value);
-  const place = { t, selectedTopicId, onToggle, onActivate, ops: ops?.rows };
+  const place = { t, selectedTopicId, onToggle, onActivate, ops: ops?.rows, quietCounts };
   return (
     <div className="flex min-h-full flex-col px-1 pb-4">
       <header className="flex h-9 items-center gap-1 pl-2">
@@ -226,8 +230,11 @@ export function TopicNavigatorView({
             <ChevronLeft aria-hidden="true" className="size-3.5" />
             {t("explore.navigator.wholeTree")}
           </Button>
-          <span className="min-w-0 flex-1 truncate text-xs font-semibold text-foreground">
-            {root?.data?.parent.title ?? t("topics.navigator.unnamed")}
+          <span
+            title={root?.data?.parent.title ?? t("topics.navigator.unnamed")}
+            className="flex min-w-0 flex-1 text-xs font-semibold text-foreground"
+          >
+            <WrappedLabel text={root?.data?.parent.title ?? t("topics.navigator.unnamed")} />
           </span>
         </nav>
       ) : null}
@@ -316,6 +323,8 @@ export interface TopicNavigatorProps {
   /** The tree starts at this topic ("Show only this branch"), and `onExitHoist` shows it all again. */
   hoistId?: string | null | undefined;
   onExitHoist?: (() => void) | undefined;
+  /** Compact windows: a row's count shows on hover, focus and the open row only. */
+  quietCounts?: boolean | undefined;
 }
 
 /** The reads and actions of the navigator, bound to the preload API when they run. */
@@ -347,7 +356,8 @@ export function TopicNavigator({
   onOpenSource,
   onAsk,
   hoistId = null,
-  onExitHoist
+  onExitHoist,
+  quietCounts = false
 }: TopicNavigatorProps) {
   const [store] = useState(() => new TopicNavigatorStore(desktopApi()));
   const snapshot = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);
@@ -541,6 +551,7 @@ export function TopicNavigator({
                 })
       }}
       onAsk={onAsk}
+      quietCounts={quietCounts}
       hoist={hoistId ? { id: hoistId, onExit: () => onExitHoist?.() } : undefined}
       onCollapseAll={() => store.collapseAll()}
       onToggle={(row) => toggleRow(row, deps)}

@@ -124,18 +124,21 @@ function desktopApi(): PinApi | undefined {
   return typeof window === "undefined" ? undefined : window.app?.viewHistory;
 }
 
+async function titleOf(address: string): Promise<string> {
+  const objects = typeof window === "undefined" ? undefined : window.app?.objects;
+  const key = historyAddressOf(address) ?? address;
+  try {
+    return (await objects?.resolveMany({ addresses: [key] }))?.items[key]?.title ?? "";
+  } catch {
+    return "";
+  }
+}
+
 async function subjectOf(address: string): Promise<PinSubject> {
   const objects = typeof window === "undefined" ? undefined : window.app?.objects;
   const parsed = parseObjectAddress(address);
-  let title = "";
-  try {
-    const key = historyAddressOf(address) ?? address;
-    title = (await objects?.resolveMany({ addresses: [key] }))?.items[key]?.title ?? "";
-  } catch {
-    title = "";
-  }
   return {
-    title,
+    title: await titleOf(address),
     ...(parsed?.kind === "note" && objects
       ? { host: () => noteHostAddress(objects.locate, parsed.id) }
       : {})

@@ -77,18 +77,14 @@ export function runGuards(list: readonly LeaveGuard[], proceed: () => void): voi
   else first(() => runGuards(rest, proceed));
 }
 
-/** `dispatch` that asks the panels with unsaved work first. `current` reads the state of the moment. */
-export function guardDispatch(
-  current: { current: WorkspaceState },
-  dispatch: (action: WorkspaceAction) => void
-): (action: WorkspaceAction) => void {
-  return (action) => {
-    const state = current.current;
-    const next = reduce(state, action);
-    runGuards(guardsAtRisk(state, next), () => {
-      // A move that follows in the same tick (a link's "go", then "open") reads this one's result.
-      current.current = reduce(current.current, action);
-      dispatch(action);
-    });
-  };
+/**
+ * Asks the panels that `action` would unmount before `proceed` runs it: `proceed` runs at once when
+ * none is at risk, and when each one that is lets the move go.
+ */
+export function guardedMove(
+  state: WorkspaceState,
+  action: WorkspaceAction,
+  proceed: () => void
+): void {
+  runGuards(guardsAtRisk(state, reduce(state, action)), proceed);
 }

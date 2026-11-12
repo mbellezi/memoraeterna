@@ -13,7 +13,7 @@ import {
 import type { TopicHealth, TopicItemLeaf } from "@app/domain";
 import type { Translator } from "@app/i18n";
 import { cn } from "../../lib/cn";
-import { FittedLabel } from "../../workspace/destinations/explore/FittedLabel";
+import { FittedLabel, WrappedLabel } from "../../workspace/destinations/explore/FittedLabel";
 import { ObjectKindGlyph, objectKindTextClass } from "../glyphs";
 import { InlineTitleEditor } from "./ops/InlineTitleEditor";
 import { actionRowOf, actionsLabelKey, itemIdentity, type NavRowOps } from "./ops/nav-ops";
@@ -32,6 +32,17 @@ export interface NavRowProps {
   tabStop: boolean;
   /** The topic that is open. */
   selected: boolean;
+  /**
+   * The row shows its whole name on up to two lines (the open row and its ancestors), and tells the
+   * list how many it drew so the list can place the rows below it.
+   */
+  wrap?: boolean;
+  onLines?: ((key: string, lines: number) => void) | undefined;
+  /**
+   * Compact windows (960-1179 px): a count shows on hover and focus, and on the open row, so the
+   * name has the width.
+   */
+  quietCounts?: boolean;
   /** Absolute placement inside a windowed list. */
   style?: CSSProperties | undefined;
   /** Renaming in place and the actions of a topic (T26); absent, the row is read-only. */
@@ -84,18 +95,26 @@ function PinMark({ t }: { t: Translator }) {
 function Count({
   value,
   spoken,
-  format
+  format,
+  onDemand = false
 }: {
   value: number | null;
   spoken: string;
   format: (value: number) => string;
+  /** Drawn over the row's end on hover and focus only, taking no width from the name. */
+  onDemand?: boolean;
 }) {
   if (value === null) return null;
   return (
     <>
       <span
         aria-hidden="true"
-        className="min-w-5 shrink-0 text-right text-xs tabular-nums text-muted-foreground"
+        className={cn(
+          "min-w-5 text-right text-xs tabular-nums text-muted-foreground",
+          onDemand
+            ? "pointer-events-none absolute inset-y-0 right-2 flex items-center bg-soft pl-1 opacity-0 group-hover/row:opacity-100 group-focus-within/row:opacity-100"
+            : "shrink-0"
+        )}
       >
         {format(value)}
       </span>
@@ -150,6 +169,9 @@ export function TopicNavRow({
   format,
   tabStop,
   selected,
+  wrap = false,
+  onLines,
+  quietCounts = false,
   style,
   ops,
   onToggle,
@@ -175,7 +197,8 @@ export function TopicNavRow({
       title={title?.tooltip}
       style={{ ...style, paddingLeft: baseInset + (row.level - 1) * levelIndent }}
       className={cn(
-        "group/row flex h-7 items-center gap-1 rounded-md pr-2 text-sm outline-none",
+        "group/row relative flex items-center gap-1 rounded-md pr-2 text-sm outline-none",
+        wrap ? "min-h-7 py-1" : "h-7",
         "focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent",
         selected ? "bg-accent-soft font-semibold text-foreground" : "text-foreground hover:bg-soft"
       )}
@@ -192,7 +215,15 @@ export function TopicNavRow({
       }
     >
       <Chevron row={row} onToggle={onToggle} />
-      <RowContent t={t} row={row} format={format} ops={ops} />
+      <RowContent
+        t={t}
+        row={row}
+        format={format}
+        ops={ops}
+        wrap={wrap}
+        onLines={onLines}
+        quietCount={quietCounts && !selected}
+      />
       {ops && actionRow ? (
         <button
           type="button"
@@ -237,17 +268,49 @@ function rowTitle(t: Translator, row: NavRow): { tooltip: string } | null {
   }
 }
 
+/**
+ * A topic's name: cut at word boundaries by its width, or, on the open row and its ancestors,
+ * whole on up to two lines. The two never share a node, so a row that becomes open is fitted again
+ * in the weight it is drawn in.
+ */
+function NameLabel({
+  text,
+  unnamed,
+  wrap,
+  onLines
+}: {
+  text: string;
+  unnamed: boolean;
+  wrap: boolean;
+  onLines: ((lines: number) => void) | undefined;
+}) {
+  const className = unnamed ? "italic text-muted-foreground" : undefined;
+  return wrap ? (
+    <WrappedLabel text={text} onLines={onLines} {...(className ? { className } : {})} />
+  ) : (
+    <FittedLabel text={text} {...(className ? { className } : {})} />
+  );
+}
+
 function RowContent({
   t,
   row,
   format,
-  ops
+  ops,
+  wrap,
+  onLines,
+  quietCount
 }: {
   t: Translator;
   row: NavRow;
   format: (value: number) => string;
   ops?: NavRowOps | undefined;
+  wrap: boolean;
+  onLines: ((key: string, lines: number) => void) | undefined;
+  quietCount: boolean;
 }) {
+  const key = row.key;
+  const reportLines = onLines ? (lines: number) => onLines(key, lines) : undefined;
   switch (row.type) {
     case "topic": {
       const { node } = row;
@@ -265,9 +328,11 @@ function RowContent({
               onCancel={ops.onCancelRename}
             />
           ) : (
-            <FittedLabel
+            <NameLabel
               text={node.title ?? t("topics.navigator.unnamed")}
-              className={cn(node.title === null && "italic text-muted-foreground")}
+              unnamed={node.title === null}
+              wrap={wrap}
+              onLines={reportLines}
             />
           )}
           {node.management === "human" ? (
@@ -286,6 +351,7 @@ function RowContent({
             value={node.items}
             spoken={t("topics.navigator.itemCount", { values: { count: node.items } })}
             format={format}
+            onDemand={quietCount}
           />
         </>
       );
@@ -313,6 +379,7 @@ function RowContent({
               value={leaf.noteCount}
               spoken={t("topics.navigator.noteCount", { values: { count: leaf.noteCount } })}
               format={format}
+              onDemand={quietCount}
             />
           ) : null}
         </>
@@ -327,6 +394,7 @@ function RowContent({
             value={row.count}
             spoken={t("topics.navigator.itemCount", { values: { count: row.count } })}
             format={format}
+            onDemand={quietCount}
           />
         </>
       );
@@ -336,13 +404,20 @@ function RowContent({
         <>
           <ObjectKindGlyph kind={place.kind} className={objectKindTextClass[place.kind]} />
           <span className="sr-only">{t(`topics.navigator.kinds.${place.kind}`)}: </span>
-          <FittedLabel
+          <NameLabel
             text={place.title ?? t("topics.navigator.unnamed")}
-            className={cn(place.title === null && "italic text-muted-foreground")}
+            unnamed={place.title === null}
+            wrap={wrap}
+            onLines={reportLines}
           />
           {place.pinned || place.management === "pinned" ? <PinMark t={t} /> : null}
           <HealthMark t={t} health={place.health} />
-          <Count value={place.count} spoken={placeCountLabel(t, place)} format={format} />
+          <Count
+            value={place.count}
+            spoken={placeCountLabel(t, place)}
+            format={format}
+            onDemand={quietCount}
+          />
         </>
       );
     }

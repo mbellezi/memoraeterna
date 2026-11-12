@@ -3,6 +3,8 @@ import { formatObjectAddress, parseObjectAddress } from "@app/domain";
 import type { Translator } from "@app/i18n";
 
 import { TopicNavigator } from "../../../components/topics/TopicNavigator";
+import { tierFor } from "../../layout-config";
+import { useViewportWidth } from "../../use-workspace";
 import type { WorkspaceAction, WorkspaceState } from "../../state";
 
 /**
@@ -34,6 +36,8 @@ export interface ExploreNavigatorProps {
 }
 
 export function ExploreNavigator({ t, workspace, dispatch }: ExploreNavigatorProps) {
+  // At 960-1179 px a row's count shows on hover, focus and the open row (design record 5.3).
+  const compact = tierFor(useViewportWidth()).name === "compact";
   const openBeside = (address: string) =>
     dispatch({
       type: "open",
@@ -46,6 +50,7 @@ export function ExploreNavigator({ t, workspace, dispatch }: ExploreNavigatorPro
       t={t}
       active
       selectedTopicId={followedTopic(workspace)}
+      quietCounts={compact}
       hoistId={workspace.hoist}
       onExitHoist={() => dispatch({ type: "hoist", topicId: null })}
       onOpenTopic={(id) => openBeside(formatObjectAddress({ kind: "topic", id }))}
