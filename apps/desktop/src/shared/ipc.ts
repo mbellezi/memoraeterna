@@ -1466,7 +1466,8 @@ export const aiProfileSchema = z
     name: z.string().min(1),
     description: z.string().nullable(),
     isDefault: z.boolean(),
-    privacyMode: z.string().min(1),
+    /** @deprecated No longer returned: the column is dead and is dropped in F6 (F5 T172). */
+    privacyMode: z.string().min(1).optional(),
     outputLanguage: aiOutputLanguageSchema,
     providerConfigId: z.string().uuid().nullable(),
     localModelId: z.string().uuid().nullable(),
@@ -1482,7 +1483,8 @@ export const aiProfileCreateSchema = z
     name: z.string().trim().min(1),
     description: z.string().nullable().optional(),
     isDefault: z.boolean().default(false),
-    privacyMode: z.enum(["allow_remote", "offline_only"]).default("allow_remote"),
+    /** @deprecated Accepted and ignored (F5 T172). */
+    privacyMode: z.enum(["allow_remote", "offline_only"]).optional(),
     outputLanguage: aiOutputLanguageSchema.default("ui")
   })
   .strict();
@@ -1491,6 +1493,7 @@ export const aiProfileUpdateSchema = z
   .object({
     id: z.string().uuid(),
     name: z.string().trim().min(1).optional(),
+    /** @deprecated Accepted and ignored (F5 T172). */
     privacyMode: z.enum(["allow_remote", "offline_only"]).optional(),
     outputLanguage: aiOutputLanguageSchema.optional(),
     providerConfigId: z.string().uuid().nullable().optional(),

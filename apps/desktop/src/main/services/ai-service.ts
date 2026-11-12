@@ -1008,7 +1008,6 @@ export class AiService {
     const created = await createAiConfigRepository(this.requirePool()).createProfile({
       name: input.name,
       isDefault: input.isDefault,
-      privacyMode: input.privacyMode,
       outputLanguage: input.outputLanguage,
       ...(input.description !== undefined ? { description: input.description } : {})
     });
@@ -1061,9 +1060,6 @@ export class AiService {
       await repository.updateProfile({
         id: input.id,
         ...(input.name !== undefined ? { name: input.name } : {}),
-        ...(input.modelId !== undefined
-          ? { privacyMode: input.localModelId ? "offline_only" : "allow_remote" }
-          : {}),
         ...(input.outputLanguage !== undefined ? { outputLanguage: input.outputLanguage } : {}),
         ...(input.providerConfigId !== undefined
           ? { providerConfigId: input.providerConfigId }
@@ -1377,7 +1373,6 @@ export class AiService {
     await repository.setProfileTask({
       profileId: input.profileId,
       task: input.task,
-      fallbackPolicy: "block",
       parameters: normalizeAiModelParameters(input.parameters, parameterCapabilities)
     });
     this.configCache.invalidate();
@@ -4310,7 +4305,6 @@ function mapProfile(record: AiProfileRecord): AiProfile {
     name: record.name,
     description: record.description,
     isDefault: record.isDefault,
-    privacyMode: record.privacyMode,
     outputLanguage: record.outputLanguage as AiProfile["outputLanguage"],
     providerConfigId: record.providerConfigId,
     localModelId: record.localModelId,
