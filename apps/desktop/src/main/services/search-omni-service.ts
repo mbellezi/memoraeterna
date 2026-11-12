@@ -14,6 +14,10 @@ export type OmniQueryEmbedder = Pick<AiService, "runDefaultTask">;
 
 const vectorDimensions = new Set([256, 768, 1_024]);
 
+/** Whether a request for these kinds (every kind when absent) reaches a vector arm: notes and passages. */
+const usesVectors = (kinds: readonly string[] | undefined) =>
+  kinds === undefined || kinds.some((kind) => kind === "note" || kind === "source");
+
 /**
  * `search.omni` (F5 D12): the one retriever of every search surface. Quick mode (Cmd-K) is one SQL
  * statement over titles, names and full text, with no AI. Full mode (the search results panel) also
@@ -32,7 +36,12 @@ export class SearchOmniService {
     const request = SearchOmniInputSchema.parse(input);
     const pool = this.getPool();
     if (!pool) throw new Error("errors.database.notReady");
-    const embedding = request.mode === "full" ? await this.embed(request.query) : null;
+    // Only notes and passages have a vector arm: a request for topics or entities needs no query
+    // embedding, and so is never held for a local model it would not use.
+    const embedding =
+      request.mode === "full" && usesVectors(request.kinds)
+        ? await this.embed(request.query)
+        : null;
     const outcome = await createOmniSearchRepository(pool).search({
       query: request.query,
       mode: request.mode,
@@ -41,13 +50,10 @@ export class SearchOmniService {
       limit: request.limit,
       embedding
     });
-    const degraded: SearchOmniResult["degraded"] = [];
-    if (request.mode === "full" && !outcome.vectors) degraded.push("ann");
-    if (!outcome.fullText) degraded.push("fts");
     return SearchOmniResultSchema.parse({
       requestId: request.requestId,
       items: outcome.items,
-      degraded,
+      degraded: outcome.degraded,
       tookMs: Math.round(performance.now() - started)
     });
   }

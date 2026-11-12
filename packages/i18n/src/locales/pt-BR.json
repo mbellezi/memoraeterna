@@ -95,7 +95,8 @@
     "drawer": {
       "close": "Fechar atividade",
       "explainer": "o que o Memora faz em segundo plano",
-      "loadFailed": "Não foi possível carregar a atividade."
+      "loadFailed": "Não foi possível carregar a atividade.",
+      "loadFailedKept": "Nada foi alterado. Sua biblioteca está segura."
     },
     "sections": {
       "now": "Agora",
@@ -128,6 +129,7 @@
     "done": {
       "empty": "Nada foi alterado automaticamente ainda.",
       "loadFailed": "Não foi possível carregar as alterações recentes.",
+      "loadFailedKept": "As alterações estão guardadas e poderão ser desfeitas assim que carregarem.",
       "undo": "Desfazer",
       "undoing": "Desfazendo...",
       "undone": "Alteração desfeita.",
@@ -137,6 +139,7 @@
     },
     "budget": {
       "loadFailed": "Não foi possível carregar os medidores de gasto.",
+      "loadFailedKept": "Seus limites e gastos não foram alterados.",
       "state": {
         "open": "Abaixo do limite",
         "paused": "Pausado perto do limite",
@@ -176,10 +179,17 @@
         "any": "Qualquer risco"
       }
     },
+    "confidence": {
+      "high": "confiança alta ({percent})",
+      "medium": "confiança média ({percent})",
+      "low": "confiança baixa ({percent})",
+      "unknown": "confiança desconhecida"
+    },
     "kinds": {
       "review": "Para revisar",
       "quarantined": "Tarefas com falha",
       "contradiction": "Contradições",
+      "suggestion": "Conexões sugeridas",
       "withdrawn": "Conexões retiradas",
       "duplicate": "Duplicatas",
       "obsidianConflict": "Conflitos do Obsidian",
@@ -232,6 +242,11 @@
         "body": "Uma conexão sugerida diz que “{first}” e “{second}” têm posições opostas. Mantenha-a para registrar a contradição ou remova-a.",
         "divergenceTitle": "Novas evidências discordam da visão geral de um tema",
         "divergenceBody": "A visão geral de “{topic}” foi ampliada, e parte das novas evidências discorda do que ela diz. A discordância fica ao lado do texto, nunca misturada a ele. Mantenha-a ali ou descarte este item. Pontos de discordância: {count}."
+      },
+      "suggestion": {
+        "title": "Conexão sugerida · {confidence}",
+        "body": "Sugestão: “{first}” {relation} “{second}”. Mantenha para que conte como decisão sua, ou remova.",
+        "hint": "Nada é apagado: só a conexão muda. Se você a remover, ela não volta a ser sugerida."
       },
       "withdrawn": {
         "title": "Uma conexão foi retirada",
@@ -2590,16 +2605,9 @@
   },
   "sourceWorkspace": {
     "outdated": "Resumo desatualizado",
-    "content": "Conteúdo",
-    "history": "Histórico",
-    "current": "Atual",
-    "historyHint": "O conteúdo anterior é somente leitura. São listados até 100 documentos recentes; as evidências originais são preservadas.",
     "fetchUrl": "Buscar metadados e conteúdo",
-    "edit": "Editar fonte",
-    "editContent": "Editar conteúdo",
     "save": "Salvar alterações",
     "addChild": "Adicionar subitem",
-    "overview": "Visão geral",
     "search": "Buscar na biblioteca",
     "searchHint": "Título, autor, ISBN, DOI, tags — incluindo subitens",
     "list": "Visualização em lista",
@@ -2608,12 +2616,10 @@
     "pages": "Paginação",
     "previous": "Anterior",
     "next": "Próxima",
-    "noChildren": "Ainda não há subitens. Adicione o primeiro para começar a compor esta fonte.",
     "moreMetadata": "Metadados adicionais",
     "enrichmentEmpty": "Nenhum resultado. Refine o título ou use ISBN / DOI. Você pode continuar manualmente.",
     "enrichmentError": "A consulta ao catálogo está indisponível. Você pode continuar manualmente.",
     "editHint": "Ao salvar, o conteúdo anterior e as evidências revisadas são preservados. Depois, processe a fonte alterada para atualizar os resultados gerados.",
-    "stale": "O conteúdo mudou. Processe esta fonte para atualizar o resumo.",
     "conflict": "Esta fonte mudou desde que você a abriu. Abra novamente antes de salvar.",
     "processing": "Aguarde o processamento ativo desta fonte terminar antes de editar.",
     "modelDefaults": "Padrões do modelo",
@@ -2627,6 +2633,17 @@
     "presetName": "Nome do preset",
     "savePreset": "Salvar preset",
     "removePreset": "Remover este preset?"
+  },
+  "sourcePage": {
+    "content": "Conteúdo",
+    "current": "Atual",
+    "edit": "Editar fonte",
+    "editContent": "Editar conteúdo",
+    "history": "Histórico",
+    "historyHint": "O conteúdo anterior é somente leitura. São listados até 100 documentos recentes; as evidências originais são preservadas.",
+    "noChildren": "Ainda não há subitens. Adicione o primeiro para começar a compor esta fonte.",
+    "overview": "Visão geral",
+    "stale": "O conteúdo mudou. Processe esta fonte para atualizar o resumo."
   },
   "sourceRelations": {
     "openNote": "Ver nota",
@@ -3177,7 +3194,6 @@
         "undone": "Mudança desfeita.",
         "undo": "Desfazer",
         "undoing": "Desfazendo...",
-        "dismiss": "Dispensar",
         "blocked": "Não dá para desfazer agora: uma mudança posterior depende dela.",
         "failed": "Não foi possível desfazer a mudança. Tente novamente."
       }
@@ -3986,6 +4002,8 @@
       "expand": "Mostrar o caminho inteiro",
       "label": "Lugar na árvore",
       "loading": "Procurando lugar na árvore…",
+      "mostCited": "Mais citada em",
+      "mostCitedNone": "Ainda não citada em nenhum tópico",
       "placedByCitations": "colocada pelas citações",
       "retry": "Tentar de novo",
       "tentative": "Lugar provável:",
@@ -3997,5 +4015,55 @@
     },
     "stackLabel": "Painéis abertos",
     "untitled": "Sem título"
+  },
+  "entityPage": {
+    "aliases": "Outros nomes:",
+    "articleLabel": "Entidade: {name}",
+    "coMentioned": {
+      "heading": "Costuma aparecer com",
+      "sharedMany": "{count} notas em comum",
+      "sharedOne": "{count} nota em comum"
+    },
+    "empty": {
+      "ask": "Perguntar sobre {name}",
+      "body": "As notas que citarem este nome aparecem aqui assim que forem escritas.",
+      "headline": "Ainda sem menções diretas."
+    },
+    "error": {
+      "compact": "Não foi possível abrir.",
+      "kept": "Suas notas e fontes continuam como estavam.",
+      "message": "Não foi possível abrir esta entidade."
+    },
+    "mentions": {
+      "heading": "Menções",
+      "listLabel": "Notas que citam esta entidade",
+      "moreFailed": "Não foi possível carregar mais menções.",
+      "moreLoading": "Carregando mais menções",
+      "moreMany": "Mostrar mais {count} notas",
+      "moreOne": "Mostrar mais {count} nota",
+      "summaryMany": "{count} notas, por tópico",
+      "summaryOne": "{count} nota, por tópico",
+      "unplaced": "Sem lugar",
+      "untitledTopic": "Tópico sem nome"
+    },
+    "meta": {
+      "mentionsMany": "citada em {count} notas",
+      "mentionsOne": "citada em {count} nota",
+      "sourcesMany": "{count} fontes",
+      "sourcesOne": "{count} fonte"
+    },
+    "missing": {
+      "body": "Ela pode ter sido juntada a outra entidade. Busque pelo nome para encontrá-la.",
+      "headline": "Esta entidade não está mais na biblioteca."
+    },
+    "sources": {
+      "heading": "Fontes",
+      "partial": "Fontes das menções já carregadas. Mostre mais menções para ver as demais."
+    },
+    "topics": {
+      "heading": "Tópicos",
+      "more": "e mais {count}",
+      "mostCited": "mais citada"
+    }
   }
 }

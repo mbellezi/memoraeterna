@@ -106,6 +106,17 @@ const recountEvents = [
 ] as const satisfies readonly AppEventType[];
 
 const defaultRefreshDelayMs = 3_000;
+/** The longest quiet time the adaptive delay of `recountDelayMs` grows to. */
+const recountDelayMaxMs = 60_000;
+
+/**
+ * The quiet time before a recount: at least `baseMs`, and ten times as long as the last read took,
+ * so a library with tens of thousands of routed suggestions (D33: the visibility check is paid per
+ * relation) never spends most of its time counting while a stream of events goes on.
+ */
+export function recountDelayMs(baseMs: number, lastReadMs: number): number {
+  return Math.max(baseMs, Math.min(recountDelayMaxMs, Math.round(lastReadMs * 10)));
+}
 /** How long the vault's conflicts are reused by the recounts that follow a stream of events. */
 const vaultCacheMs = 10_000;
 /** How often opening the Inbox asks the MATCH backlog whether its decider changed. */
@@ -123,6 +134,8 @@ export class InboxService {
   private timer: ReturnType<typeof setTimeout> | null = null;
   private refreshing: Promise<void> | null = null;
   private again = false;
+  /** How long the database's last count took (the quiet time before the next recount follows it). */
+  private lastReadMs = 0;
   private disposed = false;
   private vault: { at: number; records: ObsidianConflictRecord[] } | null = null;
   private offeredAt = Number.NEGATIVE_INFINITY;
@@ -130,6 +143,10 @@ export class InboxService {
   private conflictSeen = new Map<string, Date>();
 
   constructor(private readonly options: InboxServiceOptions) {}
+
+  private now(): number {
+    return (this.options.now ?? Date.now)();
+  }
 
   private pool(): PgPool {
     const pool = this.options.getPool();
@@ -238,7 +255,10 @@ export class InboxService {
    * that follows a stream of events uses it, a person's request never does.
    */
   async counts(options: { cached?: boolean } = {}): Promise<InboxCounts> {
+    // Only the database's count is timed: the vault's conflicts have their own cache.
+    const startedAt = this.now();
     const rows = await createInboxRepository(this.pool()).counts();
+    this.lastReadMs = Math.max(0, this.now() - startedAt);
     const counts = emptyInboxCounts();
     for (const kind of inboxKinds) counts.byKind[kind] = rows.byKind[kind] ?? 0;
     counts.byRisk = { ...rows.byRisk };
@@ -351,6 +371,7 @@ export class InboxService {
         return parseDivergenceItemId(input.id) === null
           ? this.relation(input)
           : this.divergence(input);
+      case "suggestion":
       case "withdrawn":
         return this.relation(input);
       case "quarantined":
@@ -561,10 +582,13 @@ export class InboxService {
 
   private schedule(): void {
     if (this.disposed || this.timer) return;
-    this.timer = setTimeout(() => {
-      this.timer = null;
-      void this.refreshNow();
-    }, this.options.refreshDelayMs ?? defaultRefreshDelayMs);
+    this.timer = setTimeout(
+      () => {
+        this.timer = null;
+        void this.refreshNow();
+      },
+      recountDelayMs(this.options.refreshDelayMs ?? defaultRefreshDelayMs, this.lastReadMs)
+    );
     this.timer.unref?.();
   }
 

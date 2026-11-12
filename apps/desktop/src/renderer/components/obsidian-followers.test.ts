@@ -74,6 +74,20 @@ describe("the editorial card reads when an editorial projection or a sync ends",
     expect(editorialConflicts).toHaveBeenCalledTimes(2);
   });
 
+  it("reads again when the vault or storage settings change, and not for other stores", async () => {
+    const { bus, editorialConflicts } = setup();
+    await settled();
+    bus.emit(settingsChanged("ai", "knowledge.controls"));
+    await settled();
+    expect(editorialConflicts).toHaveBeenCalledTimes(1);
+    bus.emit(settingsChanged("obsidian"));
+    await settled();
+    expect(editorialConflicts).toHaveBeenCalledTimes(2);
+    bus.emit(settingsChanged("storage", "app"));
+    await settled();
+    expect(editorialConflicts).toHaveBeenCalledTimes(3);
+  });
+
   it("shows the error when the read fails, and releases the bus when the card goes", async () => {
     const bus = createFakeAppEvents();
     const api: EditorialApi = {
@@ -91,6 +105,7 @@ describe("the editorial card reads when an editorial projection or a sync ends",
     stop();
     expect(bus.listening("obsidian.projection")).toBe(0);
     expect(bus.listening("obsidian.sync")).toBe(0);
+    expect(bus.listening("settings.changed")).toBe(0);
   });
 });
 

@@ -95,7 +95,8 @@
     "drawer": {
       "close": "Fermer l’activité",
       "explainer": "ce que Memora fait en arrière-plan",
-      "loadFailed": "Impossible de charger l’activité."
+      "loadFailed": "Impossible de charger l’activité.",
+      "loadFailedKept": "Rien n’a été modifié. Votre bibliothèque est en sécurité."
     },
     "sections": {
       "now": "En ce moment",
@@ -128,6 +129,7 @@
     "done": {
       "empty": "Rien n’a encore été modifié automatiquement.",
       "loadFailed": "Impossible de charger les modifications récentes.",
+      "loadFailedKept": "Les modifications sont enregistrées et pourront être annulées une fois chargées.",
       "undo": "Annuler",
       "undoing": "Annulation...",
       "undone": "Modification annulée.",
@@ -137,6 +139,7 @@
     },
     "budget": {
       "loadFailed": "Impossible de charger les compteurs de dépenses.",
+      "loadFailedKept": "Vos limites et vos dépenses n’ont pas changé.",
       "state": {
         "open": "Sous la limite",
         "paused": "En pause près de la limite",
@@ -176,10 +179,17 @@
         "any": "Tous les risques"
       }
     },
+    "confidence": {
+      "high": "confiance élevée ({percent})",
+      "medium": "confiance moyenne ({percent})",
+      "low": "confiance faible ({percent})",
+      "unknown": "confiance inconnue"
+    },
     "kinds": {
       "review": "À examiner",
       "quarantined": "Tâches en échec",
       "contradiction": "Contradictions",
+      "suggestion": "Liens suggérés",
       "withdrawn": "Liens retirés",
       "duplicate": "Doublons",
       "obsidianConflict": "Conflits Obsidian",
@@ -232,6 +242,11 @@
         "body": "Un lien suggéré indique que « {first} » et « {second} » défendent des positions opposées. Conservez-le pour consigner la contradiction, ou supprimez-le.",
         "divergenceTitle": "De nouvelles preuves divergent de la vue d'ensemble d'un sujet",
         "divergenceBody": "La vue d'ensemble de « {topic} » a été complétée, et de nouvelles preuves divergent de ce qu'elle dit. La divergence reste à côté du texte, sans jamais s'y fondre. Conservez-la, ou écartez cet élément. Points de divergence : {count}."
+      },
+      "suggestion": {
+        "title": "Lien suggéré · {confidence}",
+        "body": "Suggestion : « {first} » {relation} « {second} ». Conservez-le pour qu'il compte comme votre décision, ou supprimez-le.",
+        "hint": "Rien n'est effacé : seul le lien change. Si vous le supprimez, il ne sera plus suggéré."
       },
       "withdrawn": {
         "title": "Un lien a été retiré",
@@ -2592,16 +2607,9 @@
   },
   "sourceWorkspace": {
     "outdated": "Résumé à actualiser",
-    "content": "Contenu",
-    "history": "Historique",
-    "current": "Actuel",
-    "historyHint": "Le contenu précédent est en lecture seule. Jusqu’à 100 documents récents sont affichés ; les preuves originales sont conservées.",
     "fetchUrl": "Récupérer les métadonnées et le contenu",
-    "edit": "Modifier la source",
-    "editContent": "Modifier le contenu",
     "save": "Enregistrer",
     "addChild": "Ajouter un sous-élément",
-    "overview": "Vue générale",
     "search": "Rechercher dans la bibliothèque",
     "searchHint": "Titre, auteur, ISBN, DOI, tags — sous-éléments inclus",
     "list": "Vue liste",
@@ -2610,12 +2618,10 @@
     "pages": "Pagination",
     "previous": "Précédente",
     "next": "Suivante",
-    "noChildren": "Aucun sous-élément. Ajoutez le premier pour commencer.",
     "moreMetadata": "Métadonnées supplémentaires",
     "enrichmentEmpty": "Aucun résultat. Précisez le titre ou utilisez un ISBN / DOI. Vous pouvez continuer manuellement.",
     "enrichmentError": "Le catalogue est indisponible. Vous pouvez continuer manuellement.",
     "editHint": "L’enregistrement conserve le contenu précédent et les preuves révisées. Traitez ensuite la source modifiée pour actualiser les résultats.",
-    "stale": "Le contenu a changé. Traitez cette source pour actualiser le résumé.",
     "conflict": "Cette source a changé depuis son ouverture. Rouvrez-la avant d’enregistrer.",
     "processing": "Attendez la fin du traitement actif avant de modifier cette source.",
     "modelDefaults": "Valeurs du modèle",
@@ -2629,6 +2635,17 @@
     "presetName": "Nom du préréglage",
     "savePreset": "Enregistrer le préréglage",
     "removePreset": "Supprimer ce préréglage ?"
+  },
+  "sourcePage": {
+    "content": "Contenu",
+    "current": "Actuel",
+    "edit": "Modifier la source",
+    "editContent": "Modifier le contenu",
+    "history": "Historique",
+    "historyHint": "Le contenu précédent est en lecture seule. Jusqu’à 100 documents récents sont affichés ; les preuves originales sont conservées.",
+    "noChildren": "Aucun sous-élément. Ajoutez le premier pour commencer.",
+    "overview": "Vue générale",
+    "stale": "Le contenu a changé. Traitez cette source pour actualiser le résumé."
   },
   "sourceRelations": {
     "openNote": "Ouvrir la note",
@@ -3179,7 +3196,6 @@
         "undone": "Modification annulée.",
         "undo": "Annuler",
         "undoing": "Annulation...",
-        "dismiss": "Fermer",
         "blocked": "Impossible de l’annuler maintenant : une modification ultérieure en dépend.",
         "failed": "La modification n’a pas pu être annulée. Réessayez."
       }
@@ -3988,6 +4004,8 @@
       "expand": "Afficher le chemin complet",
       "label": "Emplacement dans l’arbre",
       "loading": "Recherche de l’emplacement dans l’arbre…",
+      "mostCited": "La plus citée dans",
+      "mostCitedNone": "Pas encore citée dans un sujet",
       "placedByCitations": "placée par les citations",
       "retry": "Réessayer",
       "tentative": "Emplacement probable :",
@@ -3999,5 +4017,55 @@
     },
     "stackLabel": "Panneaux ouverts",
     "untitled": "Sans titre"
+  },
+  "entityPage": {
+    "aliases": "Autres noms :",
+    "articleLabel": "Entité : {name}",
+    "coMentioned": {
+      "heading": "Apparaît souvent avec",
+      "sharedMany": "{count} notes en commun",
+      "sharedOne": "{count} note en commun"
+    },
+    "empty": {
+      "ask": "Poser une question sur {name}",
+      "body": "Les notes qui citeront ce nom apparaîtront ici dès qu’elles seront écrites.",
+      "headline": "Pas encore de mentions directes."
+    },
+    "error": {
+      "compact": "Impossible d’ouvrir.",
+      "kept": "Vos notes et vos sources sont restées telles quelles.",
+      "message": "Impossible d’ouvrir cette entité."
+    },
+    "mentions": {
+      "heading": "Mentions",
+      "listLabel": "Notes qui citent cette entité",
+      "moreFailed": "Impossible de charger d’autres mentions.",
+      "moreLoading": "Chargement d’autres mentions",
+      "moreMany": "Afficher {count} notes de plus",
+      "moreOne": "Afficher {count} note de plus",
+      "summaryMany": "{count} notes, par sujet",
+      "summaryOne": "{count} note, par sujet",
+      "unplaced": "Sans emplacement",
+      "untitledTopic": "Sujet sans nom"
+    },
+    "meta": {
+      "mentionsMany": "citée dans {count} notes",
+      "mentionsOne": "citée dans {count} note",
+      "sourcesMany": "{count} sources",
+      "sourcesOne": "{count} source"
+    },
+    "missing": {
+      "body": "Elle a peut-être été fusionnée avec une autre entité. Cherchez son nom pour la retrouver.",
+      "headline": "Cette entité n’est plus dans la bibliothèque."
+    },
+    "sources": {
+      "heading": "Sources",
+      "partial": "Sources des mentions chargées jusqu’ici. Affichez plus de mentions pour voir le reste."
+    },
+    "topics": {
+      "heading": "Sujets",
+      "more": "et {count} de plus",
+      "mostCited": "la plus citée"
+    }
   }
 }

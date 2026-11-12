@@ -6,7 +6,7 @@ import { cn } from "../../lib/cn";
 import { useOverflowLevel } from "../../lib/use-overflow-level";
 import { Kbd } from "../ui/kbd";
 import type { PillGlyph, PillView } from "./activity-model";
-import { RunningRing, SolidCheck, SolidTriangle } from "./solid-glyphs";
+import { RunningRing, SolidCheck, SolidTriangle } from "../ui/solid-glyphs";
 
 /**
  * What the pill shows in place of its left part for eight seconds or so after the person (or the

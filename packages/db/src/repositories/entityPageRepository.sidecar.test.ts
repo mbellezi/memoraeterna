@@ -66,6 +66,17 @@ describe.skipIf(!sidecarInstalled)("entities.page on a real database", () => {
   const bigNotes = Array.from({ length: 55 }, () => randomUUID());
   const smallNotes = Array.from({ length: 3 }, () => randomUUID());
   const looseNotes = Array.from({ length: 6 }, () => randomUUID());
+  // Wordy: 51 mentions whose 50th (the last of page one) has a very long accented title.
+  const wordyId = randomUUID();
+  const wordyNotes = Array.from({ length: 51 }, () => randomUUID());
+  const longTitle = `Wordy 049 ${"áé".repeat(225)}`;
+  // Cap: eleven co-mentioned entities, the last two tied with the first nine at the boundary.
+  const capId = randomUUID();
+  const capCo = Array.from({ length: 11 }, (_, index) => ({
+    id: randomUUID(),
+    name: `Co ${String(index + 1).padStart(2, "0")}`
+  }));
+  const capNotes = [randomUUID(), randomUUID()];
 
   async function note(
     id: string,
@@ -193,6 +204,29 @@ describe.skipIf(!sidecarInstalled)("entities.page on a real database", () => {
     await insertMany(smallNotes, "Small");
     await insertMany(looseNotes, "Loose");
     for (const id of [...bigNotes, ...smallNotes, ...looseNotes]) await mention(id, e.busy);
+
+    await pool.query(
+      `insert into entities (id, type, canonical_name, normalized_name, aliases, description, confidence, language)
+       values ($1, 'concept', 'Wordy', 'wordy', '[]'::jsonb, null, 0.9, 'pt-BR'),
+              ($2, 'concept', 'Cap', 'cap', '[]'::jsonb, null, 0.9, 'en')`,
+      [wordyId, capId]
+    );
+    for (const [index, id] of wordyNotes.entries()) {
+      await note(id, index === 49 ? longTitle : `Wordy ${String(index).padStart(3, "0")}`);
+      await mention(id, wordyId);
+    }
+    for (const id of capNotes) await note(id, `Cap note ${id.slice(0, 4)}`);
+    for (const id of capNotes) await mention(id, capId);
+    for (const co of capCo)
+      await pool.query(
+        `insert into entities (id, type, canonical_name, normalized_name, aliases, description, confidence, language)
+         values ($1, 'concept', $2, lower($2), '[]'::jsonb, null, 0.9, 'en')`,
+        [co.id, co.name]
+      );
+    // Every Co entity shares the first note; "Co 11" shares both, so it leads and "Co 10" is the
+    // tenth of eleven ties (one shared note each), cut by name.
+    for (const co of capCo) await mention(capNotes[0]!, co.id);
+    await mention(capNotes[1]!, capCo[10]!.id);
 
     const trees = createTopicTreeRepository(pool);
     const tree = await trees.createTree({
@@ -357,6 +391,17 @@ describe.skipIf(!sidecarInstalled)("entities.page on a real database", () => {
     );
   });
 
+  it("pages past a very long note title with a cursor that still fits the bound", async () => {
+    const first = await repository.page({ id: wordyId });
+    expect(first!.mentions.items).toHaveLength(50);
+    expect(first!.mentions.items.at(-1)!.title).toBe(longTitle);
+    // The cursor holds ids, so it fits the 1024 characters `EntityPageSchema` allows for `next`.
+    expect(first!.mentions.next!.length).toBeLessThan(200);
+    const second = await repository.page({ id: wordyId, cursor: first!.mentions.next });
+    expect(second!.mentions.items.map((item) => item.title)).toEqual(["Wordy 050"]);
+    expect(second!.mentions.next).toBeUndefined();
+  });
+
   it("refuses a cursor it did not write", async () => {
     await expect(repository.page({ id: e.busy, cursor: "not-a-cursor" })).rejects.toBeInstanceOf(
       InvalidEntityPageCursorError
@@ -377,6 +422,16 @@ describe.skipIf(!sidecarInstalled)("entities.page on a real database", () => {
     // The entity is never its own co-mention, and a superseded or rejected note shares nothing.
     expect(page!.coMentioned!.some((item) => item.id === e.circadian)).toBe(false);
     expect(page!.coMentioned!.some((item) => item.id === e.ghost)).toBe(false);
+  });
+
+  it("caps the co-mentions at ten and cuts a tie at the boundary by name", async () => {
+    const page = await repository.page({ id: capId });
+    // "Co 11" shares both notes and leads; the other ten share one, and "Co 10" is cut.
+    expect(page!.coMentioned!.map((item) => [item.canonicalName, item.sharedNotes])).toEqual([
+      ["Co 11", 2],
+      ...capCo.slice(0, 9).map((co) => [co.name, 1])
+    ]);
+    expect(page!.coMentioned).toHaveLength(entityCoMentionLimit);
   });
 
   it("takes the topics from locate: the densest place first, the others after it", async () => {

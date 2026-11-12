@@ -13,14 +13,18 @@ describe("the mentions cursor", () => {
   const key = {
     unplaced: false,
     negativeTopicNotes: -12,
-    topicTitle: "Sleep ñ “quoted”",
     topicId: randomUUID(),
-    noteTitle: "A note",
     noteId: randomUUID()
   };
 
-  it("round-trips the whole sort key, text included", () => {
+  it("round-trips the whole sort key", () => {
     expect(decodeMentionCursor(encodeMentionCursor(key))).toEqual(key);
+  });
+
+  it("carries ids and counts only, so its size does not depend on any title", () => {
+    expect(encodeMentionCursor(key).length).toBeLessThan(200);
+    const text = Buffer.from(encodeMentionCursor(key), "base64url").toString("utf8");
+    expect(JSON.parse(text)).toEqual([false, -12, key.topicId, key.noteId]);
   });
 
   it("refuses what the repository did not write", () => {
@@ -30,9 +34,11 @@ describe("the mentions cursor", () => {
       "%%%",
       encode({}),
       encode([1, 2]),
-      encode([false, -1.5, "t", key.topicId, "n", key.noteId]),
-      encode([false, -1, "t", "not-a-uuid", "n", key.noteId]),
-      encode(["no", -1, "t", key.topicId, "n", key.noteId])
+      encode([false, -1.5, key.topicId, key.noteId]),
+      encode([false, -1, "not-a-uuid", key.noteId]),
+      encode(["no", -1, key.topicId, key.noteId]),
+      // The older cursor with free text in it is refused, not read.
+      encode([false, -1, "Sleep", key.topicId, "A note", key.noteId])
     ])
       expect(decodeMentionCursor(cursor), cursor).toBeNull();
   });

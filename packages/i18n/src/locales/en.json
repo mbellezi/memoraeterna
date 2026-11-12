@@ -95,7 +95,8 @@
     "drawer": {
       "close": "Close activity",
       "explainer": "what Memora does in the background",
-      "loadFailed": "Activity could not be loaded."
+      "loadFailed": "Activity could not be loaded.",
+      "loadFailedKept": "Nothing was changed. Your library is safe."
     },
     "sections": {
       "now": "Now",
@@ -128,6 +129,7 @@
     "done": {
       "empty": "Nothing was changed automatically yet.",
       "loadFailed": "Recent changes could not be loaded.",
+      "loadFailedKept": "The changes are stored and can still be undone once they load.",
       "undo": "Undo",
       "undoing": "Undoing...",
       "undone": "Change undone.",
@@ -137,6 +139,7 @@
     },
     "budget": {
       "loadFailed": "The spending meters could not be loaded.",
+      "loadFailedKept": "Your limits and spending are unchanged.",
       "state": {
         "open": "Under the limit",
         "paused": "Paused near the limit",
@@ -176,10 +179,17 @@
         "any": "Any risk"
       }
     },
+    "confidence": {
+      "high": "high confidence ({percent})",
+      "medium": "medium confidence ({percent})",
+      "low": "low confidence ({percent})",
+      "unknown": "unknown confidence"
+    },
     "kinds": {
       "review": "To review",
       "quarantined": "Failed tasks",
       "contradiction": "Contradictions",
+      "suggestion": "Suggested connections",
       "withdrawn": "Withdrawn connections",
       "duplicate": "Duplicates",
       "obsidianConflict": "Obsidian conflicts",
@@ -232,6 +242,11 @@
         "body": "A suggested connection says “{first}” and “{second}” hold opposing positions. Keep it to record the contradiction, or remove it.",
         "divergenceTitle": "New evidence disagrees with a topic overview",
         "divergenceBody": "The overview of “{topic}” was extended, and some new evidence disagrees with what it says. The disagreement is kept beside the text, never merged into it. Keep it there, or dismiss this. Points of disagreement: {count}."
+      },
+      "suggestion": {
+        "title": "Suggested connection · {confidence}",
+        "body": "Suggestion: “{first}” {relation} “{second}”. Keep it to make it your decision, or remove it.",
+        "hint": "Nothing is deleted: only the connection changes. If you remove it, it is not suggested again."
       },
       "withdrawn": {
         "title": "A connection was withdrawn",
@@ -2587,16 +2602,9 @@
   },
   "sourceWorkspace": {
     "outdated": "Summary needs updating",
-    "content": "Content",
-    "history": "History",
-    "current": "Current",
-    "historyHint": "Earlier content is read-only. Up to 100 recent documents are listed; original evidence remains preserved.",
     "fetchUrl": "Fetch metadata and content",
-    "edit": "Edit source",
-    "editContent": "Edit content",
     "save": "Save changes",
     "addChild": "Add subitem",
-    "overview": "Overview",
     "search": "Search the library",
     "searchHint": "Title, author, ISBN, DOI, tags — including subitems",
     "list": "List view",
@@ -2605,12 +2613,10 @@
     "pages": "Pagination",
     "previous": "Previous",
     "next": "Next",
-    "noChildren": "No subitems yet. Add the first one to start building this source.",
     "moreMetadata": "Additional metadata",
     "enrichmentEmpty": "No matches. Refine the title or use an ISBN / DOI. You can continue manually.",
     "enrichmentError": "Catalog lookup is unavailable. You can continue manually.",
     "editHint": "Saving preserves earlier content and reviewed evidence. Process the changed source afterwards to update its generated results.",
-    "stale": "The content has changed. Process this source to update the summary.",
     "conflict": "This source changed since you opened it. Reopen it before saving.",
     "processing": "Wait for this source’s active processing to finish before editing.",
     "modelDefaults": "Model defaults",
@@ -2624,6 +2630,17 @@
     "presetName": "Preset name",
     "savePreset": "Save preset",
     "removePreset": "Remove this preset?"
+  },
+  "sourcePage": {
+    "content": "Content",
+    "current": "Current",
+    "edit": "Edit source",
+    "editContent": "Edit content",
+    "history": "History",
+    "historyHint": "Earlier content is read-only. Up to 100 recent documents are listed; original evidence remains preserved.",
+    "noChildren": "No subitems yet. Add the first one to start building this source.",
+    "overview": "Overview",
+    "stale": "The content has changed. Process this source to update the summary."
   },
   "sourceRelations": {
     "openNote": "Open note",
@@ -3174,7 +3191,6 @@
         "undone": "Change undone.",
         "undo": "Undo",
         "undoing": "Undoing...",
-        "dismiss": "Dismiss",
         "blocked": "It cannot be undone now: a later change depends on it.",
         "failed": "The change could not be undone. Try again."
       }
@@ -3873,7 +3889,7 @@
     "close": "Close",
     "details": "Details",
     "loading": "Loading",
-    "retry": "Retry"
+    "retry": "Try again"
   },
   "workspace": {
     "destinations": {
@@ -3983,6 +3999,8 @@
       "expand": "Show the whole path",
       "label": "Place in the tree",
       "loading": "Finding the place in the tree…",
+      "mostCited": "Most cited in",
+      "mostCitedNone": "Not cited under any topic yet",
       "placedByCitations": "placed by the citations",
       "retry": "Try again",
       "tentative": "Likely place:",
@@ -3994,5 +4012,55 @@
     },
     "stackLabel": "Open panels",
     "untitled": "Untitled"
+  },
+  "entityPage": {
+    "aliases": "Other names:",
+    "articleLabel": "Entity: {name}",
+    "coMentioned": {
+      "heading": "Often appears with",
+      "sharedMany": "{count} notes in common",
+      "sharedOne": "{count} note in common"
+    },
+    "empty": {
+      "ask": "Ask about {name}",
+      "body": "Notes that cite this name appear here as soon as they are written.",
+      "headline": "No direct mentions yet."
+    },
+    "error": {
+      "compact": "Could not open.",
+      "kept": "Your notes and sources are as they were.",
+      "message": "This entity could not be opened."
+    },
+    "mentions": {
+      "heading": "Mentions",
+      "listLabel": "Notes that cite this entity",
+      "moreFailed": "More mentions could not be loaded.",
+      "moreLoading": "Loading more mentions",
+      "moreMany": "Show {count} more notes",
+      "moreOne": "Show {count} more note",
+      "summaryMany": "{count} notes, by topic",
+      "summaryOne": "{count} note, by topic",
+      "unplaced": "No place",
+      "untitledTopic": "Untitled topic"
+    },
+    "meta": {
+      "mentionsMany": "cited in {count} notes",
+      "mentionsOne": "cited in {count} note",
+      "sourcesMany": "{count} sources",
+      "sourcesOne": "{count} source"
+    },
+    "missing": {
+      "body": "It may have been merged into another entity. Search for its name to find it.",
+      "headline": "This entity is no longer in the library."
+    },
+    "sources": {
+      "heading": "Sources",
+      "partial": "Sources of the mentions loaded so far. Show more mentions to see the rest."
+    },
+    "topics": {
+      "heading": "Topics",
+      "more": "and {count} more",
+      "mostCited": "most cited"
+    }
   }
 }

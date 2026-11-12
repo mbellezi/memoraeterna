@@ -42,6 +42,7 @@ describe("the inbox.* contracts", () => {
       "review",
       "quarantined",
       "contradiction",
+      "suggestion",
       "withdrawn",
       "duplicate",
       "obsidian_conflict",

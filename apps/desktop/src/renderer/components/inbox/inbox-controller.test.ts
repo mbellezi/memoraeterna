@@ -306,6 +306,8 @@ describe("every verb goes through inbox.act", () => {
     ["review", "dismiss"],
     ["contradiction", "apply"],
     ["contradiction", "dismiss"],
+    ["suggestion", "apply"],
+    ["suggestion", "dismiss"],
     ["withdrawn", "apply"],
     ["withdrawn", "dismiss"],
     ["quarantined", "retry"],
@@ -654,6 +656,9 @@ describe("the tables", () => {
     expect(doneMessage("contradiction", "apply", "divergence")).toBe("inbox.result.kept");
     expect(doneMessage("contradiction", "dismiss", "divergence")).toBe("inbox.result.dismissed");
     expect(doneMessage("contradiction", "dismiss", "relation")).toBe("inbox.result.removed");
+    // A suggestion is kept or removed; it has no plain dismiss (D34).
+    expect(doneMessage("suggestion", "apply")).toBe("inbox.result.kept");
+    expect(doneMessage("suggestion", "dismiss")).toBe("inbox.result.removed");
   });
 
   it("has a sentence for every blocker", () => {
