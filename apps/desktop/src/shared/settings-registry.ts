@@ -1011,7 +1011,7 @@ export const settingsRegistryV2: readonly SettingEntryV2[] = [
     "general",
     "appearance",
     "segmented",
-    { value: "system" },
+    { value: "dark" },
     read(rendererApp, "App"),
     {
       scope: "personalization"

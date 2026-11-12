@@ -1880,7 +1880,7 @@ export type WindowNavigationDirection = z.infer<typeof windowNavigationDirection
 
 export const defaultAppSettings = {
   contentLanguage: "en",
-  themeMode: "system",
+  themeMode: "dark",
   graphWheelZoomSensitivity: 1,
   navigationCollapsed: false,
   debugMode: false,

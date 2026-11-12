@@ -115,9 +115,9 @@ describe.skipIf(!sidecarInstalled)("matching settings v2 migration on a real Pos
   it("keeps what the person saved afterwards, with no dead field written back", async () => {
     await createSettingsRepository(pool).set("app.preferences", profileDocument);
     const settings = service();
-    await settings.updateApp({ themeMode: "dark" });
+    await settings.updateApp({ themeMode: "light" });
     const saved = (await row()).value;
-    expect(saved).toMatchObject({ themeMode: "dark", activeMatchingPresetId: "recommended-v2" });
+    expect(saved).toMatchObject({ themeMode: "light", activeMatchingPresetId: "recommended-v2" });
     expect(saved.atomicNoteRelationThreshold).toBeUndefined();
     expect(Object.keys(saved.atomicNoteMatchingSettings)).toEqual(["maxRerankOutputTokens"]);
     expect(saved.sourceRelationSettings).not.toHaveProperty("reciprocalRankConstant");

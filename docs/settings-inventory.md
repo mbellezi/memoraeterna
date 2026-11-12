@@ -145,7 +145,7 @@ fallback of tests and scripts. The stored document carries `updatedAt` (internal
 | --- | --- | --- | --- | --- | --- |
 | `language` | OS locale (`settings-service.ts:77-82`) | `R/App.tsx:207` (translator), `:214` (document language), `:583` (menu); `M/index.ts:295` → `M/services/ai-service.ts:894` (error copy) | Personalization › Appearance `SettingsView.tsx:668` | preference | keep: General; onboarding step 1 |
 | `contentLanguage` | OS locale; `en` when absent (`S/ipc.ts:352`) | `M/index.ts:294` and 10 more getters → `knowledge-service.ts:359,1226,1898`, `topic-tree/topic-naming.ts:417`, `topic-areas.ts:436`, `topic-overview.ts:206`, `relation-explanation-service.ts:159`, `consultation-service.ts:460`, `ai-service.ts:1519`; written also by `M/ipc.ts:143` | Personalization › Appearance `:684` **and** Data › Relation labels `RelationLabelsCard.tsx:95` (two controls, one value) | preference | keep: General; one control (the Relation labels card keeps its action); onboarding step 1 |
-| `themeMode` | `system` | `R/App.tsx:208,211,525`, `R/lib/theme.ts:69` (also remembered in `localStorage` `memora.themeMode`) | Appearance `:687`; rail toggle | preference | keep: General |
+| `themeMode` | `dark` | `R/App.tsx:208,211,525`, `R/lib/theme.ts:69` (also remembered in `localStorage` `memora.themeMode`) | Appearance `:687`; rail toggle | preference | keep: General |
 | `graphWheelZoomSensitivity` | 1 | `R/App.tsx:911` → `KnowledgeGraphDashboard.tsx:960`, `SourceConnectionGraph.tsx:278` | Appearance `:719` | preference | keep: Advanced (graph lens; F5 Map) |
 | `navigationCollapsed` | false | none since F5 T135 (the rail no longer collapses; the key is only in the stored schema) | none | dead | **removed from the registry in F5 T159** (section 15); the schema, update schema and defaults of `S/ipc.ts` drop it with their chain owner |
 | `wikiTreeWidth` | 320 | **none** | none | dead | **drop** (section 10) |
@@ -465,7 +465,7 @@ reads is removed.
 
 | Entry | Section › group | Control | Stored as | Default | Reset | Reader (`file` symbol) |
 | --- | --- | --- | --- | --- | --- | --- |
-| `themeMode` | general › appearance | segmented | app.preferences: `themeMode` | `"system"` | app-preference | `R/App.tsx` App |
+| `themeMode` | general › appearance | segmented | app.preferences: `themeMode` | `"dark"` | app-preference | `R/App.tsx` App |
 | `contentLanguage` | general › language | select | app.preferences: `contentLanguage` | macOS language | app-preference | `M/index.ts` <module> |
 | `language` | general › language | select | app.preferences: `language` | macOS language | app-preference | `R/App.tsx` App |
 | `ai.preset.v1` | ai › setup | choice | settings: `ai.preset.v1` | computed (ai.preset.recommendedForThisMac) | ai-preset | `M/services/ai-class-routes.ts` AiClassRouteService.readState |

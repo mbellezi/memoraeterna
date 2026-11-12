@@ -62,7 +62,7 @@ describe("the sections", () => {
 describe("the changed counts", () => {
   const index = describeIndexOf([
     described("contentLanguage", "en", "pt-BR", true),
-    described("themeMode", "system", "system", false),
+    described("themeMode", "dark", "dark", false),
     described("obsidianSync", "on", "off", true),
     described("obsidianVaultPath", true, null, true)
   ]);
@@ -140,9 +140,9 @@ describe("the words of a value", () => {
     expect(valueText(en, number, described(number.id, 12, 5, true))).toBe("12");
     // The theme and a language are named; any other choice's code is not copy (its section says it).
     const theme = entry("themeMode");
-    expect(valueText(en, theme, described("themeMode", "system", "system", false))).toBe("System");
-    expect(defaultText(en, theme, described("themeMode", "dark", "system", true))).toBe("System");
-    expect(valueText(en, theme, described("themeMode", "sepia", "system", true))).toBeNull();
+    expect(valueText(en, theme, described("themeMode", "dark", "dark", false))).toBe("Dark");
+    expect(defaultText(en, theme, described("themeMode", "system", "dark", true))).toBe("Dark");
+    expect(valueText(en, theme, described("themeMode", "sepia", "dark", true))).toBeNull();
     expect(valueText(en, theme, undefined)).toBeNull();
     const language = entry("contentLanguage");
     expect(valueText(en, language, described(language.id, "pt-BR", "en", true))).toBe(

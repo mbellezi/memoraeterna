@@ -658,13 +658,22 @@ describe("theme preference", () => {
     return path;
   };
 
-  it("follows the system appearance on a new install", async () => {
-    expect(defaultAppSettings.themeMode).toBe("system");
+  it("starts in the dark theme on a new install", async () => {
+    expect(defaultAppSettings.themeMode).toBe("dark");
     const service = new SettingsService(await settingsDirectory("memora-theme-new-"));
-    expect((await service.getApp()).themeMode).toBe("system");
+    expect((await service.getApp()).themeMode).toBe("dark");
   });
 
-  it.each(["dark", "light"] as const)(
+  it("gives dark to a stored profile that has no theme choice yet", async () => {
+    const path = await settingsDirectory("memora-theme-unset-");
+    await writeFile(
+      join(path, "app-settings.json"),
+      JSON.stringify({ language: "en", updatedAt: new Date().toISOString() })
+    );
+    expect((await new SettingsService(path).getApp()).themeMode).toBe("dark");
+  });
+
+  it.each(["system", "dark", "light"] as const)(
     "keeps the %s theme an existing install already stored",
     async (themeMode) => {
       const path = await settingsDirectory("memora-theme-stored-");

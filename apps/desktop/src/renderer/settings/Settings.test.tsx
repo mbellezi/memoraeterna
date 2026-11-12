@@ -259,7 +259,7 @@ describe("the surface, in the DOM", () => {
 
   it("keeps the changed count as one sentence, with the list it opens inside it, and names values", async () => {
     const known: Record<string, [string, string]> = {
-      themeMode: ["system", "system"],
+      themeMode: ["dark", "dark"],
       language: ["en", "en"],
       contentLanguage: ["pt-BR", "en"]
     };
@@ -275,7 +275,7 @@ describe("the surface, in the DOM", () => {
     expect(toggle.textContent).toBe("1 setting changed in this section");
     expect(toggle.getAttribute("aria-expanded")).toBe("false");
     // The theme and the language are said in words, in the row's control place.
-    expect(row("themeMode")?.textContent).toContain("System");
+    expect(row("themeMode")?.textContent).toContain("Dark");
     expect(row("language")?.textContent).toContain("English");
     expect(row("contentLanguage")?.textContent).toContain("Portuguese (Brazil)");
     expect(row("contentLanguage")?.textContent).toContain("Default:English");
