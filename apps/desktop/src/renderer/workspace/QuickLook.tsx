@@ -295,7 +295,12 @@ export function QuickLookView({
               <span>{t("preview.quickLook.keys.openHere")}</span>
             </Keys>
           </SheetHeader>
-          <SheetBody className={cn("min-h-0 overflow-auto", !preview.current && "opacity-60")}>
+          <SheetBody
+            // While the next row's read is on its way the body keeps the last object at full contrast
+            // (the design has no opacity on text) and says it is busy.
+            aria-busy={preview.current ? undefined : true}
+            className="min-h-0 overflow-auto"
+          >
             <SheetObject t={t} preview={preview} notes={notes} />
           </SheetBody>
           <SheetFooter className="flex-wrap gap-x-4 gap-y-1">

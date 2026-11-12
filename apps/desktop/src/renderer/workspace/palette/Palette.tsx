@@ -414,7 +414,7 @@ function PreviewPane({
       t(countKey(entry), { values: { count: entry.count } })
     );
     return (
-      <div className={cn("grid min-w-0 gap-3", !preview.current && "opacity-60")}>
+      <div aria-busy={preview.current ? undefined : true} className="grid min-w-0 gap-3">
         <p className="m-0 flex items-center gap-2 text-sm text-secondary-foreground">
           <ObjectKindGlyph kind={kind} size={16} className={objectKindTextClass[kind]} />
           <span className="font-medium">{t(kindWordKeys[kind])}</span>

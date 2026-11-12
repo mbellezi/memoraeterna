@@ -277,7 +277,8 @@ export function LibraryGrid<Item>({
           attach(node);
         }}
         role="rowgroup"
-        className={cn("relative", stale && "opacity-60 transition-opacity")}
+        // A stale page keeps full contrast (the design has no opacity on text); `aria-busy` above says so.
+        className="relative"
         style={{ height: (count + tail) * rowHeight }}
       >
         {indexes.map((index) => {
