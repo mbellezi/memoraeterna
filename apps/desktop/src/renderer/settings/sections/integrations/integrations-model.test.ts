@@ -153,8 +153,12 @@ describe("the gateway's summary", () => {
   it("counts the paired apps and says the state, and is nothing until both are read", () => {
     expect(gatewayMeta(en, null, [])).toBeNull();
     expect(gatewayMeta(en, gateway, null)).toBeNull();
-    expect(gatewayMeta(en, gateway, [client("paired"), client("revoked")])).toBe("1 app · ready");
-    expect(gatewayMeta(en, gateway, [client("paired"), client("paired")])).toBe("2 apps · ready");
-    expect(gatewayMeta(en, gateway, [])).toBe("0 apps · ready");
+    expect(gatewayMeta(en, gateway, [client("paired"), client("revoked")])).toBe(
+      "1 app · connection ready"
+    );
+    expect(gatewayMeta(en, gateway, [client("paired"), client("paired")])).toBe(
+      "2 apps · connection ready"
+    );
+    expect(gatewayMeta(en, gateway, [])).toBe("No app · connection ready");
   });
 });

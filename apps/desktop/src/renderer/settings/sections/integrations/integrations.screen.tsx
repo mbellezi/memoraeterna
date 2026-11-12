@@ -99,14 +99,38 @@ const shared = {
       sourceIds: ["6f1f8b2e-1c10-4d3a-9a39-3a9c2b1d7e01", "6f1f8b2e-1c10-4d3a-9a39-3a9c2b1d7e02"],
       includeDescendants: true
     },
-    conflicts: [],
+    conflicts: [
+      {
+        id: "6f1f8b2e-1c10-4d3a-9a39-3a9c2b1d7e91",
+        relative_path: "Memora/Fontes/Thinking, Fast and Slow/Capítulo 3.md",
+        status: "conflict",
+        error: null
+      }
+    ],
     retired: { archived: 0, absent: 0, keptTotal: 0, kept: [] }
   },
   "obsidian.layoutStatus": {
     config: { version: 2, language: "pt-BR", attachments: "omit" },
     migrations: []
   },
-  "obsidian.editorialConflicts": [],
+  "obsidian.editorialConflicts": [
+    {
+      id: "6f1f8b2e-1c10-4d3a-9a39-3a9c2b1d7e77",
+      path: "Memora/Notas/Atenção dividida.md",
+      receipt: {
+        operationId: "6f1f8b2e-1c10-4d3a-9a39-3a9c2b1d7e78",
+        targetId: "6f1f8b2e-1c10-4d3a-9a39-3a9c2b1d7e79",
+        status: "conflict",
+        revision: "r1",
+        syncVersion: 1,
+        contentHash: "a".repeat(64),
+        projection: "conflict",
+        content: "x",
+        reason: null,
+        comparison: { base: "b", local: "l", app: "a" }
+      }
+    }
+  ],
   "integrations.getGatewayStatus": {
     state: "ready",
     host: "127.0.0.1",

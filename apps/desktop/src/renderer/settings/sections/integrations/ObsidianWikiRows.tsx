@@ -16,7 +16,16 @@ import type { WikiHandle } from "./use-integrations-data";
  * and "Choose sources…", which opens the picker in the row. Nothing is saved until "Save"; an empty
  * choice means every source. Saving queues the projection; it does not touch the vault by itself.
  */
-export function WikiScopeRow({ entry, handle }: { entry: SettingEntryV2; handle: WikiHandle }) {
+export function WikiScopeRow({
+  entry,
+  handle,
+  vaultBound
+}: {
+  entry: SettingEntryV2;
+  handle: WikiHandle;
+  /** `false` when the storage says no vault is chosen yet; `null` while that is not known. */
+  vaultBound: boolean | null;
+}) {
   const { t } = useSettings();
   const { wiki } = handle;
   const [draft, setDraft] = useState<string[] | null>(null);
@@ -49,7 +58,7 @@ export function WikiScopeRow({ entry, handle }: { entry: SettingEntryV2; handle:
       control={
         <Button
           aria-expanded={draft !== null}
-          disabled={!scope || busy}
+          disabled={!scope || busy || vaultBound !== true}
           onClick={() => setDraft(draft === null ? (scope?.sourceIds ?? []) : null)}
         >
           {t("settingsIntegrations.scope.choose")}
@@ -70,6 +79,7 @@ export function WikiScopeRow({ entry, handle }: { entry: SettingEntryV2; handle:
               {sourcesText(t, scope.sourceIds.length)}
             </span>
           ) : null}
+          {vaultBound === false ? <span>{t("settingsIntegrations.scope.needsVault")}</span> : null}
           {draft !== null ? (
             <div className="grid max-w-[34rem] gap-3 rounded-lg border border-border bg-surface p-3">
               <EvidenceScopePicker
@@ -103,10 +113,12 @@ export function WikiScopeRow({ entry, handle }: { entry: SettingEntryV2; handle:
 /** Whether the chapters and parts of each chosen source come along; saved as soon as it is flipped. */
 export function WikiDescendantsRow({
   entry,
-  handle
+  handle,
+  vaultBound
 }: {
   entry: SettingEntryV2;
   handle: WikiHandle;
+  vaultBound: boolean | null;
 }) {
   const { t } = useSettings();
   const { wiki } = handle;
@@ -136,22 +148,31 @@ export function WikiDescendantsRow({
     <RegistryRow
       entry={entry}
       control={
-        scope ? (
+        wiki.status === "loading" ? (
+          <Skeleton className="h-5 w-20 rounded-full" />
+        ) : (
+          // A failed read leaves the switch at its default, out of reach: the Sources row says why.
           <SwitchControl
             t={t}
             label={labelOf(t, entry)}
             checked={checked}
+            disabled={!scope || vaultBound !== true}
             onChange={(next) => void flip(next)}
           />
-        ) : (
-          <Skeleton className="h-5 w-20 rounded-full" />
         )
       }
       note={
-        failed ? (
-          <StatusLine tone="warn" role="status">
-            {t("settingsIntegrations.scope.saveFailed")}
-          </StatusLine>
+        failed || vaultBound === false ? (
+          <div className="grid gap-1">
+            {vaultBound === false ? (
+              <span>{t("settingsIntegrations.scope.needsVault")}</span>
+            ) : null}
+            {failed ? (
+              <StatusLine tone="warn" role="status">
+                {t("settingsIntegrations.scope.saveFailed")}
+              </StatusLine>
+            ) : null}
+          </div>
         ) : undefined
       }
     />

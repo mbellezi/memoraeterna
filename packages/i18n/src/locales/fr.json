@@ -5467,9 +5467,10 @@
         "obsidianPlugin": "Plugin Obsidian"
       },
       "localOnly": "Elle ne répond qu’aux apps associées, et seulement sur ce Mac.",
-      "metaFailed": "Indisponible",
-      "metaMany": "{count} apps · {state}",
-      "metaOne": "{count} app · {state}",
+      "metaFailed": "Lecture impossible",
+      "metaMany": "{count} apps · connexion {state}",
+      "metaNone": "Aucune app · connexion {state}",
+      "metaOne": "{count} app · connexion {state}",
       "noClients": "Aucune app n’est associée pour l’instant. Associez l’extension Chrome ou le plugin Obsidian.",
       "pair": "Associer une app…",
       "pairFailed": "Impossible de créer l’association. Rien n’a été conservé.",
@@ -5485,6 +5486,7 @@
         "starting": "en démarrage",
         "stopped": "arrêtée"
       },
+      "statusLine": "Connexion locale {state}.",
       "today": "aujourd’hui",
       "tokenDone": "Je l’ai copié",
       "tokenTitle": "Code d’association",
@@ -5499,8 +5501,10 @@
     "moreInAdvanced": "Le dossier de Memora dans le coffre et la langue des dossiers se trouvent dans",
     "openAdvanced": "Avancé › Obsidian",
     "review": {
+      "bothSides": "Pages modifiées des deux côtés",
       "hint": "Ce qui vous attend après que Memora a écrit dans le coffre : des pages modifiées des deux côtés, des fichiers qui n’ont pas pu être écrits et des modifications du plugin.",
       "none": "rien en attente",
+      "plugin": "Modifications du plugin",
       "title": "Relectures du coffre",
       "waitingMany": "{count} en attente",
       "waitingOne": "{count} en attente",
@@ -5511,6 +5515,7 @@
       "choose": "Choisir des sources…",
       "countMany": "{count} sources choisies",
       "countOne": "{count} source choisie",
+      "needsVault": "Choisissez le dossier du coffre ci-dessus pour définir ce qui devient des pages.",
       "readFailed": "Impossible de lire les sources du coffre.",
       "save": "Enregistrer les sources",
       "saveFailed": "Impossible d’enregistrer. Le choix précédent reste."

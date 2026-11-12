@@ -5460,9 +5460,10 @@
         "obsidianPlugin": "Plugin di Obsidian"
       },
       "localOnly": "Risponde solo alle app abbinate, e solo su questo Mac.",
-      "metaFailed": "Non disponibile",
-      "metaMany": "{count} app · {state}",
-      "metaOne": "{count} app · {state}",
+      "metaFailed": "Lettura non riuscita",
+      "metaMany": "{count} app · connessione {state}",
+      "metaNone": "Nessuna app · connessione {state}",
+      "metaOne": "{count} app · connessione {state}",
       "noClients": "Nessuna app è ancora abbinata. Abbina l’estensione di Chrome o il plugin di Obsidian.",
       "pair": "Abbina un’app…",
       "pairFailed": "Non è stato possibile creare l’abbinamento. Non è stato salvato nulla.",
@@ -5478,6 +5479,7 @@
         "starting": "in avvio",
         "stopped": "ferma"
       },
+      "statusLine": "Connessione locale {state}.",
       "today": "oggi",
       "tokenDone": "L’ho copiato",
       "tokenTitle": "Codice di abbinamento",
@@ -5492,8 +5494,10 @@
     "moreInAdvanced": "La cartella di Memora nel vault e la lingua delle cartelle sono in",
     "openAdvanced": "Avanzate › Obsidian",
     "review": {
+      "bothSides": "Pagine modificate su entrambi i lati",
       "hint": "Ciò che ti aspetta dopo che Memora scrive nel vault: pagine modificate su entrambi i lati, file che non è stato possibile scrivere e modifiche del plugin.",
       "none": "niente in attesa",
+      "plugin": "Modifiche del plugin",
       "title": "Revisioni nel vault",
       "waitingMany": "{count} in attesa",
       "waitingOne": "{count} in attesa",
@@ -5504,6 +5508,7 @@
       "choose": "Scegli le fonti…",
       "countMany": "{count} fonti scelte",
       "countOne": "{count} fonte scelta",
+      "needsVault": "Scegli qui sopra la cartella del vault per definire cosa diventa pagina.",
       "readFailed": "Non è stato possibile leggere le fonti del vault.",
       "save": "Salva le fonti",
       "saveFailed": "Non è stato possibile salvare. Resta la scelta precedente."

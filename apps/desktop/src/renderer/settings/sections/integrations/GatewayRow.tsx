@@ -62,8 +62,10 @@ async function copyText(text: string): Promise<boolean> {
  */
 export function GatewayRow({ entry, handle }: { entry: SettingEntryV2; handle: GatewayHandle }) {
   const { t } = useSettings();
-  const [open, setOpen] = useState(false);
   const { gateway } = handle;
+  // A read that failed opens the row by itself, so its sentence and its retry are not hidden.
+  const [opened, setOpened] = useState<boolean | null>(null);
+  const open = opened ?? gateway.status === "failed";
   const meta =
     gateway.status === "ready"
       ? gatewayMeta(t, gateway.value.status, gateway.value.clients)
@@ -78,7 +80,7 @@ export function GatewayRow({ entry, handle }: { entry: SettingEntryV2; handle: G
       help={helpOf(t, entry)}
       meta={meta ?? <Skeleton className="h-3.5 w-24" />}
       open={open}
-      onToggle={() => setOpen(!open)}
+      onToggle={() => setOpened(!open)}
     >
       {gateway.status === "loading" ? (
         <div className="grid gap-2">
@@ -168,9 +170,11 @@ function GatewayPage({
     <div className="grid max-w-[34rem] gap-4">
       <div className="grid gap-1.5">
         <StatusLine tone={stateTone[gateway.state]}>
-          <span className="first-letter:uppercase">
-            {t(`settingsIntegrations.gateway.states.${gateway.state}` as MessageKey)}
-          </span>
+          {t("settingsIntegrations.gateway.statusLine", {
+            values: {
+              state: t(`settingsIntegrations.gateway.states.${gateway.state}` as MessageKey)
+            }
+          })}
         </StatusLine>
         {gateway.baseUrl ? (
           <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">

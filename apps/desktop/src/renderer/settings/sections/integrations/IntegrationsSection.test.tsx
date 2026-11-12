@@ -21,6 +21,15 @@ let editorial: unknown[];
 let applied: unknown;
 let startSync: () => Promise<unknown>;
 let reads: number;
+let wikiRead: () => Promise<unknown>;
+const wikiStatusOf = (conflicts: unknown[] = []) => ({
+  active: true,
+  job: null,
+  delivery: null,
+  scope: { sourceIds: ["6f1f8b2e-1c10-4d3a-9a39-3a9c2b1d7e01"], includeDescendants: true },
+  conflicts,
+  retired: { archived: 0, absent: 0, keptTotal: 0, kept: [] }
+});
 
 const vaultSettings = {
   obsidianVaultPath: "~/Vault",
@@ -74,6 +83,7 @@ beforeEach(() => {
   vi.useFakeTimers();
   calls = [];
   reads = 0;
+  wikiRead = () => Promise.resolve(wikiStatusOf());
   editorial = [];
   applied = { config: null, migrations: [] };
   startSync = () => Promise.resolve({});
@@ -140,14 +150,7 @@ beforeEach(() => {
       },
       wikiStatus: () => {
         reads += 1;
-        return Promise.resolve({
-          active: true,
-          job: null,
-          delivery: null,
-          scope: { sourceIds: ["6f1f8b2e-1c10-4d3a-9a39-3a9c2b1d7e01"], includeDescendants: true },
-          conflicts: [],
-          retired: { archived: 0, absent: 0, keptTotal: 0, kept: [] }
-        });
+        return wikiRead();
       },
       saveWikiScope: record("obsidian.saveWikiScope", {}),
       layoutStatus: () => {
@@ -284,6 +287,73 @@ describe("Settings › Integrations", () => {
     expect(row("obsidianVaultPath").textContent).toContain("~/Vault");
   });
 
+  it("shows one failure and one retry for each failed read, and leaves no row loading", async () => {
+    storage = () => Promise.reject(new Error("closed"));
+    wikiRead = () => Promise.reject(new Error("down"));
+    await mount();
+    const alerts = [...dom.document.querySelectorAll("[role=alert]")].map(
+      (element) => element.textContent ?? ""
+    );
+    // The storage read speaks on the vault row only; the wiki read on the sources row only.
+    expect(alerts.filter((text) => text.includes("Could not read the vault folder."))).toHaveLength(
+      1
+    );
+    expect(
+      alerts.filter((text) => text.includes("Could not read the vault’s sources."))
+    ).toHaveLength(1);
+    expect(row("obsidianSync").querySelector("[role=alert]")).toBeNull();
+    expect(dom.document.body.textContent).not.toContain("Could not load the projection");
+    for (const alert of dom.document.querySelectorAll("[role=alert]"))
+      expect(alert.querySelectorAll("button")).toHaveLength(1);
+    // The chapters switch is drawn, out of reach, instead of staying a skeleton.
+    const chapters = row("obsidian.wiki.includeDescendants").querySelector(
+      "[role=switch]"
+    ) as HTMLButtonElement;
+    expect(chapters.disabled).toBe(true);
+  });
+
+  it("keeps the sources, the chapters switch and the review out of reach until a vault is chosen", async () => {
+    storage = () =>
+      Promise.resolve({ ...vaultSettings, obsidianVaultPath: null, obsidianSyncEnabled: false });
+    await mount();
+    const choose = button("Choose sources…", row("obsidian.wiki.scope")) as HTMLButtonElement;
+    expect(choose.disabled).toBe(true);
+    expect(
+      (row("obsidian.wiki.includeDescendants").querySelector("[role=switch]") as HTMLButtonElement)
+        .disabled
+    ).toBe(true);
+    expect(row("obsidian.wiki.scope").textContent).toContain(
+      "Choose the vault folder above to choose what becomes pages."
+    );
+    expect(dom.document.body.textContent).not.toContain("Vault reviews");
+  });
+
+  it("names the two review lists after what they hold, in one heading style", async () => {
+    wikiRead = () =>
+      Promise.resolve(
+        wikiStatusOf([
+          {
+            id: "6f1f8b2e-1c10-4d3a-9a39-3a9c2b1d7e91",
+            relative_path: "Sources/a.md",
+            status: "conflict",
+            error: null
+          }
+        ])
+      );
+    editorial = [
+      {
+        id: "6f1f8b2e-1c10-4d3a-9a39-3a9c2b1d7e77",
+        path: "Notes/edited-in-obsidian.md",
+        receipt: { status: "conflict", revision: "r1", comparison: null }
+      }
+    ];
+    await mount();
+    const headings = [...dom.document.querySelectorAll("h4")].map((h) => h.textContent);
+    expect(headings).toEqual(["Pages edited on both sides", "Plugin edits"]);
+    expect(dom.document.body.textContent).not.toContain("Sync review");
+    expect(dom.document.body.textContent).not.toContain("Pending local edits");
+  });
+
   it("counts the chosen sources, saves the chapters switch at once with the saved sources", async () => {
     await mount();
     expect(row("obsidian.wiki.scope").textContent).toContain("1 source chosen");
@@ -401,7 +471,7 @@ describe("Settings › Integrations", () => {
 
   it("opens the gateway page with its address and paired apps, asks before revoking, and revokes", async () => {
     await mount();
-    expect(row("integrations.gateway").textContent).toContain("1 app · ready");
+    expect(row("integrations.gateway").textContent).toContain("1 app · connection ready");
     await click(row("integrations.gateway").querySelector("button[aria-expanded]")!);
     const page = row("integrations.gateway");
     expect(page.textContent).toContain("http://127.0.0.1:47613");
@@ -432,11 +502,12 @@ describe("Settings › Integrations", () => {
   it("says a gateway that cannot be read in its row, quietly", async () => {
     gateway = () => Promise.reject(new Error("down"));
     await mount();
-    expect(row("integrations.gateway").textContent).toContain("Unavailable");
-    await click(row("integrations.gateway").querySelector("button[aria-expanded]")!);
+    // The row opens by itself, so the sentence and its retry are in view.
+    expect(row("integrations.gateway").textContent).toContain("Could not be read");
     expect(row("integrations.gateway").textContent).toContain(
       "Could not read the local connection."
     );
+    expect(button("Retry", row("integrations.gateway"))).toBeTruthy();
   });
 
   it("starts no timer and speaks pt-BR without English chrome", async () => {

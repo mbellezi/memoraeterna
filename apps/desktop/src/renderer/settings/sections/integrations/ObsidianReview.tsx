@@ -13,7 +13,7 @@ import {
   isFailedFile
 } from "../../../components/ObsidianWikiCard";
 import { cn } from "../../../lib/cn";
-import { ReadProblem, StatusLine } from "../../SettingControls";
+import { StatusLine } from "../../SettingControls";
 import { useSettings } from "../../settings-context";
 import { useEditorialConflicts, type WikiHandle } from "./use-integrations-data";
 
@@ -50,12 +50,8 @@ export function ObsidianReview({ handle }: { handle: WikiHandle }) {
   const editorial = useEditorialConflicts();
 
   if (wiki.status === "loading") return <Skeleton className="mt-3 h-4 w-48" />;
-  if (wiki.status === "failed")
-    return (
-      <div className="mt-3">
-        <ReadProblem t={t} message={t("obsidianWiki.errors.load")} onRetry={handle.reload} />
-      </div>
-    );
+  // The Sources row already says the wiki status could not be read and offers the one retry.
+  if (wiki.status === "failed") return null;
 
   const status = wiki.value;
   const failed = status.conflicts.filter(isFailedFile);
@@ -109,9 +105,11 @@ export function ObsidianReview({ handle }: { handle: WikiHandle }) {
       </button>
       {open ? (
         <div id={bodyId} className="grid max-w-[34rem] gap-3">
-          <p className="m-0 text-xs text-muted-foreground [text-wrap:pretty]">
-            {t("settingsIntegrations.review.hint")}
-          </p>
+          {waiting === 0 ? (
+            <p className="m-0 text-xs text-muted-foreground [text-wrap:pretty]">
+              {t("settingsIntegrations.review.hint")}
+            </p>
+          ) : null}
           {error ? (
             <StatusLine tone="warn" role="status">
               {t(error)}
@@ -127,13 +125,13 @@ export function ObsidianReview({ handle }: { handle: WikiHandle }) {
             </StatusLine>
           ) : null}
           {status.delivery && status.delivery.total > 0 ? (
-            <DeliveryProgress t={t} delivery={status.delivery} />
+            <DeliveryProgress t={t} delivery={status.delivery} quiet />
           ) : null}
           <ObsidianFailedFiles t={t} failed={failed} />
           {pending.length > 0 ? (
             <div className="grid gap-2">
               <h4 className="m-0 text-sm font-medium text-foreground">
-                {t("obsidianWiki.pending")}
+                {t("settingsIntegrations.review.bothSides")}
               </h4>
               {pending.map((row) => (
                 <div
@@ -168,7 +166,11 @@ export function ObsidianReview({ handle }: { handle: WikiHandle }) {
               void act(async () => handle.set(await window.app.obsidian.moveRetiredWiki({ id })))
             }
           />
-          <ObsidianEditorialCard t={t} feed={editorial} />
+          <ObsidianEditorialCard
+            t={t}
+            feed={editorial}
+            heading={t("settingsIntegrations.review.plugin")}
+          />
         </div>
       ) : null}
       {diff ? (

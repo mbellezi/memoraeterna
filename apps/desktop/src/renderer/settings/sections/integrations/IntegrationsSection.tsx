@@ -36,6 +36,12 @@ export function IntegrationsSection() {
   const layout = useLayoutStatus();
   const gateway = useGateway();
 
+  // `false` only once the storage is read and holds no vault; unknown (still reading, or failed) is `null`.
+  const vaultBound =
+    storage.storage.status === "ready"
+      ? Boolean(storage.storage.value.obsidianVaultPath?.trim())
+      : null;
+
   const rowOf = (entry: SettingEntryV2): ReactNode => {
     switch (entry.id) {
       case "obsidianVaultPath":
@@ -53,15 +59,14 @@ export function IntegrationsSection() {
             entry={entry}
             storage={storage.storage}
             apply={storage.apply}
-            retry={storage.retry}
             sync={sync.sync}
             retrySync={sync.retry}
           />
         );
       case "obsidian.wiki.scope":
-        return <WikiScopeRow entry={entry} handle={wiki} />;
+        return <WikiScopeRow entry={entry} handle={wiki} vaultBound={vaultBound} />;
       case "obsidian.wiki.includeDescendants":
-        return <WikiDescendantsRow entry={entry} handle={wiki} />;
+        return <WikiDescendantsRow entry={entry} handle={wiki} vaultBound={vaultBound} />;
       case "obsidian.layout.attachments":
         return <AttachmentsRow entry={entry} layout={layout} />;
       case "bookLookup":
@@ -89,7 +94,7 @@ export function IntegrationsSection() {
           {entries.map((entry) => (
             <Fragment key={entry.id}>{rowOf(entry)}</Fragment>
           ))}
-          {group === "obsidian" ? <ObsidianReview handle={wiki} /> : null}
+          {group === "obsidian" && vaultBound !== false ? <ObsidianReview handle={wiki} /> : null}
         </SettingsGroup>
       ))}
       <p className="m-0 mt-8 text-sm text-secondary-foreground [text-wrap:pretty]">

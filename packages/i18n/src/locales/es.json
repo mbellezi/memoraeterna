@@ -5469,9 +5469,10 @@
         "obsidianPlugin": "Plugin de Obsidian"
       },
       "localOnly": "Solo responde a apps emparejadas, y solo en este Mac.",
-      "metaFailed": "No disponible",
-      "metaMany": "{count} apps · {state}",
-      "metaOne": "{count} app · {state}",
+      "metaFailed": "No se pudo leer",
+      "metaMany": "{count} apps · conexión {state}",
+      "metaNone": "Ninguna app · conexión {state}",
+      "metaOne": "{count} app · conexión {state}",
       "noClients": "Aún no hay ninguna app emparejada. Empareja la extensión de Chrome o el plugin de Obsidian.",
       "pair": "Emparejar una app…",
       "pairFailed": "No se pudo crear el emparejamiento. No se guardó nada.",
@@ -5487,6 +5488,7 @@
         "starting": "iniciando",
         "stopped": "detenida"
       },
+      "statusLine": "Conexión local {state}.",
       "today": "hoy",
       "tokenDone": "Ya lo copié",
       "tokenTitle": "Código de emparejamiento",
@@ -5501,8 +5503,10 @@
     "moreInAdvanced": "La carpeta de Memora en la bóveda y el idioma de las carpetas están en",
     "openAdvanced": "Avanzado › Obsidian",
     "review": {
+      "bothSides": "Páginas editadas en ambos lados",
       "hint": "Lo que te espera después de que Memora escribe en la bóveda: páginas editadas en los dos lados, archivos que no se pudieron grabar y ediciones del plugin.",
       "none": "nada esperando",
+      "plugin": "Ediciones del plugin",
       "title": "Revisiones en la bóveda",
       "waitingMany": "{count} esperando",
       "waitingOne": "{count} esperando",
@@ -5513,6 +5517,7 @@
       "choose": "Elegir fuentes…",
       "countMany": "{count} fuentes elegidas",
       "countOne": "{count} fuente elegida",
+      "needsVault": "Elige arriba la carpeta de la bóveda para definir qué se convierte en página.",
       "readFailed": "No se pudieron leer las fuentes de la bóveda.",
       "save": "Guardar fuentes",
       "saveFailed": "No se pudo guardar. Sigue la elección anterior."

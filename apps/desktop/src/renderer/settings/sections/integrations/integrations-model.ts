@@ -195,7 +195,11 @@ export function gatewayMeta(
   const paired = clients.filter((client) => client.status === "paired").length;
   const state = t(`settingsIntegrations.gateway.states.${gateway.state}` as MessageKey);
   return t(
-    paired === 1 ? "settingsIntegrations.gateway.metaOne" : "settingsIntegrations.gateway.metaMany",
+    paired === 0
+      ? "settingsIntegrations.gateway.metaNone"
+      : paired === 1
+        ? "settingsIntegrations.gateway.metaOne"
+        : "settingsIntegrations.gateway.metaMany",
     { values: { count: paired, state } }
   );
 }

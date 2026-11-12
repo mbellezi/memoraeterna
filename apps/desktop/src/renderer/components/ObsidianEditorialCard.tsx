@@ -12,12 +12,18 @@ export interface EditorialFeed {
   refresh: () => void;
 }
 
+/**
+ * `heading` is the embedded use (Settings › Integrations): the card sits under a title of its own,
+ * takes the quiet heading, has no icon or divider, and draws nothing while no edit waits.
+ */
 export function ObsidianEditorialCard({
   t,
-  feed
+  feed,
+  heading
 }: {
   t: (key: MessageKey) => string;
   feed?: EditorialFeed;
+  heading?: string;
 }) {
   const [ownRows, setOwnRows] = useState<Conflict[] | null>(null),
     [selected, setSelected] = useState<Conflict | null>(null),
@@ -44,12 +50,19 @@ export function ObsidianEditorialCard({
         : undefined,
     [followed]
   );
+  if (heading !== undefined && !error && !rows?.length && !selected) return null;
   return (
-    <section className="grid gap-3 border-t border-border pt-4">
-      <h4 className="flex items-center gap-2 font-medium">
-        <FileWarning size={16} />
-        {t("obsidianEditing.review")}
-      </h4>
+    <section
+      className={heading === undefined ? "grid gap-3 border-t border-border pt-4" : "grid gap-2"}
+    >
+      {heading === undefined ? (
+        <h4 className="flex items-center gap-2 font-medium">
+          <FileWarning size={16} />
+          {t("obsidianEditing.review")}
+        </h4>
+      ) : (
+        <h4 className="m-0 text-sm font-medium text-foreground">{heading}</h4>
+      )}
       {error && (
         <p role="status" className="text-sm text-muted-foreground">
           {t("obsidianEditing.deliveryError")}

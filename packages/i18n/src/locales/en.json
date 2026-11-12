@@ -5462,9 +5462,10 @@
         "obsidianPlugin": "Obsidian plugin"
       },
       "localOnly": "It answers only paired apps, and only on this Mac.",
-      "metaFailed": "Unavailable",
-      "metaMany": "{count} apps · {state}",
-      "metaOne": "{count} app · {state}",
+      "metaFailed": "Could not be read",
+      "metaMany": "{count} apps · connection {state}",
+      "metaNone": "No app · connection {state}",
+      "metaOne": "{count} app · connection {state}",
       "noClients": "No app is paired yet. Pair the Chrome extension or the Obsidian plugin.",
       "pair": "Pair an app…",
       "pairFailed": "Could not create the pairing. Nothing was kept.",
@@ -5480,6 +5481,7 @@
         "starting": "starting",
         "stopped": "stopped"
       },
+      "statusLine": "Local connection {state}.",
       "today": "today",
       "tokenDone": "I copied it",
       "tokenTitle": "Pairing code",
@@ -5494,8 +5496,10 @@
     "moreInAdvanced": "Memora’s folder in the vault and the language of the folders are in",
     "openAdvanced": "Advanced › Obsidian",
     "review": {
+      "bothSides": "Pages edited on both sides",
       "hint": "What waits for you after Memora writes to the vault: pages edited on both sides, files that could not be written and edits from the plugin.",
       "none": "nothing waiting",
+      "plugin": "Plugin edits",
       "title": "Vault reviews",
       "waitingMany": "{count} waiting",
       "waitingOne": "{count} waiting",
@@ -5506,6 +5510,7 @@
       "choose": "Choose sources…",
       "countMany": "{count} sources chosen",
       "countOne": "{count} source chosen",
+      "needsVault": "Choose the vault folder above to choose what becomes pages.",
       "readFailed": "Could not read the vault’s sources.",
       "save": "Save sources",
       "saveFailed": "Could not save. The previous choice stays."

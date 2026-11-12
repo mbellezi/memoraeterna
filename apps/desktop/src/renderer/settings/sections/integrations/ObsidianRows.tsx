@@ -107,10 +107,9 @@ export function SyncRow({
   entry,
   storage,
   apply,
-  retry,
   sync,
   retrySync
-}: StorageProps & {
+}: Omit<StorageProps, "retry"> & {
   entry: SettingEntryV2;
   sync: Loaded<ObsidianSyncStatus>;
   retrySync: () => void;
@@ -184,13 +183,7 @@ export function SyncRow({
       }
       note={
         <div className="grid gap-1.5">
-          {storage.status === "failed" ? (
-            <ReadProblem
-              t={t}
-              message={t("settingsIntegrations.sync.readFailed")}
-              onRetry={retry}
-            />
-          ) : storage.status === "ready" && !hasVault && mode === "off" ? (
+          {storage.status === "ready" && !hasVault && mode === "off" ? (
             <span>{t("settingsIntegrations.sync.needsVault")}</span>
           ) : null}
           {failed ? (
