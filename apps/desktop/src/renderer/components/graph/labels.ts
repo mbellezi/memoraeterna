@@ -3,8 +3,9 @@ import { graphTypography } from "./view-model";
 
 /**
  * Node labels of a graph that reads the theme (design record 4.1 and 7.5): horizontal, at most two
- * lines, centred under the dot, in the label colour on a 3 px halo of the canvas colour, so a label
- * stays legible over the lines it crosses in either theme. Only the person's own text is drawn
+ * lines, centred under the dot, in the label colour on a plate and a 3 px halo of the canvas colour,
+ * so a label stays legible over the lines it crosses in either theme: the halo alone covers only
+ * the glyphs, while the plate also hides a line between words and inside letters. Only the person's own text is drawn
  * here (a note's title), so a title too long for two lines ends in an ellipsis; the full title is
  * in the hover card, the keyboard description and the table.
  */
@@ -14,8 +15,11 @@ export const graphLabelLayout = {
   maxWidth: 148,
   maxLines: 2,
   lineHeight: 14,
-  /** The halo's width on each side of a glyph. */
+  /** The halo's width on each side of a glyph, and the plate's margin on each side of a line. */
   halo: 3,
+  /** The plate behind each line: nearly opaque, so a crossing line still hints where it runs. */
+  plateOpacity: 0.9,
+  plateRadius: 3,
   /** Space between the dot's edge and the first line. */
   gap: 5
 } as const;
@@ -83,6 +87,7 @@ export interface LabelNode {
 
 export interface LabelContext {
   font: string;
+  globalAlpha: number;
   fillStyle: string | CanvasGradient | CanvasPattern;
   strokeStyle: string | CanvasGradient | CanvasPattern;
   lineWidth: number;
@@ -92,15 +97,15 @@ export interface LabelContext {
   measureText(text: string): { width: number };
   strokeText(text: string, x: number, y: number): void;
   fillText(text: string, x: number, y: number): void;
+  beginPath(): void;
+  roundRect(x: number, y: number, width: number, height: number, radius: number): void;
+  fill(): void;
 }
 
 /** A topic's pill on a zoomed-out graph: the topic colour as its ring, the name inside. */
 export const graphPillLayout = { maxWidth: 200, height: 26, paddingX: 12, ring: 2 } as const;
 
 export interface PillContext extends LabelContext {
-  beginPath(): void;
-  roundRect(x: number, y: number, width: number, height: number, radius: number): void;
-  fill(): void;
   stroke(): void;
 }
 
@@ -140,7 +145,7 @@ export function drawPillLabel(
   return text;
 }
 
-/** Draws a node's label under it on a halo; returns the lines it drew (for tests). */
+/** Draws a node's label under it on a plate and a halo; returns the lines it drew (for tests). */
 export function drawHaloLabel(
   context: LabelContext,
   node: LabelNode,
@@ -155,13 +160,26 @@ export function drawHaloLabel(
     graphLabelLayout.maxWidth,
     (value) => context.measureText(value).width
   );
+  const { halo, lineHeight, plateOpacity, plateRadius } = graphLabelLayout;
+  const top = node.y + node.size + graphLabelLayout.gap;
+  // One path for every line's plate, so where two plates meet the canvas colour is not doubled.
+  context.beginPath();
+  lines.forEach((line, index) => {
+    const width = context.measureText(line).width + halo * 2;
+    const y = top + index * lineHeight - 1;
+    context.roundRect(node.x - width / 2, y, width, lineHeight + 2, plateRadius);
+  });
+  const alpha = context.globalAlpha;
+  context.globalAlpha = alpha * plateOpacity;
+  context.fillStyle = palette.canvas;
+  context.fill();
+  context.globalAlpha = alpha;
   context.textAlign = "center";
   context.textBaseline = "top";
   context.lineJoin = "round";
-  context.lineWidth = graphLabelLayout.halo * 2;
+  context.lineWidth = halo * 2;
   context.strokeStyle = palette.canvas;
   context.fillStyle = node.labelColor ?? palette.label;
-  const top = node.y + node.size + graphLabelLayout.gap;
   lines.forEach((line, index) => {
     const y = top + index * graphLabelLayout.lineHeight;
     context.strokeText(line, node.x, y);
