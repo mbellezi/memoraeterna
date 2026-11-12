@@ -1,7 +1,7 @@
 import type { PgPool } from "@app/db";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { AppEvent, AppEventHandler, AppEventType } from "../../../shared/app-events.js";
+import type { AppEventType } from "../../../shared/app-events.js";
 import { InboxService, recountDelayMs } from "./inbox-service.js";
 
 describe("the quiet time before the Inbox recounts", () => {
@@ -26,7 +26,7 @@ describe("the service's recount after an event", () => {
   const build = (countMs: () => number, vaultMs = 0) => {
     let clock = 0;
     let queries = 0;
-    const handlers = new Map<AppEventType, AppEventHandler<AppEventType>>();
+    const handlers = new Map<AppEventType, () => void>();
     const pool = {
       query: async () => {
         queries += 1;
@@ -45,9 +45,9 @@ describe("the service's recount after an event", () => {
         return [];
       },
       events: {
-        publish: (_event: AppEvent) => undefined,
+        publish: () => undefined,
         subscribe: (type, handler) => {
-          handlers.set(type, handler as AppEventHandler<AppEventType>);
+          handlers.set(type, () => (handler as unknown as () => void)());
           return () => undefined;
         }
       },
@@ -58,7 +58,7 @@ describe("the service's recount after an event", () => {
     return {
       service,
       queries: () => queries,
-      emit: () => handlers.get("relation.created")?.({ type: "relation.created" } as AppEvent)
+      emit: () => handlers.get("relation.created")?.()
     };
   };
 
