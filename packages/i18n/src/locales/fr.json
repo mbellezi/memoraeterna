@@ -5208,6 +5208,146 @@
       "updated": "dernière mise à jour : {date}"
     }
   },
+  "settingsGeneral": {
+    "language": {
+      "connectionsNote": "Les descriptions de liens déjà écrites peuvent être refaites dans",
+      "defaultOs": "comme macOS, {language}"
+    },
+    "saveFailed": "Impossible d’enregistrer. Rien n’a changé.",
+    "theme": {
+      "dark": "Sombre",
+      "light": "Clair",
+      "system": "Système"
+    }
+  },
+  "settingsLibrary": {
+    "backup": {
+      "action": "Sauvegarder maintenant",
+      "done": "Sauvegarde terminée.",
+      "failed": "La sauvegarde n’a pas pu être faite.",
+      "running": "Sauvegarde en cours…",
+      "savedIn": "Enregistrée dans {path}",
+      "verified": "Une restauration de test a réussi."
+    },
+    "plans": {
+      "deleteAction": "Supprimer",
+      "deleteAsk": "Supprimer « {name} » ?",
+      "deleteConfirm": "Supprimer le plan",
+      "deleteKept": "Les sources déjà importées gardent ce qui a été fait.",
+      "empty": "Aucun plan d’import enregistré pour l’instant. Enregistrez-en un pendant un import.",
+      "loadFailed": "Impossible de lire les plans d’import enregistrés.",
+      "loadKept": "Rien n’a changé.",
+      "renameAction": "Renommer",
+      "renameLabel": "Nom du plan",
+      "saveFailed": "Impossible d’enregistrer. Rien n’a changé."
+    },
+    "storage": {
+      "database": "Base de données locale",
+      "files": "Fichiers conservés",
+      "filesNote": "les originaux que vous avez envoyés",
+      "sourcesMany": "{count} sources",
+      "sourcesOne": "{count} source",
+      "where": "Les deux se trouvent dans le dossier de données de Memora sur ce Mac, et leur emplacement est fixe. Pour garder les originaux dans un dossier à vous, activez la copie juste en dessous ; pour tout déplacer sur un autre disque, utilisez la sauvegarde."
+    },
+    "uploads": {
+      "change": "Changer de dossier",
+      "choose": "Choisir un dossier",
+      "needsFolder": "Choisissez d’abord le dossier : les copies ont besoin d’un endroit.",
+      "noFolder": "Aucun dossier choisi pour l’instant",
+      "off": "Désactivé",
+      "on": "Activé",
+      "pathHint": "Collez le chemin complet d’un dossier de ce Mac.",
+      "pathLabel": "Chemin du dossier",
+      "pathRejected": "Un chemin complet commence par « / » et désigne un dossier qui existe.",
+      "readFailed": "Impossible de lire le dossier des copies.",
+      "saveFailed": "Impossible d’enregistrer. Rien n’a changé.",
+      "willReceive": "Ce dossier recevra les copies dès que vous activerez cette option."
+    }
+  },
+  "settingsPrivacy": {
+    "callLog": {
+      "full": "La capture complète est activée : il garde les prompts et les réponses en entier.",
+      "light": "Il garde les durées, les modèles et les jetons ; les prompts et les réponses en entier seulement avec la capture complète.",
+      "none": "Le journal des appels d’IA est vide.",
+      "open": "Voir et supprimer dans Avancé",
+      "readFailed": "Impossible de lire le journal des appels.",
+      "summaryMany": "Le journal des appels d’IA garde {count} appels sur ce Mac.",
+      "summaryOne": "Le journal des appels d’IA garde {count} appel sur ce Mac."
+    },
+    "history": {
+      "action": "Effacer…",
+      "confirm": "Effacer les Récents",
+      "dialogBody": "Efface la liste des éléments ouverts récemment sur ce Mac. Les éléments épinglés restent.",
+      "dialogTitle": "Effacer les Récents ?",
+      "doneMany": "{count} éléments ont quitté les Récents.",
+      "doneNone": "Les Récents étaient déjà vides.",
+      "doneOne": "{count} élément a quitté les Récents.",
+      "failed": "Impossible d’effacer les Récents. Rien n’a changé."
+    },
+    "leaves": {
+      "books": "Données des livres et des articles",
+      "booksGoogle": "Google Books",
+      "changeInAi": "Changer dans IA",
+      "cloud": "Dans le cloud",
+      "columns": {
+        "job": "Tâche",
+        "what": "Ce qui sort",
+        "where": "Où elle s’exécute"
+      },
+      "credentials": "Identifiants conservés sur ce Mac (seulement les noms ; les valeurs n’apparaissent jamais) : {names}.",
+      "decisions": "OpenAI Decisions",
+      "internet": "Sur Internet",
+      "local": "Sur ce Mac",
+      "lookupAuto": "Open Library, Google Books et Crossref",
+      "lookupGoogle": "Google Books et Crossref",
+      "lookupOpenLibrary": "Open Library et Crossref",
+      "noCredentials": "Aucun identifiant n’est conservé sur ce Mac.",
+      "noModel": "Aucun modèle choisi",
+      "nothing": "Rien",
+      "off": "Désactivé",
+      "readFailed": "Impossible de lire ce qui quitte ce Mac.",
+      "readKept": "Rien n’a changé.",
+      "tableLabel": "Ce qui quitte ce Mac, par tâche",
+      "what": {
+        "answer": "Votre question et les notes citées",
+        "books": "ISBN, DOI, titre et auteurs",
+        "decide": "Titres et idées des notes comparées",
+        "decisions": "Titre, idée et début du texte des notes comparées",
+        "embed": "Extraits de vos sources et de vos notes",
+        "judge": "Notes et extraits comparés",
+        "writeFast": "Extraits des sources et résumés",
+        "writeQuality": "Extraits des sources"
+      }
+    },
+    "questions": {
+      "action": "Supprimer les questions…",
+      "confirm": "Supprimer les questions",
+      "countMany": "{count} questions enregistrées",
+      "countMore": "Plus de {count} questions enregistrées",
+      "countNone": "Aucune question enregistrée.",
+      "countOne": "{count} question enregistrée",
+      "dialogBody": "Supprime toutes les questions enregistrées et leurs réponses. Vos sources et vos notes restent. Cette action est irréversible.",
+      "dialogTitle": "Supprimer toutes les questions ?",
+      "doneMany": "{count} questions supprimées.",
+      "doneNone": "Il n’y avait aucune question à supprimer.",
+      "doneOne": "{count} question supprimée.",
+      "failed": "Impossible de supprimer les questions. Rien n’a changé.",
+      "readFailed": "Impossible de compter les questions enregistrées."
+    },
+    "reset": {
+      "action": "Tout réinitialiser…",
+      "backupLink": "Faites d’abord une sauvegarde",
+      "confirm": "Tout réinitialiser",
+      "dialogBody": "Efface la bibliothèque, les index de recherche, les graphes, les questions, les historiques, les liens, les préférences et les fichiers conservés. Les profils, les fournisseurs, les routes et les modèles installés restent ; les sauvegardes et vos fichiers personnels ne sont pas touchés.",
+      "dialogTitle": "Tout réinitialiser ?",
+      "dialogWarn": "Cette action est irréversible.",
+      "failed": "La réinitialisation n’a pas pu se terminer. Vérifiez les autorisations des fichiers et réessayez.",
+      "noUndo": "Cette action est irréversible.",
+      "running": "Réinitialisation…",
+      "warnings": "La réinitialisation est terminée, mais certains fichiers conservés n’ont pas pu être supprimés."
+    },
+    "working": "En cours…"
+  },
   "settingsRegistry": {
     "activeMatchingPresetId": {
       "help": "Équilibré est le jeu calibré et reste en lecture seule. Pour modifier les valeurs, créez ou dupliquez un préréglage.",
@@ -5457,7 +5597,7 @@
       "label": "Sources qui deviennent des pages"
     },
     "privacyCallLog": {
-      "help": "Les derniers appels à un modèle, local ou dans le cloud. En lecture seule ; le journal complet est dans Avancé.",
+      "help": "Ce que ce Mac garde des appels faits à un modèle, local ou dans le cloud.",
       "label": "Appels d’IA récents"
     },
     "privacyClearQuestions": {

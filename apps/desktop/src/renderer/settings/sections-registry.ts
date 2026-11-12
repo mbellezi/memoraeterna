@@ -1,5 +1,4 @@
 import type { ComponentType } from "react";
-import type { Translator } from "@app/i18n";
 
 import { settingsSectionIds, type SettingsSectionId } from "./settings-model";
 
@@ -15,10 +14,10 @@ export interface SettingsSectionModule {
   id: SettingsSectionId;
   Section: ComponentType;
   /**
-   * The bars shown while the section's values are read, when its content has a shape the frame's
-   * generic rows do not (the AI section opens on a row of cards). Without it the frame's rows show.
+   * The bars shown while the saved values are read, in the shape of this section (built from
+   * `SectionBars`). Absent: the surface's generic rows.
    */
-  Skeleton?: ComponentType<{ t: Translator }>;
+  Skeleton?: ComponentType;
 }
 
 export type SectionRegistry = Readonly<Partial<Record<SettingsSectionId, SettingsSectionModule>>>;

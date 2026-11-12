@@ -202,34 +202,19 @@ const defaultValue = (entry: SettingEntryV2): Json | null =>
 
 const key = (entry: SettingEntryV2): string => entry.store.keys[0] ?? entry.id;
 
-/** What an unset list setting is stored as. */
-const emptyValues: Readonly<Record<string, Json>> = { processingPresets: [] };
-
 // --- the two stores of the settings service (it announces its own writes) ------------------------
 
 const appPreference: Adapter = {
   async read(entry, context) {
     const stored = valueAt(await context.app(), key(entry));
-    if ("unset" in entry.default) {
-      const set = Array.isArray(stored) ? stored.length > 0 : stored !== null;
-      return { value: set ? true : null, default: null, changed: set };
-    }
     const fallback =
       "osLocale" in entry.default ? context.ports.settings.osLanguage() : defaultValue(entry);
     return { value: stored, default: fallback, changed: !same(stored, fallback) };
   },
-  async write(entry, context, _before, confirmed) {
-    const name = key(entry);
-    // A list the person built (their saved import plans) is not emptied without their yes.
-    if (Object.hasOwn(emptyValues, name) && !confirmed) return { pending: true, wrote: false };
+  async write(entry, context) {
     const value =
-      "unset" in entry.default
-        ? emptyValues[name]
-        : "osLocale" in entry.default
-          ? context.ports.settings.osLanguage()
-          : defaultValue(entry);
-    if (value === undefined) throw new Error("errors.common.validationFailed");
-    await context.ports.settings.updateApp({ [name]: value } as never);
+      "osLocale" in entry.default ? context.ports.settings.osLanguage() : defaultValue(entry);
+    await context.ports.settings.updateApp({ [key(entry)]: value } as never);
   }
 };
 

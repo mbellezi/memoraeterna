@@ -5208,6 +5208,146 @@
       "updated": "última actualización: {date}"
     }
   },
+  "settingsGeneral": {
+    "language": {
+      "connectionsNote": "Las descripciones de conexiones ya escritas se pueden rehacer en",
+      "defaultOs": "igual que macOS, {language}"
+    },
+    "saveFailed": "No se pudo guardar. No se cambió nada.",
+    "theme": {
+      "dark": "Oscuro",
+      "light": "Claro",
+      "system": "Sistema"
+    }
+  },
+  "settingsLibrary": {
+    "backup": {
+      "action": "Hacer copia ahora",
+      "done": "Copia de seguridad terminada.",
+      "failed": "No se pudo hacer la copia de seguridad.",
+      "running": "Haciendo la copia…",
+      "savedIn": "Guardada en {path}",
+      "verified": "Una restauración de prueba salió bien."
+    },
+    "plans": {
+      "deleteAction": "Eliminar",
+      "deleteAsk": "¿Eliminar «{name}»?",
+      "deleteConfirm": "Eliminar plan",
+      "deleteKept": "Las fuentes ya importadas se quedan como están.",
+      "empty": "Aún no hay planes de importación guardados. Guarda uno al importar.",
+      "loadFailed": "No se pudieron leer los planes de importación guardados.",
+      "loadKept": "No se cambió nada.",
+      "renameAction": "Renombrar",
+      "renameLabel": "Nombre del plan",
+      "saveFailed": "No se pudo guardar. No se cambió nada."
+    },
+    "storage": {
+      "database": "Base de datos local",
+      "files": "Archivos guardados",
+      "filesNote": "los originales que subiste",
+      "sourcesMany": "{count} fuentes",
+      "sourcesOne": "{count} fuente",
+      "where": "Ambos están en la carpeta de datos de Memora en este Mac, y su lugar es fijo. Para tener los originales en una carpeta tuya, activa la copia de aquí abajo; para llevar todo a otro disco, usa la copia de seguridad."
+    },
+    "uploads": {
+      "change": "Cambiar carpeta",
+      "choose": "Elegir una carpeta",
+      "needsFolder": "Elige primero la carpeta: las copias necesitan un lugar.",
+      "noFolder": "Aún no hay carpeta elegida",
+      "off": "Desactivado",
+      "on": "Activado",
+      "pathHint": "Pega la ruta completa de una carpeta de este Mac.",
+      "pathLabel": "Ruta de la carpeta",
+      "pathRejected": "Una ruta completa empieza con «/» e indica una carpeta que existe.",
+      "readFailed": "No se pudo leer la carpeta de las copias.",
+      "saveFailed": "No se pudo guardar. No se cambió nada.",
+      "willReceive": "Esta carpeta empezará a recibir las copias cuando lo actives."
+    }
+  },
+  "settingsPrivacy": {
+    "callLog": {
+      "full": "La captura completa está activada: guarda prompts y respuestas enteros.",
+      "light": "Guarda tiempos, modelos y tokens; prompts y respuestas enteros solo con la captura completa.",
+      "none": "El registro de llamadas de IA está vacío.",
+      "open": "Ver y borrar en Avanzado",
+      "readFailed": "No se pudo leer el registro de llamadas.",
+      "summaryMany": "El registro de llamadas de IA guarda {count} llamadas en este Mac.",
+      "summaryOne": "El registro de llamadas de IA guarda {count} llamada en este Mac."
+    },
+    "history": {
+      "action": "Borrar…",
+      "confirm": "Borrar los Recientes",
+      "dialogBody": "Borra la lista de elementos abiertos hace poco en este Mac. Los elementos fijados se quedan.",
+      "dialogTitle": "¿Borrar los Recientes?",
+      "doneMany": "{count} elementos salieron de los Recientes.",
+      "doneNone": "Los Recientes ya estaban vacíos.",
+      "doneOne": "{count} elemento salió de los Recientes.",
+      "failed": "No se pudieron borrar los Recientes. No se cambió nada."
+    },
+    "leaves": {
+      "books": "Datos de libros y artículos",
+      "booksGoogle": "Google Books",
+      "changeInAi": "Cambiar en IA",
+      "cloud": "En la nube",
+      "columns": {
+        "job": "Trabajo",
+        "what": "Qué sale",
+        "where": "Dónde se ejecuta"
+      },
+      "credentials": "Credenciales guardadas en este Mac (solo los nombres; los valores nunca aparecen): {names}.",
+      "decisions": "OpenAI Decisions",
+      "internet": "En internet",
+      "local": "En este Mac",
+      "lookupAuto": "Open Library, Google Books y Crossref",
+      "lookupGoogle": "Google Books y Crossref",
+      "lookupOpenLibrary": "Open Library y Crossref",
+      "noCredentials": "No hay credenciales guardadas en este Mac.",
+      "noModel": "Ningún modelo elegido",
+      "nothing": "Nada",
+      "off": "Desactivado",
+      "readFailed": "No se pudo leer qué sale de este Mac.",
+      "readKept": "No se cambió nada.",
+      "tableLabel": "Qué sale de este Mac, por trabajo",
+      "what": {
+        "answer": "Tu pregunta y las notas citadas",
+        "books": "ISBN, DOI, título y autores",
+        "decide": "Títulos e ideas de las notas comparadas",
+        "decisions": "Título, idea y comienzo del texto de las notas comparadas",
+        "embed": "Fragmentos de tus fuentes y notas",
+        "judge": "Notas y fragmentos comparados",
+        "writeFast": "Fragmentos de las fuentes y resúmenes",
+        "writeQuality": "Fragmentos de las fuentes"
+      }
+    },
+    "questions": {
+      "action": "Borrar preguntas…",
+      "confirm": "Borrar preguntas",
+      "countMany": "{count} preguntas guardadas",
+      "countMore": "Más de {count} preguntas guardadas",
+      "countNone": "No hay preguntas guardadas.",
+      "countOne": "{count} pregunta guardada",
+      "dialogBody": "Borra todas las preguntas guardadas y sus respuestas. Tus fuentes y notas se quedan. No se puede deshacer.",
+      "dialogTitle": "¿Borrar todas las preguntas?",
+      "doneMany": "{count} preguntas borradas.",
+      "doneNone": "No había preguntas que borrar.",
+      "doneOne": "{count} pregunta borrada.",
+      "failed": "No se pudieron borrar las preguntas. No se cambió nada.",
+      "readFailed": "No se pudieron contar las preguntas guardadas."
+    },
+    "reset": {
+      "action": "Restablecer todo…",
+      "backupLink": "Haz una copia de seguridad antes",
+      "confirm": "Restablecer todo",
+      "dialogBody": "Borra la biblioteca, los índices de búsqueda, los grafos, las preguntas, los historiales, las conexiones, las preferencias y los archivos guardados. Se quedan los perfiles, los proveedores, las rutas y los modelos instalados; las copias de seguridad y tus archivos personales no se tocan.",
+      "dialogTitle": "¿Restablecer todo?",
+      "dialogWarn": "No se puede deshacer.",
+      "failed": "No se pudo terminar el restablecimiento. Revisa los permisos de los archivos y vuelve a intentarlo.",
+      "noUndo": "No se puede deshacer.",
+      "running": "Restableciendo…",
+      "warnings": "El restablecimiento terminó, pero algunos archivos guardados no se pudieron quitar."
+    },
+    "working": "Trabajando…"
+  },
   "settingsRegistry": {
     "activeMatchingPresetId": {
       "help": "Equilibrado es el conjunto calibrado y es de solo lectura. Para editar valores, crea o duplica un preajuste.",
@@ -5457,7 +5597,7 @@
       "label": "Fuentes que se vuelven páginas"
     },
     "privacyCallLog": {
-      "help": "Las últimas llamadas a un modelo, local o en la nube. Solo lectura; el registro completo está en Avanzado.",
+      "help": "Lo que este Mac guarda sobre las llamadas hechas a modelos, locales o en la nube.",
       "label": "Llamadas de IA recientes"
     },
     "privacyClearQuestions": {

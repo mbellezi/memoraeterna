@@ -3,7 +3,7 @@ import { cn } from "../../lib/cn";
 
 /** A native button; `ref` reaches it (React 19 passes refs as props). */
 type ButtonProps = ComponentPropsWithRef<"button"> & {
-  variant?: "primary" | "secondary" | "ghost" | "link" | "danger" | "chip";
+  variant?: "primary" | "secondary" | "ghost" | "link" | "danger" | "danger-outline" | "chip";
   /** `sm` is the 28 px button of a dense row of chips (design record 5.11); the default is 32+. */
   size?: "default" | "sm";
 };
@@ -19,6 +19,8 @@ const variants = {
   // An action that reads as a link (accent text); `cn` does not merge classes, so variants own colour.
   link: "border-transparent bg-transparent text-accent hover:bg-soft hover:text-accent-hover",
   danger: "border-rose-700 bg-rose-700 text-white hover:bg-rose-800",
+  // The button that opens a step which erases for good: outlined and coloured, solid only in the confirmation.
+  "danger-outline": "border-danger bg-surface text-danger hover:bg-danger-soft",
   // A filter or prefix chip that toggles (`aria-pressed`): the pressed one is soft-filled, semibold
   // and ringed with `--border-strong`, as the segmented control's pressed segment is (design record
   // 5.11); accent colour stays with links, focus and the selection bar.

@@ -66,6 +66,7 @@ import { PaletteHost } from "./workspace/palette/PaletteHost";
 import { palette } from "./workspace/palette/palette-store";
 import { toggleQuickLook } from "./workspace/QuickLookModel";
 import { SettingsSurface } from "./settings/SettingsSurface";
+import { useFollowSavedSettings } from "./settings/use-follow-saved-settings";
 import { newSettingsShown, useClassicSettings } from "./settings/settings-place";
 import { Shell } from "./workspace/Shell";
 import { hasNavigator, hostedViewIds, legacyHostFor } from "./workspace/shell-model";
@@ -235,6 +236,23 @@ export function App({
   }, [hasLoadedAppData, appSettings.themeMode]);
   // Assistive technology and the browser read the interface language from the document.
   useDocumentLanguage(appSettings.language);
+  // A section of Settings v2 saves through main; the app follows what main announces (F5 T162).
+  useFollowSavedSettings({
+    enabled: hasLoadedAppData,
+    appBusy: () =>
+      appSaveTimer.current !== null || Object.keys(pendingAppUpdate.current).length > 0,
+    storageBusy: () => storageSaveTimer.current !== null || pendingStorageSettings.current !== null,
+    currentApp: () => lastPersistedAppSettings.current,
+    currentStorage: () => lastPersistedSettings.current,
+    onApp: (saved) => {
+      lastPersistedAppSettings.current = saved;
+      setAppSettings(saved);
+    },
+    onStorage: (saved) => {
+      lastPersistedSettings.current = saved;
+      setSettings(saved);
+    }
+  });
   const preserveKnowledgeGraphViewState = useCallback(
     (mode: KnowledgeGraphDashboardMode, state: KnowledgeGraphViewState) => {
       knowledgeGraphViewStates.current[mode] = state;

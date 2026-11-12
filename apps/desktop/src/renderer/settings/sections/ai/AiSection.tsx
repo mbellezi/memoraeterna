@@ -5,7 +5,7 @@ import type { Translator } from "@app/i18n";
 import type { SettingEntryV2 } from "../../../../shared/settings-registry";
 import { Button } from "../../../components/ui/button";
 import { ErrorState } from "../../../components/ui/error-state";
-import { LoadingState, Skeleton } from "../../../components/ui/skeleton";
+import { Skeleton } from "../../../components/ui/skeleton";
 import { cn } from "../../../lib/cn";
 import { ReadOnlyValue, RegistryRow, SettingRow } from "../../SettingRow";
 import type { SettingsSectionModule } from "../../sections-registry";
@@ -271,31 +271,28 @@ export const section: SettingsSectionModule = {
  * The bars of the section while its values are read, in the shape of what arrives: a group title, the
  * row of four setup cards, the spending-limit line and the first rows of the providers.
  */
-function AiSkeleton({ t }: { t: Translator }) {
+function AiSkeleton() {
   return (
-    <LoadingState t={t} className="mt-4 max-w-[45rem]">
-      <div>
-        <Skeleton className="mt-1 h-3 w-full max-w-[40rem]" />
-        <Skeleton className="mt-8 h-3 w-28" />
-        <Skeleton className="mt-4 h-3.5 w-36" />
-        <Skeleton className="mt-2 h-3 w-80 max-w-full" />
-        <SetupCardsSkeleton className="mt-4" />
-        <div className="flex items-center gap-4 border-b border-border py-4">
-          <Skeleton className="size-4 rounded-full" />
-          <div className="grid flex-1 gap-2">
-            <Skeleton className="h-3.5 w-64 max-w-full" />
-            <Skeleton className="h-3 w-80 max-w-full" />
-          </div>
-          <Skeleton className="h-8 w-44 rounded-lg" />
-        </div>
-        <Skeleton className="mt-10 h-3 w-36" />
-        <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-6 gap-y-2 border-b border-border py-4">
-          <Skeleton className="h-3.5 w-44" />
-          <Skeleton className="row-span-2 h-8 w-32 rounded-lg" />
+    <>
+      <Skeleton className="mt-8 h-3 w-28" />
+      <Skeleton className="mt-4 h-3.5 w-36" />
+      <Skeleton className="mt-2 h-3 w-80 max-w-full" />
+      <SetupCardsSkeleton className="mt-4" />
+      <div className="flex items-center gap-4 border-b border-border py-4">
+        <Skeleton className="size-4 rounded-full" />
+        <div className="grid flex-1 gap-2">
+          <Skeleton className="h-3.5 w-64 max-w-full" />
           <Skeleton className="h-3 w-80 max-w-full" />
         </div>
+        <Skeleton className="h-8 w-44 rounded-lg" />
       </div>
-    </LoadingState>
+      <Skeleton className="mt-10 h-3 w-36" />
+      <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-6 gap-y-2 border-b border-border py-4">
+        <Skeleton className="h-3.5 w-44" />
+        <Skeleton className="row-span-2 h-8 w-32 rounded-lg" />
+        <Skeleton className="h-3 w-80 max-w-full" />
+      </div>
+    </>
   );
 }
 

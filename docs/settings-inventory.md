@@ -494,7 +494,7 @@ reads is removed.
 | `library.storage` | library › data | block | none | unset | none | `M/services/database-service.ts` DatabaseService |
 | `uploadCopies` | library › uploads | copies | storage_settings: `uploadCopiesEnabled`, `uploadCopiesFolderPath` | `false` | upload-copies | `M/services/ingestion-service.ts` IngestionService.stageAssetFiles |
 | `library.backup` | library › backup | page | none | unset | none | `M/services/backup-service.ts` BackupService.create |
-| `processingPresets` | library › imports | page | app.preferences: `processingPresets` | unset | app-preference | `R/components/ProcessingPlanPicker.tsx` ProcessingPlanPicker |
+| `processingPresets` | library › imports | page | app.preferences: `processingPresets` | unset | none | `R/components/ProcessingPlanPicker.tsx` ProcessingPlanPicker |
 | `obsidianVaultPath` | integrations › obsidian | folder | storage_settings: `obsidianVaultPath` | unset | storage-setting | `M/services/obsidian-sync-service.ts` ObsidianSyncService.reconcileVault |
 | `obsidianSync` | integrations › obsidian | segmented | storage_settings: `obsidianSyncEnabled`, `obsidianSyncPaused` | `"off"` | obsidian-sync | `M/services/obsidian-sync-service.ts` isSyncActive |
 | `obsidian.wiki.scope` | integrations › obsidian | info | settings: `obsidian.wiki.scope` | unset | obsidian-wiki-scope | `M/services/obsidian-wiki-projection.ts` ObsidianWikiProjection.scope |
