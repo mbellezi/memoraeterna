@@ -99,7 +99,6 @@ export function RelationsTable({
   useEffect(() => {
     if (sync.revealRowId === null) return;
     reveal(nodes.current.get(sync.revealRowId));
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- `reveal` only reads refs
   }, [sync.revealRowId]);
 
   const onKeyDown = (event: KeyboardEvent<HTMLTableSectionElement>) => {
