@@ -8,6 +8,7 @@ import {
   citedObjectCount,
   emptyStream,
   failureKey,
+  foundNothing,
   numberCitations,
   plainText,
   shownAnswer,
@@ -130,9 +131,23 @@ describe("what the page shows", () => {
     expect(partial.paragraphs).toHaveLength(1);
   });
 
-  it("finds nothing to rest on when a finished answer has no paragraph", () => {
-    const shown = shownAnswer(questionFixture("noGrounding"), emptyStream);
-    expect(shown).toMatchObject({ stage: "done", paragraphs: [] });
+  it("finds nothing to rest on when the Ask failed with a no-evidence key and wrote nothing", () => {
+    const stored = shownAnswer(questionFixture("noGrounding"), emptyStream);
+    expect(stored).toMatchObject({ stage: "failed", paragraphs: [] });
+    expect(foundNothing(stored)).toBe(true);
+    // The stream's failure says the same before the stored Question is read.
+    const streamed = shownAnswer(
+      questionFixture("running"),
+      applyStatus(streamFor(request), {
+        requestId: request,
+        stage: "failed",
+        error: "consultation.errors.noTopicEvidence"
+      })
+    );
+    expect(foundNothing(streamed)).toBe(true);
+    // Another failure, or a failure that kept paragraphs, is a failure.
+    expect(foundNothing(shownAnswer(questionFixture("failed"), emptyStream))).toBe(false);
+    expect(foundNothing(shownAnswer(questionFixture("done"), emptyStream))).toBe(false);
   });
 
   it("picks an older version, which is not stale and has no error", () => {
@@ -227,10 +242,11 @@ describe("the citations in reading order", () => {
 });
 
 describe("where the model ran", () => {
-  it("says local for a local lane, cloud for a provider, and falls back on the privacy", () => {
-    expect(aiPlace({ privacy: "allow_remote" }, { lane: "local-mlx" })).toBe("local");
-    expect(aiPlace({ privacy: "offline_only" }, { provider: "openai" })).toBe("cloud");
-    expect(aiPlace({ privacy: "allow_remote" }, undefined)).toBe("cloud");
-    expect(aiPlace({ privacy: "offline_only" }, undefined)).toBe("local");
+  it("says local for a local lane and cloud for a provider, and nothing until the route is known", () => {
+    expect(aiPlace({ lane: "local-mlx" })).toBe("local");
+    expect(aiPlace({ provider: "openai" })).toBe("cloud");
+    // The stored privacy column never says where a model ran: with no provenance there is no answer.
+    expect(aiPlace(undefined)).toBeNull();
+    expect(aiPlace({})).toBeNull();
   });
 });

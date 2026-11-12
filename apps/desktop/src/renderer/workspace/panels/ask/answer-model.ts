@@ -377,13 +377,33 @@ export function failureKey(error: string | undefined): string | null {
     : null;
 }
 
-/** Whether the model that wrote an answer runs on this Mac or in the cloud, when it says so. */
-export function aiPlace(
-  question: Pick<QuestionView, "privacy">,
-  provenance: QuestionProvenance | undefined
-): "cloud" | "local" {
+/**
+ * The message keys the consultation fails with when nothing in the library can rest an answer. The
+ * backend never stores a finished answer with no paragraph: this failure is how "found nothing"
+ * reaches the page, and asking again would fail the same way.
+ */
+const noEvidenceKeys: readonly string[] = [
+  "consultation.errors.noRelevantEvidence",
+  "consultation.errors.noTopicEvidence"
+];
+
+/** The Ask found nothing in the library to answer from (design record §6.4). */
+export function foundNothing(shown: Pick<ShownAnswer, "stage" | "paragraphs" | "error">): boolean {
+  if (shown.paragraphs.length > 0) return false;
+  return (
+    shown.stage === "done" ||
+    (shown.stage === "failed" && shown.error !== undefined && noEvidenceKeys.includes(shown.error))
+  );
+}
+
+/**
+ * Whether the model that wrote an answer runs on this Mac or in the cloud, when its provenance says
+ * so; null until it does. The Question's stored privacy is never read: routing ignores it, so it
+ * would tell the person their question stayed on this Mac when it may not have.
+ */
+export function aiPlace(provenance: QuestionProvenance | undefined): "cloud" | "local" | null {
   const lane = `${provenance?.lane ?? ""} ${provenance?.runtime ?? ""} ${provenance?.route ?? ""}`;
   if (/local|mlx|llama|ollama/i.test(lane)) return "local";
   if (provenance?.provider !== undefined && provenance.provider !== "") return "cloud";
-  return question.privacy === "allow_remote" ? "cloud" : "local";
+  return null;
 }

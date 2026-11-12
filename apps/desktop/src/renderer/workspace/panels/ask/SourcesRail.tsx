@@ -232,7 +232,7 @@ export function PassageTray({ t, entry }: PassageTrayProps) {
       }}
       // The panel body keeps 3rem of padding under its content and a sticky edge stops at the
       // padding, so the tray reaches past it to rest on the panel's foot.
-      className="sticky [bottom:-3rem] z-[1] mt-6 max-h-32 overflow-hidden border-t border-border bg-surface py-2.5 [box-shadow:0_-6px_14px_-10px_rgba(38,49,64,0.25)]"
+      className="sticky [bottom:-3rem] z-[1] mt-6 max-h-32 overflow-hidden border-t border-border bg-surface py-2.5 [box-shadow:var(--shadow-edge-up)]"
     >
       <div className="grid gap-1">
         <p className="m-0 flex min-w-0 items-baseline gap-1.5 text-xs font-medium text-foreground">

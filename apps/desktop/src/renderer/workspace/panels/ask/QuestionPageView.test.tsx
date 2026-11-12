@@ -15,6 +15,7 @@ import {
 } from "./ask-fixtures";
 import { enterSends } from "./AskComposer";
 import type { QuestionSnapshot } from "./question-controller";
+import { questionState } from "./question-state";
 import { QuestionPageView, trayBelow, type QuestionPageViewProps } from "./QuestionPageView";
 
 const en = createTranslator("en");
@@ -313,6 +314,25 @@ describe("the page after the answer", () => {
     expect(opened).toEqual(["memora://import"]);
   });
 
+  it("draws the no-evidence failure as the nothing-found page, with no failure and no retry", async () => {
+    // The backend stores it as a failed Question: its retry would fail the same way.
+    await dom.render(<QuestionPageView {...props(snapshot(questionFixture("noGrounding")))} />);
+    expect(dom.document.querySelectorAll('[role="alert"]')).toHaveLength(0);
+    expect(dom.document.body.textContent).not.toContain("Retry");
+    expect(dom.document.body.textContent).not.toContain("No relevant original passages");
+    expect(questionState(snapshot(questionFixture("noGrounding")))).toBe("empty");
+    // The same failure heard on the bus, before the stored Question is read.
+    const heard = applyStatus(streamFor(request), {
+      requestId: request,
+      stage: "failed",
+      error: "consultation.errors.noTopicEvidence"
+    });
+    const running = snapshot(questionFixture("running"), heard);
+    await dom.render(<QuestionPageView {...props(running)} />);
+    expect(dom.document.body.textContent).toContain("I found nothing in your library about this.");
+    expect(questionState(running)).toBe("empty");
+  });
+
   it("sends a follow-up with the words in the field, in the same scope", async () => {
     // "Rephrase" puts the question's words in the field: the way to a field with words in it.
     await dom.render(<QuestionPageView {...props(snapshot(questionFixture("noGrounding")))} />);
@@ -353,6 +373,54 @@ describe("the page after the answer", () => {
     await dom.act(() => previous.click());
     expect(dom.document.body.textContent).toContain("Version 1 of 2");
     expect(dom.document.querySelectorAll("[data-answer-paragraph]")).toHaveLength(1);
+  });
+
+  it("goes to the newest version after Ask again, not back to the one picked before", async () => {
+    const question = questionFixture("done");
+    const first = question.answers[0];
+    if (!first) throw new Error("fixture has an answer");
+    const two: QuestionView = {
+      ...question,
+      answers: [
+        { ...first, paragraphs: first.paragraphs.slice(0, 1) },
+        { ...first, version: 2, paragraphs: first.paragraphs.slice(0, 2) }
+      ]
+    };
+    const three: QuestionView = {
+      ...two,
+      answers: [...two.answers, { ...first, version: 3 }]
+    };
+    const running: QuestionView = { ...two, status: "running" };
+    await dom.render(<QuestionPageView {...props(snapshot(two))} />);
+    const click = async (label: string) =>
+      dom.act(() => (dom.document.querySelector(`[aria-label="${label}"]`) as HTMLElement).click());
+    await click("Previous version");
+    await click("Next version");
+    expect(dom.document.body.textContent).toContain("Version 2 of 2");
+    // Ask again: the stream writes, then version 3 is stored.
+    await dom.render(<QuestionPageView {...props(snapshot(running, streamFor(request)))} />);
+    await dom.render(<QuestionPageView {...props(snapshot(three))} />);
+    expect(dom.document.body.textContent).toContain("Version 3 of 3");
+    expect(dom.document.querySelectorAll("[data-answer-paragraph]")).toHaveLength(3);
+  });
+});
+
+describe("where the model ran", () => {
+  const meta = () => dom.document.querySelector("header")?.textContent ?? "";
+
+  it("says nothing of the AI while the answer is written, whatever the stored privacy says", async () => {
+    const running = { ...questionFixture("running"), privacy: "offline_only" as const };
+    const writing = applyStatus(streamFor(request), { requestId: request, stage: "answering" });
+    await dom.render(<QuestionPageView {...props(snapshot(running, writing))} />);
+    expect(meta()).not.toContain("local AI");
+    expect(meta()).not.toContain("cloud AI");
+    // A Question that failed before any version was stored has no route to name either.
+    const failed = { ...questionFixture("failed"), privacy: "offline_only" as const };
+    await dom.render(<QuestionPageView {...props(snapshot(failed))} />);
+    expect(meta()).not.toContain("local AI");
+    // The stored provenance names it.
+    await dom.render(<QuestionPageView {...props(snapshot(questionFixture("done")))} />);
+    expect(meta()).toContain("cloud AI");
   });
 });
 

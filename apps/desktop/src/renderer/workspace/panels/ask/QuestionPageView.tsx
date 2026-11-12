@@ -17,6 +17,7 @@ import {
   aiPlace,
   citedObjectCount,
   failureKey,
+  foundNothing,
   numberCitations,
   plainText,
   shownAnswer,
@@ -150,14 +151,11 @@ function QuestionMeta({
       )
     );
   }
-  if (shown.stage !== "retrieving" || shown.provenance !== undefined)
-    clauses.push(
-      t(
-        aiPlace(question, shown.provenance) === "cloud"
-          ? "askPanel.meta.cloud"
-          : "askPanel.meta.local"
-      )
-    );
+  // Only what the stored provenance says: until it arrives (or when none is stored) the line
+  // names no AI rather than guess from the Question's privacy column.
+  const place = aiPlace(shown.provenance);
+  if (place !== null)
+    clauses.push(t(place === "cloud" ? "askPanel.meta.cloud" : "askPanel.meta.local"));
   return compact ? (
     // The narrow form lists the clauses, one to a line, with no separators to wrap onto a new line.
     <ul className="m-0 grid list-none gap-0.5 p-0 text-xs text-secondary-foreground">
@@ -228,7 +226,7 @@ function LoadedQuestion({
   viewportWidth,
   onOpen,
   onStop,
-  onAskAgain,
+  onAskAgain: askAgainOf,
   followUp,
   question
 }: QuestionPageViewProps & { question: QuestionView }) {
@@ -236,10 +234,17 @@ function LoadedQuestion({
   const idBase = useId();
   const headingId = useId();
   const field = useRef<HTMLTextAreaElement>(null);
-  const [picked, setPicked] = useState<number | null>(null);
+  // The version the person stepped to, with the count it was picked among: a new version (Ask
+  // again) makes the page show the newest, not the one picked before.
+  const [pick, setPick] = useState<{ version: number; among: number } | null>(null);
   const [active, setActive] = useState<number | null>(null);
   const [draft, setDraft] = useState("");
 
+  const onAskAgain = () => {
+    setPick(null);
+    askAgainOf();
+  };
+  const picked = pick !== null && pick.among === question.answers.length ? pick.version : null;
   const shown = useMemo(
     () => shownAnswer(question, snapshot.stream, picked),
     [question, snapshot.stream, picked]
@@ -248,9 +253,10 @@ function LoadedQuestion({
   const { sources, numberOf } = numbering;
   const cited = citedObjectCount(sources);
   const activeEntry = sources.find((entry) => entry.number === active) ?? null;
-  const failed = shown.stage === "failed";
   const grounded = shown.paragraphs.length > 0;
-  const noGrounding = shown.stage === "done" && !grounded;
+  // An Ask that found nothing to rest on is the "nothing found" page, not a failure to retry.
+  const noGrounding = foundNothing(shown);
+  const failed = shown.stage === "failed" && !noGrounding;
   const canStop =
     shown.live && snapshot.action !== "stopping" && snapshot.stream.requestId !== null;
   const canAskAgain = !shown.live && snapshot.action !== "asking";
@@ -416,7 +422,7 @@ function LoadedQuestion({
               t={t}
               version={shown.version}
               versions={shown.versions}
-              onPick={setPicked}
+              onPick={(version) => setPick({ version, among: shown.versions })}
             />
           ) : null}
         </div>

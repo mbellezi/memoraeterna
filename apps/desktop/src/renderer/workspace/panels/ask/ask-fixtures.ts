@@ -105,11 +105,14 @@ export function questionFixture(variant: Variant): QuestionView {
     model: { provider: "openai", model: "gpt", lane: "remote" },
     completedAt: "2026-11-11T09:13:00.000Z"
   };
+  // What the backend stores when nothing in the library rests the answer: a failed Question with
+  // the consultation's no-evidence key and no answer version (a complete answer has paragraphs).
   if (variant === "noGrounding")
     return {
       ...base,
-      status: "complete",
-      answers: [{ ...answerBase, status: "complete", paragraphs: [], stale: false }]
+      status: "failed",
+      errorKey: "consultation.errors.noRelevantEvidence",
+      answers: []
     };
   const paragraphs = paragraphMarkdown.map((markdown, index) => ({
     markdown,
