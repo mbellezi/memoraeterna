@@ -985,7 +985,11 @@
     "nodeCount": "{count} nodi",
     "edgeCount": "{count} relazioni",
     "truncated": "Visualizzazione del sottoinsieme più rilevante",
-    "lod": { "overview": "Comunità", "hubs": "Hub principali", "detail": "Dettaglio completo" },
+    "lod": {
+      "overview": "Comunità",
+      "hubs": "Hub principali",
+      "detail": "Dettaglio completo"
+    },
     "community": "Comunità",
     "source": "Fonte",
     "atomicNote": "Nota atomica",
@@ -1152,7 +1156,11 @@
       "title": "Ogni file, un unico flusso continuo",
       "description": "Segui in tempo reale dalla conversione al grafo della conoscenza, con checkpoint, tentativi ed errori riuniti."
     },
-    "summary": { "active": "Attive ora", "completed": "Completate", "attention": "Da controllare" },
+    "summary": {
+      "active": "Attive ora",
+      "completed": "Completate",
+      "attention": "Da controllare"
+    },
     "batch": {
       "label": "Lotto di elaborazione",
       "plan": "Piano: {plan}",
@@ -1508,7 +1516,10 @@
   },
   "import": {
     "unspecifiedLanguage": "Non specificata",
-    "modes": { "manual": "Contenuto manuale", "file": "File locale" },
+    "modes": {
+      "manual": "Contenuto manuale",
+      "file": "File locale"
+    },
     "steps": {
       "type": "Tipo",
       "origin": "Origine",
@@ -1518,8 +1529,15 @@
       "structure": "Struttura"
     },
     "searchTypes": "Cerca tipi di fonte",
-    "groups": { "notes": "Note", "publications": "Pubblicazioni", "media": "Web, video e file" },
-    "badges": { "container": "Contenitore", "child": "Richiede fonte principale" },
+    "groups": {
+      "notes": "Note",
+      "publications": "Pubblicazioni",
+      "media": "Web, video e file"
+    },
+    "badges": {
+      "container": "Contenitore",
+      "child": "Richiede fonte principale"
+    },
     "hierarchyHint": "Questo tipo puo rilevare capitoli, articoli e sezioni prima dell'elaborazione.",
     "fields": {
       "sourceType": "Tipo di fonte",
@@ -1618,12 +1636,19 @@
       "containerHint": "Componi qui i sottoelementi o passa a un documento unico. Potrai verificare la struttura rilevata prima del salvataggio.",
       "editingHierarchyHint": "Questa modifica riguarda il documento della fonte corrente. I sottoelementi esistenti mantengono il proprio contenuto e possono essere modificati singolarmente dalla biblioteca.",
       "modeLabel": "Organizzazione del contenuto",
-      "modes": { "subitems": "Componi sottoelementi", "document": "Documento unico" },
+      "modes": {
+        "subitems": "Componi sottoelementi",
+        "document": "Documento unico"
+      },
       "modeDescriptions": {
         "subitems": "Scrivi separatamente capitoli, articoli o sezioni e organizzane l’ordine.",
         "document": "Scrivi o incolla un documento Markdown e rileva automaticamente i titoli."
       },
-      "labels": { "chapters": "Capitoli", "articles": "Articoli", "sections": "Sezioni" },
+      "labels": {
+        "chapters": "Capitoli",
+        "articles": "Articoli",
+        "sections": "Sezioni"
+      },
       "placeholders": {
         "chapter": "Titolo del capitolo",
         "article": "Titolo dell’articolo",
@@ -1719,7 +1744,10 @@
         "title": "Ricercabile + organizzato",
         "description": "Crea segmenti ed embedding per la ricerca."
       },
-      "summary": { "title": "Riepilogo", "description": "Genera un riepilogo conciso con prove." },
+      "summary": {
+        "title": "Riepilogo",
+        "description": "Genera un riepilogo conciso con prove."
+      },
       "full_knowledge": {
         "title": "Secondo cervello",
         "description": "Genera riassunti, note, grafo e collegamenti."
@@ -1761,7 +1789,11 @@
     "blockingIssues": "Risolvi {count} problemi prima di continuare.",
     "selectAtLeastOne": "Seleziona almeno un elemento da creare come fonte indipendente.",
     "ready": "La struttura e valida e pronta per la conferma.",
-    "confidence": { "high": "Alta", "medium": "Rivedi", "low": "Bassa" },
+    "confidence": {
+      "high": "Alta",
+      "medium": "Rivedi",
+      "low": "Bassa"
+    },
     "kinds": {
       "part": "Parte",
       "chapter": "Capitolo",
@@ -1899,7 +1931,11 @@
       "empty": "Nessuna nota generata dall'IA attende una revisione facoltativa.",
       "optional": "Queste note sono gia in uso. Rivederle e facoltativo.",
       "unknownSource": "Fonte sconosciuta",
-      "fields": { "title": "Titolo", "idea": "Idea principale", "body": "Corpo della nota" },
+      "fields": {
+        "title": "Titolo",
+        "idea": "Idea principale",
+        "body": "Corpo della nota"
+      },
       "actions": {
         "approve": "Approva",
         "edit": "Modifica",
@@ -2392,8 +2428,13 @@
         "embedding": "Embedding",
         "reranking": "Reranking"
       },
-      "privacy": { "allowRemote": "Consenti modelli remoti", "offlineOnly": "Solo modelli locali" },
-      "languages": { "interface": "Come l'interfaccia" },
+      "privacy": {
+        "allowRemote": "Consenti modelli remoti",
+        "offlineOnly": "Solo modelli locali"
+      },
+      "languages": {
+        "interface": "Come l'interfaccia"
+      },
       "oauth": {
         "authentication": "Autenticazione ChatGPT",
         "connect": "Accedi con ChatGPT",
@@ -2771,7 +2812,11 @@
   },
   "markdown": {
     "modeLabel": "Vista dell’editor",
-    "modes": { "write": "Scrivi", "preview": "Anteprima", "split": "Diviso" },
+    "modes": {
+      "write": "Scrivi",
+      "preview": "Anteprima",
+      "split": "Diviso"
+    },
     "previewLabel": "Anteprima Markdown",
     "emptyPreview": "Inizia a scrivere per vedere l’anteprima.",
     "placeholder": "Scrivi in Markdown…",
@@ -3226,7 +3271,7 @@
         "button": "Chiedi su questo argomento"
       },
       "health": {
-        "good": "Stato buono",
+        "good": "dimensione equilibrata",
         "attention": "Richiede attenzione",
         "violation": "Problema di struttura"
       },
@@ -4630,6 +4675,53 @@
       "graph": "Grafo",
       "history": "Cronologia",
       "mentions": "Menzioni"
+    }
+  },
+  "explore": {
+    "compactError": "Non disponibile",
+    "compactGone": "Non è più qui",
+    "navigator": {
+      "branch": "Ramo",
+      "branchLabel": "Mostrando solo un ramo dell’albero",
+      "errorKept": "Fissati e Recenti sono ancora qui.",
+      "pinHint": "Fissa ciò che apri sempre: ⌘D nel pannello aperto.",
+      "wholeTree": "Albero intero"
+    },
+    "note": {
+      "alsoInInbox": "anche nella Posta in arrivo",
+      "connections": "Connessioni",
+      "error": "Impossibile aprire questa nota.",
+      "errorKept": "Il resto di Esplora resta aperto e le tue note non sono cambiate.",
+      "explainedLocally": "spiegazione scritta dall’IA locale",
+      "gardenerConfidence": "Giardiniere · confidenza {word}",
+      "gardenerSuggestion": "suggerimento del Giardiniere · decidi quando vuoi",
+      "goneBody": "Potrebbe essere stata unita a un’altra nota o rimossa. Nient’altro è cambiato.",
+      "goneHeadline": "Questa nota non è più nella tua libreria.",
+      "moreRelations": "altre {count}",
+      "suggestionsMany": "{count} suggerimenti",
+      "suggestionsOne": "{count} suggerimento",
+      "summaryHint": "Ogni connessione, con la sua evidenza, è nel pannello di contesto."
+    },
+    "root": {
+      "addFirst": "Aggiungi la prima fonte",
+      "areasLead": "Scegli un’area per aprirla accanto. Ciò che apri resta qui, un pannello accanto all’altro.",
+      "areasTitle": "Le tue aree",
+      "emptyBody": "Tutto ciò che apri compare qui, un pannello accanto all’altro. I più vecchi si ripiegano in strisce a sinistra, con tipo e titolo in vista; un clic li riapre. Così il percorso fin qui non si perde mai.",
+      "emptyHeadline": "Ancora nulla di aperto",
+      "error": "Impossibile caricare le tue aree.",
+      "errorKept": "Le tue fonti e le tue note non sono cambiate.",
+      "keyClose": "chiude il pannello attivo",
+      "keyOpen": "apre accanto",
+      "keyPeek": "dà un’occhiata senza aprire",
+      "keySpace": "Spazio",
+      "keysLabel": "Tasti"
+    },
+    "topic": {
+      "error": "Impossibile aprire questo argomento.",
+      "errorKept": "Il resto di Esplora resta aperto e le tue note non sono cambiate.",
+      "goneBody": "Potrebbe essere stato unito a un altro argomento o rimosso. Nient’altro è cambiato.",
+      "goneHeadline": "Questo argomento non è più nell’albero.",
+      "noDirectNotes": "Ancora nessuna nota propria. Le note sono negli argomenti secondari."
     }
   },
   "entityPage": {

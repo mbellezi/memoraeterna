@@ -53,6 +53,8 @@ export interface PanelFrameProps {
   onToggleFocusMode?: () => void;
   /** "Fixar no navegador"; absent until the navigator's pins land, so no control does nothing. */
   onPin?: () => void;
+  /** The object is pinned: the pin is drawn pressed (`aria-pressed`, the accent fill). */
+  pinned?: boolean;
   /** Opens an address beside this panel (a ribbon crumb). */
   onOpen: ObjectOpen;
   ribbonPlace?: RibbonPlace;
@@ -92,12 +94,15 @@ export function pressFocusesPanel(target: unknown, frame: unknown): boolean {
   return false;
 }
 
-const iconButton = cn(
-  "inline-grid size-7 shrink-0 place-items-center rounded-md text-secondary-foreground",
-  "transition-colors hover:bg-surface-hover hover:text-foreground",
+const iconButtonBase = cn(
+  "inline-grid size-7 shrink-0 place-items-center rounded-md transition-colors",
   "focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-accent",
   "[&>svg]:size-4"
 );
+const iconButtonIdle = "text-secondary-foreground hover:bg-surface-hover hover:text-foreground";
+const iconButton = cn(iconButtonBase, iconButtonIdle);
+/** The pressed pin: the accent colour and its soft fill (the idle colours are not on it). */
+const iconButtonPressed = cn(iconButtonBase, "bg-accent-soft text-accent hover:bg-accent-soft");
 
 export function PanelFrame({
   t,
@@ -119,6 +124,7 @@ export function PanelFrame({
   focusMode = false,
   onToggleFocusMode,
   onPin,
+  pinned = false,
   onOpen,
   ribbonPlace,
   onChoosePlace,
@@ -133,8 +139,8 @@ export function PanelFrame({
   const compact = mode === "compact";
   const objectPanel = kind !== null && address.startsWith(`memora://${kind}/`);
   // A panel whose object failed says so once, in its body: the ribbon's own failure line is for a
-  // place that fails while the object reads.
-  const ribbon = objectPanel && state !== "error";
+  // place that fails while the object reads. An object that is gone has no place to show.
+  const ribbon = objectPanel && state !== "error" && state !== "empty";
   // The ribbon draws an edge under it only while content slides beneath it.
   const [scrolled, setScrolled] = useState(false);
 
@@ -255,10 +261,11 @@ export function PanelFrame({
             <button
               type="button"
               aria-label={t("panelFrame.pin")}
-              className={iconButton}
+              aria-pressed={pinned}
+              className={pinned ? iconButtonPressed : iconButton}
               onClick={onPin}
             >
-              <Pin aria-hidden="true" />
+              <Pin aria-hidden="true" className={cn(pinned && "fill-current")} />
             </button>
           </Tooltip>
         ) : null}
@@ -278,7 +285,9 @@ export function PanelFrame({
         data-panel-body=""
         onScroll={(event) => setScrolled(event.currentTarget.scrollTop > 0)}
         className={cn(
-          "min-h-0 flex-1 overflow-auto",
+          // `relative`: an absolutely positioned node of the page (a screen-reader-only label) is
+          // held by the body's own scroll area and never lengthens the window.
+          "relative min-h-0 flex-1 overflow-auto",
           compact ? "px-4 pb-8" : "px-(--top-pl) pb-12",
           // The ribbon holds the body's top padding itself, so its opaque box starts at the edge of
           // the scroll area and no text shows above it.

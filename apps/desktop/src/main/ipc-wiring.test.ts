@@ -200,7 +200,7 @@ describe("the entry files", () => {
       [
         "ipcChannels.appEvents",
         "ipcChannels.menuCommand",
-        "ipcChannels.obsidianDeepLink",
+        "ipcChannels.deepLinkOpen",
         "ipcChannels.windowNavigation"
       ].sort()
     );

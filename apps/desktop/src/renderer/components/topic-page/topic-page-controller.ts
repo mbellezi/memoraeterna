@@ -266,6 +266,14 @@ export class TopicPageController {
   }
 
   /** A read in place: the same topic, the page on screen stays until the new one arrives. */
+  /**
+   * Reads the page again in place (the bus said its overview changed: an undo or an applied
+   * proposal publishes `overview.changed` and nothing else).
+   */
+  reread(): void {
+    this.refresh();
+  }
+
   private refresh(): void {
     if (!this.active) return;
     this.attempt += 1;

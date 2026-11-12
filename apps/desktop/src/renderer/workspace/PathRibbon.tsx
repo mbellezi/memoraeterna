@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import {
   formatObjectAddress,
   parseObjectAddress,
@@ -359,35 +359,44 @@ export function PathRibbonView({
           : null;
 
   const shown = expanded ? segments : foldMiddle(segments, hidden);
-  const crumbs = shown.map((entry, index) => {
-    const separator =
-      index > 0 ? (
+  // A separator belongs to the crumb before it ("Microbiology ›" is one item that never breaks), so
+  // a line that wraps always starts with a crumb's name, never with a lone "›".
+  const joined = (entry: (typeof shown)[number], index: number, crumb: ReactNode) => {
+    const key = isFolded(entry) ? "folded" : entry.id;
+    if (index === shown.length - 1) return <Fragment key={key}>{crumb}</Fragment>;
+    return (
+      <span key={key} className="inline-flex max-w-full items-start gap-x-1">
+        {crumb}
         <span aria-hidden="true" className="text-muted-foreground">
           ›
         </span>
-      ) : null;
+      </span>
+    );
+  };
+  const crumbs = shown.map((entry, index) => {
     if (isFolded(entry))
-      return (
-        <Fragment key="folded">
-          {separator}
-          <button
-            type="button"
-            aria-label={t("panelFrame.ribbon.expand")}
-            title={t("panelFrame.ribbon.expand")}
-            onClick={() => setExpanded(true)}
-            className={cn(
-              "rounded-sm px-0.5 hover:text-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent",
-              tentative && dashed
-            )}
-          >
-            …
-          </button>
-        </Fragment>
+      return joined(
+        entry,
+        index,
+        <button
+          type="button"
+          aria-label={t("panelFrame.ribbon.expand")}
+          title={t("panelFrame.ribbon.expand")}
+          onClick={() => setExpanded(true)}
+          className={cn(
+            "rounded-sm px-0.5 hover:text-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent",
+            tentative && dashed
+          )}
+        >
+          …
+        </button>
       );
     const last = index === shown.length - 1;
     const leaf = !isTopic && last;
     const label = entry.title === "" ? t("panelFrame.ribbon.untitled") : entry.title;
-    const crumb = (
+    return joined(
+      entry,
+      index,
       <ObjectLink
         t={t}
         address={entry.address}
@@ -404,12 +413,6 @@ export function PathRibbonView({
       >
         {label}
       </ObjectLink>
-    );
-    return (
-      <Fragment key={entry.id}>
-        {separator}
-        {crumb}
-      </Fragment>
     );
   });
 

@@ -14,25 +14,43 @@ export function RelationStanceLabel({
   t,
   size = 14,
   className,
-  linked = false
+  linked = false,
+  phrase = null
 }: {
   type: string;
   t: Translator;
   size?: number;
   className?: string;
   linked?: boolean;
+  /**
+   * The directional phrase ("this note supports"), shown in place of the word from 480 px of the
+   * page's container, wrapped at a word when the column is narrow ("this note / supports"), so a
+   * narrow panel still says who supports whom; narrower than that, the word.
+   */
+  phrase?: string | null;
 }) {
   const view = relationTypeView(type);
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1.5 text-xs font-semibold whitespace-nowrap",
+        "inline-flex gap-1.5 text-xs font-semibold whitespace-nowrap",
+        // A phrase can take two lines: the glyph stays level with the first.
+        phrase ? "items-start [&>svg]:mt-0.5" : "items-center",
         stanceTextClass[view.stance],
         className
       )}
     >
       <StanceGlyph stance={view.stance} size={size} />
-      {linked ? t("notePage.linkedStance", { values: { type: t(view.wordKey) } }) : t(view.wordKey)}
+      {phrase ? (
+        <>
+          <span className="@min-[480px]:hidden">{t(view.wordKey)}</span>
+          <span className="hidden whitespace-normal @min-[480px]:inline">{phrase}</span>
+        </>
+      ) : linked ? (
+        t("notePage.linkedStance", { values: { type: t(view.wordKey) } })
+      ) : (
+        t(view.wordKey)
+      )}
     </span>
   );
 }
