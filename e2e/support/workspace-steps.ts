@@ -9,7 +9,7 @@ import { join } from "node:path";
 import { expect, type ElectronApplication, type Locator, type Page } from "@playwright/test";
 
 import type { MemoraSession, StepRecord } from "./app.js";
-import { scanContrast } from "./contrast.js";
+import { scanContrast, settleAnimations } from "./contrast.js";
 import { readGestures } from "./gestures.js";
 
 /** The device-local layout key of the workspace (`R/workspace/persist.ts`, D8). */
@@ -213,6 +213,9 @@ export class StepLog {
       await page.evaluate(
         () => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)))
       );
+      // The switch starts a colour transition on every button and chip: the screenshot and the scan
+      // wait for it to end, or they see colours halfway between the two themes.
+      await settleAnimations(page);
       const path = join(folder, `${base}-${theme}.png`);
       await page.screenshot({ path });
       record.screenshots.push(path);

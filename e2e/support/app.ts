@@ -15,7 +15,7 @@ import { assertLocalModelSeeded, findLocalModelCatalogEntry, LocalModelSeedError
 import { machineRunsMlx, presetCatalogIds } from "@app/domain";
 import { _electron, type ElectronApplication, type Page } from "@playwright/test";
 
-import { scanContrast, type ContrastResult } from "./contrast.js";
+import { scanContrast, settleAnimations, type ContrastResult } from "./contrast.js";
 import { stubOpenDialog } from "./dialog.js";
 import {
   assertJourneysScratchPath,
@@ -294,6 +294,8 @@ export async function captureStep(
   };
   for (const theme of themes) {
     await setTheme(session, theme);
+    // The colour transitions the switch starts end before the screenshot and the scan.
+    await settleAnimations(session.page);
     const path = join(folder, `${base}-${theme}.png`);
     await session.page.screenshot({ path });
     record.screenshots.push(path);

@@ -188,6 +188,11 @@ export interface ContrastSample {
   fontSizePx: number;
   fontWeight: number;
   /**
+   * A transition or a finite animation is running on the element or an ancestor, so the computed
+   * colours are somewhere between two states and say nothing about either.
+   */
+  animating?: boolean;
+  /**
    * The elements from the sample's up to the root that could clip it away: a collapsed box, a
    * `clip` or a `clip-path`. Judged by `isClippedAway`.
    */
@@ -331,6 +336,7 @@ export function effectiveColours(
   const layers = sample.backgrounds.map(parseCssColor);
   if (!foreground || layers.some((layer) => layer === null))
     return { reason: `unparsed colour (${[sample.color, ...sample.backgrounds].join(" | ")})` };
+  if (sample.animating) return { reason: "colour in transition" };
   const painted = layers as Rgba[];
   // How much of a layer shows: its own alpha, faded by the opacity of its element and every ancestor.
   const shown = (index: number) =>
@@ -422,8 +428,14 @@ export function collectInPage(limit: number): ContrastSample[] {
     const images: boolean[] = [];
     const opacities: number[] = [];
     const boxes: ClipBox[] = [];
+    let animating = false;
     for (let node: Element | null = element; node; node = node.parentElement) {
       const style = getComputedStyle(node);
+      for (const animation of node.getAnimations()) {
+        const end = animation.effect?.getComputedTiming().endTime;
+        if (animation.playState === "running" && typeof end === "number" && Number.isFinite(end))
+          animating = true;
+      }
       backgrounds.push(style.backgroundColor);
       images.push(style.backgroundImage !== "none" && style.backgroundImage !== "");
       opacities.push(Number(style.opacity));
@@ -452,7 +464,8 @@ export function collectInPage(limit: number): ContrastSample[] {
       opacities,
       fontSizePx: Number.parseFloat(style.fontSize),
       fontWeight: Number(style.fontWeight) || 400,
-      boxes
+      boxes,
+      animating
     });
   };
   const seen = new Set<Element>();
@@ -526,8 +539,53 @@ export function collectInPage(limit: number): ContrastSample[] {
   return samples;
 }
 
-/** The scan of the page as it is now (the caller sets the theme and waits for it first). */
+/**
+ * Runs in the page: waits until every transition and finite animation has ended (a theme switch
+ * starts a 120 ms colour transition on each button, and the scan would read the colours halfway
+ * between the two themes), then two frames for the last paint. A moving ring or pulse never ends and
+ * is not waited for. Returns how many were still running at the deadline.
+ */
+export async function settleInPage(timeoutMs: number): Promise<number> {
+  const running = () =>
+    document.getAnimations().filter((animation) => {
+      const end = animation.effect?.getComputedTiming().endTime;
+      return (
+        (animation.playState === "running" || animation.pending) &&
+        typeof end === "number" &&
+        Number.isFinite(end)
+      );
+    });
+  const deadline = performance.now() + timeoutMs;
+  for (
+    let pending = running();
+    pending.length > 0 && performance.now() < deadline;
+    pending = running()
+  )
+    await Promise.race([
+      Promise.allSettled(pending.map((animation) => animation.finished)),
+      new Promise((done) => setTimeout(done, Math.max(0, deadline - performance.now())))
+    ]);
+  // Two frames, or a quarter of a second in a window that draws none.
+  await new Promise<void>((done) => {
+    let frames = 0;
+    const tick = () => (++frames >= 2 ? done() : requestAnimationFrame(tick));
+    requestAnimationFrame(tick);
+    setTimeout(done, 250);
+  });
+  return running().length;
+}
+
+/** Lets the page's transitions and animations finish (see `settleInPage`). */
+export async function settleAnimations(page: Page, timeoutMs = 2_000): Promise<void> {
+  await page.evaluate(settleInPage, timeoutMs);
+}
+
+/**
+ * The scan of the page as it is now (the caller sets the theme and waits for it first). The page is
+ * settled first, and a colour that is still in transition is listed as unverifiable, never judged.
+ */
 export async function scanContrast(page: Page, limit = 4_000): Promise<ContrastResult> {
+  await settleAnimations(page);
   const samples = await page.evaluate(collectInPage, limit);
   return evaluateSamples(samples);
 }

@@ -7,6 +7,7 @@ import { call, electronBinary, runInPage } from "./contrast-page.js";
 import {
   collectInPage,
   evaluateSamples,
+  settleInPage,
   type ContrastResult,
   type ContrastSample
 } from "./contrast.js";
@@ -166,4 +167,38 @@ describe.skipIf(!electronAvailable)("the contrast scan on a real page", () => {
       expect(failed("Dim value")).toBeDefined();
     });
   });
+});
+
+describe.skipIf(!electronAvailable)("a theme switch's colour transition", () => {
+  // A button's `transition-colors` (120 ms) starts when the theme class changes. Light text is
+  // fading in over a dark panel: halfway it is neither theme's colour.
+  const page = `<!doctype html><html><head><meta charset="utf-8"><style>
+    body { margin: 0; background: #10151d; font: 14px sans-serif; }
+    section { margin: 8px; padding: 6px; background: #171e28; }
+    #fade { color: #2a3544; transition: color 400ms linear; }
+  </style></head><body><section><span id="fade">Fading text</span></section></body></html>`;
+  const start = {
+    source: `(() => { const el = document.getElementById("fade"); getComputedStyle(el).color;
+      el.style.color = "#e4eaf2"; getComputedStyle(el).color; return true; })()`
+  };
+
+  it("is listed as unverifiable while it runs, and judged once it has settled", async () => {
+    const [, midway, running, settled] = await runInPage(page, [
+      start,
+      { ...call(collectInPage, 4000), waitMs: 100 },
+      call(settleInPage, 2000),
+      call(collectInPage, 4000)
+    ]);
+    const during = evaluateSamples(midway as ContrastSample[]);
+    expect(during.unverifiable).toEqual([
+      expect.objectContaining({ text: "Fading text", reason: "colour in transition" })
+    ]);
+    expect(during.failures).toEqual([]);
+    // Nothing is left running after the wait.
+    expect(running).toBe(0);
+    const after = evaluateSamples(settled as ContrastSample[]);
+    expect(after.unverifiable).toEqual([]);
+    expect(after.failures).toEqual([]);
+    expect(after.checked).toBe(1);
+  }, 90_000);
 });
