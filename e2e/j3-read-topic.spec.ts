@@ -35,6 +35,7 @@ import {
 } from "./support/app.js";
 import { openProfileDb, type ProfileDb } from "./support/db.js";
 import { installGestureCounter, readGestures, resetGestures } from "./support/gestures.js";
+import { pathMustShow, ribbonFailures } from "./support/path-ribbon.js";
 import { journeysRun } from "./support/profile.js";
 import { pressShortcut } from "./support/shortcuts.js";
 
@@ -405,16 +406,21 @@ test("J3 path with 0 clicks (X2): each of the five kinds shows the path of objec
       // Every kind has a place: the answer of the Question cites a placed note, so locate must answer for it.
       if (!located) throw new Error(`objects.locate found nothing for ${want}`);
       const expected = expectedSegments(located);
-      if (target.kind === "question")
+      // A path that must show is not empty: an empty locate and an "unsorted" ribbon would agree.
+      const mustShow = pathMustShow(target.kind, below.belowLevelOne);
+      if (mustShow)
         expect(
           expected.length,
-          "the Question's path is empty: its answer cites no placed note"
+          target.kind === "question"
+            ? "the Question's path is empty: its answer cites no placed note"
+            : `objects.locate gives the ${target.kind} no topic on its primary path`
         ).toBeGreaterThan(0);
       if (target.kind === "note")
         expect
           .soft(below.belowLevelOne, "BASE-J's tree has no note below level 1 (X2's [I])")
           .toBe(true);
 
+      let kindFailed = false;
       for (const route of ["deep link", "Cmd-K"] as const) {
         // Each route opens the object afresh: the stack starts without it.
         await resetGestures(page);
@@ -448,22 +454,26 @@ test("J3 path with 0 clicks (X2): each of the five kinds shows the path of objec
           gesturesToRibbon: gesturesAfter - gesturesBefore,
           gesturesToOpen: gesturesBefore
         });
-        if (target.kind === "question")
-          expect
-            .soft(
-              { state, segments: segments.length > 0 },
-              `question by ${route}: the ribbon shows no path`
-            )
-            .toEqual({ state: expect.stringMatching(/^(placed|tentative)$/u), segments: true });
         // The path is there with no gesture beyond the opening, and it is the path of locate.
         expect
           .soft(gesturesAfter, `${target.kind} by ${route}: a gesture was needed`)
           .toBe(gesturesBefore);
         if (route === "deep link")
           expect.soft(gesturesBefore, `${target.kind}: a deep link needs no gesture`).toBe(0);
+        // The ribbon shows a path where one must show (placed or tentative, with segments), and it is
+        // the path of locate.
+        const failures = ribbonFailures({
+          kind: target.kind,
+          route,
+          state,
+          segments,
+          expected,
+          mustShow
+        });
         expect
-          .soft(segments, `${target.kind} by ${route}: segments differ from objects.locate`)
-          .toEqual(expected);
+          .soft(failures, `${target.kind} by ${route}: the ribbon against objects.locate`)
+          .toEqual([]);
+        if (failures.length > 0) kindFailed = true;
         if (route === "deep link") {
           step += 1;
           await captureAndCheck(session, "j3-x2", step, `${target.kind}-ribbon`);
@@ -472,9 +482,10 @@ test("J3 path with 0 clicks (X2): each of the five kinds shows the path of objec
         await pressShortcut(session, "Meta+W");
         await expect(page.locator(`[data-surface="${target.kind}"]`)).toHaveCount(0);
       }
-      passed += 1;
+      // A kind counts as read only when both routes showed its path.
+      if (!kindFailed) passed += 1;
     }
-    expect(passed).toBe(kinds.length);
+    expect(passed, "kinds whose ribbon held by both routes").toBe(kinds.length);
   } finally {
     const evidence = join(run.evidenceDir, "j3-x2");
     await mkdir(evidence, { recursive: true });
