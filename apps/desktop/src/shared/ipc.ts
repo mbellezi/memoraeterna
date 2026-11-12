@@ -34,7 +34,7 @@ import {
 } from "@app/integration-contracts";
 export { obsidianEditorialConflictsSchema, obsidianResolveInputSchema };
 import type { OnboardingFinishInput, OnboardingState } from "@app/domain";
-import type { ObsidianDeepLink } from "./obsidian-deep-link.js";
+import type { DeepLink } from "./obsidian-deep-link.js";
 import type { AppMenuCommand } from "./app-menu.js";
 import type { AppEventHandler, AppEventType } from "./app-events.js";
 import { objectsIpcChannels, type ObjectsApi } from "./ipc-objects.js";
@@ -230,8 +230,8 @@ export const ipcChannels = {
   settingsGet: "app:settings:get",
   settingsUpdate: "app:settings:update",
   settingsSelectObsidianVault: "app:settings:select-obsidian-vault",
-  obsidianDeepLink: "app:obsidian:open",
-  obsidianDeepLinkPending: "app:obsidian:open:pending",
+  deepLinkOpen: "app:deep-link:open",
+  deepLinkPending: "app:deep-link:open:pending",
   obsidianEditorialConflicts: "app:obsidian:editorial:conflicts",
   obsidianEditorialComparison: "app:obsidian:editorial:comparison",
   obsidianEditorialResolve: "app:obsidian:editorial:resolve",
@@ -2096,9 +2096,12 @@ export interface DesktopApi {
     selectObsidianVault: () => Promise<StorageSettings | null>;
     resetLibrary: () => Promise<LibraryResetResult>;
   };
+  /** The `memora://` links that open an object (D10): pushed as they arrive, and the one that started the app. */
+  deepLink: {
+    onOpen: (listener: (target: DeepLink) => void) => () => void;
+    pendingOpen: () => Promise<DeepLink | null>;
+  };
   obsidian: {
-    onOpen: (listener: (target: ObsidianDeepLink) => void) => () => void;
-    pendingOpen: () => Promise<ObsidianDeepLink | null>;
     editorialConflicts: () => Promise<z.infer<typeof obsidianEditorialConflictsSchema>>;
     editorialComparison: (id: string) => Promise<ObsidianEditReceipt>;
     resolveEditorial: (

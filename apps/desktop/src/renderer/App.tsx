@@ -44,7 +44,6 @@ import {
 } from "../shared/ipc";
 import { cn } from "./lib/cn";
 import { waitForDatabaseReady } from "./lib/database-boot";
-import { createObsidianLinkOpener, type ObsidianLinkActions } from "./lib/obsidian-link";
 import { libraryTargetForNavigation, type PassageAnchor } from "./lib/object-navigation";
 import { useStableCallback } from "./lib/stable-callback";
 import { useDocumentLanguage } from "./lib/document-language";
@@ -57,6 +56,7 @@ import type { ActivityNavigation } from "./components/activity/activity-model";
 import { useFirstRun } from "./components/onboarding/use-first-run";
 import { ToastViewport, useToasts } from "./components/ui/toast";
 import type { KnowledgeGraphViewState } from "./components/KnowledgeGraphDashboard";
+import { useDeepLinks } from "./workspace/destinations/explore/deep-link";
 import { PanelStack, panelRegistry } from "./workspace/PanelStack";
 import { Shell } from "./workspace/Shell";
 import { hasNavigator, hostedViewIds, legacyHostFor } from "./workspace/shell-model";
@@ -261,36 +261,9 @@ export function App({
     setWikiHistory((current) => showInWiki(current, topicId));
     setActiveView("wiki");
   });
-  // A link from Obsidian: the Wiki shows its notice where it starts, so an open topic gives way to it.
-  const showWikiNotice = useStableCallback((kind: WikiNoticeKind) => {
-    setWikiNotice((current) => ({ token: (current?.token ?? 0) + 1, kind }));
-    setWikiHistory((current) => showInWiki(current, null));
-    setActiveView("wiki");
-  });
-  // What each kind of link does here; a topic that was merged opens its successor and says so.
-  const obsidianLinkActions = useStableCallback((): ObsidianLinkActions => ({
-    removedWikiPage: () => showWikiNotice("removedPage"),
-    source: (target) => {
-      libraryTargetToken.current += 1;
-      setLibraryTarget({ ...target, token: libraryTargetToken.current });
-      setActiveView("library");
-    },
-    topic: (topicId, redirected) => {
-      openTopic(topicId);
-      if (redirected) pushToast(t("topics.page.redirected"), "info");
-    },
-    topicNotFound: () => showWikiNotice("topicNotFound")
-  }));
-  const [openObsidianLink] = useState(() =>
-    createObsidianLinkOpener({ topics: () => window.app.topics, actions: obsidianLinkActions })
-  );
-  useEffect(() => {
-    const off = window.app.obsidian.onOpen((link) => void openObsidianLink(link));
-    void window.app.obsidian.pendingOpen().then((target) => {
-      if (target) void openObsidianLink(target);
-    });
-    return off;
-  }, [openObsidianLink]);
+  // A link from Obsidian or the system opens its object as a panel (D10); a page of the retired
+  // wiki says so in a notice.
+  useDeepLinks(workspace, dispatch, () => pushToast(t("topics.placeholder.notice"), "info"));
   // Closing the Topic page (its button or Cmd-W) shows where to start; Back opens the topic again.
   const closeWikiTopic = useStableCallback(() =>
     setWikiHistory((current) => showInWiki(current, null))

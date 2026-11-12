@@ -36,12 +36,16 @@ import {
   serializeManagedFrontmatter,
   wikiGeneratedStart,
   wikiGeneratedEnd,
-  wikiLink,
   safeWikiLabel,
   type ObsidianManagedFrontmatter
 } from "@app/integration-contracts";
 import type { StorageSettings } from "../../shared/ipc.js";
-import { collisionFileName, slugify } from "./obsidian-projection.js";
+import {
+  collisionFileName,
+  projectionLink,
+  projectionObjectAddress,
+  slugify
+} from "./obsidian-projection.js";
 import { trackObsidianProjection } from "./obsidian-projection-events.js";
 import {
   safeVaultPath,
@@ -777,13 +781,16 @@ export class ObsidianWikiProjection {
         `${slugify(r.sourceTitle)}--${slugify(r.targetTitle)}.md`
       );
     const link = (id: string, title: string, kind = "source") => {
-      if (!missing.has(id)) return wikiLink(paths.get(id), title, id, kind);
+      if (!missing.has(id)) return projectionLink(paths.get(id), title, id, kind);
       const note = noteById.get(id),
         relation = relations.find((r) => r.id === id);
+      const relationAddress = relation
+        ? projectionObjectAddress("source", relation.source_item_id, { relation: id })
+        : null;
       return (
-        (relation
-          ? `[${safeWikiLabel(title)}](memora://open/source/${relation.source_item_id}?relation=${id})`
-          : wikiLink(undefined, title, note?.sourceId ?? id, note ? "source" : kind)) +
+        (relationAddress
+          ? `[${safeWikiLabel(title)}](${relationAddress})`
+          : projectionLink(undefined, title, note?.sourceId ?? id, note ? "source" : kind)) +
         " · " +
         t("obsidianEditing.deleted")
       );
@@ -907,8 +914,8 @@ export class ObsidianWikiProjection {
           .map((entry) => ({ id: entry.topic.id, title: entry.title }))
       : [];
     const indexGenerated = [
-      topicRoot ? link(topicRoot.topic.id, topicRoot.title, "wiki") : "",
-      list(areas),
+      topicRoot ? link(topicRoot.topic.id, topicRoot.title, "topic") : "",
+      list(areas, "topic"),
       link(CATALOG, t("obsidianWiki.catalog"), "wiki"),
       link(RELATIONS, t("obsidianWiki.connections"), "wiki")
     ]

@@ -211,14 +211,14 @@ describe("the area channels in ipcChannels", () => {
 const pushChannels = [
   ipcChannels.appEvents,
   ipcChannels.menuCommand,
-  ipcChannels.obsidianDeepLink,
+  ipcChannels.deepLinkOpen,
   ipcChannels.windowNavigation
 ].sort();
 
 describe("the push channels the preload listens on (F5 D16, T125)", () => {
   it("are, in the source, the bus, the menu, the window navigation and the deep link, and no other", () => {
     const allowed = new Set(
-      ["appEvents", "menuCommand", "obsidianDeepLink", "windowNavigation"].map(
+      ["appEvents", "menuCommand", "deepLinkOpen", "windowNavigation"].map(
         (name) => `ipcChannels.${name}`
       )
     );
@@ -260,7 +260,7 @@ describe("the push channels the preload listens on (F5 D16, T125)", () => {
     visit(exposed, 0);
     exposed.system.subscribeNavigation(noop);
     exposed.menu.subscribeCommand(noop);
-    exposed.obsidian.onOpen(noop);
+    exposed.deepLink.onOpen(noop);
     expect([...new Set(electron.listened)].sort()).toEqual(pushChannels);
   });
 });
