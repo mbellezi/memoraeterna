@@ -439,10 +439,12 @@ describe("the Ask tab asks the scope of the object in focus", () => {
   });
 
   it("follows the jobs only while a run of the source is live", async () => {
-    const onAppEvent = vi.fn((_type: string) => () => undefined);
-    app.onAppEvent = onAppEvent;
-    const subscribed = () =>
-      onAppEvent.mock.calls.filter(([type]) => type === "job.progress").length;
+    const types: string[] = [];
+    app.onAppEvent = (type: string) => {
+      types.push(type);
+      return () => undefined;
+    };
+    const subscribed = () => types.filter((type) => type === "job.progress").length;
     const progress = (status: string | null) => ({
       sourceId: uuid(5),
       run: status ? { status } : null,
