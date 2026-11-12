@@ -680,6 +680,30 @@ describe("local models and profiles", () => {
 });
 
 describe("OpenAI Decisions", () => {
+  it("keeps the same row on the page when its status arrives, so a row that took focus keeps it", async () => {
+    let arrive: (status: unknown) => void = () => undefined;
+    await mount(
+      ai({
+        "ai.decisionsStatus": () =>
+          new Promise((resolve) => {
+            arrive = resolve;
+          })
+      })
+    );
+    const waiting = row("relations.decisions")!;
+    expect(waiting.querySelector('[role="switch"]')).toBeNull();
+    await dom.act(async () => {
+      arrive(decisionsFixture);
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    await flush();
+    const ready = row("relations.decisions")!;
+    expect(ready.querySelector('[role="switch"]')).not.toBeNull();
+    // The same element: a row that was focused (a link, a search result) is not replaced under it.
+    expect(ready).toBe(waiting);
+    expect(waiting.isConnected).toBe(true);
+  });
+
   it("asks first, with the notice of what leaves this Mac, and turns on only on the yes", async () => {
     await mount();
     const decisions = row("relations.decisions")!;
