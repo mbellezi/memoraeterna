@@ -146,11 +146,12 @@ test("J-idle: 60 s idle in each destination and Settings, no invocation without 
   const reports: WindowReport[] = [];
   try {
     await waitForDatabase(page, 180_000);
-    // Dark is the default (Q39): the app is made to follow the window's scheme, so every scan is drawn
-    // in the theme setTheme asks for and none depends on the default or on what the profile stored.
-    await followSystemTheme(session);
     await setContentSize(session, 1280, 800);
     await expect(page.locator('[data-surface="shell"]').first()).toBeVisible({ timeout: 60_000 });
+    // Dark is the default (Q39): the app is made to follow the window's scheme, so every scan is drawn
+    // in the theme setTheme asks for and none depends on the default or on what the profile stored.
+    // Asked once the shell is up: the app has loaded its settings and follows a change made outside it.
+    await followSystemTheme(session);
     // The trace must be on, or the journey proves nothing.
     expect(await readIpcTrace(electronApp), "MEMORA_IPC_TRACE is not recording").not.toBeNull();
     await recordBus(page);

@@ -164,11 +164,12 @@ test("J2 import to tree: Add through Cmd-N pushes the Source at once and its not
   let report: Record<string, unknown> = {};
   try {
     await waitForDatabase(page, 180_000);
-    // Dark is the default (Q39): the app is made to follow the window's scheme, so every scan is drawn
-    // in the theme setTheme asks for and none depends on the default or on what the profile stored.
-    await followSystemTheme(session);
     await setContentSize(session, 1440, 900);
     await expect(page.locator('[data-surface="shell"]').first()).toBeVisible({ timeout: 60_000 });
+    // Dark is the default (Q39): the app is made to follow the window's scheme, so every scan is drawn
+    // in the theme setTheme asks for and none depends on the default or on what the profile stored.
+    // Asked once the shell is up: the app has loaded its settings and follows a change made outside it.
+    await followSystemTheme(session);
     db = await openProfileDb(session.userDataDir);
     const sourcesBefore = await db.query<{ id: string }>("select id::text as id from source_items");
     const [failedRow] = await db.query<{ failed: number }>(

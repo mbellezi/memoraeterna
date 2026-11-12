@@ -178,9 +178,12 @@ describe("setTheme", () => {
 });
 
 describe("followSystemTheme", () => {
-  const fakeSession = (follows: boolean) => {
+  // `followsFrom`: the number of settings saves after which the page follows the scheme (the renderer
+  // drops the changes announced before it loaded its settings); Infinity never follows.
+  const fakeSession = (follows: boolean, followsFrom = 1) => {
     const calls: string[] = [];
     let scheme = "light";
+    let saves = 0;
     const session = {
       electronApp: { evaluate: async () => undefined },
       page: {
@@ -189,16 +192,29 @@ describe("followSystemTheme", () => {
         },
         waitForFunction: async () => undefined,
         evaluate: async (run: unknown, input: unknown) => {
-          if (run === readDrawnTheme) return follows ? scheme : "dark";
+          if (run === readDrawnTheme) return follows && saves >= followsFrom ? scheme : "dark";
           if (run === settleInPage) return 0;
           const call = input as { path?: string; args?: unknown[] };
-          if (call?.path) calls.push(`${call.path} ${JSON.stringify(call.args)}`);
+          if (call?.path) {
+            saves += 1;
+            calls.push(`${call.path} ${JSON.stringify(call.args)}`);
+          }
           return undefined;
         }
       }
     };
     return { calls, session };
   };
+
+  it("asks again with a real change when the first one was announced before the renderer listened", async () => {
+    const { calls, session } = fakeSession(true, 2);
+    await followSystemTheme(session as never, 5_000, 150);
+    expect(calls).toEqual([
+      'settings.updateApp [{"themeMode":"system"}]',
+      'settings.updateApp [{"themeMode":"light"}]',
+      'settings.updateApp [{"themeMode":"system"}]'
+    ]);
+  });
 
   it("sets the app's theme to follow the system, explicitly, and proves both schemes reach the page", async () => {
     const { calls, session } = fakeSession(true);

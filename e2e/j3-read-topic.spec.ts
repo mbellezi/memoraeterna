@@ -194,11 +194,12 @@ test("J3 read topic: a navigator topic, its member note beside it, back within t
   let db: ProfileDb | null = null;
   try {
     await waitForDatabase(page, 180_000);
-    // Dark is the default (Q39): the app is made to follow the window's scheme, so every scan is drawn
-    // in the theme setTheme asks for and none depends on the default or on what the profile stored.
-    await followSystemTheme(session);
     await setContentSize(session, 1440, 900);
     await expect(page.locator('[data-surface="shell"]').first()).toBeVisible({ timeout: 60_000 });
+    // Dark is the default (Q39): the app is made to follow the window's scheme, so every scan is drawn
+    // in the theme setTheme asks for and none depends on the default or on what the profile stored.
+    // Asked once the shell is up: the app has loaded its settings and follows a change made outside it.
+    await followSystemTheme(session);
     db = await openProfileDb(session.userDataDir);
     const { segments } = await noteBelowLevelOne(page, db);
     const topicId = segments[segments.length - 1]!.split("/").pop()!;
@@ -343,11 +344,12 @@ test("J3 path with 0 clicks (X2): each of the five kinds shows the path of objec
   const report: Record<string, unknown>[] = [];
   try {
     await waitForDatabase(page, 180_000);
-    // Dark is the default (Q39): the app is made to follow the window's scheme, so every scan is drawn
-    // in the theme setTheme asks for and none depends on the default or on what the profile stored.
-    await followSystemTheme(session);
     await setContentSize(session, 1440, 900);
     await expect(page.locator('[data-surface="shell"]').first()).toBeVisible({ timeout: 60_000 });
+    // Dark is the default (Q39): the app is made to follow the window's scheme, so every scan is drawn
+    // in the theme setTheme asks for and none depends on the default or on what the profile stored.
+    // Asked once the shell is up: the app has loaded its settings and follows a change made outside it.
+    await followSystemTheme(session);
     db = await openProfileDb(session.userDataDir);
 
     // One object of each kind. The note below level 1 comes first; its topic is the topic.

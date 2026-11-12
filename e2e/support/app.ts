@@ -317,15 +317,29 @@ export async function setTheme(session: Pick<MemoraSession, "electronApp" | "pag
  * switch moves: a journey that scans both themes calls this once, explicitly, before its first step,
  * and so never depends on the default or on what the profile stored. Then it proves both switches
  * reach the page.
+ *
+ * The renderer follows a change made outside it only once it has loaded its settings
+ * (`useFollowSavedSettings` is enabled then): a change announced before that is dropped, and saving
+ * "system" again announces nothing, since no value moved. So when the page has not followed within
+ * `askAgainMs`, the theme is stored as the scheme asked for and then as "system" again: two real
+ * changes, each drawn in the wanted theme, until it follows or `timeoutMs` runs out.
  */
 export async function followSystemTheme(
   session: Pick<MemoraSession, "electronApp" | "page">,
-  timeoutMs = 15_000
+  timeoutMs = 15_000,
+  askAgainMs = 3_000
 ) {
   await invokeApp(session.page, "settings.updateApp", { themeMode: "system" });
   for (const theme of ["light", "dark"] as const) {
     await setTheme(session, theme);
-    const drawn = await waitForDrawnTheme(session.page, theme, timeoutMs);
+    const deadline = Date.now() + timeoutMs;
+    const slice = () => Math.max(0, Math.min(askAgainMs, deadline - Date.now()));
+    let drawn = await waitForDrawnTheme(session.page, theme, slice());
+    while (drawn !== theme && Date.now() < deadline) {
+      await invokeApp(session.page, "settings.updateApp", { themeMode: theme });
+      await invokeApp(session.page, "settings.updateApp", { themeMode: "system" });
+      drawn = await waitForDrawnTheme(session.page, theme, slice());
+    }
     if (drawn !== theme)
       throw new Error(`The app did not follow the colour scheme to ${theme}: it is drawn ${drawn}`);
   }

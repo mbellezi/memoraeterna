@@ -276,9 +276,6 @@ test("J1 first run: onboarding, Home as the first-run surface, the first source 
   let report: Record<string, unknown> = {};
   try {
     await waitForDatabase(page, minutes(3));
-    // Dark is the default (Q39): the app is made to follow the window's scheme, so every scan is drawn
-    // in the theme setTheme asks for and none depends on the default or on what the profile stored.
-    await followSystemTheme(session);
     lap("databaseReady");
     db = await openProfileDb(userDataDir);
 
@@ -288,6 +285,10 @@ test("J1 first run: onboarding, Home as the first-run surface, the first source 
     });
     await expect(page.locator('[data-surface="shell"]')).toHaveCount(0);
     await expect(page.locator("main form select")).toHaveCount(2, { timeout: 60_000 });
+    // Dark is the default (Q39): the app is made to follow the window's scheme, so every scan is drawn
+    // in the theme setTheme asks for and none depends on the default or on what the profile stored.
+    // Asked once the first-run view is up: the app has loaded its settings and follows a change.
+    await followSystemTheme(session);
     // X12 scans the first-run view too: the languages step stands in both themes.
     await captureAndCheck(session, 0, "first-run-languages");
     await page.locator("main form select").nth(1).selectOption(contentLanguage);
