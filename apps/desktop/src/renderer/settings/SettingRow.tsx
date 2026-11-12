@@ -1,13 +1,14 @@
-import { useId, type ReactNode } from "react";
+import { useId, useState, type ReactNode } from "react";
 import { RotateCcw } from "lucide-react";
 import type { Translator } from "@app/i18n";
 
 import type { SettingEntryV2 } from "../../shared/settings-registry";
+import { Button } from "../components/ui/button";
 import { cn } from "../lib/cn";
 import { ChangedMarker } from "./ChangedMarker";
 import { InlineAction } from "./InlineAction";
 import { useSettings } from "./settings-context";
-import { defaultText, helpOf, labelOf, valueText } from "./settings-model";
+import { defaultText, helpOf, labelOf, resetNeedsConfirm, valueText } from "./settings-model";
 import type { RowReset } from "./settings-store";
 
 export interface SettingRowProps {
@@ -27,6 +28,11 @@ export interface SettingRowProps {
   defaultVaries?: boolean;
   /** Puts the setting back; the row offers it only while it differs. */
   onReset?: (() => void) | undefined;
+  /**
+   * Restoring deletes something the person gave (a stored key): the row asks first, in its line,
+   * and only "Remove" calls `onReset`.
+   */
+  confirmReset?: boolean;
   reset?: RowReset;
   /** A line under the help (a status, a pointer to another section). */
   note?: ReactNode;
@@ -54,6 +60,7 @@ export function SettingRow({
   defaultLabel,
   defaultVaries = false,
   onReset,
+  confirmReset = false,
   reset = "idle",
   note,
   stack = false,
@@ -61,6 +68,7 @@ export function SettingRow({
   className
 }: SettingRowProps) {
   const labelId = useId();
+  const [asking, setAsking] = useState(false);
   const showDefault = changed && (defaultLabel !== undefined || defaultVaries || onReset);
   return (
     <div
@@ -114,11 +122,28 @@ export function SettingRow({
                 <span role="status" className="text-secondary-foreground">
                   {t("settingsShell.row.resetting")}
                 </span>
+              ) : asking ? (
+                <span role="group" className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                  <span className="text-foreground">{t("settingsShell.row.removeAsk")}</span>
+                  <Button
+                    variant="secondary"
+                    aria-label={`${t("settingsShell.row.removeConfirm")}: ${label}`}
+                    onClick={() => {
+                      setAsking(false);
+                      onReset();
+                    }}
+                  >
+                    {t("settingsShell.row.removeConfirm")}
+                  </Button>
+                  <Button variant="ghost" onClick={() => setAsking(false)}>
+                    {t("shell.actions.cancel")}
+                  </Button>
+                </span>
               ) : (
                 <InlineAction
-                  onClick={onReset}
+                  onClick={confirmReset ? () => setAsking(true) : onReset}
                   aria-label={`${t("settingsShell.row.reset")}: ${label}`}
-                  className="text-xs"
+                  size="xs"
                 >
                   <RotateCcw aria-hidden="true" />
                   {t("settingsShell.row.reset")}
@@ -186,7 +211,12 @@ export function RegistryRow({
       changed={changed}
       defaultLabel={defaultWords}
       defaultVaries={defaultWords === undefined && description?.default === null}
-      onReset={entry.reset === "none" ? undefined : () => void settings.reset(entry.id)}
+      onReset={
+        entry.reset === "none"
+          ? undefined
+          : () => void settings.reset(entry.id, resetNeedsConfirm(entry))
+      }
+      confirmReset={resetNeedsConfirm(entry)}
       reset={settings.rowState(entry.id)}
       highlighted={settings.highlighted === entry.id}
       {...(control !== undefined ? { control } : {})}

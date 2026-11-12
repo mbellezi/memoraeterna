@@ -4671,6 +4671,8 @@
       "changed": "Changed",
       "default": "Default:",
       "defaultVaries": "Default: depends on this Mac and the other options",
+      "removeAsk": "Remove it from this Mac? You would have to enter it again.",
+      "removeConfirm": "Remove",
       "reset": "Restore default",
       "resetFailed": "Could not restore it. Nothing was changed.",
       "resetPending": "One step is left for you to confirm in the option itself.",
@@ -4710,6 +4712,8 @@
       "restoreAskMany": "Restore {count} settings to their defaults?",
       "restoreAskOne": "Restore {count} setting to its default?",
       "restoreConfirm": "Restore",
+      "restoreFailedMany": "{count} could not be restored and stayed as they were.",
+      "restoreFailedOne": "{count} could not be restored and stayed as it was.",
       "restoreSkippedMany": "{count} need a step from you and stayed as they were.",
       "restoreSkippedOne": "{count} needs a step from you and stayed as it was."
     },

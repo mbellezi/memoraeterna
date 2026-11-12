@@ -4674,6 +4674,8 @@
       "changed": "Alterado",
       "default": "Padrão:",
       "defaultVaries": "Padrão: depende deste Mac e das outras opções",
+      "removeAsk": "Remover deste Mac? Será preciso informar de novo.",
+      "removeConfirm": "Remover",
       "reset": "Restaurar padrão",
       "resetFailed": "Não deu para restaurar. Nada foi alterado.",
       "resetPending": "Falta um passo que você confirma na própria opção.",
@@ -4713,6 +4715,8 @@
       "restoreAskMany": "Restaurar {count} ajustes ao padrão?",
       "restoreAskOne": "Restaurar {count} ajuste ao padrão?",
       "restoreConfirm": "Restaurar",
+      "restoreFailedMany": "{count} não puderam ser restaurados e ficaram como estavam.",
+      "restoreFailedOne": "{count} não pôde ser restaurado e ficou como estava.",
       "restoreSkippedMany": "{count} precisam de um passo seu e ficaram como estavam.",
       "restoreSkippedOne": "{count} precisa de um passo seu e ficou como estava."
     },

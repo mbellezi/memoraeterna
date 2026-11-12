@@ -6,6 +6,7 @@ import type { SettingsMessages } from "../../shared/settings-search";
 import type { SettingEntryV2 } from "../../shared/settings-registry";
 import type { SettingHit } from "../../shared/settings-search";
 import { Kbd } from "../components/ui/kbd";
+import { Tooltip } from "../components/ui/tooltip";
 import { cn } from "../lib/cn";
 import { useOverflowLevel } from "../lib/use-overflow-level";
 import { ChangedMarker } from "./ChangedMarker";
@@ -79,18 +80,20 @@ export function SettingsSearchField({
           {value === "" ? <FieldPlaceholder t={t} /> : null}
         </span>
         {value !== "" ? (
-          <button
-            type="button"
-            aria-label={t("settingsShell.search.clear")}
-            onClick={() => onChange("")}
-            className={cn(
-              "inline-flex size-6 items-center justify-center rounded-sm border-0 bg-transparent",
-              "text-secondary-foreground hover:bg-surface-hover hover:text-foreground",
-              "focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent"
-            )}
-          >
-            <X aria-hidden="true" className="size-4" />
-          </button>
+          <Tooltip label={t("settingsShell.search.clear")}>
+            <button
+              type="button"
+              aria-label={t("settingsShell.search.clear")}
+              onClick={() => onChange("")}
+              className={cn(
+                "inline-flex size-6 items-center justify-center rounded-sm border-0 bg-transparent",
+                "text-secondary-foreground hover:bg-surface-hover hover:text-foreground",
+                "focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent"
+              )}
+            >
+              <X aria-hidden="true" className="size-4" />
+            </button>
+          </Tooltip>
         ) : (
           <Kbd aria-hidden="true" className="mr-1">
             ⌘F
@@ -309,7 +312,7 @@ export function SettingsResults({
                     <span className="col-start-1 text-xs leading-5 text-muted-foreground">
                       {t(sectionMeta[hit.section].name)} › {groupLabelOf(t, hit.section, hit.group)}
                     </span>
-                    <span className="col-start-1 line-clamp-2 max-w-[32.5rem] text-sm text-secondary-foreground [text-wrap:pretty]">
+                    <span className="col-start-1 max-w-[32.5rem] text-sm text-secondary-foreground [text-wrap:pretty]">
                       {helpOf(t, entry)}
                     </span>
                     <span className="col-start-2 row-span-3 row-start-1 flex max-w-60 items-center gap-2 self-center whitespace-nowrap text-sm text-secondary-foreground">

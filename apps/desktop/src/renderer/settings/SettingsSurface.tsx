@@ -10,7 +10,7 @@ import {
   type KeyboardEvent
 } from "react";
 import { ChevronDown } from "lucide-react";
-import type { Translator } from "@app/i18n";
+import type { MessageKey, Translator } from "@app/i18n";
 
 import { settingsRegistryV2, type SettingEntryV2 } from "../../shared/settings-registry";
 import { searchSettings, type SettingHit } from "../../shared/settings-search";
@@ -28,6 +28,7 @@ import {
   entryForAddress,
   hitCounts,
   labelOf,
+  resetNeedsConfirm,
   sectionMeta,
   settingSelector,
   settingsState,
@@ -126,11 +127,19 @@ export function SettingsSurface({
     if (entry) setPendingRow(entry.id);
   }
 
-  // Focus: the search field each time Settings is shown, unless a request is taking a row.
+  // Focus: the search field each time Settings is shown, unless a request is taking a row. The field
+  // waits, disabled, while the first read is on its way and a browser does not focus a disabled
+  // field, so the wish stays until the field can take it (once per time shown).
+  const fieldWaits = read.status === "loading" && !searching;
+  const wantsFocus = useRef(false);
   useEffect(() => {
-    if (!active || pendingRow !== null) return;
-    inputRef.current?.focus();
+    wantsFocus.current = active && pendingRow === null;
   }, [active]); // eslint-disable-line react-hooks/exhaustive-deps -- once per time shown
+  useEffect(() => {
+    if (!wantsFocus.current || fieldWaits) return;
+    wantsFocus.current = false;
+    inputRef.current?.focus();
+  }, [active, fieldWaits]);
 
   // A row asked for: scroll to it, focus it and light it, once the row is on screen.
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -249,7 +258,7 @@ export function SettingsSurface({
           t={t}
           value={query}
           onChange={setQuery}
-          disabled={read.status === "loading" && !searching}
+          disabled={fieldWaits}
           inputRef={inputRef}
           onKeyDown={onSearchKeyDown}
           controls={searching ? resultsId : undefined}
@@ -264,7 +273,7 @@ export function SettingsSurface({
         <div className="mx-2 mt-auto grid gap-2 pt-4 text-xs text-muted-foreground">
           <p className="m-0 [text-wrap:pretty]">{t("settingsShell.navFoot")}</p>
           {onOpenClassic ? (
-            <InlineAction onClick={onOpenClassic} className="text-xs">
+            <InlineAction onClick={onOpenClassic} size="xs">
               {t("settingsShell.classic.open")}
             </InlineAction>
           ) : null}
@@ -364,7 +373,9 @@ function SettingsSkeleton({ t }: { t: Translator }) {
 /**
  * Under the section's title: how many of its settings differ from their default, which ones (a list
  * that opens in place), and "Restore all", which asks once, in the line, before it writes anything.
- * A setting that waits for a step the person confirms is left as it was and counted.
+ * A setting that deletes something the person gave (a stored key) is never restored from here: it
+ * has its own confirmed step in its row, so it is left as it was and counted, like a setting that
+ * waits for a step the person confirms. A reset that failed is told apart from those.
  */
 function SectionSummary({
   t,
@@ -384,32 +395,44 @@ function SectionSummary({
   const [open, setOpen] = useState(false);
   const [asking, setAsking] = useState(false);
   const [working, setWorking] = useState(false);
-  const [left, setLeft] = useState(0);
+  const [left, setLeft] = useState({ pending: 0, failed: 0 });
   const listId = useId();
   const count = entries.length;
+  const restorable = entries.filter((entry) => !resetNeedsConfirm(entry));
+  const askCount = restorable.length;
+
+  const plural = (n: number, one: MessageKey, many: MessageKey) =>
+    t(n === 1 ? one : many, { values: { count: n } });
+  const notes = [
+    left.pending > 0
+      ? plural(
+          left.pending,
+          "settingsShell.section.restoreSkippedOne",
+          "settingsShell.section.restoreSkippedMany"
+        )
+      : null,
+    left.failed > 0
+      ? plural(
+          left.failed,
+          "settingsShell.section.restoreFailedOne",
+          "settingsShell.section.restoreFailedMany"
+        )
+      : null
+  ].filter((note): note is string => note !== null);
 
   if (count === 0)
     return (
       <p className="m-0 mt-1 text-sm text-secondary-foreground">
-        {left > 0
-          ? t(
-              left === 1
-                ? "settingsShell.section.restoreSkippedOne"
-                : "settingsShell.section.restoreSkippedMany",
-              {
-                values: { count: left }
-              }
-            )
-          : t("settingsShell.section.allDefault")}
+        {notes.length > 0 ? notes.join(" ") : t("settingsShell.section.allDefault")}
       </p>
     );
 
   const run = async () => {
     setWorking(true);
-    const tally = await onRestoreAll(entries.map((entry) => entry.id));
+    const tally = await onRestoreAll(restorable.map((entry) => entry.id));
     setWorking(false);
     setAsking(false);
-    setLeft(tally.pending + tally.failed);
+    setLeft({ pending: tally.pending + (count - askCount), failed: tally.failed });
   };
 
   return (
@@ -418,11 +441,10 @@ function SectionSummary({
         {asking ? (
           <>
             <span className="text-foreground">
-              {t(
-                count === 1
-                  ? "settingsShell.section.restoreAskOne"
-                  : "settingsShell.section.restoreAskMany",
-                { values: { count } }
+              {plural(
+                askCount,
+                "settingsShell.section.restoreAskOne",
+                "settingsShell.section.restoreAskMany"
               )}
             </span>
             <Button variant="secondary" disabled={working} onClick={() => void run()}>
@@ -439,21 +461,17 @@ function SectionSummary({
             <InlineAction
               aria-expanded={open}
               aria-controls={listId}
-              aria-label={`${t(
-                count === 1
-                  ? "settingsShell.section.changedOne"
-                  : "settingsShell.section.changedMany",
-                { values: { count } }
+              aria-label={`${plural(
+                count,
+                "settingsShell.section.changedOne",
+                "settingsShell.section.changedMany"
               )}. ${t("settingsShell.section.listLabel")}`}
               onClick={() => setOpen((value) => !value)}
             >
-              {t(
-                count === 1
-                  ? "settingsShell.section.changedOne"
-                  : "settingsShell.section.changedMany",
-                {
-                  values: { count }
-                }
+              {plural(
+                count,
+                "settingsShell.section.changedOne",
+                "settingsShell.section.changedMany"
               )}
               <ChevronDown
                 aria-hidden="true"
@@ -461,23 +479,20 @@ function SectionSummary({
               />
             </InlineAction>
             <span>{t("settingsShell.section.inSection")}</span>
-            <span aria-hidden="true">·</span>
-            <InlineAction onClick={() => setAsking(true)}>
-              {t("settingsShell.section.restoreAll")}
-            </InlineAction>
+            {askCount > 0 ? (
+              <>
+                <span aria-hidden="true">·</span>
+                <InlineAction onClick={() => setAsking(true)}>
+                  {t("settingsShell.section.restoreAll")}
+                </InlineAction>
+              </>
+            ) : null}
           </>
         )}
       </p>
-      {left > 0 && !asking ? (
+      {notes.length > 0 && !asking ? (
         <p role="status" className="m-0 mt-1 text-xs text-muted-foreground">
-          {t(
-            left === 1
-              ? "settingsShell.section.restoreSkippedOne"
-              : "settingsShell.section.restoreSkippedMany",
-            {
-              values: { count: left }
-            }
-          )}
+          {notes.join(" ")}
         </p>
       ) : null}
       {open && !asking ? (

@@ -191,6 +191,17 @@ export function settingsState(input: {
 }
 
 // ---------------------------------------------------------------------------
+// Reset
+
+/**
+ * A reset that deletes what the person gave and cannot give back by itself: a stored key or token
+ * (`reset: "credential"`). Restoring its default removes the secret, so a row asks first, naming
+ * the setting, and "Restore all" leaves it alone (rules/security-privacy.md: destructive actions
+ * disclose their scope and require confirmation).
+ */
+export const resetNeedsConfirm = (entry: SettingEntryV2): boolean => entry.reset === "credential";
+
+// ---------------------------------------------------------------------------
 // Values
 
 /**

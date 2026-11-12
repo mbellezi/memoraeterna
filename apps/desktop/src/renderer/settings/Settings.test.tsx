@@ -133,6 +133,7 @@ let reads: number;
 let focusedByScript: Element | null;
 let describeAnswer: () => Promise<unknown>;
 let resetCalls: unknown[];
+let resetAnswer: (id: string) => Promise<unknown>;
 let emit: () => void;
 
 const entries = (changedIds: string[] = ["contentLanguage"]) =>
@@ -150,12 +151,15 @@ beforeEach(async () => {
   resetSettingsTargetForTests();
   reads = 0;
   resetCalls = [];
+  resetAnswer = (id) => Promise.resolve({ id, value: null });
   focusedByScript = null;
   describeAnswer = () => Promise.resolve({ entries: entries() });
   dom = createTestDom();
   const prototype = (dom.window as unknown as { HTMLElement: { prototype: object } }).HTMLElement
     .prototype as { focus?: () => void };
   prototype.focus = function focus(this: Element) {
+    // A browser does not focus a disabled control.
+    if ((this as HTMLInputElement).disabled) return;
     // eslint-disable-next-line @typescript-eslint/no-this-alias -- the test records what took focus
     focusedByScript = this;
   };
@@ -168,7 +172,7 @@ beforeEach(async () => {
       },
       reset: (input: unknown) => {
         resetCalls.push(input);
-        return Promise.resolve({ id: (input as { id: string }).id, value: null });
+        return resetAnswer((input as { id: string }).id);
       }
     },
     onAppEvent: (_type: string, handler: () => void) => {
@@ -227,6 +231,23 @@ describe("the surface, in the DOM", () => {
     const general = dom.document.querySelector('[data-section="general"]') as HTMLElement;
     expect(general.textContent).toContain("1");
     expect(dom.document.body.textContent).toContain("1 setting changed");
+  });
+
+  it("focuses the search field when the saved values arrive after Settings opened", async () => {
+    let answer: (value: unknown) => void = () => undefined;
+    describeAnswer = () =>
+      new Promise((resolve) => {
+        answer = resolve;
+      });
+    await mount();
+    // The field waits, disabled, while the values are read: a browser would not focus it yet.
+    expect(frame().getAttribute("data-state")).toBe("loading");
+    expect(search().disabled).toBe(true);
+    expect(focusedByScript).toBeNull();
+    await dom.act(() => answer({ entries: entries() }));
+    await dom.act(() => void vi.advanceTimersByTime(0));
+    expect(search().disabled).toBe(false);
+    expect(focusedByScript).toBe(search());
   });
 
   it("shows a failed read in place with one retry, and the rows after the retry answers", async () => {
@@ -331,6 +352,97 @@ describe("the surface, in the DOM", () => {
     await click(confirm);
     await dom.act(() => void vi.advanceTimersByTime(0));
     expect(resetCalls).toEqual([{ id: "contentLanguage" }]);
+  });
+
+  it("asks before it removes a stored key, naming it, and only Remove writes", async () => {
+    describeAnswer = () => Promise.resolve({ entries: entries(["ai:decisions-openai-platform"]) });
+    await mount({ initialSection: "ai" });
+    const restore = () =>
+      [...dom.document.querySelectorAll("button")].find((button) =>
+        button.getAttribute("aria-label")?.startsWith("Restore default: OpenAI Platform key")
+      )!;
+    await click(restore());
+    expect(resetCalls).toEqual([]);
+    expect(row("ai:decisions-openai-platform")?.textContent).toContain(
+      "Remove it from this Mac? You would have to enter it again."
+    );
+    const cancel = [...row("ai:decisions-openai-platform")!.querySelectorAll("button")].find(
+      (button) => button.textContent === "Cancel"
+    )!;
+    await click(cancel);
+    expect(resetCalls).toEqual([]);
+    expect(row("ai:decisions-openai-platform")?.textContent).toContain("Restore default");
+    await click(restore());
+    await click(
+      [...row("ai:decisions-openai-platform")!.querySelectorAll("button")].find(
+        (button) => button.getAttribute("aria-label") === "Remove: OpenAI Platform key"
+      )!
+    );
+    await dom.act(() => void vi.advanceTimersByTime(0));
+    expect(resetCalls).toEqual([{ id: "ai:decisions-openai-platform", confirmed: true }]);
+  });
+
+  it("leaves a stored key out of Restore all, counts it as a step for the person, and restores the rest", async () => {
+    const other = settingsRegistryV2.find(
+      (entry) =>
+        entry.section === "ai" &&
+        entry.store.kind !== "none" &&
+        entry.reset !== "none" &&
+        entry.reset !== "credential"
+    )!;
+    describeAnswer = () =>
+      Promise.resolve({ entries: entries(["ai:decisions-openai-platform", other.id]) });
+    await mount({ initialSection: "ai" });
+    expect(dom.document.body.textContent).toContain("2 settings changed");
+    await click(
+      [...dom.document.querySelectorAll("button")].find(
+        (button) => button.textContent === "Restore all"
+      )!
+    );
+    // The line promises only what it will do: one setting, not the key.
+    expect(dom.document.body.textContent).toContain("Restore 1 setting to its default?");
+    await click(
+      [...dom.document.querySelectorAll("button")].find(
+        (button) => button.textContent === "Restore"
+      )!
+    );
+    await dom.act(() => void vi.advanceTimersByTime(0));
+    expect(resetCalls).toEqual([{ id: other.id }]);
+    expect(dom.document.body.textContent).toContain(
+      "1 needs a step from you and stayed as it was."
+    );
+  });
+
+  it("offers no Restore all when every changed setting of the section is a stored key", async () => {
+    describeAnswer = () => Promise.resolve({ entries: entries(["ai:decisions-openai-platform"]) });
+    await mount({ initialSection: "ai" });
+    expect(dom.document.body.textContent).toContain("1 setting changed");
+    expect(
+      [...dom.document.querySelectorAll("button")].some(
+        (button) => button.textContent === "Restore all"
+      )
+    ).toBe(false);
+  });
+
+  it("says a reset that failed failed, apart from the ones that wait for a step", async () => {
+    resetAnswer = () => Promise.reject(new Error("closed"));
+    await mount();
+    await click(
+      [...dom.document.querySelectorAll("button")].find(
+        (button) => button.textContent === "Restore all"
+      )!
+    );
+    await click(
+      [...dom.document.querySelectorAll("button")].find(
+        (button) => button.textContent === "Restore"
+      )!
+    );
+    await dom.act(() => void vi.advanceTimersByTime(0));
+    const status = [...dom.document.querySelectorAll('[role="status"]')].map(
+      (node) => node.textContent
+    );
+    expect(status.join(" ")).toContain("1 could not be restored and stayed as it was.");
+    expect(status.join(" ")).not.toContain("needs a step");
   });
 
   it("opens the old settings from the column's foot, and ⌘F goes to the search field", async () => {

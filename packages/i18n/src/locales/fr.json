@@ -4676,6 +4676,8 @@
       "changed": "Modifié",
       "default": "Par défaut :",
       "defaultVaries": "Par défaut : dépend de ce Mac et des autres options",
+      "removeAsk": "Retirer de ce Mac ? Il faudrait le saisir de nouveau.",
+      "removeConfirm": "Retirer",
       "reset": "Rétablir la valeur par défaut",
       "resetFailed": "Impossible de rétablir. Rien n’a changé.",
       "resetPending": "Il reste une étape à confirmer dans l’option elle-même.",
@@ -4715,6 +4717,8 @@
       "restoreAskMany": "Rétablir {count} réglages à leur valeur par défaut ?",
       "restoreAskOne": "Rétablir {count} réglage à sa valeur par défaut ?",
       "restoreConfirm": "Rétablir",
+      "restoreFailedMany": "{count} n’ont pas pu être rétablis et sont restés comme avant.",
+      "restoreFailedOne": "{count} n’a pas pu être rétabli et est resté comme avant.",
       "restoreSkippedMany": "{count} demandent une étape de votre part et sont restés comme avant.",
       "restoreSkippedOne": "{count} demande une étape de votre part et est resté comme avant."
     },

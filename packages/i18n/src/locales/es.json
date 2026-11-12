@@ -4678,6 +4678,8 @@
       "changed": "Cambiado",
       "default": "Predeterminado:",
       "defaultVaries": "Predeterminado: depende de este Mac y de las otras opciones",
+      "removeAsk": "¿Quitar de este Mac? Tendrías que volver a introducirlo.",
+      "removeConfirm": "Quitar",
       "reset": "Restaurar predeterminado",
       "resetFailed": "No se pudo restaurar. No se cambió nada.",
       "resetPending": "Falta un paso que confirmas en la propia opción.",
@@ -4717,6 +4719,8 @@
       "restoreAskMany": "¿Restaurar {count} ajustes a su valor predeterminado?",
       "restoreAskOne": "¿Restaurar {count} ajuste a su valor predeterminado?",
       "restoreConfirm": "Restaurar",
+      "restoreFailedMany": "{count} no se pudieron restaurar y quedaron como estaban.",
+      "restoreFailedOne": "{count} no se pudo restaurar y quedó como estaba.",
       "restoreSkippedMany": "{count} necesitan un paso tuyo y quedaron como estaban.",
       "restoreSkippedOne": "{count} necesita un paso tuyo y quedó como estaba."
     },
