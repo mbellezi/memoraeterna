@@ -4147,5 +4147,74 @@
       "topic": "Tema"
     },
     "title": "Mapa"
+  },
+  "mapRelations": {
+    "canvas": {
+      "hint": "Las flechas recorren las notas y luego las conexiones; Enter abre la nota; Esc limpia.",
+      "label": "Grafo de {scope}: {notes} notas y {relations} conexiones.",
+      "openHint": "Haz clic para abrir la nota junto al Mapa."
+    },
+    "controls": {
+      "fit": "Encuadrar",
+      "zoomIn": "Acercar",
+      "zoomOut": "Alejar"
+    },
+    "depth": {
+      "help": "Qué nivel de subtemas da el color a los puntos",
+      "label": "Colores por",
+      "one": "1.er nivel",
+      "three": "3.er nivel",
+      "two": "2.º nivel"
+    },
+    "description": "Conexiones entre las notas de una rama",
+    "edge": {
+      "description": "«{first}» {verb} «{second}».",
+      "suggested": "Sugerida: aún sin confirmar."
+    },
+    "empty": {
+      "body": "Las conexiones aparecen aquí cuando las notas de esta rama se enlazan entre sí. Elige otra rama o mira el Árbol.",
+      "headline": "Aún no hay conexiones en esta rama",
+      "missing": "Esta rama ya no está en el árbol.",
+      "missingBody": "Puede que se haya unido a otro tema. Elige otra rama o mira el Árbol.",
+      "noTopics": "El grafo aparece cuando haya temas.",
+      "noTopicsBody": "Cuando la primera fuente se convierta en notas, los temas nacen solos y el grafo muestra cómo se enlazan sus notas.",
+      "tree": "Ver el Árbol"
+    },
+    "error": {
+      "kept": "Tus notas y conexiones siguen intactas.",
+      "message": "No se pudo cargar el grafo."
+    },
+    "failure": {
+      "context": "El grafo dejó de dibujarse.",
+      "layout": "No se pudo organizar el grafo.",
+      "unavailable": "Esta ventana no puede dibujar el grafo.",
+      "unavailableBody": "La tabla muestra las mismas conexiones."
+    },
+    "group": {
+      "description": "{topic}. Notas en el grafo: {notes}. Conexiones con otros temas: {count}."
+    },
+    "legend": {
+      "direct": "{topic} (notas directas)",
+      "label": "Leyenda",
+      "lines": "Línea = conexión:",
+      "suggested": "discontinua = sugerida",
+      "thickness": "de lejos, cada tema se vuelve una etiqueta; grosor = número de conexiones",
+      "topics": "Color del punto = tema:",
+      "unplaced": "sin lugar en el árbol"
+    },
+    "loading": "Cargando el grafo",
+    "node": {
+      "description": "{title}. Tema: {topic}. Conexiones: {count}."
+    },
+    "scope": {
+      "above": "Arriba",
+      "beside": "Al lado",
+      "inside": "Dentro",
+      "label": "Rama: {title}",
+      "menu": "Elegir la rama",
+      "source": "Fuente: {title}",
+      "sourceUnnamed": "esta fuente"
+    },
+    "untitledTopic": "Tema sin nombre"
   }
 }

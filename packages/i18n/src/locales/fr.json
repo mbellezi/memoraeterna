@@ -4145,5 +4145,74 @@
       "topic": "Sujet"
     },
     "title": "Carte"
+  },
+  "mapRelations": {
+    "canvas": {
+      "hint": "Les flèches parcourent les notes puis les connexions ; Entrée ouvre la note ; Échap efface.",
+      "label": "Graphe de {scope} : {notes} notes et {relations} connexions.",
+      "openHint": "Cliquez pour ouvrir la note à côté de la Carte."
+    },
+    "controls": {
+      "fit": "Cadrer",
+      "zoomIn": "Zoomer",
+      "zoomOut": "Dézoomer"
+    },
+    "depth": {
+      "help": "Quel niveau de sous-thèmes donne leur couleur aux points",
+      "label": "Couleurs par",
+      "one": "1er niveau",
+      "three": "3e niveau",
+      "two": "2e niveau"
+    },
+    "description": "Connexions entre les notes d’une branche",
+    "edge": {
+      "description": "« {first} » {verb} « {second} ».",
+      "suggested": "Suggérée : pas encore confirmée."
+    },
+    "empty": {
+      "body": "Les connexions apparaissent ici quand des notes de cette branche se relient entre elles. Choisissez une autre branche ou voyez l’Arbre.",
+      "headline": "Pas encore de connexions dans cette branche",
+      "missing": "Cette branche n’est plus dans l’arbre.",
+      "missingBody": "Elle a peut-être été fusionnée avec un autre thème. Choisissez une autre branche ou voyez l’Arbre.",
+      "noTopics": "Le graphe apparaît quand il y a des thèmes.",
+      "noTopicsBody": "Quand la première source devient des notes, les thèmes naissent tout seuls et le graphe montre comment leurs notes se relient.",
+      "tree": "Voir l’Arbre"
+    },
+    "error": {
+      "kept": "Vos notes et connexions sont intactes.",
+      "message": "Impossible de charger le graphe."
+    },
+    "failure": {
+      "context": "Le graphe n’est plus dessiné.",
+      "layout": "Impossible d’organiser le graphe.",
+      "unavailable": "Cette fenêtre ne peut pas dessiner le graphe.",
+      "unavailableBody": "Le tableau présente les mêmes connexions."
+    },
+    "group": {
+      "description": "{topic}. Notes dans le graphe : {notes}. Connexions avec d’autres thèmes : {count}."
+    },
+    "legend": {
+      "direct": "{topic} (notes directes)",
+      "label": "Légende",
+      "lines": "Ligne = connexion :",
+      "suggested": "pointillés = suggérée",
+      "thickness": "de loin, chaque thème devient une étiquette ; épaisseur = nombre de connexions",
+      "topics": "Couleur du point = thème :",
+      "unplaced": "sans place dans l’arbre"
+    },
+    "loading": "Chargement du graphe",
+    "node": {
+      "description": "{title}. Thème : {topic}. Connexions : {count}."
+    },
+    "scope": {
+      "above": "Au-dessus",
+      "beside": "À côté",
+      "inside": "Dedans",
+      "label": "Branche : {title}",
+      "menu": "Choisir la branche",
+      "source": "Source : {title}",
+      "sourceUnnamed": "cette source"
+    },
+    "untitledTopic": "Thème sans nom"
   }
 }
