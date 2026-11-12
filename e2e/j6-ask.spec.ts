@@ -91,6 +91,20 @@ test("J6 ask and jump to citation: the answer streams, the Question is stored fr
     db = await openProfileDb(session.userDataDir);
     const steps = new StepLog(session, "j6");
 
+    // The guard under the comment above: the fake remote admits BASE-J's Codex writer (a stub
+    // credential, reachable at the real endpoint since no cassette is on), and only the clone's
+    // paused automation keeps a job from calling it. So the pause is read before anything is asked.
+    const controls = await invokeApp<{ paused: boolean; autonomy: string }>(
+      page,
+      "knowledgeControls.get"
+    );
+    expect(controls.paused, "automation is not paused: a job could call the admitted writer").toBe(
+      true
+    );
+    expect(controls.autonomy, "automation is not off: a job could call the admitted writer").toBe(
+      "off"
+    );
+
     // The question is asked from Explore, where its panels stand.
     await pressMenuShortcut(session, "2");
     await expect(

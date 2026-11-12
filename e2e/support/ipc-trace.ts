@@ -12,6 +12,9 @@ export interface IpcTraceEntry {
 /** Must equal `ipcTraceGlobalKey` of `M/services/dev/ipc-trace.ts`. */
 export const ipcTraceGlobalKey = "__memoraIpcTrace";
 
+/** The channel of an Inbox verdict; must equal `ipcChannels.inboxAct`. */
+export const inboxActChannel = "app:inbox:act";
+
 interface RingLike {
   entries(): IpcTraceEntry[];
   clear(): void;

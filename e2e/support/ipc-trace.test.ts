@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import { ipcTraceGlobalKey as mainKey } from "../../apps/desktop/src/main/services/dev/ipc-trace.js";
-import { ipcTraceGlobalKey, uncausedInvocations } from "./ipc-trace.js";
+import { ipcChannels } from "../../apps/desktop/src/shared/ipc.js";
+import { inboxActChannel, ipcTraceGlobalKey, uncausedInvocations } from "./ipc-trace.js";
 import { percentile } from "./perf.js";
 
 describe("uncausedInvocations", () => {
@@ -22,6 +23,10 @@ describe("uncausedInvocations", () => {
 
   it("reads the ring the main process publishes", () => {
     expect(ipcTraceGlobalKey).toBe(mainKey);
+  });
+
+  it("names the Inbox verdict channel the app registers", () => {
+    expect(inboxActChannel).toBe(ipcChannels.inboxAct);
   });
 });
 

@@ -14,6 +14,11 @@
 // relation's human state and its `relation_events` row, the change-sets' `dismissed` status, the
 // finding's.
 //
+// `x` on a suggestion is proved by what the renderer sends, not by waiting for a write that did not
+// come: the main process's IPC trace is cleared, `x` is pressed, a later key (`j`/`k`) moves the
+// selection (the app has handled `x` by then), and the trace holds no `app:inbox:act`. The same
+// read after Backspace holds one, so the read is not blind.
+//
 // Selectors are roles and data attributes (`data-surface`, `role=listbox` / `option` /
 // `aria-selected`, `aria-keyshortcuts` on the verb buttons); the items are found by their keys from
 // `inbox.list` (the list and the screen share one order), never by copy. The only words asserted are
@@ -22,6 +27,7 @@ import { expect, test, type Locator, type Page } from "@playwright/test";
 
 import { invokeApp, launchMemora, setContentSize, waitForDatabase } from "./support/app.js";
 import { installGestureCounter } from "./support/gestures.js";
+import { clearIpcTrace, inboxActChannel, readIpcTrace } from "./support/ipc-trace.js";
 import { cloneProfile, journeysRun, profileDir } from "./support/profile.js";
 import { inboxStoreReaders, seedInbox, type InboxSeed } from "./support/seed-inbox.js";
 import {
@@ -94,6 +100,55 @@ async function expectGone(page: Page, key: string) {
     .toBe(false);
 }
 
+interface ShownRelation {
+  id: string;
+  state: string;
+  probability: number | null;
+}
+
+/** A note's shown relations (`notes.relations`, group "shown"), paged until the list ends. */
+async function shownRelations(page: Page, noteAddress: string): Promise<ShownRelation[]> {
+  const noteId = noteAddress.split("/").pop()!;
+  const all: ShownRelation[] = [];
+  for (let pageNo = 0; pageNo < 20; pageNo += 1) {
+    const answer = await invokeApp<{ items: ShownRelation[]; total: number }>(
+      page,
+      "notes.relations",
+      { noteId, group: "shown", offset: all.length, limit: 50 }
+    );
+    all.push(...answer.items);
+    if (answer.items.length === 0 || all.length >= answer.total) return all;
+  }
+  throw new Error("A note has more than 1,000 shown relations");
+}
+
+/** Moves the selection off the selected row with `j` (or `k` on the last row) and back. */
+async function moveAndBack(page: Page, row: Locator) {
+  const all = options(page);
+  const index = await all.evaluateAll((rows) =>
+    rows.findIndex((option) => option.getAttribute("aria-selected") === "true")
+  );
+  const last = (await all.count()) - 1;
+  const [away, back] = index < last ? ["j", "k"] : ["k", "j"];
+  await page.keyboard.press(away!);
+  await expect(row, `${away} did not move the selection`).not.toHaveAttribute(
+    "aria-selected",
+    "true"
+  );
+  await page.keyboard.press(back!);
+  await expect(row, `${back} did not bring the selection back`).toHaveAttribute(
+    "aria-selected",
+    "true"
+  );
+}
+
+/** How many times the renderer asked main to carry out a verdict since the trace was cleared. */
+async function actCalls(session: { electronApp: Parameters<typeof readIpcTrace>[0] }) {
+  const trace = await readIpcTrace(session.electronApp);
+  if (!trace) throw new Error("The IPC trace is off: MEMORA_IPC_TRACE did not reach main");
+  return trace.entries.filter((entry) => entry.channel === inboxActChannel).length;
+}
+
 const verbButton = (page: Page, shortcut: string): Locator =>
   inboxRoot(page).locator(`button[aria-keyshortcuts="${shortcut}"]`);
 
@@ -150,6 +205,14 @@ test("J5 Inbox triage: seeded through the real writers, D33 routing, D34 keys, e
       keysListed.has(seed.keys.suggestionHigh),
       "the suggestion above the 0.85 band is listed in the Inbox"
     ).toBe(false);
+    // ... and it is not dropped: it is a live suggestion, shown inline on its note (state
+    // suggested, the probability the seed wrote), so "not in the Inbox" is not vacuous.
+    const inline = (await shownRelations(page, seed.relations.suggestionHigh.notes[0])).find(
+      (relation) => relation.id === seed.relations.suggestionHigh.id
+    );
+    expect(inline, "the suggestion above the band is not shown inline on its note").toBeTruthy();
+    expect(inline?.state, "the inline suggestion's state").toBe("suggested");
+    expect(inline?.probability, "the inline suggestion's probability").toBeCloseTo(0.92, 2);
     // Both suggestions that are listed are medium risk (an unknown probability is not "high").
     for (const name of ["suggestionLow", "suggestionUnknown"] as const)
       expect(listed.find((item) => item.key === seed.keys[name])?.risk, `${name} risk`).toBe(
@@ -184,21 +247,28 @@ test("J5 Inbox triage: seeded through the real writers, D33 routing, D34 keys, e
     expect(kept?.after?.status, "the kept relation's human state").toBe("accepted");
 
     // 3. The suggestion with no probability: no number; `x` offers nothing; Backspace removes it.
-    await selectItem(page, seed.keys.suggestionUnknown);
+    const unknownRow = await selectItem(page, seed.keys.suggestionUnknown);
     const detail = inboxRoot(page);
     await expect(detail).toContainText(/confiança desconhecida/u);
     await expect(detail.getByText(/confiança desconhecida[^\n]*\d/u)).toHaveCount(0);
     await expect(verbButton(page, "Backspace")).toBeVisible();
+    expect(await clearIpcTrace(session.electronApp), "the IPC trace is off").toBe(true);
     await page.keyboard.press("x");
-    await page.waitForTimeout(1_000);
+    await moveAndBack(page, unknownRow);
+    expect(await actCalls(session), "x asked main to carry out a verdict on a suggestion").toBe(0);
     expect(
       (await listedItems(page)).some((item) => item.key === seed.keys.suggestionUnknown),
       "x dismissed a suggestion (D34: x only dismisses where nothing changes)"
     ).toBe(true);
     const untouched = (await readers.relationEvents(seed.relations.suggestionUnknown.id)).at(-1);
     expect(untouched?.kind, "x wrote a relation event").not.toMatch(/^(kept|removed)$/u);
+    await clearIpcTrace(session.electronApp);
     await page.keyboard.press("Backspace");
     await expectGone(page, seed.keys.suggestionUnknown);
+    expect(
+      await actCalls(session),
+      "Backspace did not reach main as a verdict"
+    ).toBeGreaterThanOrEqual(1);
     const removed = (await readers.relationEvents(seed.relations.suggestionUnknown.id)).at(-1);
     expect(removed?.kind, "the last relation event of the removed suggestion").toBe("removed");
     expect(removed?.after?.status, "the removed relation's human state").toBe("rejected");
