@@ -57,8 +57,7 @@ function EvidenceFigure({
           </div>
         </blockquote>
         <figcaption className="col-start-2 flex min-w-0 flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
-          <ObjectKindGlyph kind="source" size={12} className="text-object-source" />
-          <span className="min-w-0 [overflow-wrap:anywhere]">
+          <span className="min-w-0 basis-full [overflow-wrap:anywhere]">
             {item.workTitle ?? item.sourceTitle}
             {locator ? ` · ${locator}` : ""}
           </span>
@@ -175,7 +174,9 @@ export function NoteEvidence({
           {t("notePage.evidence.title")}
         </h2>
         <span className="text-sm text-muted-foreground tabular-nums">{evidence.total}</span>
-        <span className="text-xs text-muted-foreground">{t("notePage.evidence.hint")}</span>
+        <span className={quiet ? "sr-only" : "text-xs text-muted-foreground"}>
+          {t("notePage.evidence.hint")}
+        </span>
       </div>
       {evidence.items.map((item, index) => (
         <EvidenceFigure

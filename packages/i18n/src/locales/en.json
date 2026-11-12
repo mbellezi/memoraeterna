@@ -3065,7 +3065,7 @@
         "button": "Ask about this topic"
       },
       "health": {
-        "good": "Balanced size",
+        "good": "balanced size",
         "attention": "Needs attention",
         "violation": "Structure problem"
       },

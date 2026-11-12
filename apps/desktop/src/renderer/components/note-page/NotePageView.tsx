@@ -148,7 +148,7 @@ export function NotePageView(props: NotePageViewProps) {
  * page, no wider than the reading measure; one plain sentence in place with what is kept and one
  * retry; and what a note that is gone says. The page itself is the success state.
  */
-function EmbeddedStates({ t, load, onRetry }: NotePageViewProps) {
+function EmbeddedStates({ t, load, compact, onRetry }: NotePageViewProps) {
   if (load.status === "loading")
     return (
       <LoadingState t={t} className="max-w-(--measure) gap-4">
@@ -175,10 +175,13 @@ function EmbeddedStates({ t, load, onRetry }: NotePageViewProps) {
         className="max-w-(--measure)"
         headline={t("explore.note.goneHeadline")}
         action={
-          // The one way on: the panel closes and the person is back at the one before it.
-          <Button type="button" onClick={() => void dispatchClosePanel()}>
-            {t("panelFrame.close")}
-          </Button>
+          // The one way on: the top panel closes and the person is back at the one before it. The
+          // previous panel offers none: the close would be the top panel's.
+          compact ? undefined : (
+            <Button type="button" onClick={() => void dispatchClosePanel()}>
+              {t("panelFrame.close")}
+            </Button>
+          )
         }
       >
         {t("explore.note.goneBody")}
@@ -274,7 +277,7 @@ function NoteArticle(props: NotePageViewProps & { page: NotePage }) {
         // The wide sheet (design record 6.3): from 760 px the text column keeps its 600 px and
         // Evidence moves into a 264 px margin, top-aligned with the title; below it, the margin
         // folds into the body in the same order.
-        <div className="grid min-w-0 gap-8 @min-[760px]:grid-cols-[minmax(0,600px)_264px] @min-[760px]:justify-center @min-[760px]:gap-x-12">
+        <div className="grid min-w-0 gap-8 @min-[760px]:grid-cols-[minmax(0,600px)_264px] @min-[760px]:gap-x-12">
           <div className="flex min-w-0 flex-col gap-6">
             {header}
             <NoteBodyText t={t} note={note} embedded />

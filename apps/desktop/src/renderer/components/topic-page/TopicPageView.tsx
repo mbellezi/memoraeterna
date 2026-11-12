@@ -135,7 +135,7 @@ export function TopicPageView(props: TopicPageViewProps) {
  * page, no wider than the reading measure; one plain sentence in place with what is kept and one
  * retry; and what a topic that is gone says (merged or removed). The page is the success state.
  */
-function EmbeddedStates({ t, snapshot, onRetry }: TopicPageViewProps) {
+function EmbeddedStates({ t, snapshot, compact, onRetry }: TopicPageViewProps) {
   const { load } = snapshot;
   if (load.status === "loading")
     return (
@@ -163,10 +163,13 @@ function EmbeddedStates({ t, snapshot, onRetry }: TopicPageViewProps) {
         className="max-w-(--measure)"
         headline={t("explore.topic.goneHeadline")}
         action={
-          // The one way on: the panel closes and the person is back at the one before it.
-          <Button type="button" onClick={() => void dispatchClosePanel()}>
-            {t("panelFrame.close")}
-          </Button>
+          // The one way on: the top panel closes and the person is back at the one before it. The
+          // previous panel offers none: the close would be the top panel's.
+          compact ? undefined : (
+            <Button type="button" onClick={() => void dispatchClosePanel()}>
+              {t("panelFrame.close")}
+            </Button>
+          )
         }
       >
         {t("explore.topic.goneBody")}

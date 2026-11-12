@@ -3065,7 +3065,7 @@
         "button": "Poser une question sur ce sujet"
       },
       "health": {
-        "good": "Taille équilibrée",
+        "good": "taille équilibrée",
         "attention": "Demande de l’attention",
         "violation": "Problème de structure"
       },

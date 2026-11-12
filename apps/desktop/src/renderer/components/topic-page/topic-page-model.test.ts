@@ -101,7 +101,7 @@ describe("counts", () => {
 describe("health", () => {
   it("is a word and a tone for every value", () => {
     expect(Object.keys(healthViews).sort()).toEqual(["attention", "good", "violation"]);
-    expect(en(healthViews.good.key)).toBe("Balanced size");
+    expect(en(healthViews.good.key)).toBe("balanced size");
     expect(healthViews.good.tone).toBe("success");
     expect(healthViews.attention.tone).toBe("warning");
     expect(healthViews.violation.tone).toBe("danger");

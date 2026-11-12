@@ -47,7 +47,7 @@ describe("the Topic page in a panel (design record 6.1)", () => {
     expect(title).toBeGreaterThan(-1);
     expect(meta).toBeGreaterThan(title);
     expect(description).toBeGreaterThan(meta);
-    expect(html).toContain("Balanced size");
+    expect(html).toContain("balanced size");
     expect(html).toContain(">·</span>");
   });
 
@@ -106,5 +106,7 @@ describe("the Topic page in a panel (design record 6.1)", () => {
     const html = render({ status: "missing" });
     expect(html).toContain("This topic is no longer in the tree.");
     expect(html).toContain(">Close panel<");
+    // The previous panel would close the top one: it offers no button.
+    expect(render({ status: "missing" }, { compact: true })).not.toContain(">Close panel<");
   });
 });
