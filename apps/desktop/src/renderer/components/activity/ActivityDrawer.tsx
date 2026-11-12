@@ -112,7 +112,12 @@ export function ActivityDrawer({
         <Section title={t("activity.sections.now")}>
           {statusLoading ? <LoadingLine t={t} /> : null}
           {statusFailed ? (
-            <FailedLine t={t} message={t("activity.drawer.loadFailed")} onRetry={onRetry} />
+            <FailedLine
+              t={t}
+              message={t("activity.drawer.loadFailed")}
+              kept={t("activity.drawer.loadFailedKept")}
+              onRetry={onRetry}
+            />
           ) : null}
           {status && section === "now" ? (
             <SentenceBlock
@@ -172,7 +177,12 @@ export function ActivityDrawer({
           <Section title={t("activity.sections.done")}>
             {snapshot.done.status === "loading" ? <LoadingLine t={t} /> : null}
             {snapshot.done.status === "error" ? (
-              <FailedLine t={t} message={t("activity.done.loadFailed")} onRetry={onRetry} />
+              <FailedLine
+                t={t}
+                message={t("activity.done.loadFailed")}
+                kept={t("activity.done.loadFailedKept")}
+                onRetry={onRetry}
+              />
             ) : null}
             {snapshot.done.status === "ready" ? (
               <DoneList
@@ -189,7 +199,12 @@ export function ActivityDrawer({
           <Section title={t("activity.sections.budget")}>
             {snapshot.budget.status === "loading" ? <LoadingLine t={t} /> : null}
             {snapshot.budget.status === "error" ? (
-              <FailedLine t={t} message={t("activity.budget.loadFailed")} onRetry={onRetry} />
+              <FailedLine
+                t={t}
+                message={t("activity.budget.loadFailed")}
+                kept={t("activity.budget.loadFailedKept")}
+                onRetry={onRetry}
+              />
             ) : null}
             {budget ? <BudgetMeters t={t} budget={budget} /> : null}
           </Section>

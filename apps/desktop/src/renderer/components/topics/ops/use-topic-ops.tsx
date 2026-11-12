@@ -18,8 +18,8 @@ export interface TopicOps {
 
 /**
  * The human structure operations of one view: the controller and the dialog that is open. The
- * notice that follows a change is the window's, not the view's (`TopicNoticeHost`). A hidden view
- * keeps no dialog and no notice of its own.
+ * notice that follows a change is the window's, not the view's: the Activity pill shows it. A
+ * hidden view keeps no dialog and no notice of its own.
  */
 export function useTopicOps(active: boolean): TopicOps {
   const [controller] = useState(() => new TopicOpsController(() => window.app.topics));

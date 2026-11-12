@@ -1,13 +1,17 @@
 import { useId, useState, type ReactNode } from "react";
-import { AlertTriangle, ChevronDown } from "lucide-react";
+import { ChevronDown } from "lucide-react";
 import type { Translator } from "@app/i18n";
 import { cn } from "../../lib/cn";
 import { Button } from "./button";
+import { SolidTriangle } from "./solid-glyphs";
 
 /**
- * The error state of a view, shown in place (never a modal, never `window.alert`): a plain sentence
- * saying what failed, what is kept, "Retry", and a "Details" disclosure for the technical text.
- * `role="alert"` announces it once; the retry control keeps the failure retryable.
+ * The error state of a view, shown in place (never a modal, never `window.alert`) and never the
+ * loudest thing on screen: a solid danger triangle, a plain sentence saying what failed, a muted
+ * line saying what is kept, "Try again", and a "Details" disclosure for the technical text. There is
+ * no fill and no box (design record 5.12): the glyph carries the state, the words carry the rest.
+ * `role="alert"` announces it once; the retry control keeps the failure retryable. It sits at the
+ * reading measure unless a caller widens it.
  */
 export function ErrorState({
   t,
@@ -24,7 +28,7 @@ export function ErrorState({
   /** What is kept ("Your notes are safe"), when it matters. */
   kept?: ReactNode;
   onRetry?: () => void;
-  /** The retry button's words when a place says it differently ("Try again"); default "Retry". */
+  /** The retry button's words when a place says it differently; default `ui.retry`. */
   retryLabel?: string;
   /** Technical text for the disclosure; it never replaces `message`. */
   details?: string;
@@ -36,19 +40,17 @@ export function ErrorState({
     <div
       role="alert"
       className={cn(
-        "grid min-w-0 gap-3 rounded-lg border border-danger bg-danger-soft p-4 text-sm text-foreground",
+        "grid min-w-0 max-w-(--measure) grid-cols-[auto_minmax(0,1fr)] gap-x-2 gap-y-2 text-sm text-foreground",
         className
       )}
     >
+      <SolidTriangle className="mt-0.5 text-danger" />
       <div className="grid min-w-0 gap-1 [text-wrap:pretty]">
-        <p className="m-0 flex min-w-0 items-start gap-2 font-semibold">
-          <AlertTriangle aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-danger" />
-          <span className="min-w-0">{message}</span>
-        </p>
+        <p className="m-0 min-w-0 font-semibold">{message}</p>
         {kept ? <p className="m-0 text-secondary-foreground">{kept}</p> : null}
       </div>
       {onRetry || details ? (
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="col-start-2 flex flex-wrap items-center gap-2">
           {onRetry ? (
             <Button variant="secondary" onClick={onRetry}>
               {retryLabel ?? t("ui.retry")}
@@ -73,7 +75,7 @@ export function ErrorState({
       {details && open ? (
         <pre
           id={detailsId}
-          className="m-0 max-h-40 overflow-auto whitespace-pre-wrap rounded-md border border-border bg-surface p-3 text-xs text-secondary-foreground [overflow-wrap:anywhere]"
+          className="col-start-2 m-0 max-h-40 overflow-auto whitespace-pre-wrap rounded-md border border-border bg-surface p-3 text-xs text-secondary-foreground [overflow-wrap:anywhere]"
         >
           {details}
         </pre>

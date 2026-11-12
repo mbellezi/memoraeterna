@@ -147,7 +147,7 @@ fallback of tests and scripts. The stored document carries `updatedAt` (internal
 | `contentLanguage` | OS locale; `en` when absent (`S/ipc.ts:352`) | `M/index.ts:294` and 10 more getters → `knowledge-service.ts:359,1226,1898`, `topic-tree/topic-naming.ts:417`, `topic-areas.ts:436`, `topic-overview.ts:206`, `relation-explanation-service.ts:159`, `consultation-service.ts:460`, `ai-service.ts:1519`; written also by `M/ipc.ts:143` | Personalization › Appearance `:684` **and** Data › Relation labels `RelationLabelsCard.tsx:95` (two controls, one value) | preference | keep: General; one control (the Relation labels card keeps its action); onboarding step 1 |
 | `themeMode` | `system` | `R/App.tsx:208,211,525`, `R/lib/theme.ts:69` (also remembered in `localStorage` `memora.themeMode`) | Appearance `:687`; rail toggle | preference | keep: General |
 | `graphWheelZoomSensitivity` | 1 | `R/App.tsx:911` → `KnowledgeGraphDashboard.tsx:960`, `SourceConnectionGraph.tsx:278` | Appearance `:719` | preference | keep: Advanced (graph lens; F5 Map) |
-| `navigationCollapsed` | false | `R/App.tsx:567,694,727` | none (rail button) | internal | keep, silent UI state |
+| `navigationCollapsed` | false | none since F5 T135 (the rail no longer collapses; the key is only in the stored schema) | none | dead | **removed from the registry in F5 T159** (section 15); the schema, update schema and defaults of `S/ipc.ts` drop it with their chain owner |
 | `wikiTreeWidth` | 320 | **none** | none | dead | **drop** (section 10) |
 | `debugMode` | false | `M/services/monitoring-service.ts:32-36`, `M/index.ts:405,467`, `R/App.tsx:921` | Debug view `MonitoringDashboard.tsx:110-119` | diagnostics | keep: Advanced › Diagnostics |
 | `debugFullCapture` | false | `monitoring-service.ts:33,57`, `R/App.tsx:923` | Debug view | diagnostics | keep: Advanced › Diagnostics |
@@ -424,3 +424,141 @@ exactly when placed in `advanced`) keep it true. A setting added without a row f
   shape proposes a rebuild for review (`reviewConfigChanges`), carries the configuration in the proposal's summary and
   moves the tree to it when applied; a shape that moves nothing is recorded, not proposed. A dismissed shape is not
   proposed again until another shape is; the tree keeps its own configuration and its rebuild triggers.
+
+## 15. Registry v2 (F5 T159)
+
+`settingsRegistryV2` in `apps/desktop/src/shared/settings-registry.ts` (D17, spec 3.8) lists one entry per control of
+Settings v2 and `persistedStateRegistry` the persisted state with no control. **72 entries and 20 state keys: 69
+persisted keys** (this file's 70 after T123, less `navigationCollapsed`), the six workload routes, the three provider
+credentials and the pages. Seven sections: general 3, ai 16, knowledge 7, library 4, integrations 8, privacy 5, advanced
+29 entries. An entry carries its section, group, label and help keys (`settingsRegistry.<slug>.label` and `.help`,
+written by T175), English keywords (T175), control, store, default, reset adapter, reader and category. The test
+`apps/desktop/src/main/settings-registry.test.ts` holds each reader to D17's three parts: a symbol whose body reads the
+key (a property access on the loaded object, or the key as an argument of a call that does not write; a declaration, a
+comparison or an assignment does not count), in a file that is not a schema (`S/ipc*.ts`), a test, a fixture, tooling,
+the settings writer, `settings-reset.ts` or the Settings screen, that the main entry point, `R/main.tsx` or the preload
+reaches through imports. Every row below is checked against the registry column by column. The rule (`rules/frontend.md`): every persisted setting has an entry; a setting no code
+reads is removed.
+
+- **Merged** (D17): upload copies and their folder (`uploadCopies`); online lookup and its provider (`bookLookup`);
+  Obsidian enabled and paused (`obsidianSync`, the Off, On, Paused tri-state); one `contentLanguage` control. The
+  Obsidian layout language stays an Advanced override (`obsidian.layout.language`); the vault's wiki scope, its
+  descendants switch and the attachments switch are one entry each over `obsidian.wiki.scope` and `obsidian.layout`.
+- **Defaults** (D18, Q31, Q35): `contentLanguage` and `language` default to the macOS language (`osLocale`), not "same
+  as the source"; density, "open in" and "reduce motion" are not settings in F5 and have no entry; the class routes
+  and `ai.preset.v1` have computed defaults (the preset, the machine).
+- **Not entries.** `privacy_mode` and `fallback_policy` (dead columns, T172: no control, no reader that branches). The
+  mockup's "local MCP address" row: no code in the application serves or stores one, so it is not a setting (the gateway
+  page is `integrations.gateway`).
+- **Reset adapters** (T160 implements them, each through the setting's existing writer): `ai-preset`, `ai-route`,
+  `app-preference`, `book-lookup`, `credential`, `decider-mode`, `decisions-opt-in`, `knowledge-control`,
+  `matching-preset`, `matching-value`, `obsidian-layout`, `obsidian-sync`, `obsidian-wiki-scope`, `storage-setting`,
+  `upload-copies`, and `none` for pages,
+  actions and read-only panels.
+- **Unread, named (X11).** Two entries have no reader under D17 and the test lists them instead of passing them:
+  `activeMatchingPresetId` (with `matchingPresets`: only the Settings screen and the settings loader read them) and
+  `jobs.history.dismissed-through.v1` (the Clear action writes it; `taskHistoryVisibleSql`, the one SQL that reads it
+  back, has no caller). Removing either is the owner's call; the test fails when one gains a reader.
+  `import.lastDirectory` is read by the writer's own getter, which `M/ipc.ts` calls to open the import dialog.
+- **Retired keys** (no entry; no production code reads them): `deletionPolicy`, `knowledgeGraphMaxEntitiesPerSource`,
+  `knowledgeGraphMaxRelationsPerSource`, `navigationCollapsed`, `wikiTreeWidth`.
+
+| Entry | Section › group | Control | Stored as | Default | Reset | Reader (`file` symbol) |
+| --- | --- | --- | --- | --- | --- | --- |
+| `themeMode` | general › appearance | segmented | app.preferences: `themeMode` | `"system"` | app-preference | `R/App.tsx` App |
+| `contentLanguage` | general › language | select | app.preferences: `contentLanguage` | macOS language | app-preference | `M/index.ts` <module> |
+| `language` | general › language | select | app.preferences: `language` | macOS language | app-preference | `R/App.tsx` App |
+| `ai.preset.v1` | ai › setup | choice | settings: `ai.preset.v1` | computed (ai.preset.recommendedForThisMac) | ai-preset | `M/services/ai-class-routes.ts` AiClassRouteService.readState |
+| `ai.provider.openai-codex` | ai › providers | credential | credential: `ai_provider_configs.credentialRef` | unset | credential | `M/services/ai-service.ts` AiService.buildRemoteAdapter |
+| `ai.provider.openai-compatible` | ai › providers | credential | credential: `ai_provider_configs.credentialRef` | unset | credential | `M/services/ai-service.ts` AiService.buildRemoteAdapter |
+| `ai.provider.google` | ai › providers | credential | credential: `ai_provider_configs.credentialRef` | unset | credential | `M/services/ai-service.ts` AiService.buildRemoteAdapter |
+| `ai.thisMac` | ai › thisMac | block | none | unset | none | `M/services/hardware/hardware-service.ts` HardwareService.profile |
+| `ai.route.embed` | ai › routes | select | route: `class:embed` | computed (ai.route.presetDefault) | ai-route | `M/services/ai-class-routes.ts` AiClassRouteService.readView |
+| `ai.route.decide` | ai › routes | select | route: `class:decide` | computed (ai.route.presetDefault) | ai-route | `M/services/ai-class-routes.ts` AiClassRouteService.readView |
+| `ai.route.write-fast` | ai › routes | select | route: `class:write-fast` | computed (ai.route.presetDefault) | ai-route | `M/services/ai-class-routes.ts` AiClassRouteService.readView |
+| `ai.route.write-quality` | ai › routes | select | route: `class:write-quality` | computed (ai.route.presetDefault) | ai-route | `M/services/ai-class-routes.ts` AiClassRouteService.readView |
+| `ai.route.answer` | ai › routes | select | route: `class:answer` | computed (ai.route.presetDefault) | ai-route | `M/services/ai-class-routes.ts` AiClassRouteService.readView |
+| `ai.route.judge` | ai › routes | select | route: `judge` | computed (ai.route.presetDefault) | ai-route | `M/services/ai-class-routes.ts` AiClassRouteService.readView |
+| `ai.models` | ai › models | page | none | unset | none | `M/services/local-model-service.ts` LocalModelService |
+| `local-models.repository-token-ref` | ai › models | credential | settings: `local-models.repository-token-ref` | unset | credential | `M/services/local-model-service.ts` LocalModelService.getRepositoryToken |
+| `ai.profiles` | ai › models | page | none | unset | none | `M/services/ai-service.ts` AiService.listProfiles |
+| `relations.decisions` | ai › decisions | switch | settings: `relations.decisions` | `false` | decisions-opt-in | `M/services/ai-decisions.ts` DecisionsRuntime.storedEnabled |
+| `ai:decisions-openai-platform` | ai › decisions | credential | credential: `ai:decisions-openai-platform` | unset | credential | `M/services/ai-decisions.ts` DecisionsRuntime.readKey |
+| `knowledge.controls.v1.autonomy` | knowledge › gardener | choice | settings: `knowledge.controls.v1.autonomy` | `"auto"` | knowledge-control | `M/services/gardener/background-gate.ts` BackgroundGate.activeReasons |
+| `knowledge.controls.v1.paused` | knowledge › gardener | switch | settings: `knowledge.controls.v1.paused` | `false` | knowledge-control | `M/services/gardener/background-gate.ts` sharedHolds |
+| `knowledge.controls.v1.monthlyCapUsd` | knowledge › gardener | number | settings: `knowledge.controls.v1.monthlyCapUsd` | `5` | knowledge-control | `M/index.ts` <module> |
+| `knowledge.controls.v1.treeShape` | knowledge › tree | segmented | settings: `knowledge.controls.v1.treeShape` | `"balanced"` | knowledge-control | `M/index.ts` <module> |
+| `knowledge.controls.v1.onlyIdle` | knowledge › schedule | switch | settings: `knowledge.controls.v1.onlyIdle` | `false` | knowledge-control | `M/services/gardener/background-gate.ts` sharedHolds |
+| `knowledge.controls.v1.onlyOnAc` | knowledge › schedule | switch | settings: `knowledge.controls.v1.onlyOnAc` | `false` | knowledge-control | `M/services/gardener/background-gate.ts` sharedHolds |
+| `relationLabels` | knowledge › connections | action | none | unset | none | `M/services/relation-explanation-service.ts` RelationExplanationService.backfill |
+| `library.storage` | library › data | block | none | unset | none | `M/services/database-service.ts` DatabaseService |
+| `uploadCopies` | library › uploads | copies | storage_settings: `uploadCopiesEnabled`, `uploadCopiesFolderPath` | `false` | upload-copies | `M/services/ingestion-service.ts` IngestionService.stageAssetFiles |
+| `library.backup` | library › backup | page | none | unset | none | `M/services/backup-service.ts` BackupService.create |
+| `processingPresets` | library › imports | page | app.preferences: `processingPresets` | unset | app-preference | `R/components/ProcessingPlanPicker.tsx` ProcessingPlanPicker |
+| `obsidianVaultPath` | integrations › obsidian | folder | storage_settings: `obsidianVaultPath` | unset | storage-setting | `M/services/obsidian-sync-service.ts` ObsidianSyncService.reconcileVault |
+| `obsidianSync` | integrations › obsidian | segmented | storage_settings: `obsidianSyncEnabled`, `obsidianSyncPaused` | `"off"` | obsidian-sync | `M/services/obsidian-sync-service.ts` isSyncActive |
+| `obsidian.wiki.scope` | integrations › obsidian | info | settings: `obsidian.wiki.scope` | unset | obsidian-wiki-scope | `M/services/obsidian-wiki-projection.ts` ObsidianWikiProjection.scope |
+| `obsidian.wiki.includeDescendants` | integrations › obsidian | switch | settings: `obsidian.wiki.scope` | `true` | obsidian-wiki-scope | `M/services/obsidian-wiki-projection.ts` ObsidianWikiProjection.scope |
+| `obsidian.layout.attachments` | integrations › obsidian | switch | settings: `obsidian.layout` | `"omit"` | obsidian-layout | `M/services/obsidian-wiki-projection.ts` ObsidianWikiProjection.layout |
+| `bookLookup` | integrations › books | select | app.preferences: `metadataEnrichmentEnabled`, `bookMetadataProvider` | `"auto"` | book-lookup | `M/index.ts` <module> |
+| `metadata:google-books` | integrations › books | credential | credential: `metadata:google-books` | unset | credential | `M/services/metadata-enrichment-service.ts` MetadataEnrichmentService.getGoogleBooksKey |
+| `integrations.gateway` | integrations › local | page | none | unset | none | `M/services/integration-gateway.ts` IntegrationGateway.getStatus |
+| `privacy.summary` | privacy › leaving | block | none | unset | none | `M/services/ai-service.ts` AiService.pinOrganizationProfile |
+| `privacy.clearViewHistory` | privacy › history | action | none | unset | none | `M/services/view-history-service.ts` ViewHistoryService.clear |
+| `privacy.clearQuestions` | privacy › history | action | none | unset | none | `M/services/questions-service.ts` QuestionsService.clear |
+| `privacy.callLog` | privacy › logs | block | none | unset | none | `M/services/monitoring-service.ts` MonitoringService.list |
+| `privacy.reset` | privacy › reset | action | none | unset | none | `M/services/library-reset-service.ts` LibraryResetService.reset |
+| `activeMatchingPresetId` | advanced › matching | select | app.preferences: `activeMatchingPresetId`, `matchingPresets` | `"recommended-v2"` | matching-preset | `M/services/settings-service.ts` SettingsService.updateApp |
+| `relationTypeSimilarityThreshold` | advanced › matching | number | app.preferences: `relationTypeSimilarityThreshold` | `0.92` | matching-value | `M/index.ts` <module> |
+| `entityIdentitySimilarityThreshold` | advanced › matching | number | app.preferences: `entityIdentitySimilarityThreshold` | `0.92` | matching-value | `M/index.ts` <module> |
+| `canonicalMatchingSettings.relationTypeCandidateLimit` | advanced › matching | number | app.preferences: `canonicalMatchingSettings.relationTypeCandidateLimit` | `3` | matching-value | `M/services/relation-type-resolution.ts` createRelationTypeResolver |
+| `canonicalMatchingSettings.entityCandidateLimit` | advanced › matching | number | app.preferences: `canonicalMatchingSettings.entityCandidateLimit` | `3` | matching-value | `M/services/entity-identity-resolution.ts` createEntityIdentityResolver |
+| `canonicalMatchingSettings.confirmationBatchSize` | advanced › matching | number | app.preferences: `canonicalMatchingSettings.confirmationBatchSize` | `12` | matching-value | `M/services/entity-identity-resolution.ts` createEntityIdentityResolver |
+| `canonicalMatchingSettings.confirmationMaxCharacters` | advanced › matching | number | app.preferences: `canonicalMatchingSettings.confirmationMaxCharacters` | `12000` | matching-value | `M/services/entity-identity-resolution.ts` createEntityIdentityResolver |
+| `atomicNoteMatchingSettings.maxRerankOutputTokens` | advanced › matching | number | app.preferences: `atomicNoteMatchingSettings.maxRerankOutputTokens` | `4096` | matching-value | `M/services/relations/relation-matcher.ts` RelationMatcher.matchNotes |
+| `sourceRelationSettings.evidenceChunksPerSource` | advanced › matching | number | app.preferences: `sourceRelationSettings.evidenceChunksPerSource` | `2` | matching-value | `M/services/source-relation-processing.ts` sourceJudgeRequestSettings |
+| `sourceRelationSettings.evidenceMaxCharacters` | advanced › matching | number | app.preferences: `sourceRelationSettings.evidenceMaxCharacters` | `800` | matching-value | `M/services/source-relation-processing.ts` sourceJudgeRequestSettings |
+| `sourceRelationSettings.summaryMaxCharacters` | advanced › matching | number | app.preferences: `sourceRelationSettings.summaryMaxCharacters` | `1000` | matching-value | `M/services/source-relation-processing.ts` sourceJudgeRequestSettings |
+| `sourceRelationSettings.maxOutputTokens` | advanced › matching | number | app.preferences: `sourceRelationSettings.maxOutputTokens` | `4096` | matching-value | `M/services/source-relation-processing.ts` sourceJudgeRequestSettings |
+| `sourceRelationSettings.maxRelationsPerPair` | advanced › matching | number | app.preferences: `sourceRelationSettings.maxRelationsPerPair` | `4` | matching-value | `M/services/source-relation-processing.ts` sourceJudgeRequestSettings |
+| `sourceRelationSettings.maxInputTokens` | advanced › matching | number | app.preferences: `sourceRelationSettings.maxInputTokens` | `60000` | matching-value | `M/services/source-relation-processing.ts` judgeRoot |
+| `sourceRelationSettings.minImportance` | advanced › matching | number | app.preferences: `sourceRelationSettings.minImportance` | `0.75` | matching-value | `D/source-relations.ts` sourceDecisionPassesFloors |
+| `sourceRelationSettings.minConfidence` | advanced › matching | number | app.preferences: `sourceRelationSettings.minConfidence` | `0.85` | matching-value | `D/source-relations.ts` sourceDecisionPassesFloors |
+| `sourceRelationSettings.includeWeakTypes` | advanced › matching | switch | app.preferences: `sourceRelationSettings.includeWeakTypes` | `false` | matching-value | `M/services/source-relation-processing.ts` sourceJudgeRequestSettings |
+| `summaryMinimumWordCount` | advanced › processing | number | app.preferences: `summaryMinimumWordCount` | `40` | app-preference | `M/index.ts` <module> |
+| `keepLocalEmbeddingModelsLoaded` | advanced › localModels | switch | app.preferences: `keepLocalEmbeddingModelsLoaded` | `true` | app-preference | `M/index.ts` <module> |
+| `relations.deciderMode` | advanced › connections | select | settings: `relations.deciderMode` | unset | decider-mode | `M/services/relations/relation-matcher.ts` RelationMatcher.resolveDecider |
+| `graphWheelZoomSensitivity` | advanced › map | range | app.preferences: `graphWheelZoomSensitivity` | `1` | app-preference | `R/App.tsx` App |
+| `managedRoot` | advanced › obsidian | text | storage_settings: `managedRoot` | `"Memora"` | storage-setting | `M/services/obsidian-sync-service.ts` ObsidianSyncService.reconcileVault |
+| `obsidian.layout.language` | advanced › obsidian | select | settings: `obsidian.layout` | computed (obsidian.layout.followsContentLanguage) | obsidian-layout | `M/services/obsidian-wiki-projection.ts` ObsidianWikiProjection.layout |
+| `advanced.prompts` | advanced › prompts | page | none | unset | none | `M/services/prompt-service.ts` PromptService |
+| `debugMode` | advanced › diagnostics | switch | app.preferences: `debugMode` | `false` | app-preference | `M/services/monitoring-service.ts` MonitoringService.start |
+| `debugFullCapture` | advanced › diagnostics | switch | app.preferences: `debugFullCapture` | `false` | app-preference | `M/services/monitoring-service.ts` MonitoringService.start |
+| `advanced.callLog` | advanced › diagnostics | page | none | unset | none | `M/services/monitoring-service.ts` MonitoringService.prune |
+| `advanced.taskHistory` | advanced › diagnostics | page | none | unset | none | `M/services/job-supervisor.ts` JobSupervisor.listWithRuns |
+| `advanced.similarityRuns` | advanced › diagnostics | action | none | unset | none | `M/services/similarity-debug-service.ts` SimilarityDebugService.clear |
+
+**Persisted state with no control** (a reader, no label):
+
+| Key | Stored as | Reader (`file` symbol) |
+| --- | --- | --- |
+| `updatedAt` | app.preferences: `updatedAt` | `R/App.tsx` App |
+| `import.lastDirectory` | settings: `import.lastDirectory` | `M/services/settings-service.ts` createDbSettingsRepository |
+| `ai.classTests.v1` | settings: `ai.classTests.v1` | `M/services/ai-class-routes.ts` AiClassRouteService.readState |
+| `ai.routes.classMap.v1` | settings: `ai.routes.classMap.v1` | `M/services/ai-route-mapping.ts` createRouteMappingStore |
+| `relations.decisions.dailySpend` | settings: `relations.decisions.dailySpend` | `M/services/relations/decisions-budget.ts` createDecisionsSpendBudget |
+| `relations.decisions.state` | settings: `relations.decisions.state` | `M/services/ai-decisions.ts` DecisionsRuntime.readState |
+| `relations.ai.dailyCalls` | settings: `relations.ai.dailyCalls` | `M/services/relations/relation-call-budget.ts` createRelationCallBudget |
+| `catalogHeader.dailyRoots` | settings: `catalogHeader.dailyRoots` | `M/services/job-supervisor.ts` JobSupervisor.catalogHeaderExecutor |
+| `gardener.budget.subscriptionCalls.v1` | settings: `gardener.budget.subscriptionCalls.v1` | `M/services/gardener/remote-budget.ts` RemoteBudget.current |
+| `gardener.budget.continue.v1` | settings: `gardener.budget.continue.v1` | `M/services/gardener/remote-budget.ts` RemoteBudget.current |
+| `gardener.audit.cursors.v1` | settings: `gardener.audit.cursors.v1` | `M/services/topic-tree/topic-audit-lints.ts` AuditLints.readCursors |
+| `topics.ai.daily.v1` | settings: `topics.ai.daily.v1` | `M/services/topic-tree/topic-ai.ts` settingsAiBudgetStore |
+| `topics.corpus.v1` | settings: `topics.corpus.v1` | `M/services/topic-tree/corpus-runner.ts` CorpusRunner.readMarker |
+| `local-models.first-run-ranker` | settings: `local-models.first-run-ranker` | `M/services/first-run-ranker.ts` settingsFirstRunRankerStore |
+| `prompts.active` | settings: `prompts.active` | `DB/repositories/promptRepository.ts` createPromptRepository |
+| `jobs.history.dismissed-through.v1` | settings: `jobs.history.dismissed-through.v1` | `DB/repositories/taskHistory.ts` taskHistoryVisibleSql |
+| `obsidian.layout.presence` | settings: `obsidian.layout.presence` | `DB/repositories/obsidianLayoutRepository.ts` createObsidianLayoutRepository |
+| `obsidian.editorial.client` | settings: `obsidian.editorial.client` | `DB/repositories/obsidianEditorialRepository.ts` createObsidianEditorialRepository |
+| `relations.match.valuesHistory.v1` | settings: `relations.match.valuesHistory.v1` | `M/services/relations/relation-match-backlog.ts` RelationMatchBacklog.recordedValues |
+| `onboarding.v1` | settings: `onboarding.v1` | `M/services/onboarding/onboarding-service.ts` pgOnboardingStore |

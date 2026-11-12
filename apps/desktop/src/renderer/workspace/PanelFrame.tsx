@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { ChevronLeft, ChevronRight, Maximize2, Pin, X } from "lucide-react";
 import type { ObjectKind } from "@app/domain";
 import type { Translator } from "@app/i18n";
@@ -6,6 +6,7 @@ import type { Translator } from "@app/i18n";
 import { ObjectKindGlyph, objectKindTextClass } from "../components/glyphs";
 import { Tooltip } from "../components/ui/tooltip";
 import { cn } from "../lib/cn";
+import { ObjectLinkProvider, type ObjectOpen } from "./ObjectLink";
 import { PathRibbon, type RibbonPlace } from "./PathRibbon";
 
 /**
@@ -53,7 +54,7 @@ export interface PanelFrameProps {
   /** "Fixar no navegador"; absent until the navigator's pins land, so no control does nothing. */
   onPin?: () => void;
   /** Opens an address beside this panel (a ribbon crumb). */
-  onOpen: (address: string) => void;
+  onOpen: ObjectOpen;
   ribbonPlace?: RibbonPlace;
   onChoosePlace?: () => void;
   /** The body's scroll offset to restore when the panel is shown again. */
@@ -131,6 +132,11 @@ export function PanelFrame({
   const frame = useRef<HTMLElement>(null);
   const compact = mode === "compact";
   const objectPanel = kind !== null && address.startsWith(`memora://${kind}/`);
+  // A panel whose object failed says so once, in its body: the ribbon's own failure line is for a
+  // place that fails while the object reads.
+  const ribbon = objectPanel && state !== "error";
+  // The ribbon draws an edge under it only while content slides beneath it.
+  const [scrolled, setScrolled] = useState(false);
 
   // The body's scroll comes back where it was when the panel is shown again.
   useEffect(() => {
@@ -270,15 +276,24 @@ export function PanelFrame({
       <div
         ref={body}
         data-panel-body=""
+        onScroll={(event) => setScrolled(event.currentTarget.scrollTop > 0)}
         className={cn(
           "min-h-0 flex-1 overflow-auto",
-          compact ? "px-4 pt-4 pb-8" : "px-(--top-pl) pt-5 pb-12"
+          compact ? "px-4 pb-8" : "px-(--top-pl) pb-12",
+          // The ribbon holds the body's top padding itself, so its opaque box starts at the edge of
+          // the scroll area and no text shows above it.
+          !ribbon && (compact ? "pt-4" : "pt-5")
         )}
       >
-        {/* A panel whose object failed says so once, in its body: the ribbon's own failure line is
-            for a place that fails while the object reads. */}
-        {objectPanel && state !== "error" ? (
-          <div className="sticky top-0 z-[1] -mx-1 bg-surface px-1">
+        {ribbon ? (
+          <div
+            data-ribbon-stuck={scrolled ? "" : undefined}
+            className={cn(
+              "sticky top-0 z-[1] -mx-1 bg-surface px-1",
+              compact ? "pt-4" : "pt-5",
+              scrolled && "[box-shadow:0_1px_0_0_var(--border-subtle)]"
+            )}
+          >
             <PathRibbon
               t={t}
               address={address}
@@ -290,7 +305,10 @@ export function PanelFrame({
             />
           </div>
         ) : null}
-        {children}
+        {/* The links inside the page (a Markdown `memora://` link) open beside this panel. */}
+        <ObjectLinkProvider t={t} onOpen={onOpen}>
+          {children}
+        </ObjectLinkProvider>
       </div>
     </section>
   );

@@ -10,6 +10,168 @@
       "related": "Lien connexe"
     }
   },
+  "home": {
+    "arrived": {
+      "generating": "génération des notes",
+      "link": "Bibliothèque",
+      "noPlace": "pas encore de place",
+      "progressOf": "{done} sur ~{total}",
+      "progressSoFar": "{done} pour l’instant",
+      "title": "Arrivé"
+    },
+    "briefing": {
+      "arrivedNoNotesOne": "{sources} est arrivée, sans notes pour l’instant ;",
+      "arrivedNoNotesOther": "{sources} sont arrivées, sans notes pour l’instant ;",
+      "arrivedOne": "{sources} est arrivée et a déjà produit {notes} ;",
+      "arrivedOther": "{sources} sont arrivées et ont déjà produit {notes} ;",
+      "decisionsAmongOne": "{decisions} vous attend : « {title} ».",
+      "decisionsAmongOther": "{decisions} vous attendent, dont « {title} ».",
+      "decisionsOne": "{decisions} vous attend.",
+      "decisionsOther": "{decisions} vous attendent.",
+      "gardener": "Le {gardener} a fait {changes} ; relisez-les et annulez ce que vous voulez.",
+      "generatingOne": "Une source génère encore des notes.",
+      "generatingOther": "{count} sources génèrent encore des notes.",
+      "label": "Ce qui a changé pendant votre absence",
+      "noneYetOne": "{count} cherche encore sa place dans l’arbre.",
+      "noneYetOther": "{count} cherchent encore leur place dans l’arbre.",
+      "notesOnlyOne": "{notes} est arrivée ;",
+      "notesOnlyOther": "{notes} sont arrivées ;",
+      "placedAll": "toutes ont une place dans l’arbre.",
+      "placedOne": "{count} a déjà une place dans l’arbre",
+      "placedOther": "{count} ont déjà une place dans l’arbre",
+      "reassurance": "Rien n’a été supprimé. Chaque changement reste dans l’historique de l’objet et, quand c’est possible, peut être annulé.",
+      "unplacedOne": "et {count} en cherche encore une.",
+      "unplacedOther": "et {count} en cherchent encore une."
+    },
+    "calm": {
+      "body": "Pas de nouvelles sources, aucun changement du Jardinier et rien qui vous attende."
+    },
+    "counts": {
+      "changesOne": "{count} changement",
+      "changesOther": "{count} changements",
+      "decisionsOne": "{count} décision",
+      "decisionsOther": "{count} décisions",
+      "itemsOne": "{count} élément",
+      "itemsOther": "{count} éléments",
+      "levelsOne": "{count} niveau de profondeur",
+      "levelsOther": "{count} niveaux de profondeur",
+      "newNotesOne": "{count} nouvelle note",
+      "newNotesOther": "{count} nouvelles notes",
+      "notesOne": "{count} note",
+      "notesOther": "{count} notes",
+      "sourcesOne": "{count} source",
+      "sourcesOther": "{count} sources",
+      "topicsOne": "{count} sujet",
+      "topicsOther": "{count} sujets",
+      "weekNotesOne": "{count} nouvelle note cette semaine",
+      "weekNotesOther": "{count} nouvelles notes cette semaine"
+    },
+    "date": {
+      "lastVisit": "{date} · dernière visite {when}"
+    },
+    "errors": {
+      "unavailable": "La base de données n’est pas encore prête."
+    },
+    "firstRun": {
+      "add": "Ajouter votre première source",
+      "headline": "Prêt pour votre première source",
+      "hint": "Ensuite, {key} fait la même chose depuis n’importe quel écran.",
+      "lead": "Un PDF, un article, une vidéo ou une note de vous. En quelques minutes, elle devient des notes courtes, chacune avec sa place dans un arbre de sujets qui s’organise tout seul.",
+      "next": "Une fois votre choix fait, vous allez directement à la source dans Explorer et voyez arriver les notes.",
+      "promiseLocal": "Vos fichiers restent sur votre Mac. Avec un modèle dans le cloud, seuls des extraits sont envoyés, et seulement quand la tâche le demande.",
+      "promiseSetup": "Rien à configurer.",
+      "promiseUndo": "Les changements peuvent être annulés.",
+      "promisesTitle": "Entendu",
+      "stepGardener": "Le Jardinier, le travail de fond de Memora, range l’arbre et les connexions",
+      "stepGardenerHint": "vous pouvez revoir ce qu’il fait",
+      "stepNotes": "Devient des notes courtes, une idée par note",
+      "stepPlace": "Chaque note reçoit sa place dans l’arbre",
+      "stepRead": "Lue et découpée en passages",
+      "stepReadHint": "en quelques secondes · dès ici, vous pouvez déjà poser des questions",
+      "stepsTitle": "Ce qui se passe ensuite"
+    },
+    "gardener": {
+      "name": "Jardinier",
+      "tip": "Le Jardinier est le travail de fond de Memora : il range l’arbre et les connexions, et vous pouvez revoir ce qu’il a fait."
+    },
+    "gardenerColumn": {
+      "all": "Tout voir",
+      "proposed": "proposition · décidez dans la Boîte de réception",
+      "title": "Ce qu’a fait le Jardinier",
+      "why": "Pourquoi ?"
+    },
+    "greeting": {
+      "afternoon": "Bon après-midi.",
+      "away": "Pendant votre absence :",
+      "calm": "Rien n’a changé depuis votre dernière visite.",
+      "calmWeek": "Rien de nouveau ces 7 derniers jours.",
+      "evening": "Bonsoir.",
+      "morning": "Bonjour.",
+      "week": "Au cours des 7 derniers jours :"
+    },
+    "label": "Accueil",
+    "need": {
+      "impact": {
+        "pathOne": "{count} note avec un nouveau chemin",
+        "pathOther": "{count} notes avec un nouveau chemin"
+      },
+      "kinds": {
+        "backlog": "Nouvelle correspondance facultative",
+        "budget": "Plafond de dépenses",
+        "contradiction": "Contradiction",
+        "duplicate": "Doublon",
+        "obsidianConflict": "Conflit Obsidian",
+        "quarantined": "Tâche échouée",
+        "review": "À examiner",
+        "reviewOverview": "Vue d’ensemble",
+        "reviewRelation": "Lien",
+        "reviewTopic": "Structure",
+        "suggestion": "Lien suggéré",
+        "withdrawn": "Lien retiré"
+      },
+      "link": "Boîte de réception",
+      "risk": {
+        "high": "Élevé",
+        "low": "Faible",
+        "medium": "Moyen"
+      },
+      "sub": "risque le plus élevé d’abord",
+      "title": "A besoin de vous"
+    },
+    "questions": {
+      "failed": "non terminée",
+      "link": "Toutes les questions",
+      "running": "réponse en cours",
+      "scopeLibrary": "Toute la bibliothèque",
+      "scopeTopic": "Un sujet",
+      "sub": "vos dernières questions",
+      "title": "Questions récentes"
+    },
+    "resume": {
+      "action": "Reprendre",
+      "label": "Les panneaux qui étaient ouverts",
+      "panelsOne": "{count} panneau dans Explorer",
+      "panelsOther": "{count} panneaux dans Explorer",
+      "title": "Reprendre où vous en étiez"
+    },
+    "shape": {
+      "label": "La forme de votre arbre",
+      "rootTooBig": "trop grand",
+      "seeInMap": "Voir dans la Carte",
+      "summary": "{notes} dans {topics}",
+      "title": "Votre arbre",
+      "tooBigOne": "{count} sujet trop grand",
+      "tooBigOther": "{count} sujets trop grands"
+    },
+    "since": {
+      "visit": "depuis votre dernière visite",
+      "week": "au cours des 7 derniers jours"
+    },
+    "states": {
+      "error": "Impossible de charger l’Accueil.",
+      "errorKept": "Vos sources et vos notes sont intactes."
+    }
+  },
   "automation": {
     "clearHistory": "Nettoyer l’historique des tâches",
     "clearHistoryHint": "Retire des listes les exécutions terminées, échouées ou annulées. Les tâches actives, planifications, problèmes en attente, audits et réservations de budget sont conservés.",
@@ -95,7 +257,8 @@
     "drawer": {
       "close": "Fermer l’activité",
       "explainer": "ce que Memora fait en arrière-plan",
-      "loadFailed": "Impossible de charger l’activité."
+      "loadFailed": "Impossible de charger l’activité.",
+      "loadFailedKept": "Rien n’a été modifié. Votre bibliothèque est en sécurité."
     },
     "sections": {
       "now": "En ce moment",
@@ -128,6 +291,7 @@
     "done": {
       "empty": "Rien n’a encore été modifié automatiquement.",
       "loadFailed": "Impossible de charger les modifications récentes.",
+      "loadFailedKept": "Les modifications sont enregistrées et pourront être annulées une fois chargées.",
       "undo": "Annuler",
       "undoing": "Annulation...",
       "undone": "Modification annulée.",
@@ -137,6 +301,7 @@
     },
     "budget": {
       "loadFailed": "Impossible de charger les compteurs de dépenses.",
+      "loadFailedKept": "Vos limites et vos dépenses n’ont pas changé.",
       "state": {
         "open": "Sous la limite",
         "paused": "En pause près de la limite",
@@ -241,8 +406,8 @@
         "divergenceBody": "La vue d'ensemble de « {topic} » a été complétée, et de nouvelles preuves divergent de ce qu'elle dit. La divergence reste à côté du texte, sans jamais s'y fondre. Conservez-la, ou écartez cet élément. Points de divergence : {count}."
       },
       "suggestion": {
-        "title": "Un lien suggéré attend votre confirmation",
-        "body": "Un lien a été suggéré entre « {first} » et « {second} » : {confidence}. Conservez-le pour qu'il compte comme votre décision, ou supprimez-le.",
+        "title": "Lien suggéré · {confidence}",
+        "body": "Suggestion : « {first} » {relation} « {second} ». Conservez-le pour qu'il compte comme votre décision, ou supprimez-le.",
         "hint": "Rien n'est effacé : seul le lien change. Si vous le supprimez, il ne sera plus suggéré."
       },
       "withdrawn": {
@@ -2470,15 +2635,208 @@
     "removePreset": "Supprimer ce préréglage ?"
   },
   "sourcePage": {
+    "actions": {
+      "generateNotes": "Générer les notes",
+      "openInMap": "Ouvrir dans la Carte"
+    },
+    "connections": {
+      "notes": "Liens entre les notes de cette source",
+      "notesEmpty": "Aucun lien pour l’instant. Ils apparaissent ici quand les notes sont reliées.",
+      "sources": "Sources liées"
+    },
     "content": "Contenu",
     "current": "Actuel",
+    "details": {
+      "earlier": "Versions précédentes"
+    },
     "edit": "Modifier la source",
     "editContent": "Modifier le contenu",
+    "errors": {
+      "earlier": "Impossible d’ouvrir cette version.",
+      "kept": "Vos autres panneaux restent ouverts et rien n’a été modifié.",
+      "open": "Impossible d’ouvrir cette source.",
+      "progress": "Impossible de lire l’avancement pour le moment."
+    },
+    "fields": {
+      "abstract": "Résumé de l’auteur",
+      "channel": "Chaîne",
+      "chapterNumber": "Numéro de chapitre",
+      "creators": "Auteurs et contributeurs",
+      "description": "Description",
+      "doi": "DOI",
+      "durationSeconds": "Durée (secondes)",
+      "edition": "Édition",
+      "isbn10": "ISBN-10",
+      "isbn13": "ISBN-13",
+      "issn": "ISSN",
+      "issue": "Numéro",
+      "keywords": "Mots-clés",
+      "language": "Langue",
+      "pageCount": "Nombre de pages",
+      "platform": "Plateforme",
+      "publicationDate": "Date de publication",
+      "publisher": "Éditeur",
+      "sectionNumber": "Numéro de section",
+      "series": "Collection",
+      "siteName": "Nom du site",
+      "subjects": "Sujets",
+      "subtitle": "Sous-titre",
+      "tags": "Étiquettes",
+      "title": "Titre",
+      "url": "Adresse d’origine",
+      "venue": "Publication",
+      "volume": "Volume",
+      "year": "Année"
+    },
+    "gone": {
+      "action": "Ouvrir la Bibliothèque",
+      "body": "Elle a peut-être été supprimée. Ouvrez la Bibliothèque pour voir ce qu’elle contient.",
+      "title": "Cette source n’est plus dans votre bibliothèque."
+    },
+    "hint": {
+      "firstSource": "Chaque note apparaît ici avec son chemin dans l’arbre, et l’arbre naît à gauche. Ensuite, le Jardinier range l’arbre et les liens en arrière-plan, toujours avec Annuler.",
+      "key": "Espace",
+      "notes": "Les notes apparaissent ici dès qu’elles sont prêtes, déjà avec leur chemin dans l’arbre. Cliquez sur l’une pour l’ouvrir à côté ; {key} l’aperçoit sans l’ouvrir."
+    },
     "history": "Historique",
     "historyHint": "Le contenu précédent est en lecture seule. Jusqu’à 100 documents récents sont affichés ; les preuves originales sont conservées.",
+    "meta": {
+      "addedOn": "ajoutée le {date}",
+      "addedToday": "ajoutée aujourd’hui, {time}",
+      "addedYesterday": "ajoutée hier, {time}",
+      "etAl": "{name} et al.",
+      "pages": "{count} pages",
+      "pagesOne": "1 page",
+      "volume": "{venue}, vol. {volume}"
+    },
     "noChildren": "Aucun sous-élément. Ajoutez le premier pour commencer.",
+    "notes": {
+      "countLive": "{count} jusqu’ici · les plus récentes en haut",
+      "countLiveOne": "1 jusqu’ici · la plus récente en haut",
+      "emptyBody": "Quand les notes seront générées, elles apparaîtront ici, chacune avec son chemin dans l’arbre.",
+      "emptyHeadline": "Pas encore de notes pour cette source",
+      "fresh": "à l’instant",
+      "newestFirst": "les plus récentes en haut",
+      "open": "Ouvrir la note « {title} » à côté",
+      "page": "p. {page}",
+      "passage": "segment {index}",
+      "placing": "Recherche de l’emplacement dans l’arbre…",
+      "section": "section {name}",
+      "seeAll": "Voir les {count} notes",
+      "showMore": "Afficher {count} de plus",
+      "unplaced": "Sans emplacement"
+    },
     "overview": "Vue générale",
-    "stale": "Le contenu a changé. Traitez cette source pour actualiser le résumé."
+    "reader": {
+      "empty": "Cette source n’a pas encore de texte.",
+      "passages": "Segments ({count})"
+    },
+    "stale": "Le contenu a changé. Traitez cette source pour actualiser le résumé.",
+    "strip": {
+      "actionFailed": "Impossible de démarrer pour le moment. Rien n’a été modifié.",
+      "cost": {
+        "local": "modèle local, sans coût",
+        "perToken": "environ {amount}",
+        "perTokenEstimated": "environ {amount}, prix estimé",
+        "subscription": "abonnement, sans facturation à l’usage"
+      },
+      "doneIn": "Prête en {count} min",
+      "doneUnderMinute": "Prête en moins d’une minute",
+      "failedAt": "Impossible de terminer {stage}.",
+      "failedKept": "Ce qui était déjà prêt reste enregistré.",
+      "group": "Génération en direct",
+      "milestone": "Vous pouvez déjà {link} : les segments sont indexés.",
+      "milestoneLink": "interroger cette source",
+      "needsYou": {
+        "choose": "Choisir le modèle",
+        "kept": "Les segments sont déjà consultables.",
+        "noRoute": "Il manque un modèle pour écrire les notes.",
+        "other": "Cette source attend que vous continuiez."
+      },
+      "paused": "Mise en pause par vous.",
+      "pausedKept": "Ce qui était déjà prêt reste enregistré. Reprenez depuis Activité, en haut de la fenêtre.",
+      "remainingHours": "encore environ {count} h",
+      "remainingMinutes": "encore environ {count} min",
+      "ruler": {
+        "caption": "Notes par section du texte",
+        "done": "terminée",
+        "label": "Notes par section",
+        "pending": "en attente",
+        "reading": "en lecture"
+      },
+      "searchable": "Enregistrée et consultable, sans notes.",
+      "searchableKept": "Vous pouvez interroger cette source. Générez les notes quand vous voulez.",
+      "since": "depuis {time}",
+      "stages": {
+        "atomicNoteMatching": "les liens entre notes",
+        "atomicNotes": "les notes",
+        "chunking": "le découpage en segments",
+        "conversion": "la lecture du fichier",
+        "embedding": "l’indexation des segments",
+        "knowledgeGraph": "le graphe d’entités",
+        "sourceMatching": "les liens entre sources",
+        "structure": "la lecture de la structure",
+        "summarization": "le résumé"
+      },
+      "steps": {
+        "chunks": "Segments",
+        "notes": "Notes",
+        "placed": "Dans l’arbre",
+        "read": "Lue",
+        "relations": "Liens",
+        "summary": "Résumé"
+      },
+      "stopped": "La génération a été interrompue.",
+      "title": "Génération des connaissances de cette source",
+      "values": {
+        "afterNotes": "après les notes",
+        "notApplicable": "sans objet dans ce mode",
+        "notesDone": "{count} notes",
+        "notesDoneOne": "1 note",
+        "notesOfEstimate": "{count} sur ~{estimate}",
+        "notesSoFar": "{count} jusqu’ici",
+        "notesSoFarOne": "1 jusqu’ici",
+        "pages": "{count} pages",
+        "pagesOne": "1 page",
+        "placed": "{count} placées",
+        "placedOne": "1 placée",
+        "readDone": "lue",
+        "reading": "lecture",
+        "relationsDone": "{count} liens",
+        "relationsDoneOne": "1 lien",
+        "searchable": "{count} consultables",
+        "searchableOne": "1 consultable",
+        "searching": "recherche",
+        "summaryDone": "prêt",
+        "waiting": "en attente",
+        "writing": "écriture"
+      }
+    },
+    "summary": {
+      "later": "Le résumé vient après les notes.",
+      "none": "Pas encore de résumé.",
+      "title": "Résumé",
+      "writing": "Le résumé est en cours d’écriture."
+    },
+    "tabs": {
+      "connections": "Liens",
+      "details": "Détails",
+      "label": "Sections de la source",
+      "notes": "Notes"
+    },
+    "types": {
+      "AcademicPaper": "Article académique",
+      "Book": "Livre",
+      "BookChapter": "Chapitre de livre",
+      "DailyNote": "Note quotidienne",
+      "DocumentSection": "Section de document",
+      "GenericDocument": "Document générique",
+      "PeriodicalIssue": "Numéro de périodique",
+      "PersonalNote": "Note personnelle",
+      "StandaloneArticle": "Article autonome",
+      "Video": "Vidéo",
+      "WebArticle": "Article web"
+    }
   },
   "sourceRelations": {
     "openNote": "Ouvrir la note",
@@ -3029,7 +3387,6 @@
         "undone": "Modification annulée.",
         "undo": "Annuler",
         "undoing": "Annulation...",
-        "dismiss": "Fermer",
         "blocked": "Impossible de l’annuler maintenant : une modification ultérieure en dépend.",
         "failed": "La modification n’a pas pu être annulée. Réessayez."
       }
@@ -3838,6 +4195,8 @@
       "expand": "Afficher le chemin complet",
       "label": "Emplacement dans l’arbre",
       "loading": "Recherche de l’emplacement dans l’arbre…",
+      "mostCited": "La plus citée dans",
+      "mostCitedNone": "Pas encore citée dans un sujet",
       "placedByCitations": "placée par les citations",
       "retry": "Réessayer",
       "tentative": "Emplacement probable :",
@@ -4059,6 +4418,122 @@
       "graph": "Graphe",
       "history": "Historique",
       "mentions": "Mentions"
+    }
+  },
+  "entityPage": {
+    "aliases": "Autres noms :",
+    "articleLabel": "Entité : {name}",
+    "coMentioned": {
+      "heading": "Apparaît souvent avec",
+      "sharedMany": "{count} notes en commun",
+      "sharedOne": "{count} note en commun"
+    },
+    "empty": {
+      "ask": "Poser une question sur {name}",
+      "body": "Les notes qui citeront ce nom apparaîtront ici dès qu’elles seront écrites.",
+      "headline": "Pas encore de mentions directes."
+    },
+    "error": {
+      "compact": "Impossible d’ouvrir.",
+      "kept": "Vos notes et vos sources sont restées telles quelles.",
+      "message": "Impossible d’ouvrir cette entité."
+    },
+    "mentions": {
+      "heading": "Mentions",
+      "listLabel": "Notes qui citent cette entité",
+      "moreFailed": "Impossible de charger d’autres mentions.",
+      "moreLoading": "Chargement d’autres mentions",
+      "moreMany": "Afficher {count} notes de plus",
+      "moreOne": "Afficher {count} note de plus",
+      "summaryMany": "{count} notes, par sujet",
+      "summaryOne": "{count} note, par sujet",
+      "unplaced": "Sans emplacement",
+      "untitledTopic": "Sujet sans nom"
+    },
+    "meta": {
+      "mentionsMany": "citée dans {count} notes",
+      "mentionsOne": "citée dans {count} note",
+      "sourcesMany": "{count} sources",
+      "sourcesOne": "{count} source"
+    },
+    "missing": {
+      "body": "Elle a peut-être été fusionnée avec une autre entité. Cherchez son nom pour la retrouver.",
+      "headline": "Cette entité n’est plus dans la bibliothèque."
+    },
+    "sources": {
+      "heading": "Sources",
+      "partial": "Sources des mentions chargées jusqu’ici. Affichez plus de mentions pour voir le reste."
+    },
+    "topics": {
+      "heading": "Sujets",
+      "more": "et {count} de plus",
+      "mostCited": "la plus citée"
+    }
+  },
+  "preview": {
+    "card": {
+      "empty": "Pas encore de résumé. Ouvrez-le pour tout lire.",
+      "error": "Impossible de lire l’aperçu.",
+      "errorKept": "Le lien fonctionne toujours ; rien n’a été modifié.",
+      "goTo": "Aller à",
+      "keys": {
+        "open": "ouvrir à côté",
+        "peek": "survoler"
+      },
+      "label": "Aperçu",
+      "missing": "Ceci n’est plus dans la bibliothèque.",
+      "passage": "Passage",
+      "relation": "Connexion",
+      "status": {
+        "redirected": "Remplacé par un autre sujet",
+        "retired": "Hors d’usage"
+      }
+    },
+    "counts": {
+      "answers": {
+        "one": "{count} réponse",
+        "other": "{count} réponses"
+      },
+      "items": {
+        "one": "{count} élément dans le sujet",
+        "other": "{count} éléments dans le sujet"
+      },
+      "notes": {
+        "one": "{count} note",
+        "other": "{count} notes"
+      },
+      "passages": {
+        "one": "{count} passage",
+        "other": "{count} passages"
+      },
+      "sources": {
+        "one": "{count} source",
+        "other": "{count} sources"
+      },
+      "subtopics": {
+        "one": "{count} sous-sujet",
+        "other": "{count} sous-sujets"
+      }
+    },
+    "quickLook": {
+      "empty": "Pas encore de résumé. Ouvrez-le à côté pour tout lire.",
+      "error": "Impossible de lire cet élément.",
+      "errorKept": "Rien n’a été modifié ; la liste est toujours là.",
+      "keys": {
+        "close": "fermer",
+        "closes": "ferme",
+        "openHere": "ouvrir dans ce panneau",
+        "opensBeside": "ouvre à côté",
+        "peekNext": "voir le suivant",
+        "space": "Espace"
+      },
+      "label": "Coup d’œil",
+      "missing": "Ceci n’est plus dans la bibliothèque.",
+      "notesMentioning": "Notes qui le mentionnent",
+      "notesOfSource": "Notes de cette source",
+      "peeking": "Coup d’œil",
+      "stays": "Tout reste en place ; rien n’a été ouvert.",
+      "updated": "dernière mise à jour : {date}"
     }
   }
 }

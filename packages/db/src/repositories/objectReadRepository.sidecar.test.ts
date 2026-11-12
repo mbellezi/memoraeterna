@@ -710,9 +710,24 @@ describe.skipIf(!sidecarInstalled)("objects read layer on a real PostgreSQL data
       expect(items.filter((item) => item.via === "overview_citation")).toEqual([
         { from: at("topic", topic.sleep), via: "overview_citation", snippet: "Naps restore focus." }
       ]);
+      // Q1 names the note and cites its other passage; Q2 cites the note's evidence passage only,
+      // which is how Ask cites. Locate places a Question by the same notes, so both are listed,
+      // newest first, each with the passage it cites.
       expect(items.filter((item) => item.via === "question_citation")).toEqual([
-        expect.objectContaining({ from: at("question", w.q1), via: "question_citation" })
+        expect.objectContaining({
+          from: at("question", w.q2),
+          via: "question_citation",
+          anchor: `passage=${w.c1}`
+        }),
+        expect.objectContaining({
+          from: at("question", w.q1),
+          via: "question_citation",
+          anchor: `passage=${w.c2}`
+        })
       ]);
+      // The passage a superseded note rests on does not list a Question under that note.
+      const old = (await allBacklinks({ kind: "note", id: w.n3 })).items;
+      expect(old.some((item) => item.via === "question_citation")).toBe(false);
     });
 
     it("keeps a topic's backlink position when its overview is rewritten", async () => {
