@@ -42,9 +42,7 @@ accessibility, visualizations or user-visible backend messages.
   Cmd-I or Option-Arrow). The localized application menu owns them: Cmd-W closes
   the topmost dialog or panel, does nothing when nothing is open and never closes
   the window; Cmd-[ and Cmd-] follow the history. No move drops unsaved edits unasked.
-- Canvas and WebGL views (graphs, icicles, maps) offer a text or table
-  alternative. Live updates that matter are announced through live regions.
-- Undo affordances stay visible long enough to use and are reachable by keyboard.
+- Canvas and WebGL views (graphs, icicles, maps) offer a text or table alternative. Live updates that matter are announced through live regions. Undo affordances stay visible long enough to use and are reachable by keyboard.
 - Use the correct control for the data: toggles for booleans, selects for
   choices, tabs for views, numeric inputs or sliders for numbers.
 
@@ -52,6 +50,7 @@ accessibility, visualizations or user-visible backend messages.
 
 - Every important view covers loading, empty, error and success states (plus
   partial or waiting states). Failures stay visible and retryable.
+- Every persisted setting has a registry entry (section, label, help, keywords, default, reset, reader); a setting no code reads is removed.
 - Every surface in `workspace/surfaces.ts` has a screen module with loading, empty, error and success states over a fake `window.app` (`npm run screens -- --check`).
 - Product copy speaks from the user's side: what is happening and what they can
   do. State-machine terms, raw IDs and UUIDs never appear in normal UI (Diagnostics).

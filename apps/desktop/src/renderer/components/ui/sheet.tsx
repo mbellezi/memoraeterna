@@ -39,6 +39,8 @@ export function SheetContent({
   const content = (
     <DialogPrimitive.Content
       aria-describedby={undefined}
+      // A peek is not a dialog Cmd-W closes: `openDialogs` skips what carries this mark.
+      data-non-modal=""
       onOpenAutoFocus={(event) => {
         // Focus stays on the row that was peeked at.
         event.preventDefault();

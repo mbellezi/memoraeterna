@@ -9,7 +9,9 @@ import {
   isUnsorted,
   PathRibbon,
   PathRibbonView,
+  clauseWrapped,
   ribbonSegments,
+  settleClause,
   type Located
 } from "./PathRibbon";
 import { defaultWorkspace } from "./state";
@@ -206,10 +208,6 @@ describe("the path ribbon", () => {
     );
     expect(html).toContain('data-ribbon-state="tentative"');
     expect(html).toContain("Lugar provável:");
-    // The clause's "·" ends the last crumb's line, so a wrapped clause never starts with a dot.
-    expect(html).toContain("\u00a0·</span>");
-    expect(html).not.toContain("· definido");
-    expect(html).not.toMatch(/<span[^>]*>· /u);
   });
 
   it("says an entity's place is where it is most cited, before the path", () => {
@@ -297,9 +295,74 @@ describe("the path ribbon", () => {
     expect(line?.[1]).toContain("flex-wrap");
     // The line's children are the glyph, then each crumb and separator: no wrapper in between.
     const children = (line?.[2] ?? "").replace(/<svg.*?<\/svg>/u, "");
-    expect(children.startsWith("<button")).toBe(true);
+    expect(children.startsWith("<a ")).toBe(true);
     expect(children.match(/data-segment=/gu)).toHaveLength(3);
     expect(html).not.toContain("Mostrar o caminho inteiro");
+  });
+
+  it("makes every crumb and the secondary place an object link a peek can read", () => {
+    const read = {
+      ...located([
+        ref("topic", 1, ""),
+        ref("topic", 2, "Life sciences"),
+        ref("topic", 3, "Microbiology"),
+        ref("note", 5, "Lactic acid")
+      ]),
+      alsoIn: [{ kind: "topic" as const, id: uuid(9), title: "Fermented foods" }],
+      counts: { alsoIn: 1, citedBy: 0, notes: 0, passages: 0, children: 0 }
+    };
+    const html = ribbon(noteAddress, { status: "ready", located: read });
+    for (const id of [2, 3]) expect(html).toContain(`data-quick-look="memora://topic/${uuid(id)}"`);
+    expect(html).toContain(`data-also-in="memora://topic/${uuid(9)}"`);
+    expect(html).toContain(`data-quick-look="memora://topic/${uuid(9)}"`);
+    expect(html).not.toContain("<button");
+  });
+
+  it("keeps the separator of a trailing clause inside the clause, never on the last crumb", () => {
+    const read = located([
+      ref("topic", 1, ""),
+      ref("topic", 2, "Life sciences"),
+      ref("note", 5, "Lactic acid")
+    ]);
+    const html = ribbon(
+      noteAddress,
+      { status: "ready", located: read },
+      { place: "tentativeSource" }
+    );
+    // The dot is the first child of the clause, hidden once the clause wraps to its own line; the
+    // crumb before it carries none, so a wrap can leave no dot at the end of a line.
+    expect(html).toMatch(
+      /<span[^>]*data-ribbon-clause=""[^>]*><span[^>]*aria-hidden="true"[^>]*>·\u00a0<\/span>definido quando as notas terminarem<\/span>/u
+    );
+    expect(html).toContain("group-data-[wrapped]/clause:hidden");
+    expect(html).not.toMatch(/Life sciences<\/a><span[^>]*>\s*·/u);
+    expect(html.match(/·/gu)).toHaveLength(1);
+  });
+
+  it("calls a clause wrapped when it sits lower than the crumb before it, and marks it", () => {
+    expect(clauseWrapped(0, 0)).toBe(false);
+    expect(clauseWrapped(40, 40.4)).toBe(false);
+    expect(clauseWrapped(0, 20)).toBe(true);
+    const box = (before: number | null, top: number) => {
+      const marks = new Set<string>(["data-wrapped"]);
+      return {
+        marks,
+        node: {
+          offsetTop: top,
+          previousElementSibling: before === null ? null : { offsetTop: before },
+          removeAttribute: (name: string) => marks.delete(name),
+          setAttribute: (name: string) => marks.add(name)
+        }
+      };
+    };
+    // Beside the path: any old mark is taken off. On a line of its own: marked.
+    const beside = box(0, 0);
+    settleClause(beside.node);
+    expect([...beside.marks]).toEqual([]);
+    const lower = box(0, 20);
+    settleClause(lower.node);
+    expect([...lower.marks]).toEqual(["data-wrapped"]);
+    expect(() => settleClause(null)).not.toThrow();
   });
 
   it("shows a busy skeleton while it reads the place", () => {

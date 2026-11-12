@@ -12,11 +12,12 @@ import { Skeleton } from "../components/ui/skeleton";
 import { useAppEvent } from "../lib/app-events";
 import { cn } from "../lib/cn";
 import { useObjectChanged } from "../lib/object-events";
+import { ObjectLink, type ObjectOpen } from "./ObjectLink";
 
 /**
  * The path ribbon (design record §9; D8, X2): where an object sits in the topic tree, above the
  * title of every object panel, read with no click from `objects.locate`. Each crumb opens its topic
- * beside the panel (an `ObjectLink` placeholder until T144); the middle crumbs fold into "…" when
+ * beside the panel (an `ObjectLink`, so it has the hover card and the peek); the middle crumbs fold into "…" when
  * the ribbon would take more than two lines, and the root and the leaf are never cut.
  */
 
@@ -134,10 +135,36 @@ export interface PathRibbonProps {
   place?: RibbonPlace;
   /** A hidden panel listens to nothing and reads again when it is shown. */
   active?: boolean;
-  /** Opens a crumb's topic beside the panel. */
-  onOpen: (address: string) => void;
+  /** Opens a crumb's topic beside the panel, or in it (Option-click). */
+  onOpen: ObjectOpen;
   /** "Escolher lugar" on an unplaced object; absent, the ribbon only says "Sem lugar". */
   onChoosePlace?: () => void;
+}
+
+/** A clause that sits lower than the item before it has wrapped to a line of its own. */
+export function clauseWrapped(previousTop: number, clauseTop: number): boolean {
+  return clauseTop > previousTop + 1;
+}
+
+/**
+ * Marks the trailing clause `data-wrapped` when it has wrapped to a line of its own, which hides its
+ * "·" and indents it under the crumbs. The mark is taken off first so the clause is measured at the
+ * width it has beside the path; it is set on the element and not in state, so it costs no render.
+ */
+export function settleClause(clause: ClauseBox | null): void {
+  if (!clause) return;
+  clause.removeAttribute("data-wrapped");
+  const before = clause.previousElementSibling;
+  if (before && clauseWrapped(before.offsetTop, clause.offsetTop))
+    clause.setAttribute("data-wrapped", "");
+}
+
+/** The part of an element `settleClause` reads and writes. */
+export interface ClauseBox {
+  offsetTop: number;
+  previousElementSibling: { offsetTop: number } | null;
+  removeAttribute: (name: string) => void;
+  setAttribute: (name: string, value: string) => void;
 }
 
 /** The ribbon's line height in px per size: two lines at most before the middle folds. */
@@ -217,6 +244,10 @@ export function PathRibbonView({
     if (node.getBoundingClientRect().height > limit && hidden < segments.length - 2)
       setFold({ key: foldKey, hidden: hidden + 1 });
   }, [hidden, expanded, segments.length, compact, foldKey]);
+
+  // The trailing clause: whether it wrapped to a line of its own (see `settleClause`).
+  const clauseNode = useRef<HTMLSpanElement>(null);
+  useLayoutEffect(() => settleClause(clauseNode.current as ClauseBox | null));
 
   const size = compact ? "text-xs leading-4" : "text-sm leading-5";
   const shell = cn(
@@ -321,6 +352,7 @@ export function PathRibbonView({
         : place === "byCitations"
           ? t("panelFrame.ribbon.placedByCitations")
           : null;
+
   const shown = expanded ? segments : foldMiddle(segments, hidden);
   const crumbs = shown.map((entry, index) => {
     const separator =
@@ -347,40 +379,31 @@ export function PathRibbonView({
           </button>
         </Fragment>
       );
-    const leaf = !isTopic && index === shown.length - 1;
+    const last = index === shown.length - 1;
+    const leaf = !isTopic && last;
     const label = entry.title === "" ? t("panelFrame.ribbon.untitled") : entry.title;
     const crumb = (
-      <button
-        type="button"
+      <ObjectLink
+        t={t}
+        address={entry.address}
+        onOpen={onOpen}
+        appearance="bare"
         data-segment={entry.address}
         aria-current={leaf ? "location" : undefined}
-        onClick={() => onOpen(entry.address)}
         className={cn(
-          "max-w-full rounded-sm text-left [overflow-wrap:anywhere] underline-offset-[3px] hover:text-accent hover:underline",
-          "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent",
+          "max-w-full text-left [overflow-wrap:anywhere] underline-offset-[3px] hover:text-accent hover:underline",
           leaf && "font-semibold text-foreground",
           entry.title === "" && "italic",
           tentative && dashed
         )}
       >
         {label}
-      </button>
+      </ObjectLink>
     );
     return (
       <Fragment key={entry.id}>
         {separator}
-        {clause !== null && index === shown.length - 1 ? (
-          // The clause's "·" ends the last crumb's own line: when the clause wraps, the dot stays
-          // behind and no line starts with a separator (design record 9).
-          <span className="min-w-0 max-w-full">
-            {crumb}
-            <span aria-hidden="true" className="text-muted-foreground">
-              &nbsp;·
-            </span>
-          </span>
-        ) : (
-          crumb
-        )}
+        {crumb}
       </Fragment>
     );
   });
@@ -389,7 +412,6 @@ export function PathRibbonView({
   const otherCount = located.status === "ready" ? (located.located?.counts.alsoIn ?? 0) : 0;
   // The previous panel keeps to the place itself: where else an entity is cited is the top panel's.
   const first = compact && place === "mostCited" ? undefined : others[0];
-
   return (
     <nav
       aria-label={t("panelFrame.ribbon.label")}
@@ -416,8 +438,20 @@ export function PathRibbonView({
             as wide as the whole path, and would drop to a line of its own under the glyph. */}
         {crumbs}
         {clause ? (
-          // A trailing clause wraps whole; its separator lives at the end of the last crumb.
-          <span className="whitespace-normal text-muted-foreground [text-wrap:pretty]">
+          // A trailing clause wraps whole, and its "·" travels with it: when the clause has wrapped
+          // to a line of its own, `settleClause` marks it and the dot goes, so no line ever starts
+          // or ends with a separator (design record 9). The wrapped clause lines up under the crumbs.
+          <span
+            ref={clauseNode}
+            data-ribbon-clause=""
+            className={cn(
+              "group/clause whitespace-normal text-muted-foreground [text-wrap:pretty]",
+              compact ? "data-[wrapped]:ml-[18px]" : "data-[wrapped]:ml-5"
+            )}
+          >
+            <span aria-hidden="true" className="group-data-[wrapped]/clause:hidden">
+              ·&nbsp;
+            </span>
             {clause}
           </span>
         ) : null}
@@ -430,17 +464,16 @@ export function PathRibbonView({
           )}
         >
           {t("panelFrame.ribbon.alsoIn")}{" "}
-          <button
-            type="button"
+          <ObjectLink
+            t={t}
+            address={topicAddress(first)}
+            onOpen={onOpen}
+            appearance="bare"
             data-also-in={topicAddress(first)}
-            onClick={() => onOpen(topicAddress(first))}
-            className={cn(
-              "rounded-sm text-secondary-foreground underline-offset-[3px] hover:text-accent",
-              "hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-            )}
+            className="text-secondary-foreground underline-offset-[3px] hover:text-accent hover:underline"
           >
             {first.title === "" ? t("panelFrame.ribbon.untitled") : first.title}
-          </button>
+          </ObjectLink>
           {otherCount > 1 ? (
             <> {t("panelFrame.ribbon.andMore", { values: { count: otherCount - 1 } })}</>
           ) : null}

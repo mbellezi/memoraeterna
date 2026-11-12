@@ -114,7 +114,7 @@ function FirstRun() {
     dark: false,
     metadataEnrichmentEnabled: false,
     onSettings: () => undefined,
-    onOpenSource: () => undefined
+    onFirstSource: () => undefined
   });
   useEffect(() => {
     const element = host.current;

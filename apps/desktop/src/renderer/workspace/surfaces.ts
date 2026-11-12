@@ -177,6 +177,9 @@ export const surfaces: readonly SurfaceEntry[] = [
     "workspace/add/drop-overlay.screen.tsx"
   ),
   entry("quick-look", "overlay", "workspace/QuickLook.tsx", "workspace/QuickLook.screen.tsx"),
+  // The hover card of every object link (T144): a Markdown link, a path crumb, a "where it sits".
+  entry("object-card", "overlay", "workspace/ObjectLink.tsx", "workspace/ObjectLink.screen.tsx"),
+
   entry(
     "library-peek",
     "overlay",

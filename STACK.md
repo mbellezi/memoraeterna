@@ -88,7 +88,7 @@ and AGE are query and projection layers.
 | PDF outline and page labels | `pdfjs-dist` `6.1.200` |
 | Textual formats | Native TypeScript converters in `@app/conversion` |
 | ZIP handling | `fflate` `0.8.3` with bounded extraction |
-| XML/HTML parsing | `linkedom` `0.18.13` where already used |
+| XML/HTML parsing; the DOM of renderer tests that press keys or wait on timers (`workspace/test-dom.ts`) | `linkedom` `0.18.13` where already used |
 | YouTube metadata/transcripts | `youtubei.js` `17.2.0` |
 | Gateway events | `ws` `8.21.0` |
 | Gateway WebSocket types | `@types/ws` `8.18.1` |
