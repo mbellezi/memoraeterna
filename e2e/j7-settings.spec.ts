@@ -16,8 +16,8 @@
 //      and the step stops if the profile already holds one), and a saved import plan, whose Delete
 //      asks the same way; the plan has no restore at all (the registry's `reset: "none"`), which the
 //      IPC call confirms by refusing it.
-//   5. A deep link (`memora://settings/<section>#<setting>`, by the registry id and by its flat name)
-//      opens the section and lights the row, from another place and from Settings itself.
+//   5. Deep links: the in-app requests a `memora://settings/<section>#<setting>` address parses to (the
+//      row links of Settings; the OS refuses view addresses) open the section and light the row.
 //   6. X10: for every registry entry, from another place: click Settings in the rail, type the entry's
 //      first English held-out query (its label where that query does not list it, recorded), click its
 //      result: the row is visible and focused in at most 2 gestures, counted by the gesture counter.
@@ -40,7 +40,6 @@ import { messages } from "@app/i18n";
 import { expect, test, type Locator, type Page } from "@playwright/test";
 
 import {
-  settingSlug,
   settingsRegistryV2,
   type SettingEntryV2
 } from "../apps/desktop/src/shared/settings-registry";
@@ -48,7 +47,7 @@ import { invokeApp, launchMemora, setContentSize, waitForDatabase } from "./supp
 import { openProfileDb, type ProfileDb } from "./support/db.js";
 import { installGestureCounter, readGestures, resetGestures } from "./support/gestures.js";
 import { cloneProfile, journeysRun, profileDir } from "./support/profile.js";
-import { openObject, pressMenuShortcut, StepLog, surface } from "./support/workspace-steps.js";
+import { pressMenuShortcut, StepLog, surface } from "./support/workspace-steps.js";
 
 // ---------------------------------------------------------------------------------------------
 // The held-out queries (T109's fixture, committed by T161) and the ids it names differently.
@@ -308,10 +307,29 @@ test("J7 Settings: search, the changed marker and restore, asks before deleting,
 
     const first = (await describe(page)).get("themeMode");
     expect(first?.default, "the registry's default theme").toBe("dark");
-    expect(first?.value, "the theme a fresh profile holds").toBe("dark");
-    expect(first?.changed, "the default theme is marked as changed").toBe(false);
-    expect((await storedPreferences(db)).themeMode ?? "dark", "the stored theme").toBe("dark");
-    expect(await rootClass(page), "the root's theme at the start").toContain("dark");
+    if (first?.value !== "dark") {
+      // A BASE-J built before the dark default holds the old default as a stored choice ("system"),
+      // which is kept and now differs from the default: the row says so and restore moves it to dark.
+      info.annotations.push({
+        type: "note",
+        description: `the profile stores the theme "${String(first?.value)}" (BASE-J predates the dark default); the journey restores it first`
+      });
+      expect(first?.changed, "a stored non-default theme is not marked as changed").toBe(true);
+      await expect(themeRow).toHaveAttribute("data-changed");
+      await resetButton(themeRow).click();
+      await expect
+        .poll(async () => (await storedPreferences(db!)).themeMode, {
+          message: "restore did not store the dark default"
+        })
+        .toBe("dark");
+    }
+    expect((await describe(page)).get("themeMode")?.value, "the theme at the start").toBe("dark");
+    expect((await describe(page)).get("themeMode")?.changed, "dark is marked as changed").toBe(
+      false
+    );
+    await expect
+      .poll(() => rootClass(page), { message: "the root's theme at the start" })
+      .toContain("dark");
     expect(await pressed(), "the pressed theme segment at the start").toBe(darkAt);
     await expect(themeRow, "the default theme shows a changed marker").not.toHaveAttribute(
       "data-changed"
@@ -581,28 +599,33 @@ test("J7 Settings: search, the changed marker and restore, asks before deleting,
     );
 
     // -----------------------------------------------------------------------------------------
-    // 5. Deep links open the section and light the row, from another place and from Settings.
-    await leaveSettings(session);
-    await openObject(session, `memora://settings/advanced#${keepId}`);
-    await expect(settingsRoot(page), "the deep link did not show Settings").toBeVisible({
-      timeout: 15_000
-    });
-    await expectLanded(page, keepId, "the deep link by id");
+    // 5. Deep links. The system's `open-url` takes object addresses only (a view address is refused
+    // in main, D10), so a `memora://settings/<section>#<setting>` address is the in-app one: the row
+    // links of Settings send exactly the request the address parses to (`settings-target`), and
+    // each is followed here. Each opens the section, scrolls to the row, focuses it and lights it.
+    const linkIn = (scope: Locator, key: string): Locator =>
+      scope.getByRole("button", { name: copy("pt-BR", key), exact: true });
+    // Privacy's call-log row -> Advanced, the call log's row (by registry id).
+    await sectionButton(page, "privacy").click();
+    await linkIn(rowOf(page, "privacy.callLog"), "settingsPrivacy.callLog.open").click();
+    await expectLanded(page, "advanced.callLog", "the link to the call log");
     await expect(sectionButton(page, "advanced")).toHaveAttribute("aria-current", "true");
     // The light goes out by itself (2 s), and the row keeps its focus.
     await expect
-      .poll(() => rowFill(rowOf(page, keepId)), {
+      .poll(() => rowFill(rowOf(page, "advanced.callLog")), {
         message: "the row stayed lit",
         timeout: 10_000
       })
       .toBe(noFill);
-    // By the flat name (an id with a colon does not fit in an address), while in Settings.
-    await openObject(session, `memora://settings/integrations#${settingSlug(booksId)}`);
-    await expectLanded(page, booksId, "the deep link by flat name");
+    expect(await isFocused(rowOf(page, "advanced.callLog"))).toBe(true);
+    // Integrations -> Advanced, the managed folder.
+    await sectionButton(page, "integrations").click();
+    await linkIn(settingsRoot(page), "settingsIntegrations.openAdvanced").click();
+    await expectLanded(page, "managedRoot", "the link to the managed folder");
+    await expect(sectionButton(page, "advanced")).toHaveAttribute("aria-current", "true");
+    // A link that names only a section (Advanced's layout row -> Integrations).
+    await linkIn(settingsRoot(page), "settingsAdvanced.layout.openIntegrations").click();
     await expect(sectionButton(page, "integrations")).toHaveAttribute("aria-current", "true");
-    // A section alone opens the section.
-    await openObject(session, "memora://settings/library");
-    await expect(sectionButton(page, "library")).toHaveAttribute("aria-current", "true");
     await expect(settingsRoot(page)).toHaveAttribute("data-state", "success");
 
     // -----------------------------------------------------------------------------------------
