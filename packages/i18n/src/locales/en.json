@@ -317,6 +317,13 @@
     }
   },
   "inbox": {
+    "consequence": {
+      "keep": "The connection stays and counts as your decision.",
+      "remove": "The connection goes, and the Gardener does not suggest it again.",
+      "restore": "The connection comes back and counts as your decision."
+    },
+    "summary": "{count} decisions · riskiest first",
+    "summaryOne": "1 decision waits for you",
     "title": "Inbox",
     "description": "What needs your judgment, the most important first.",
     "badge": "{count} waiting",
@@ -325,14 +332,16 @@
       "error": "Your Inbox could not be loaded.",
       "empty": {
         "title": "Nothing needs you",
-        "body": "Your library organizes itself. When something needs your judgment, it appears here."
+        "body": "The Gardener asks here when a change is risky."
       },
       "emptyFiltered": "Nothing matches this filter.",
       "loadMore": "Load more",
       "loadingMore": "Loading more...",
-      "moreFailed": "More items could not be loaded."
+      "moreFailed": "More items could not be loaded.",
+      "errorKept": "Nothing was decided or changed."
     },
     "filters": {
+      "kind": "Type",
       "label": "Filter the Inbox",
       "all": "All",
       "chip": "{kind}: {count}",
@@ -346,6 +355,17 @@
       "medium": "medium confidence ({percent})",
       "low": "low confidence ({percent})",
       "unknown": "unknown confidence"
+    },
+    "kind": {
+      "review": "To review",
+      "quarantined": "Failed task",
+      "contradiction": "Contradiction",
+      "suggestion": "Suggested connection",
+      "withdrawn": "Withdrawn connection",
+      "duplicate": "Duplicate",
+      "obsidianConflict": "Obsidian conflict",
+      "budget": "Spending limit",
+      "backlog": "Optional re-match"
     },
     "kinds": {
       "review": "To review",
@@ -406,7 +426,7 @@
         "divergenceBody": "The overview of “{topic}” was extended, and some new evidence disagrees with what it says. The disagreement is kept beside the text, never merged into it. Keep it there, or dismiss this. Points of disagreement: {count}."
       },
       "suggestion": {
-        "title": "Suggested connection · {confidence}",
+        "title": "Keep this connection?",
         "body": "Suggestion: “{first}” {relation} “{second}”. Keep it to make it your decision, or remove it.",
         "hint": "Nothing is deleted: only the connection changes. If you remove it, it is not suggested again."
       },
@@ -481,17 +501,31 @@
       "hide": "Hide"
     },
     "keys": {
+      "barNote": "Single-key shortcuts do not work inside text fields.",
+      "short": {
+        "apply": "accept",
+        "dismiss": "dismiss",
+        "edit": "edit",
+        "help": "shortcuts",
+        "move": "navigate",
+        "open": "open",
+        "remove": "remove",
+        "retry": "retry",
+        "undo": "undo"
+      },
       "toggle": "Keyboard shortcuts",
       "title": "Keyboard shortcuts",
       "move": "Next or previous item",
       "open": "Go to the details",
       "apply": "Apply or keep",
-      "dismiss": "Dismiss or remove",
+      "dismiss": "Dismiss: it leaves the Inbox and nothing changes",
       "retry": "Retry",
       "undo": "Undo the last decision",
       "help": "Show or hide this help",
       "note": "These keys work while the list or the details have focus, never while you type or in a dialog.",
-      "money": "Continuing past the spending limit is a button, never a key."
+      "money": "Continuing past the spending limit is a button, never a key.",
+      "remove": "Remove a connection: it is never suggested again",
+      "edit": "Edit the names before applying"
     },
     "result": {
       "applied": "Applied.",
@@ -534,7 +568,8 @@
         "empty": "No overview yet",
         "divergences": "Where the new evidence disagrees",
         "divergence": "Paragraphs {existing} and {new}: {summary}"
-      }
+      },
+      "legend": "Small blocks, by letter"
     },
     "errors": {
       "invalidCursor": "The list changed meanwhile. Load it again.",
@@ -3381,11 +3416,13 @@
         "titles": {
           "build": "Topics were built from your notes.",
           "rebalance": "The structure was rebalanced.",
-          "rebalanceItems": "The structure was rebalanced. Items moved: {count}.",
+          "rebalanceItems": "{count} items moved when the structure was rebalanced.",
+          "rebalanceItemsOne": "1 item moved when the structure was rebalanced.",
           "audit": "Old topic redirects were shortened.",
           "areas": "Areas were regrouped.",
           "naming": "Topics were named.",
-          "namingCount": "Topics named: {count}.",
+          "namingCount": "{count} topics were named.",
+          "namingCountOne": "1 topic was named.",
           "human": "You changed the structure.",
           "rebuild": "Topics were rebuilt.",
           "other": "The structure changed."
@@ -5140,6 +5177,91 @@
     "uploadCopies": {
       "help": "A second copy of each original in a folder of yours, outside Memora’s database.",
       "label": "Keep a copy of uploaded files"
+    }
+  },
+  "map": {
+    "band": {
+      "action": "Back",
+      "back": "goes back to {topic}, where you were.",
+      "whole": "You are seeing the whole tree."
+    },
+    "chart": {
+      "columns": {
+        "areas": "Areas",
+        "subtopics": "Subtopics",
+        "topics": "Topics"
+      },
+      "deeper": "{count} topics sit deeper: the table lists them all, and Enter zooms into a branch.",
+      "deeperOne": "1 topic sits deeper: the table lists it, and Enter zooms into a branch.",
+      "here": "here",
+      "label": "Topic tree. Each block is a button that selects a topic: arrows move, Enter zooms in.",
+      "legend": {
+        "attention": "needs attention",
+        "direct": "notes placed directly in the topic",
+        "height": "Height = notes",
+        "here": "here = holds where you were",
+        "selected": "selected"
+      },
+      "merged": "Small blocks are grouped; the table lists each one.",
+      "moreTopics": "{count} more · {notes}"
+    },
+    "count": {
+      "topics": "{count} topics",
+      "topicsOne": "1 topic"
+    },
+    "display": {
+      "both": "Chart and table",
+      "label": "Display",
+      "table": "Table only"
+    },
+    "health": {
+      "attention": "needs attention",
+      "good": "balanced",
+      "violation": "over the limit"
+    },
+    "inspector": {
+      "next": "Next step",
+      "nextInbox": "See the proposal in the Inbox",
+      "selected": "Selected",
+      "table": "The same numbers as a table"
+    },
+    "lens": {
+      "label": "Map views",
+      "relations": "Graph",
+      "shape": "Tree"
+    },
+    "relations": {
+      "action": "See the Tree",
+      "body": "It will show how your topics connect. Until then, the Tree shows their size and health.",
+      "headline": "The graph of connections is on its way"
+    },
+    "selected": {
+      "growth": "{growth} notes in {days} days",
+      "growthOne": "{growth} note in {days} days",
+      "subtopics": "{count} direct subtopics",
+      "subtopicsOne": "1 direct subtopic"
+    },
+    "shape": {
+      "description": "Size and health of the tree: {notes} in {topics}",
+      "descriptionPlain": "Size and health of the tree."
+    },
+    "states": {
+      "empty": "The map appears when there are topics.",
+      "emptyAdd": "Add a source",
+      "emptyBody": "When your first source becomes notes, topics are born on their own and the map shows them here.",
+      "error": "The map could not be loaded.",
+      "errorKept": "Your sources and notes are untouched."
+    },
+    "table": {
+      "caption": "The same numbers as the chart, one row per topic",
+      "growth": "7 days",
+      "health": "Health",
+      "notes": "Notes",
+      "topic": "Topic"
+    },
+    "title": "Map",
+    "warnings": {
+      "dismiss": "Dismiss"
     }
   }
 }

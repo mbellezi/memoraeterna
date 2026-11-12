@@ -317,6 +317,13 @@
     }
   },
   "inbox": {
+    "consequence": {
+      "keep": "A conexão fica e conta como decisão sua.",
+      "remove": "A conexão sai, e o Jardineiro não volta a sugeri-la.",
+      "restore": "A conexão volta e conta como decisão sua."
+    },
+    "summary": "{count} decisões · a mais arriscada primeiro",
+    "summaryOne": "1 decisão aguardando você",
     "title": "Caixa de entrada",
     "description": "O que precisa do seu julgamento, o mais importante primeiro.",
     "badge": "{count} aguardando",
@@ -325,14 +332,16 @@
       "error": "Não foi possível carregar sua caixa de entrada.",
       "empty": {
         "title": "Nada precisa de você",
-        "body": "Sua biblioteca se organiza sozinha. Quando algo precisar do seu julgamento, aparecerá aqui."
+        "body": "O Jardineiro pergunta aqui quando uma mudança é arriscada."
       },
       "emptyFiltered": "Nada corresponde a este filtro.",
       "loadMore": "Carregar mais",
       "loadingMore": "Carregando mais...",
-      "moreFailed": "Não foi possível carregar mais itens."
+      "moreFailed": "Não foi possível carregar mais itens.",
+      "errorKept": "Nada foi decidido nem alterado."
     },
     "filters": {
+      "kind": "Tipo",
       "label": "Filtrar a caixa de entrada",
       "all": "Tudo",
       "chip": "{kind}: {count}",
@@ -346,6 +355,17 @@
       "medium": "confiança média ({percent})",
       "low": "confiança baixa ({percent})",
       "unknown": "confiança desconhecida"
+    },
+    "kind": {
+      "review": "Para revisar",
+      "quarantined": "Tarefa com falha",
+      "contradiction": "Contradição",
+      "suggestion": "Conexão sugerida",
+      "withdrawn": "Conexão retirada",
+      "duplicate": "Duplicata",
+      "obsidianConflict": "Conflito do Obsidian",
+      "budget": "Limite de gastos",
+      "backlog": "Nova correspondência opcional"
     },
     "kinds": {
       "review": "Para revisar",
@@ -406,7 +426,7 @@
         "divergenceBody": "A visão geral de “{topic}” foi ampliada, e parte das novas evidências discorda do que ela diz. A discordância fica ao lado do texto, nunca misturada a ele. Mantenha-a ali ou descarte este item. Pontos de discordância: {count}."
       },
       "suggestion": {
-        "title": "Conexão sugerida · {confidence}",
+        "title": "Manter esta conexão?",
         "body": "Sugestão: “{first}” {relation} “{second}”. Mantenha para que conte como decisão sua, ou remova.",
         "hint": "Nada é apagado: só a conexão muda. Se você a remover, ela não volta a ser sugerida."
       },
@@ -467,7 +487,7 @@
     },
     "verbs": {
       "apply": "Aplicar",
-      "dismiss": "Descartar",
+      "dismiss": "Dispensar",
       "keep": "Manter",
       "remove": "Remover",
       "retry": "Tentar de novo",
@@ -481,21 +501,35 @@
       "hide": "Ocultar"
     },
     "keys": {
+      "barNote": "Atalhos de uma tecla não funcionam dentro de campos de texto.",
+      "short": {
+        "apply": "aceitar",
+        "dismiss": "dispensar",
+        "edit": "editar",
+        "help": "atalhos",
+        "move": "navegar",
+        "open": "abrir",
+        "remove": "remover",
+        "retry": "repetir",
+        "undo": "desfazer"
+      },
       "toggle": "Atalhos de teclado",
       "title": "Atalhos de teclado",
       "move": "Próximo item ou anterior",
       "open": "Ir para os detalhes",
       "apply": "Aplicar ou manter",
-      "dismiss": "Descartar ou remover",
+      "dismiss": "Dispensar: sai da caixa e nada muda",
       "retry": "Tentar de novo",
       "undo": "Desfazer a última decisão",
       "help": "Mostrar ou ocultar esta ajuda",
       "note": "Estas teclas funcionam enquanto a lista ou os detalhes têm o foco, nunca enquanto você digita ou em um diálogo.",
-      "money": "Continuar além do limite de gastos é um botão, nunca uma tecla."
+      "money": "Continuar além do limite de gastos é um botão, nunca uma tecla.",
+      "remove": "Remover uma conexão: ela não volta a ser sugerida",
+      "edit": "Editar os nomes antes de aplicar"
     },
     "result": {
       "applied": "Aplicado.",
-      "dismissed": "Descartado.",
+      "dismissed": "Dispensado.",
       "kept": "Mantido.",
       "removed": "Removido.",
       "retried": "Na fila para rodar de novo.",
@@ -534,7 +568,8 @@
         "empty": "Ainda sem visão geral",
         "divergences": "Onde as novas evidências discordam",
         "divergence": "Parágrafos {existing} e {new}: {summary}"
-      }
+      },
+      "legend": "Blocos pequenos, por letra"
     },
     "errors": {
       "invalidCursor": "A lista mudou enquanto isso. Carregue-a de novo.",
@@ -3370,7 +3405,7 @@
         "dismiss": "Descartar",
         "working": "Aguarde...",
         "applied": "Mudança aplicada.",
-        "dismissed": "Proposta descartada.",
+        "dismissed": "Proposta dispensada.",
         "failed": "Não deu certo. Tente novamente."
       },
       "changed": {
@@ -3384,11 +3419,13 @@
         "titles": {
           "build": "Os tópicos foram criados a partir das suas notas.",
           "rebalance": "A estrutura foi reequilibrada.",
-          "rebalanceItems": "A estrutura foi reequilibrada. Itens movidos: {count}.",
+          "rebalanceItems": "{count} itens mudaram de lugar quando a estrutura foi reequilibrada.",
+          "rebalanceItemsOne": "1 item mudou de lugar quando a estrutura foi reequilibrada.",
           "audit": "Redirecionamentos de tópicos antigos foram encurtados.",
           "areas": "As áreas foram reagrupadas.",
           "naming": "Os tópicos receberam nomes.",
-          "namingCount": "Tópicos nomeados: {count}.",
+          "namingCount": "{count} tópicos receberam nomes.",
+          "namingCountOne": "1 tópico recebeu um nome.",
           "human": "Você mudou a estrutura.",
           "rebuild": "Os tópicos foram refeitos.",
           "other": "A estrutura mudou."
@@ -5143,6 +5180,91 @@
     "uploadCopies": {
       "help": "Uma segunda cópia de cada original numa pasta sua, fora do banco do Memora.",
       "label": "Guardar uma cópia dos arquivos enviados"
+    }
+  },
+  "map": {
+    "band": {
+      "action": "Voltar",
+      "back": "volta para {topic}, onde você estava.",
+      "whole": "Você está vendo a árvore inteira."
+    },
+    "chart": {
+      "columns": {
+        "areas": "Áreas",
+        "subtopics": "Subtópicos",
+        "topics": "Tópicos"
+      },
+      "deeper": "{count} tópicos estão mais fundo: a tabela lista todos, e Enter amplia um ramo.",
+      "deeperOne": "1 tópico está mais fundo: a tabela o lista, e Enter amplia um ramo.",
+      "here": "aqui",
+      "label": "Árvore de tópicos. Cada bloco é um botão que seleciona um tópico: as setas movem e Enter amplia.",
+      "legend": {
+        "attention": "precisa de atenção",
+        "direct": "notas colocadas direto no tópico",
+        "height": "Altura = notas",
+        "here": "aqui = contém onde você estava",
+        "selected": "selecionado"
+      },
+      "merged": "Blocos pequenos aparecem agrupados; a tabela lista cada um.",
+      "moreTopics": "mais {count} · {notes}"
+    },
+    "count": {
+      "topics": "{count} tópicos",
+      "topicsOne": "1 tópico"
+    },
+    "display": {
+      "both": "Gráfico e tabela",
+      "label": "Exibição",
+      "table": "Só tabela"
+    },
+    "health": {
+      "attention": "precisa de atenção",
+      "good": "equilibrado",
+      "violation": "acima do limite"
+    },
+    "inspector": {
+      "next": "Próximo passo",
+      "nextInbox": "Ver a proposta na Caixa de entrada",
+      "selected": "Selecionado",
+      "table": "Mesmos números em tabela"
+    },
+    "lens": {
+      "label": "Visões do mapa",
+      "relations": "Grafo",
+      "shape": "Árvore"
+    },
+    "relations": {
+      "action": "Ver a árvore",
+      "body": "Ele vai mostrar como os seus tópicos se conectam. Até lá, a Árvore mostra o tamanho e a saúde deles.",
+      "headline": "O grafo das conexões chega em breve"
+    },
+    "selected": {
+      "growth": "{growth} notas em {days} dias",
+      "growthOne": "{growth} nota em {days} dias",
+      "subtopics": "{count} subtópicos diretos",
+      "subtopicsOne": "1 subtópico direto"
+    },
+    "shape": {
+      "description": "Tamanho e saúde da árvore: {notes} em {topics}",
+      "descriptionPlain": "Tamanho e saúde da árvore."
+    },
+    "states": {
+      "empty": "O mapa aparece quando houver tópicos.",
+      "emptyAdd": "Adicionar fonte",
+      "emptyBody": "Quando a primeira fonte virar notas, os tópicos nascem sozinhos e o mapa os mostra aqui.",
+      "error": "Não foi possível carregar o mapa.",
+      "errorKept": "Suas fontes e notas continuam intactas."
+    },
+    "table": {
+      "caption": "Os mesmos números do gráfico, uma linha por tópico",
+      "growth": "7 dias",
+      "health": "Saúde",
+      "notes": "Notas",
+      "topic": "Tópico"
+    },
+    "title": "Mapa",
+    "warnings": {
+      "dismiss": "Dispensar"
     }
   }
 }
