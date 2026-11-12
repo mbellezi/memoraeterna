@@ -592,7 +592,11 @@ export type DefaultRef =
   /** Depends on the machine or on another setting; the key names what it depends on. */
   | { computed: string };
 
-/** How T160 puts a setting back; each adapter writes through the setting's existing writer. */
+/**
+ * How T160 puts a setting back; each adapter writes through the setting's existing writer, so a key
+ * with a dedicated writer has an adapter that names it (`obsidian-layout` is the journaled layout
+ * migration, which moves the vault's folders; `obsidian-wiki-scope` is `saveScope`).
+ */
 export const resetAdapterIds = [
   "ai-preset",
   "ai-route",
@@ -601,12 +605,13 @@ export const resetAdapterIds = [
   "credential",
   "decider-mode",
   "decisions-opt-in",
-  "kv-setting",
   "knowledge-control",
   "matching-preset",
   "matching-value",
   "none",
+  "obsidian-layout",
   "obsidian-sync",
+  "obsidian-wiki-scope",
   "storage-setting",
   "upload-copies"
 ] as const;
@@ -1052,7 +1057,7 @@ export const settingsRegistryV2: readonly SettingEntryV2[] = [
     control: "info",
     store: at("settings", "obsidian.wiki.scope"),
     default: { unset: true },
-    reset: "kv-setting",
+    reset: "obsidian-wiki-scope",
     reader: read(wikiProjection, "ObsidianWikiProjection.scope"),
     scope: "connections",
     category: "integration"
@@ -1064,7 +1069,7 @@ export const settingsRegistryV2: readonly SettingEntryV2[] = [
     control: "switch",
     store: at("settings", "obsidian.wiki.scope"),
     default: { value: true },
-    reset: "kv-setting",
+    reset: "obsidian-wiki-scope",
     reader: read(wikiProjection, "ObsidianWikiProjection.scope"),
     scope: "connections",
     category: "integration"
@@ -1076,7 +1081,7 @@ export const settingsRegistryV2: readonly SettingEntryV2[] = [
     control: "switch",
     store: at("settings", "obsidian.layout"),
     default: { value: "omit" },
-    reset: "kv-setting",
+    reset: "obsidian-layout",
     reader: read(wikiProjection, "ObsidianWikiProjection.layout"),
     scope: "connections",
     category: "integration"
@@ -1134,7 +1139,7 @@ export const settingsRegistryV2: readonly SettingEntryV2[] = [
     "action",
     read(`${base}/questions-service.ts`, "QuestionsService.clear")
   ),
-  tool("privacy.callLog", "privacy", "logs", "block", read(monitoring, "MonitoringService.prune")),
+  tool("privacy.callLog", "privacy", "logs", "block", read(monitoring, "MonitoringService.list")),
   tool(
     "privacy.reset",
     "privacy",
@@ -1269,7 +1274,7 @@ export const settingsRegistryV2: readonly SettingEntryV2[] = [
     control: "select",
     store: at("settings", "obsidian.layout"),
     default: { computed: "obsidian.layout.followsContentLanguage" },
-    reset: "kv-setting",
+    reset: "obsidian-layout",
     reader: read(wikiProjection, "ObsidianWikiProjection.layout"),
     scope: "connections",
     category: "integration"
@@ -1322,7 +1327,7 @@ export const settingsRegistryV2: readonly SettingEntryV2[] = [
     "advanced",
     "diagnostics",
     "page",
-    read("packages/db/src/repositories/taskHistory.ts", "taskHistoryVisibleSql"),
+    read(`${base}/job-supervisor.ts`, "JobSupervisor.listWithRuns"),
     {
       page: "taskHistory"
     }
@@ -1332,7 +1337,7 @@ export const settingsRegistryV2: readonly SettingEntryV2[] = [
     "advanced",
     "diagnostics",
     "action",
-    read(monitoring, "MonitoringService.prune")
+    read(`${base}/similarity-debug-service.ts`, "SimilarityDebugService.clear")
   )
 ];
 
@@ -1346,7 +1351,7 @@ const repositories = "packages/db/src/repositories";
 
 /** Persisted state no control edits. The reader test holds it to a reader like any other row. */
 export const persistedStateRegistry: readonly PersistedStateEntry[] = [
-  state("updatedAt", `${base}/settings-service.ts`, "changedSettingPaths", "app.preferences"),
+  state("updatedAt", rendererApp, "App", "app.preferences"),
   state("import.lastDirectory", `${base}/settings-service.ts`, "createDbSettingsRepository"),
   state("ai.classTests.v1", `${base}/ai-class-routes.ts`, "AiClassRouteService.readState"),
   state("ai.routes.classMap.v1", `${base}/ai-route-mapping.ts`, "createRouteMappingStore"),
@@ -1361,17 +1366,17 @@ export const persistedStateRegistry: readonly PersistedStateEntry[] = [
     `${base}/relations/relation-call-budget.ts`,
     "createRelationCallBudget"
   ),
-  state("catalogHeader.dailyRoots", `${base}/catalog-header-policy.ts`, "catalogHeaderConfig"),
+  state(
+    "catalogHeader.dailyRoots",
+    `${base}/job-supervisor.ts`,
+    "JobSupervisor.catalogHeaderExecutor"
+  ),
   state(
     "gardener.budget.subscriptionCalls.v1",
     `${base}/gardener/remote-budget.ts`,
     "RemoteBudget.current"
   ),
-  state(
-    "gardener.budget.continue.v1",
-    `${base}/gardener/remote-budget.ts`,
-    "RemoteBudget.continuePastPause"
-  ),
+  state("gardener.budget.continue.v1", `${base}/gardener/remote-budget.ts`, "RemoteBudget.current"),
   state(
     "gardener.audit.cursors.v1",
     `${base}/topic-tree/topic-audit-lints.ts`,
@@ -1402,8 +1407,8 @@ export const persistedStateRegistry: readonly PersistedStateEntry[] = [
   ),
   state(
     "relations.match.valuesHistory.v1",
-    `${base}/relations/relation-match-values.ts`,
-    "matchValuesHistorySettingKey"
+    `${base}/relations/relation-match-backlog.ts`,
+    "RelationMatchBacklog.recordedValues"
   ),
   state("onboarding.v1", `${base}/onboarding/onboarding-service.ts`, "pgOnboardingStore")
 ];
