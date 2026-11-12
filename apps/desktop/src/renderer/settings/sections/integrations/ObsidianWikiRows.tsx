@@ -79,7 +79,6 @@ export function WikiScopeRow({
               {sourcesText(t, scope.sourceIds.length)}
             </span>
           ) : null}
-          {vaultBound === false ? <span>{t("settingsIntegrations.scope.needsVault")}</span> : null}
           {draft !== null ? (
             <div className="grid max-w-[34rem] gap-3 rounded-lg border border-border bg-surface p-3">
               <EvidenceScopePicker
@@ -144,7 +143,7 @@ export function WikiDescendantsRow({
     }
   };
 
-  // Without a vault the switch only waits: the Sources row above already says to choose one.
+  // Without a vault the switch only waits: the Sync row above already says to choose a vault.
   return (
     <RegistryRow
       entry={entry}

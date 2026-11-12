@@ -5935,7 +5935,6 @@
         "obsidianPlugin": "Plugin de Obsidian"
       },
       "localOnly": "Solo responde a apps emparejadas, y solo en este Mac.",
-      "metaFailed": "No se pudo leer",
       "metaMany": "{count} apps · conexión {state}",
       "metaNone": "Ninguna app · conexión {state}",
       "metaOne": "{count} app · conexión {state}",
@@ -5963,7 +5962,6 @@
     },
     "layout": {
       "needsSync": "Para aplicarlo, la sincronización con Obsidian tiene que estar activada.",
-      "needsVault": "Elige la carpeta de la bóveda para poder copiar los archivos.",
       "readFailed": "No se pudo leer el estado de la bóveda.",
       "review": "El cambio está preparado. Revisa los archivos, cierra los editores y aplícalo."
     },
@@ -5985,7 +5983,6 @@
       "choose": "Elegir fuentes…",
       "countMany": "{count} fuentes elegidas",
       "countOne": "{count} fuente elegida",
-      "needsVault": "Elige arriba la carpeta de la bóveda para definir qué se convierte en página.",
       "readFailed": "No se pudieron leer las fuentes de la bóveda.",
       "save": "Guardar fuentes",
       "saveFailed": "No se pudo guardar. Sigue la elección anterior."
@@ -5993,7 +5990,7 @@
     "sync": {
       "failed": "La última sincronización se detuvo. No se perdió nada; inténtalo de nuevo.",
       "last": "Sincronizado {when}",
-      "needsVault": "Elige arriba la carpeta de la bóveda para activar la sincronización.",
+      "needsVault": "Elige arriba la carpeta de la bóveda para usar la sincronización y los ajustes de abajo.",
       "never": "Todavía no se ha sincronizado.",
       "now": "Sincronizar ahora",
       "off": "Desactivada",

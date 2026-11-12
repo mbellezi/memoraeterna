@@ -253,8 +253,10 @@ describe("Settings › Integrations", () => {
     await mount();
     expect(row("obsidianVaultPath").textContent).toContain("No vault chosen");
     expect(row("obsidianSync").textContent).toContain(
-      "Choose the vault folder above to turn the sync on."
+      "Choose the vault folder above to use the sync and the settings below."
     );
+    // The instruction is said once: the rows that wait for a vault do not repeat it.
+    expect(dom.document.body.textContent?.split("Choose the vault folder").length).toBe(2);
     const segments = [
       ...row("obsidianSync").querySelectorAll("[aria-pressed]")
     ] as HTMLButtonElement[];
@@ -325,9 +327,7 @@ describe("Settings › Integrations", () => {
       (row("obsidian.wiki.includeDescendants").querySelector("[role=switch]") as HTMLButtonElement)
         .disabled
     ).toBe(true);
-    expect(row("obsidian.wiki.scope").textContent).toContain(
-      "Choose the vault folder above to choose what becomes pages."
-    );
+    expect(row("obsidian.wiki.scope").textContent).not.toContain("Choose the vault folder");
     expect(dom.document.body.textContent).not.toContain("Vault reviews");
   });
 
@@ -432,11 +432,12 @@ describe("Settings › Integrations", () => {
     expect(dom.document.querySelectorAll("[role=alert]")).toHaveLength(0);
   });
 
-  it("says once, in the sources row, that a vault is needed, and leaves the chapters switch bare", async () => {
+  it("says once, under the sync, that a vault is needed, and leaves the rows that wait for it bare", async () => {
     storage = () =>
       Promise.resolve({ ...vaultSettings, obsidianVaultPath: null, obsidianSyncEnabled: false });
     await mount();
-    expect(row("obsidian.wiki.scope").textContent).toContain("Choose the vault folder above");
+    expect(row("obsidianSync").textContent).toContain("Choose the vault folder above");
+    expect(row("obsidian.wiki.scope").textContent).not.toContain("Choose the vault folder");
     expect(row("obsidian.wiki.includeDescendants").textContent).not.toContain(
       "Choose the vault folder"
     );
@@ -597,11 +598,22 @@ describe("Settings › Integrations", () => {
     expect(row("integrations.gateway").textContent).not.toContain("t".repeat(40));
   });
 
+  it("draws the page row's focus ring outside its text: the button is inset by its own padding", async () => {
+    await mount();
+    const toggle = row("integrations.gateway").querySelector("button[aria-expanded]")!;
+    // The ring sits inside the button's box, which reaches 0.75rem past the row's text on both sides,
+    // so it never crosses the first letter of the label or the help.
+    expect(toggle.className).toContain("-mx-3");
+    expect(toggle.className).toContain("px-3");
+    expect(toggle.className).toContain("focus-visible:-outline-offset-2");
+  });
+
   it("says a gateway that cannot be read in its row, quietly", async () => {
     gateway = () => Promise.reject(new Error("down"));
     await mount();
     // The row opens by itself, so the sentence and its retry are in view.
-    expect(row("integrations.gateway").textContent).toContain("Could not be read");
+    // One cause, one sentence: the row's summary does not say it again.
+    expect(row("integrations.gateway").textContent).not.toContain("Could not be read");
     expect(row("integrations.gateway").textContent).toContain(
       "Could not read the local connection."
     );

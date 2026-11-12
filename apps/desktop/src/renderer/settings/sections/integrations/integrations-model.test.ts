@@ -88,6 +88,12 @@ describe("the line under the sync", () => {
     expect(waiting).toMatchObject({ tone: "warn" });
     expect(waiting?.text).toContain("Synced today, 09:12");
     expect(waiting?.text).toContain(" · 2 waiting for review");
+    // The count's words come apart from the lead so the row can keep them on one line.
+    expect(waiting?.review).toEqual({
+      lead: "Synced today, 09:12 AM",
+      count: "2 waiting for review"
+    });
+    expect(done?.review).toBeUndefined();
     expect(syncLine(en, "on", sync({}), now, 1)?.text).toContain("1 waiting for review");
     expect(syncLine(en, "on", sync({ state: "failed" }), now, 0)).toMatchObject({
       tone: "warn",

@@ -5935,7 +5935,6 @@
         "obsidianPlugin": "Plugin do Obsidian"
       },
       "localOnly": "Só responde a apps pareados, e só neste Mac.",
-      "metaFailed": "Não foi possível ler",
       "metaMany": "{count} apps · conexão {state}",
       "metaNone": "Nenhum app · conexão {state}",
       "metaOne": "{count} app · conexão {state}",
@@ -5963,7 +5962,6 @@
     },
     "layout": {
       "needsSync": "Para aplicar, a sincronização com o Obsidian precisa estar ligada.",
-      "needsVault": "Escolha a pasta do cofre para poder copiar os arquivos.",
       "readFailed": "Não foi possível ler o estado do cofre.",
       "review": "A mudança está preparada. Confira os arquivos, feche os editores e aplique."
     },
@@ -5985,7 +5983,6 @@
       "choose": "Escolher fontes…",
       "countMany": "{count} fontes escolhidas",
       "countOne": "{count} fonte escolhida",
-      "needsVault": "Escolha a pasta do cofre acima para definir o que vira página.",
       "readFailed": "Não foi possível ler as fontes do cofre.",
       "save": "Salvar fontes",
       "saveFailed": "Não foi possível salvar. A escolha anterior continua."
@@ -5993,7 +5990,7 @@
     "sync": {
       "failed": "A última sincronização parou. Nada foi perdido; tente de novo.",
       "last": "Sincronizado {when}",
-      "needsVault": "Escolha a pasta do cofre acima para ligar a sincronização.",
+      "needsVault": "Escolha a pasta do cofre acima para usar a sincronização e os ajustes abaixo.",
       "never": "Ainda não sincronizou.",
       "now": "Sincronizar agora",
       "off": "Desligada",

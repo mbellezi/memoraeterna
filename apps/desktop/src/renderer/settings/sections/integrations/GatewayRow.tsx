@@ -75,19 +75,18 @@ export function GatewayRow({
   // A read that failed opens the row by itself, so its sentence and its retry are not hidden.
   const [opened, setOpened] = useState<boolean | null>(null);
   const open = opened ?? (initialOpen || gateway.status === "failed");
+  // A failed read has no summary: the open row says it once, with its retry.
   const meta =
-    gateway.status === "ready"
-      ? gatewayMeta(t, gateway.value.status, gateway.value.clients)
-      : gateway.status === "failed"
-        ? t("settingsIntegrations.gateway.metaFailed")
-        : null;
+    gateway.status === "ready" ? gatewayMeta(t, gateway.value.status, gateway.value.clients) : null;
 
   return (
     <PageRow
       id={entry.id}
       label={labelOf(t, entry)}
       help={helpOf(t, entry)}
-      meta={meta ?? <Skeleton className="h-3.5 w-24" />}
+      meta={
+        meta ?? (gateway.status === "loading" ? <Skeleton className="h-3.5 w-24" /> : undefined)
+      }
       open={open}
       onToggle={() => setOpened(!open)}
     >

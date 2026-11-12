@@ -5935,7 +5935,6 @@
         "obsidianPlugin": "Plugin Obsidian"
       },
       "localOnly": "Elle ne répond qu’aux apps associées, et seulement sur ce Mac.",
-      "metaFailed": "Lecture impossible",
       "metaMany": "{count} apps · connexion {state}",
       "metaNone": "Aucune app · connexion {state}",
       "metaOne": "{count} app · connexion {state}",
@@ -5963,7 +5962,6 @@
     },
     "layout": {
       "needsSync": "Pour l’appliquer, la synchronisation avec Obsidian doit être activée.",
-      "needsVault": "Choisissez le dossier du coffre pour pouvoir copier les fichiers.",
       "readFailed": "Impossible de lire l’état du coffre.",
       "review": "Le changement est préparé. Vérifiez les fichiers, fermez les éditeurs et appliquez."
     },
@@ -5985,7 +5983,6 @@
       "choose": "Choisir des sources…",
       "countMany": "{count} sources choisies",
       "countOne": "{count} source choisie",
-      "needsVault": "Choisissez le dossier du coffre ci-dessus pour définir ce qui devient des pages.",
       "readFailed": "Impossible de lire les sources du coffre.",
       "save": "Enregistrer les sources",
       "saveFailed": "Impossible d’enregistrer. Le choix précédent reste."
@@ -5993,7 +5990,7 @@
     "sync": {
       "failed": "La dernière synchronisation s’est arrêtée. Rien n’a été perdu ; réessayez.",
       "last": "Synchronisé {when}",
-      "needsVault": "Choisissez le dossier du coffre ci-dessus pour activer la synchronisation.",
+      "needsVault": "Choisissez le dossier du coffre ci-dessus pour utiliser la synchronisation et les réglages ci-dessous.",
       "never": "Pas encore synchronisé.",
       "now": "Synchroniser maintenant",
       "off": "Désactivée",

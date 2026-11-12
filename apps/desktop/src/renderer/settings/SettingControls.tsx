@@ -357,11 +357,14 @@ export type StatusTone = "ok" | "idle" | "warn" | "working";
 export function StatusLine({
   tone,
   children,
-  role
+  role,
+  plain = false
 }: {
   tone: StatusTone;
   children: ReactNode;
   role?: "status";
+  /** Wrap line by line, not balanced: for a line that ends in an action, which balancing would strand. */
+  plain?: boolean;
 }) {
   return (
     <span
@@ -379,7 +382,9 @@ export function StatusLine({
           <span aria-hidden="true" className="inline-block size-2 rounded-full bg-border-strong" />
         )}
       </span>
-      <span className="min-w-0 flex-1 basis-40 [text-wrap:pretty]">{children}</span>
+      <span className={cn("min-w-0 flex-1 basis-40", !plain && "[text-wrap:pretty]")}>
+        {children}
+      </span>
     </span>
   );
 }
@@ -441,7 +446,7 @@ export function PageRow({
       className={cn(
         "relative border-b border-border outline-none",
         "transition-colors [transition-duration:var(--motion-slow)]",
-        "focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent",
+        "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent",
         highlighted === id
           ? "-mx-4 bg-surface-selected px-4 [box-shadow:inset_2px_0_0_var(--accent)]"
           : ""
@@ -453,11 +458,19 @@ export function PageRow({
         aria-controls={bodyId}
         onClick={onToggle}
         className={cn(
-          "grid w-full grid-cols-[minmax(0,1fr)_auto_1rem] items-center gap-x-4 gap-y-1 rounded-md border-0",
-          "bg-transparent py-4 text-left focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent"
+          "group -mx-3 grid w-[calc(100%+1.5rem)] grid-cols-[minmax(0,1fr)_auto_1rem] items-center gap-x-4 gap-y-1",
+          "rounded-md border-0 bg-transparent px-3 py-4 text-left",
+          "focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent"
         )}
       >
-        <span className="text-base font-medium leading-5 text-foreground">{label}</span>
+        <span
+          className={cn(
+            "min-w-0 text-base font-medium leading-5 text-foreground [overflow-wrap:anywhere]",
+            "group-hover:underline group-hover:decoration-border-strong group-hover:underline-offset-[3px]"
+          )}
+        >
+          {label}
+        </span>
         <span className="col-start-1 max-w-[27.5rem] text-sm text-secondary-foreground [text-wrap:pretty]">
           {help}
         </span>

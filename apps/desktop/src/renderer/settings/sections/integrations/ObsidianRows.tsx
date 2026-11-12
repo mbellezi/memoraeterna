@@ -209,8 +209,16 @@ export function SyncRow({
           ) : null}
           {line ? (
             <div className="grid gap-1.5">
-              <StatusLine tone={line.tone} role="status">
-                {line.text}
+              <StatusLine tone={line.tone} role="status" plain>
+                {line.review ? (
+                  <>
+                    {/* The count never splits: it moves to the next line whole. */}
+                    {line.review.lead}&nbsp;·{" "}
+                    <span className="whitespace-nowrap">{line.review.count}</span>
+                  </>
+                ) : (
+                  line.text
+                )}
                 {line.canRun ? (
                   <>
                     {/* No dot between: it would start the next line when the action wraps. */}

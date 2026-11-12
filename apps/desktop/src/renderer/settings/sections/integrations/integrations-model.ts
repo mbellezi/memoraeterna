@@ -58,6 +58,11 @@ export function formatWhen(t: Translator, locale: LanguageCode, iso: string, now
 export interface SyncLine {
   tone: StatusTone;
   text: string;
+  /**
+   * When a count waits in "Vault reviews": the count's own words, so the row can keep them on one
+   * line (`text` holds the whole sentence, the first part then `lead`).
+   */
+  review?: { lead: string; count: string };
   /** "Synchronize now" is offered when no run is going and the sync is on. */
   canRun: boolean;
   /** Progress of the run that is going, 0 to 1. */
@@ -105,14 +110,20 @@ export function syncLine(
       canRun: true,
       progress: null
     };
-  return {
-    tone: waiting > 0 ? "warn" : "ok",
-    text: `${t("settingsIntegrations.sync.last", {
-      values: { when: formatWhen(t, t.locale, status.finishedAt, now) }
-    })}${waiting > 0 ? ` · ${reviewText(t, waiting)}` : ""}`,
-    canRun: true,
-    progress: null
-  };
+  const lead = t("settingsIntegrations.sync.last", {
+    values: { when: formatWhen(t, t.locale, status.finishedAt, now) }
+  });
+  if (waiting > 0) {
+    const count = reviewText(t, waiting);
+    return {
+      tone: "warn",
+      text: `${lead} · ${count}`,
+      review: { lead, count },
+      canRun: true,
+      progress: null
+    };
+  }
+  return { tone: "ok", text: lead, canRun: true, progress: null };
 }
 
 export const reviewText = (t: Translator, count: number): string =>

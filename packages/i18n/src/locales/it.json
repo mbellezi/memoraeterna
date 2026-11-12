@@ -5935,7 +5935,6 @@
         "obsidianPlugin": "Plugin di Obsidian"
       },
       "localOnly": "Risponde solo alle app abbinate, e solo su questo Mac.",
-      "metaFailed": "Lettura non riuscita",
       "metaMany": "{count} app · connessione {state}",
       "metaNone": "Nessuna app · connessione {state}",
       "metaOne": "{count} app · connessione {state}",
@@ -5963,7 +5962,6 @@
     },
     "layout": {
       "needsSync": "Per applicarlo, la sincronizzazione con Obsidian deve essere attiva.",
-      "needsVault": "Scegli la cartella del vault per poter copiare i file.",
       "readFailed": "Non è stato possibile leggere lo stato del vault.",
       "review": "La modifica è pronta. Controlla i file, chiudi gli editor e applica."
     },
@@ -5985,7 +5983,6 @@
       "choose": "Scegli le fonti…",
       "countMany": "{count} fonti scelte",
       "countOne": "{count} fonte scelta",
-      "needsVault": "Scegli qui sopra la cartella del vault per definire cosa diventa pagina.",
       "readFailed": "Non è stato possibile leggere le fonti del vault.",
       "save": "Salva le fonti",
       "saveFailed": "Non è stato possibile salvare. Resta la scelta precedente."
@@ -5993,7 +5990,7 @@
     "sync": {
       "failed": "L’ultima sincronizzazione si è fermata. Non è andato perso nulla; riprova.",
       "last": "Sincronizzato {when}",
-      "needsVault": "Scegli qui sopra la cartella del vault per attivare la sincronizzazione.",
+      "needsVault": "Scegli qui sopra la cartella del vault per usare la sincronizzazione e le impostazioni qui sotto.",
       "never": "Non si è ancora sincronizzato.",
       "now": "Sincronizza ora",
       "off": "Disattivata",

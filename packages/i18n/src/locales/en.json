@@ -5935,7 +5935,6 @@
         "obsidianPlugin": "Obsidian plugin"
       },
       "localOnly": "It answers only paired apps, and only on this Mac.",
-      "metaFailed": "Could not be read",
       "metaMany": "{count} apps · connection {state}",
       "metaNone": "No app · connection {state}",
       "metaOne": "{count} app · connection {state}",
@@ -5963,7 +5962,6 @@
     },
     "layout": {
       "needsSync": "To apply it, the Obsidian sync has to be on.",
-      "needsVault": "Choose the vault folder to be able to copy the files.",
       "readFailed": "Could not read the state of the vault.",
       "review": "The change is prepared. Check the files, close your editors and apply."
     },
@@ -5985,7 +5983,6 @@
       "choose": "Choose sources…",
       "countMany": "{count} sources chosen",
       "countOne": "{count} source chosen",
-      "needsVault": "Choose the vault folder above to choose what becomes pages.",
       "readFailed": "Could not read the vault’s sources.",
       "save": "Save sources",
       "saveFailed": "Could not save. The previous choice stays."
@@ -5993,7 +5990,7 @@
     "sync": {
       "failed": "The last sync stopped. Nothing was lost; try again.",
       "last": "Synced {when}",
-      "needsVault": "Choose the vault folder above to turn the sync on.",
+      "needsVault": "Choose the vault folder above to use the sync and the settings below.",
       "never": "It has not synced yet.",
       "now": "Sync now",
       "off": "Off",

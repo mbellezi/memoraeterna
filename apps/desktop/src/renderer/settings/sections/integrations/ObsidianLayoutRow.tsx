@@ -122,9 +122,6 @@ export function AttachmentsRow({
               onRetry={layout.reload}
             />
           ) : null}
-          {!layout.configured && layout.status !== null && !storageFailed ? (
-            <span>{t("settingsIntegrations.layout.needsVault")}</span>
-          ) : null}
           {error ? (
             <StatusLine tone="warn" role="status">
               {t(error)}
