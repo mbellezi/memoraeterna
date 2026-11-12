@@ -4297,6 +4297,7 @@
       "kept": "Ciò che era stato scritto prima dell’interruzione è conservato qui sotto.",
       "keptNothing": "La tua domanda è salvata: puoi rifarla.",
       "message": "Il percorso IA non ha risposto.",
+      "otherRoute": "Usa un altro percorso",
       "stop": "Impossibile interrompere la risposta."
     },
     "followUp": {
@@ -4360,6 +4361,13 @@
       "passagesMany": "{count} passaggi citati",
       "passagesOne": "{count} passaggio citato",
       "readFailed": "Impossibile leggere il passaggio.",
+      "readFromMany": "da {count} fonti",
+      "readFromOne": "da {count} fonte",
+      "readNotCited": "Letti, non citati",
+      "readNotCitedReason": "non riguardava questa domanda",
+      "readNotCitedUnknown": "Questa risposta non ha conservato i passaggi letti senza essere citati.",
+      "readPassagesMany": "{count} passaggi letti",
+      "readPassagesOne": "{count} passaggio letto",
       "reading": "lettura…",
       "removed": "passaggio rimosso",
       "seeSource": "vedi la fonte"

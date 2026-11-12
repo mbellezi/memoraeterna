@@ -4304,6 +4304,7 @@
       "kept": "Ce qui a été écrit avant l’arrêt est conservé ci-dessous.",
       "keptNothing": "Votre question est enregistrée : vous pouvez la refaire.",
       "message": "La route d’IA n’a pas répondu.",
+      "otherRoute": "Utiliser une autre route",
       "stop": "Impossible d’arrêter la réponse."
     },
     "followUp": {
@@ -4367,6 +4368,13 @@
       "passagesMany": "{count} passages cités",
       "passagesOne": "{count} passage cité",
       "readFailed": "Impossible de lire le passage.",
+      "readFromMany": "dans {count} sources",
+      "readFromOne": "dans {count} source",
+      "readNotCited": "Lus, non cités",
+      "readNotCitedReason": "ne portait pas sur cette question",
+      "readNotCitedUnknown": "Cette réponse n’a pas gardé les passages lus sans être cités.",
+      "readPassagesMany": "{count} passages lus",
+      "readPassagesOne": "{count} passage lu",
       "reading": "lecture…",
       "removed": "passage supprimé",
       "seeSource": "voir la source"

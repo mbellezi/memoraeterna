@@ -7,6 +7,7 @@ import {
 
 import type { ConsultationDeltaParagraph } from "../../../../shared/app-events";
 import type { QuestionListItemView, QuestionView } from "../../../../shared/ipc-questions";
+import type { ReadSummary } from "./ask-session";
 
 /**
  * One synthetic Question for the Ask and Question panels' screens and tests (design record §17's
@@ -28,7 +29,8 @@ export const askFixture = {
 
 const sources = {
   micro: { id: uuid(11), title: "Food microbiology, ch. 3" },
-  kefir: { id: uuid(12), title: "Kefir and kombucha at home" }
+  kefir: { id: uuid(12), title: "Kefir and kombucha at home" },
+  canning: { id: uuid(13), title: "Home canning basics" }
 } as const;
 
 const passages = [
@@ -51,6 +53,37 @@ const passages = [
     text: "A jar of sauerkraut keeps for months in a cool cupboard because the brine and the acid keep working after the jar is closed."
   }
 ] as const;
+
+/** Two passages the Ask read and did not cite: the answer did not need them. */
+const leftOut = [
+  {
+    source: sources.canning,
+    chunk: uuid(54),
+    text: "Jars are processed in a boiling-water bath for ten minutes."
+  },
+  {
+    source: sources.kefir,
+    chunk: uuid(55),
+    text: "Water kefir grains are fed with sugar water every two days."
+  }
+] as const;
+
+const leftOutAddress = (index: number) =>
+  formatObjectAddress({
+    kind: "source",
+    id: (leftOut[index] as (typeof leftOut)[number]).source.id,
+    anchor: { passage: (leftOut[index] as (typeof leftOut)[number]).chunk }
+  });
+
+/** What the Ask's retrieval reported it read: five passages of three sources, two of them not cited. */
+export const readFixture: ReadSummary = {
+  passages: 5,
+  sources: 3,
+  notCited: [
+    { address: leftOutAddress(0), reason: "had nothing about keeping fermented food" },
+    { address: leftOutAddress(1) }
+  ]
+};
 
 const citedAddress = (index: number) => {
   const passage = passages[index] as (typeof passages)[number];
@@ -150,6 +183,18 @@ const resolved = (address: string): ObjectResolved | null => {
   const index = citationAddresses.indexOf(address);
   if (index >= 0) {
     const passage = passages[index] as (typeof passages)[number];
+    return {
+      address,
+      kind: "source",
+      title: passage.source.title,
+      status: "current",
+      preview: passage.text,
+      updatedAt: "2026-11-01T10:00:00.000Z"
+    };
+  }
+  const left = [0, 1].find((index) => leftOutAddress(index) === address);
+  if (left !== undefined) {
+    const passage = leftOut[left] as (typeof leftOut)[number];
     return {
       address,
       kind: "source",

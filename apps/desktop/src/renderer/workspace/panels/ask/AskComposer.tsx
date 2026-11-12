@@ -95,9 +95,11 @@ export function AskComposer({
     <div className={cn("grid min-w-0 max-w-(--measure) gap-1.5", className)}>
       <div
         className={cn(
-          "flex min-w-0 items-end gap-2 rounded-lg border border-border-strong bg-surface p-2",
+          "min-w-0 rounded-lg border border-border-strong bg-surface",
           "focus-within:border-accent focus-within:[box-shadow:0_0_0_2px_var(--surface-selected)]",
-          roomy && "p-3"
+          // The roomy field keeps its button in a row of its own under the words, so the text uses
+          // the whole measure instead of stopping short of a button beside it.
+          roomy ? "grid gap-2 p-3" : "flex items-end gap-2 p-2"
         )}
       >
         <textarea
@@ -114,11 +116,11 @@ export function AskComposer({
           className={cn(
             "block min-w-0 flex-1 resize-none border-0 bg-transparent p-1 font-reading text-reading text-foreground outline-none",
             "placeholder:text-muted-foreground [field-sizing:content] [overflow-wrap:anywhere]",
-            roomy ? "max-h-48 min-h-20" : "max-h-32 min-h-8 text-base"
+            roomy ? "max-h-48 min-h-14" : "max-h-32 min-h-8 text-base"
           )}
         />
         {roomy ? (
-          sendButton
+          <div className="flex justify-end">{sendButton}</div>
         ) : (
           // The span keeps the tooltip reachable while the button is disabled (an empty field).
           <Tooltip label={sendLabel} shortcut="↵">

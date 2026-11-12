@@ -1,6 +1,12 @@
 import type { ScreenModule } from "../surfaces";
 import { Component } from "./question.panel";
-import { askFixture, questionFixture, questionPanelFixtures } from "./ask/ask-fixtures";
+import {
+  askFixture,
+  questionFixture,
+  questionPanelFixtures,
+  readFixture
+} from "./ask/ask-fixtures";
+import { forgetAsks, rememberRead } from "./ask/ask-session";
 import { PanelStackScreen, openedFrom, t, useFocusCitation } from "./ask/ask-screen-parts";
 
 export const surface = "question";
@@ -31,5 +37,8 @@ function Screen() {
 }
 
 export function render() {
+  // What the Ask's retrieval reported it read: the sources list's "Lidas, não citadas" shows it.
+  forgetAsks();
+  rememberRead(askFixture.questionId, readFixture);
   return <Screen />;
 }

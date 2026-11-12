@@ -4302,6 +4302,7 @@
       "kept": "O que foi escrito antes de parar está guardado abaixo.",
       "keptNothing": "Sua pergunta está salva; dá para refazer.",
       "message": "A rota de IA não respondeu.",
+      "otherRoute": "Usar outra rota",
       "stop": "Não foi possível parar a resposta."
     },
     "followUp": {
@@ -4365,6 +4366,13 @@
       "passagesMany": "{count} trechos citados",
       "passagesOne": "{count} trecho citado",
       "readFailed": "Não foi possível ler o trecho.",
+      "readFromMany": "de {count} fontes",
+      "readFromOne": "de {count} fonte",
+      "readNotCited": "Lidas, não citadas",
+      "readNotCitedReason": "não tinha nada sobre esta pergunta",
+      "readNotCitedUnknown": "Esta resposta não guardou quais trechos foram lidos sem serem citados.",
+      "readPassagesMany": "{count} trechos lidos",
+      "readPassagesOne": "{count} trecho lido",
       "reading": "lendo…",
       "removed": "trecho removido",
       "seeSource": "ver a fonte"

@@ -9,11 +9,13 @@ import { applyDelta, applyStatus, emptyStream, streamFor, type StreamState } fro
 import {
   askFixture,
   citationAddresses,
+  readFixture,
   deltaParagraphs,
   questionFixture,
   questionPanelFixtures
 } from "./ask-fixtures";
 import { enterSends } from "./AskComposer";
+import { forgetAsks, rememberRead } from "./ask-session";
 import type { QuestionSnapshot } from "./question-controller";
 import { questionState } from "./question-state";
 import { QuestionPageView, trayBelow, type QuestionPageViewProps } from "./QuestionPageView";
@@ -156,6 +158,74 @@ describe("citation chips, in the DOM", () => {
     await dom.render(<QuestionPageView {...props(done())} />);
     const heading = dom.document.querySelector("section h2")?.textContent ?? "";
     expect(heading.replaceAll("\u00a0", " ")).toContain("3 passages cited · 2 sources");
+  });
+
+  it("writes the scope and what was read in the sources heading, and lists what was read and not cited", async () => {
+    forgetAsks();
+    rememberRead(askFixture.questionId, readFixture);
+    await dom.render(<QuestionPageView {...props(done())} />);
+    await settle();
+    const heading = dom.document.querySelector("section h2")?.textContent ?? "";
+    expect(heading).toContain("Scope: whole library · 5 passages read from 3 sources");
+    const group = dom.document.querySelector('[role="group"]') as HTMLElement;
+    expect(group.querySelector("h3")?.textContent).toBe("Read, not cited (2)");
+    const rows = group.querySelectorAll("[data-read-not-cited]");
+    expect(rows).toHaveLength(2);
+    expect(rows[0]?.textContent).toContain("Home canning basics");
+    expect(rows[0]?.textContent).toContain("had nothing about keeping fermented food");
+    // The Ask gave no reason for the second one: the page says it did not bear on the question.
+    expect(rows[1]?.textContent).toContain("did not bear on this question");
+    await dom.act(() => (rows[0] as HTMLElement).click());
+    expect(opened).toEqual([readFixture.notCited[0]?.address]);
+    forgetAsks();
+  });
+
+  it("says the answer did not keep what was read when the Ask reported nothing, and not while it writes", async () => {
+    forgetAsks();
+    await dom.render(<QuestionPageView {...props(done())} />);
+    const group = dom.document.querySelector('[role="group"]') as HTMLElement;
+    expect(group.querySelector("h3")?.textContent).toBe("Read, not cited");
+    expect(group.textContent).toContain("did not keep which passages were read");
+    const running = applyDelta(streamFor(request), {
+      requestId: request,
+      paragraphs: deltaParagraphs(2),
+      restart: false
+    });
+    await dom.render(
+      <QuestionPageView {...props(snapshot(questionFixture("running"), running))} />
+    );
+    expect(dom.document.querySelector('[role="group"]')).toBeNull();
+  });
+
+  it("clamps an idle passage to one line and draws the active one only in the tray below 1280", async () => {
+    await dom.render(<QuestionPageView {...props(done(), { viewportWidth: 960 })} />);
+    await settle();
+    await hover(chip(2));
+    await settle();
+    const idle = entry(1).querySelector(".font-reading");
+    // `block` would undo the clamp's own display.
+    expect(idle?.className).toContain("line-clamp-1");
+    expect(idle?.className.split(" ")).not.toContain("block");
+    // The active entry shows no passage: its text lives in the tray alone.
+    expect(entry(2).querySelector(".font-reading")).toBeNull();
+    expect(tray()?.textContent).toContain("fills the space");
+  });
+
+  it("offers another route after a route failure, in Settings", async () => {
+    const failed = applyStatus(streamFor(request), {
+      requestId: request,
+      stage: "failed",
+      error: "The provider returned an error."
+    });
+    const view = snapshot(questionFixture("running"), failed);
+    expect(questionState(view)).toBe("error");
+    await dom.render(<QuestionPageView {...props(view)} />);
+    expect(dom.document.body.textContent).toContain("The AI route did not answer.");
+    const other = [...dom.document.querySelectorAll("button")].find(
+      (node) => node.textContent === "Use another route"
+    ) as HTMLElement;
+    await dom.act(() => other.click());
+    expect(opened).toEqual(["memora://settings/ai"]);
   });
 
   it("gives every chip the same lead and puts no margin after it", async () => {

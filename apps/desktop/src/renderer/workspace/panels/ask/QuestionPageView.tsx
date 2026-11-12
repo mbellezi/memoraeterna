@@ -26,6 +26,7 @@ import {
 import { AnswerParagraphView } from "./AnswerParagraph";
 import { AskComposer } from "./AskComposer";
 import { objectOfScope } from "./ask-scope";
+import { readOf } from "./ask-session";
 import { MetaClauses } from "./MetaClauses";
 import type { LauncherSend } from "./ask-launcher";
 import type { QuestionSnapshot } from "./question-controller";
@@ -181,6 +182,25 @@ function QuestionMeta({
   );
 }
 
+/**
+ * What the Question was about, as the sources list's scope line writes it ("toda a biblioteca",
+ * "tópico: …"); null until the title of a topic or source is read.
+ */
+function useScopeValue(t: Translator, question: QuestionView): string | null {
+  const object = objectOfScope(question.scope);
+  const preview = useObjectPreview(object ?? "", object !== null);
+  const { scope } = question;
+  if (scope.kind === "library") return t("askPanel.launcher.scope.library");
+  if (scope.kind === "sources" && scope.sourceIds.length > 1)
+    return t("askPanel.band.sourcesMany", { values: { count: scope.sourceIds.length } });
+  if (preview.state.status !== "ready") return null;
+  const title = titleOf(preview.state.item, t("objects.kinds.topic"));
+  return t(
+    scope.kind === "topic" ? "askPanel.launcher.scope.topic" : "askPanel.launcher.scope.source",
+    { values: { title } }
+  );
+}
+
 function VersionPicker({
   t,
   version,
@@ -265,6 +285,8 @@ function LoadedQuestion({
   const numbering = useMemo(() => numberCitations(shown.paragraphs), [shown.paragraphs]);
   const { sources, numberOf } = numbering;
   const cited = citedObjectCount(sources);
+  const scopeValue = useScopeValue(t, question);
+  const read = readOf(question.id) ?? null;
   const activeEntry = sources.find((entry) => entry.number === active) ?? null;
   const grounded = shown.paragraphs.length > 0;
   // An Ask that found nothing to rest on is the "nothing found" page, not a failure to retry.
@@ -338,6 +360,18 @@ function LoadedQuestion({
         retryLabel={t("shell.actions.retry")}
         {...(canAskAgain ? { onRetry: onAskAgain } : {})}
       />
+      {canAskAgain && shown.error !== "questions.errors.interrupted" ? (
+        // The other way out of a route that did not answer: choose another in Settings. It sits
+        // under the retry, at the failure's own text column (the glyph and its gap are 1.5rem).
+        <div className="-mt-2 pl-6">
+          <Button
+            variant="ghost"
+            onClick={() => onOpen(formatView({ view: "settings", section: "ai" }))}
+          >
+            {t("askPanel.failed.otherRoute")}
+          </Button>
+        </div>
+      ) : null}
       {failedAction ? (
         <p role="status" className="m-0 text-xs text-secondary-foreground">
           {t("askPanel.failed.again")}
@@ -451,6 +485,9 @@ function LoadedQuestion({
         hint={t(viewportWidth < trayBelow ? "askPanel.tray.empty" : "askPanel.sources.hint")}
         active={active}
         tray={viewportWidth < trayBelow}
+        scope={scopeValue}
+        read={read}
+        live={shown.live}
         onActivate={setActive}
         onOpen={(address) => open(address)()}
       />
