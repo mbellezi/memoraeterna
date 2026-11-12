@@ -4186,7 +4186,8 @@
       "context": "Le graphe n’est plus dessiné.",
       "layout": "Impossible d’organiser le graphe.",
       "unavailable": "Cette fenêtre ne peut pas dessiner le graphe.",
-      "unavailableBody": "Le tableau présente les mêmes connexions."
+      "unavailableBody": "Le tableau présente les mêmes connexions.",
+      "unavailableTree": "L’Arbre présente les thèmes et les notes de cette branche ; chaque note liste ses connexions."
     },
     "group": {
       "description": "{topic}. Notes dans le graphe : {notes}. Connexions avec d’autres thèmes : {count}."
@@ -4200,7 +4201,6 @@
       "topics": "Couleur du point = thème :",
       "unplaced": "sans place dans l’arbre"
     },
-    "loading": "Chargement du graphe",
     "node": {
       "description": "{title}. Thème : {topic}. Connexions : {count}.",
       "meta": "Thème : {topic} · Connexions : {count}"

@@ -3,7 +3,11 @@ import Graph from "graphology";
 import type { RelationBranchStance } from "../../../../../shared/ipc-relations-branch";
 import { topicColour, type GraphPalette } from "../../../../components/graph/graph-tokens";
 import { blendGraphColor } from "../../../../components/graph/interaction";
-import { graphLayoutRadius, graphSeedFraction } from "../../../../components/graph/layout-contract";
+import {
+  graphLayoutRadius,
+  graphSeedFraction,
+  type GraphLayoutNode
+} from "../../../../components/graph/layout-contract";
 import { relationHitAreaScreenThickness } from "../../../../components/graph/view-model";
 import type { BranchModel } from "./branch-model";
 
@@ -21,7 +25,7 @@ import type { BranchModel } from "./branch-model";
 
 export const branchEdgeThickness = 2;
 export const branchSuggestionThickness = 1.6;
-/** A suggestion keeps its stance colour at this opacity (3:1 on the canvas: tokens.test.ts). */
+/** A suggestion keeps its stance colour at this opacity (3:1 on the canvas: contrast/tokens.test.ts). */
 export const branchSuggestionOpacity = 0.78;
 /** What the rest of the graph fades to while one note, relation or group is emphasised. */
 export const branchBackgroundOpacity = 0.16;
@@ -457,4 +461,59 @@ export function turnPositions(positions: ArrayLike<number>, angle: number): Floa
     turned[index + 1] = x * sin + y * cos;
   }
   return turned;
+}
+
+/**
+ * What a canvas built again for the same branch keeps from the one before it: a live re-read that
+ * changed the answer, or a new interface language, never moves the camera, resets the layout or
+ * plays the settling again.
+ */
+export interface BranchCarry {
+  /** The branch it was drawn for (`branchCarryKey`). */
+  key: string;
+  /** Each note where the layout left it, in the layout's own (unturned) frame. */
+  settled: ReadonlyMap<string, { x: number; y: number }>;
+  turn: number | null;
+  /** The custom bounding box's half side: the same camera state frames the same place. */
+  radius: number;
+  camera: { x: number; y: number; ratio: number; angle: number };
+  /** The person moved the camera: it is no longer fitted to the notes as they settle. */
+  interacted: boolean;
+}
+
+export const branchCarryKey = (model: Pick<BranchModel, "scope">): string =>
+  `${model.scope.kind}:${model.scope.id}`;
+
+/**
+ * Puts each carried note back where it was drawn and returns the layout's seeds in its own frame;
+ * a note the last canvas did not draw starts at its group's seed. Without a carry the graph keeps
+ * its seeds.
+ */
+export function carryBranchLayout(
+  graph: BranchGraph,
+  notes: readonly string[],
+  carry: BranchCarry | null
+): GraphLayoutNode[] {
+  const seeds = notes.map((id) => {
+    const attributes = graph.getNodeAttributes(id);
+    const kept = carry?.settled.get(id);
+    return {
+      id,
+      x: kept?.x ?? attributes.x,
+      y: kept?.y ?? attributes.y,
+      ...(attributes.group !== null ? { group: attributes.group } : {})
+    };
+  });
+  if (!carry) return seeds;
+  const flat = new Float32Array(seeds.length * 2);
+  seeds.forEach((seed, index) => {
+    flat[index * 2] = seed.x;
+    flat[index * 2 + 1] = seed.y;
+  });
+  const drawn = carry.turn === null ? flat : turnPositions(flat, carry.turn);
+  notes.forEach((id, index) => {
+    graph.mergeNodeAttributes(id, { x: drawn[index * 2]!, y: drawn[index * 2 + 1]! });
+  });
+  placeGroupNodes(graph);
+  return seeds;
 }

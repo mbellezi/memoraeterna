@@ -8,7 +8,9 @@ import {
   branchEdgeDisplay,
   branchNodeDisplay,
   branchZoom,
+  branchCarryKey,
   buildBranchSigmaGraph,
+  carryBranchLayout,
   groupNodeKey,
   landscapeTurn,
   midpointOf,
@@ -114,5 +116,59 @@ describe("the Grafo's Sigma graph", () => {
     expect(landscapeTurn(upright, true, turn + Math.PI * 0.4)).toBeCloseTo(turn, 9);
     expect(landscapeTurn(upright, true, turn + Math.PI * 0.6)).toBeCloseTo(turn + Math.PI, 9);
     expect(landscapeTurn([1, 1], true, 0.3)).toBe(0.3);
+  });
+});
+
+describe("a Grafo built again for the same branch", () => {
+  const notes = (graph: ReturnType<typeof buildBranchSigmaGraph>) =>
+    graph.filterNodes((_key, attributes) => attributes.kind === "note");
+
+  it("seeds the layout from the fresh positions when nothing is carried", () => {
+    const graph = buildBranchSigmaGraph(model, palette);
+    const ids = notes(graph);
+    const seeds = carryBranchLayout(graph, ids, null);
+    expect(seeds.map((seed) => [seed.id, seed.x, seed.y])).toEqual(
+      ids.map((id) => [id, graph.getNodeAttribute(id, "x"), graph.getNodeAttribute(id, "y")])
+    );
+    expect(seeds.find((seed) => seed.id === branchNotes.kefir.id)?.group).toBe(branchTopics.lactic);
+  });
+
+  it("puts each kept note where it was drawn and seeds the layout where it had settled", () => {
+    // A live re-read that changed the answer, or a new language, builds the canvas again: the notes
+    // stay put (turned as they were drawn), and only a new note starts from its group's seed.
+    const graph = buildBranchSigmaGraph(model, palette);
+    const ids = notes(graph);
+    const [kept, fresh] = [ids[0]!, ids[1]!];
+    const freshSeed = {
+      x: graph.getNodeAttribute(fresh, "x"),
+      y: graph.getNodeAttribute(fresh, "y")
+    };
+    const turn = Math.PI / 2;
+    const seeds = carryBranchLayout(graph, ids, {
+      key: branchCarryKey(model),
+      settled: new Map([[kept, { x: 10, y: 0 }]]),
+      turn,
+      radius: 300,
+      camera: { x: 0.4, y: 0.6, ratio: 0.3, angle: 0 },
+      interacted: true
+    });
+    expect(seeds.find((seed) => seed.id === kept)).toMatchObject({ x: 10, y: 0 });
+    expect(seeds.find((seed) => seed.id === fresh)).toMatchObject(freshSeed);
+    // Turned by a quarter: (10, 0) is drawn at (0, 10).
+    expect(graph.getNodeAttribute(kept, "x")).toBeCloseTo(0, 4);
+    expect(graph.getNodeAttribute(kept, "y")).toBeCloseTo(10, 4);
+    const [fx, fy] = turnPositions([freshSeed.x, freshSeed.y], turn);
+    expect(graph.getNodeAttribute(fresh, "x")).toBeCloseTo(fx!, 3);
+    expect(graph.getNodeAttribute(fresh, "y")).toBeCloseTo(fy!, 3);
+  });
+
+  it("is keyed by the branch, not by the depth or the language", () => {
+    expect(branchCarryKey(model)).toBe(`topic:${branchTopics.fermentation}`);
+    const deeper = buildBranchModel(sampleBranch(), {
+      scope: { kind: "topic", id: branchTopics.fermentation },
+      colourDepth: 2,
+      t: createTranslator("pt-BR")
+    });
+    expect(branchCarryKey(deeper)).toBe(branchCarryKey(model));
   });
 });

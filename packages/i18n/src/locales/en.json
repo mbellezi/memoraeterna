@@ -4181,7 +4181,8 @@
       "context": "The graph stopped drawing.",
       "layout": "The graph could not be arranged.",
       "unavailable": "This window cannot draw the graph.",
-      "unavailableBody": "The table lists the same connections."
+      "unavailableBody": "The table lists the same connections.",
+      "unavailableTree": "The Tree shows this branch’s topics and notes; each note lists its connections."
     },
     "group": {
       "description": "{topic}. Notes drawn: {notes}. Connections to other topics: {count}."
@@ -4195,7 +4196,6 @@
       "topics": "Dot colour = topic:",
       "unplaced": "no place in the tree"
     },
-    "loading": "Loading the graph",
     "node": {
       "description": "{title}. Topic: {topic}. Connections: {count}.",
       "meta": "Topic: {topic} · Connections: {count}"

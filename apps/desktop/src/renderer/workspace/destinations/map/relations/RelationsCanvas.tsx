@@ -46,16 +46,19 @@ import {
   branchNodeDescription,
   connectionCounts,
   groupDescription,
+  keptCursor,
   nodeGroupLabel,
   type BranchCursorItem,
   type BranchModel
 } from "./branch-model";
 import {
   branchEdgeDisplay,
+  branchCarryKey,
   branchForces,
   branchNodeDisplay,
   branchZoom,
   buildBranchSigmaGraph,
+  carryBranchLayout,
   drawMidpointGlyph,
   groupNodeKey,
   landscapeTurn,
@@ -63,6 +66,7 @@ import {
   relationOf,
   showsGroups,
   turnPositions,
+  type BranchCarry,
   type BranchGraph,
   type BranchTarget
 } from "./branch-sigma";
@@ -155,6 +159,9 @@ export function RelationsCanvas({
     [model]
   );
   const sensitivity = useRef(wheelZoomSensitivity);
+  // A model read again for the same branch rebuilds the canvas where the last one left off.
+  const carry = useRef<BranchCarry | null>(null);
+  const cursorItem = useRef<BranchCursorItem | null>(null);
   const titleOf = (id: string) => nodesById.get(id)?.title ?? "";
 
   const describe = (item: BranchCursorItem): string => {
@@ -183,9 +190,15 @@ export function RelationsCanvas({
     const disposer = createDisposer();
     let released = false;
     let built = false;
+    let capture: (() => BranchCarry) | null = null;
+    const carried = carry.current?.key === branchCarryKey(model) ? carry.current : null;
+    carry.current = null;
     setFailure(null);
-    setCard(null);
-    setCursor(null);
+    // The cursor and the card stay on what they named while it is still drawn.
+    const kept = carried ? keptCursor(items, cursorItem.current) : null;
+    cursorItem.current = kept === null ? null : items[kept]!;
+    setCursor(kept);
+    setCard((previous) => (carried && previous && stillDrawn(model, previous) ? previous : null));
     void initialize().catch(() => {
       disposer.dispose();
       if (released) return;
@@ -194,6 +207,11 @@ export function RelationsCanvas({
     });
     return () => {
       released = true;
+      try {
+        carry.current = capture?.() ?? null;
+      } catch {
+        carry.current = null;
+      }
       api.current = null;
       disposer.dispose();
     };
@@ -313,7 +331,8 @@ export function RelationsCanvas({
         for (const layer of glLayers) layer.removeEventListener("webglcontextlost", contextLost);
       });
 
-      const radius = graphLayoutRadius(graph.order, branchForces.linkDistance) * 1.4;
+      const radius =
+        carried?.radius ?? graphLayoutRadius(graph.order, branchForces.linkDistance) * 1.4;
       renderer.setCustomBBox({ x: [-radius, radius], y: [-radius, radius] });
       const camera = renderer.getCamera();
       camera.on("updated", ({ ratio }) => {
@@ -326,7 +345,8 @@ export function RelationsCanvas({
         renderer.scheduleRefresh();
       });
 
-      let interacted = false;
+      let interacted = carried?.interacted ?? false;
+      if (carried) camera.setState(carried.camera);
       let fitFrame: number | null = null;
       disposer.add(() => {
         if (fitFrame !== null) cancelAnimationFrame(fitFrame);
@@ -493,17 +513,26 @@ export function RelationsCanvas({
 
       const notes = graph.filterNodes((_key, attributes) => attributes.kind === "note");
       const index = new Map(notes.map((id, position) => [id, position]));
-      let turn: number | null = null;
-      const layout = createLayout(
-        notes.map((id) => {
-          const attributes = graph.getNodeAttributes(id);
-          return {
+      let turn: number | null = carried?.turn ?? null;
+      const seeds = carryBranchLayout(graph, notes, carried);
+      let settledPositions: ArrayLike<number> | null = null;
+      capture = () => ({
+        key: branchCarryKey(model),
+        settled: new Map(
+          notes.map((id, position) => [
             id,
-            x: attributes.x,
-            y: attributes.y,
-            ...(attributes.group !== null ? { group: attributes.group } : {})
-          };
-        }),
+            settledPositions
+              ? { x: settledPositions[position * 2]!, y: settledPositions[position * 2 + 1]! }
+              : { x: seeds[position]!.x, y: seeds[position]!.y }
+          ])
+        ),
+        turn,
+        radius,
+        camera: camera.getState(),
+        interacted
+      });
+      const layout = createLayout(
+        seeds,
         model.edges
           .filter((edge) => index.has(edge.a) && index.has(edge.b))
           .map((edge) => ({ source: edge.a, target: edge.b, weight: edge.suggested ? 0.6 : 1 })),
@@ -511,6 +540,7 @@ export function RelationsCanvas({
         (settled, running) => {
           // Someone who prefers less motion sees the settled graph, never the settling.
           if (reducedMotion && running) return;
+          settledPositions = settled;
           // The branch runs along the canvas's long side, turned continuously as it settles.
           const { width, height } = renderer.getDimensions();
           turn = landscapeTurn(settled, width >= height, turn);
@@ -559,6 +589,7 @@ export function RelationsCanvas({
   const stand = (next: number | null) => {
     setCursor(next);
     const item = next === null ? null : items[next];
+    cursorItem.current = item ?? null;
     api.current?.emphasise(item ? { type: item.type, key: item.id } : null);
     setCard(item ? { type: item.type, id: item.id, place: null } : null);
     select(item ?? null);
@@ -690,6 +721,15 @@ export function RelationsCanvas({
         </div>
       ) : null}
     </div>
+  );
+}
+
+/** Whether the note, the group pill or the relation a card names is still in the model. */
+function stillDrawn(model: BranchModel, card: CardTarget): boolean {
+  if (card.type === "edge") return model.edges.some((edge) => edge.id === card.id);
+  return (
+    model.nodes.some((node) => node.id === card.id) ||
+    model.groups.some((group) => groupNodeKey(group.id) === card.id)
   );
 }
 

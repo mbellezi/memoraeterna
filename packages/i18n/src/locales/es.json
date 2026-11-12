@@ -4188,7 +4188,8 @@
       "context": "El grafo dejó de dibujarse.",
       "layout": "No se pudo organizar el grafo.",
       "unavailable": "Esta ventana no puede dibujar el grafo.",
-      "unavailableBody": "La tabla muestra las mismas conexiones."
+      "unavailableBody": "La tabla muestra las mismas conexiones.",
+      "unavailableTree": "El Árbol muestra los temas y las notas de esta rama; cada nota lista sus conexiones."
     },
     "group": {
       "description": "{topic}. Notas en el grafo: {notes}. Conexiones con otros temas: {count}."
@@ -4202,7 +4203,6 @@
       "topics": "Color del punto = tema:",
       "unplaced": "sin lugar en el árbol"
     },
-    "loading": "Cargando el grafo",
     "node": {
       "description": "{title}. Tema: {topic}. Conexiones: {count}.",
       "meta": "Tema: {topic} · Conexiones: {count}"

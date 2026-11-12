@@ -285,6 +285,16 @@ export function branchCursorItems(model: BranchModel): BranchCursorItem[] {
   ];
 }
 
+/** Where the cursor stands among `items` once they are read again: on the same item, or nowhere. */
+export function keptCursor(
+  items: readonly BranchCursorItem[],
+  item: BranchCursorItem | null
+): number | null {
+  if (!item) return null;
+  const index = items.findIndex((other) => other.type === item.type && other.id === item.id);
+  return index < 0 ? null : index;
+}
+
 /** The number of relations drawn per note. */
 export function connectionCounts(model: BranchModel): Map<string, number> {
   const counts = new Map<string, number>();

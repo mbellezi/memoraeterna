@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ChevronDown, ListTree } from "lucide-react";
 import type { Translator } from "@app/i18n";
 import { formatObjectAddress } from "@app/domain";
@@ -6,6 +6,7 @@ import { formatObjectAddress } from "@app/domain";
 import type { RelationsBranchResult } from "../../../../../shared/ipc-relations-branch";
 import { useAppEvent } from "../../../../lib/app-events";
 import { cn } from "../../../../lib/cn";
+import { useStableCallback } from "../../../../lib/stable-callback";
 import { relationTypeView, stanceTextClass } from "../../../../lib/relation-stance";
 import { ObjectKindGlyph, StanceGlyph } from "../../../../components/glyphs";
 import { LineSample } from "../../../../components/graph/LineSamples";
@@ -32,6 +33,13 @@ import {
   type BranchModel,
   type BranchScope
 } from "./branch-model";
+import {
+  LiveRereads,
+  branchChoices,
+  sameBranchRead,
+  type BranchChoices,
+  type BranchRead
+} from "./branch-reads";
 import { RelationsCanvas, type BranchLayoutFactory } from "./RelationsCanvas";
 
 export const surfaceId = "map-relations";
@@ -45,26 +53,15 @@ type Load =
   | { status: "missing" }
   /** The tree has no topic yet: there is no branch to draw. */
   | { status: "noTopics" }
-  | { status: "ready"; model: BranchModel };
+  /** The answer on screen; the model is worded from it in the interface's language. */
+  | { status: "ready"; read: BranchRead };
 
 /** The four states of a surface, as the frame names them. */
-export function relationsState(load: Load): PanelLoadState {
+export function relationsState(load: Load, model: BranchModel | null): PanelLoadState {
   if (load.status === "loading") return "loading";
   if (load.status === "error") return "error";
-  if (load.status === "ready" && hasConnections(load.model)) return "success";
+  if (model && hasConnections(model)) return "success";
   return "empty";
-}
-
-/** A branch the picker offers. */
-interface BranchChoice {
-  id: string;
-  title: string;
-}
-
-interface Choices {
-  above: BranchChoice | null;
-  beside: BranchChoice[];
-  areas: BranchChoice[];
 }
 
 /** How long a burst of pushed changes is let settle before the graph is read again in place. */
@@ -145,6 +142,13 @@ export function RelationsLens({
   const loadKey = `${wantedKey}|${depth}|${attempt}`;
   const lastOk = useRef<string | null>(null);
   const silent = useRef(false);
+  // A pushed change reads the branch again once the burst settles, and never before a first answer.
+  const reread = useStableCallback(() => {
+    silent.current = true;
+    setAttempt((value) => value + 1);
+  });
+  const rereads = useMemo(() => new LiveRereads(reread, refreshDelayMs), [reread]);
+  useEffect(() => () => rereads.dispose(), [rereads]);
 
   useEffect(() => {
     if (!active) return undefined;
@@ -173,15 +177,19 @@ export function RelationsLens({
           return;
         }
         lastOk.current = `${wantedKey}|${depth}`;
-        setLoad({
-          status: "ready",
-          model: buildBranchModel(answer as RelationsBranchResult, {
-            scope: target,
-            colourDepth: depth,
-            sourceTitle: title,
-            t
-          })
-        });
+        const read: BranchRead = {
+          target,
+          depth,
+          answer: answer as RelationsBranchResult,
+          sourceTitle: title
+        };
+        // An answer equal to the one on screen keeps it: nothing is built or drawn again.
+        setLoad((previous) =>
+          previous.status === "ready" && sameBranchRead(previous.read, read)
+            ? previous
+            : { status: "ready", read }
+        );
+        rereads.answer();
       } catch {
         if (!live) return;
         // A read in place that fails keeps what is on screen; a first read says so.
@@ -191,26 +199,26 @@ export function RelationsLens({
     return () => {
       live = false;
     };
-    // `wanted` is keyed by `wantedKey`; `t` only words the model.
+    // `wanted` is keyed by `wantedKey`; `rereads` lives as long as the lens; `t` words the model below.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active, loadKey]);
 
-  // Pushed changes to notes, relations or the tree read the branch again in place.
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(
-    () => () => {
-      if (timer.current !== null) clearTimeout(timer.current);
-    },
-    []
+  // The model is worded in the interface's language: a new language words the same answer again.
+  const model = useMemo(
+    () =>
+      load.status === "ready"
+        ? buildBranchModel(load.read.answer, {
+            scope: load.read.target,
+            colourDepth: load.read.depth,
+            sourceTitle: load.read.sourceTitle,
+            t
+          })
+        : null,
+    [load, t]
   );
-  const refresh = useCallback(() => {
-    if (timer.current !== null || lastOk.current === null) return;
-    timer.current = setTimeout(() => {
-      timer.current = null;
-      silent.current = true;
-      setAttempt((value) => value + 1);
-    }, refreshDelayMs);
-  }, []);
+
+  // Pushed changes to notes, relations or the tree read the branch again in place.
+  const refresh = () => rereads.push();
   useAppEvent("tree.changed", refresh, active);
   useAppEvent(
     "object.changed",
@@ -222,12 +230,11 @@ export function RelationsLens({
     active
   );
 
-  const state = relationsState(load);
+  const state = relationsState(load, model);
   useEffect(() => {
     onState?.(state);
   }, [onState, state]);
 
-  const model = load.status === "ready" ? load.model : null;
   const pick = (next: BranchScope) => {
     setSelected(null);
     setChosen(next);
@@ -320,9 +327,21 @@ export function RelationsLens({
                 <p className="m-0 font-semibold text-foreground">
                   {t("mapRelations.failure.unavailable")}
                 </p>
-                <p className="m-0 text-secondary-foreground">
-                  {t("mapRelations.failure.unavailableBody")}
-                </p>
+                {aside ? (
+                  <p className="m-0 text-secondary-foreground">
+                    {t("mapRelations.failure.unavailableBody")}
+                  </p>
+                ) : (
+                  // Until the table stands beside the canvas, the Tree is the way to these notes.
+                  <>
+                    <p className="m-0 text-secondary-foreground">
+                      {t("mapRelations.failure.unavailableTree")}
+                    </p>
+                    <div className="mt-2">
+                      <TreeButton t={t} onClick={onShowTree} />
+                    </div>
+                  </>
+                )}
               </div>
             )}
             <RelationsLegend t={t} model={model} />
@@ -461,7 +480,7 @@ function BranchPicker({
   onPick: (scope: BranchScope) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const [choices, setChoices] = useState<Choices | null>(null);
+  const [choices, setChoices] = useState<BranchChoices | null>(null);
   const parentId = model?.parentId ?? null;
   const scopeId = model?.scope.id ?? wanted?.id ?? null;
   useEffect(() => {
@@ -478,14 +497,7 @@ function BranchPicker({
           id: node.id,
           title: topicLabel(t, node.title ?? "")
         });
-        const parent = siblings?.parent;
-        setChoices({
-          above: parent && parent.parentId !== null ? named(parent) : null,
-          beside: (siblings?.nodes ?? []).filter((node) => node.id !== scopeId).map(named),
-          areas: (areas?.nodes ?? [])
-            .filter((node) => node.id !== scopeId && node.id !== parentId)
-            .map(named)
-        });
+        setChoices(branchChoices(siblings, areas, scopeId, parentId, named));
       } catch {
         if (live) setChoices({ above: null, beside: [], areas: [] });
       }

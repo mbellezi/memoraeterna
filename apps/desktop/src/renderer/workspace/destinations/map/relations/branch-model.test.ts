@@ -11,6 +11,7 @@ import {
   connectionCounts,
   groupDescription,
   hasConnections,
+  keptCursor,
   topicLabel
 } from "./branch-model";
 
@@ -160,5 +161,20 @@ describe("the branch model", () => {
     expect(source.unplaced).toBe(1);
     expect(source.children).toEqual([]);
     expect(hasConnections(source)).toBe(false);
+  });
+});
+
+describe("the keyboard cursor across a re-read", () => {
+  it("stays on the note or relation it stood on, wherever it now sits, and leaves a gone one", () => {
+    const before = branchCursorItems(model());
+    const answer = sampleBranch();
+    const edge = before.find((item) => item.type === "edge")!;
+    const after = branchCursorItems(
+      model({ ...answer, edges: answer.edges.filter((other) => other.id !== edge.id) })
+    );
+    const note = before[0]!;
+    expect(after[keptCursor(after, note)!]).toEqual(note);
+    expect(keptCursor(after, edge)).toBeNull();
+    expect(keptCursor(after, null)).toBeNull();
   });
 });
