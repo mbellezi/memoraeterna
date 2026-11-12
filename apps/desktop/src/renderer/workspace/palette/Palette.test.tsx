@@ -76,6 +76,9 @@ describe("Cmd-K", () => {
     expect(text).toContain("abrir neste painel");
     expect(text).toContain("todos os resultados");
     expect(text).toContain("espiar");
+    expect(dom.document.querySelector("[aria-label=Atalhos]")?.textContent).toContain(
+      "abrir ao lado"
+    );
     expect(text).not.toContain("primeiro");
     expect(dom.document.querySelector("[data-surface=palette]")?.getAttribute("data-state")).toBe(
       "success"
@@ -160,6 +163,12 @@ describe("Cmd-K", () => {
       "empty"
     );
     expect(dom.document.body.textContent).toContain("Nada com “zzz”.");
+    // Only the ask row is there: the foot says Enter asks, and offers no keys that do nothing.
+    const foot = dom.document.querySelector("[aria-label=Atalhos]")?.textContent ?? "";
+    expect(foot).toContain("perguntar");
+    expect(foot).not.toContain("todos os resultados");
+    expect(foot).not.toContain("espiar");
+    expect(foot).not.toContain("abrir ao lado");
     await dom.dispose();
     dom = createTestDom();
     (dom.window as unknown as { app: unknown }).app = {

@@ -474,41 +474,60 @@ function PreviewPane({
   );
 }
 
-function FootKeys({ t, count }: { t: Translator; count: ReactNode }) {
+/**
+ * The keys under the list. They name only what the highlighted row can do: on the ask row Enter
+ * asks, and "todos os resultados" and "espiar" appear only when there are results to open or peek.
+ */
+function FootKeys({
+  t,
+  count,
+  askRow,
+  hasResults
+}: {
+  t: Translator;
+  count: ReactNode;
+  askRow: boolean;
+  hasResults: boolean;
+}) {
   const labels = [
     t("palette.foot.choose"),
     t("palette.foot.beside"),
     t("palette.foot.here"),
     t("palette.foot.all"),
     t("palette.foot.peek"),
+    t("palette.foot.ask"),
     t("palette.foot.shortBeside"),
     t("palette.foot.shortHere"),
     t("palette.foot.shortAll")
   ].join("|");
   // Fullest form first; a form that does not fit drops a whole clause or shortens, never a word.
   const { box, content, level } = useOverflowLevel<HTMLDivElement, HTMLDivElement>(3, labels);
-  const items: Array<{ keys: string[]; label: string }> =
-    level === 0
-      ? [
-          { keys: ["↑", "↓"], label: t("palette.foot.choose") },
-          { keys: ["↵"], label: t("palette.foot.beside") },
-          { keys: ["⌥↵"], label: t("palette.foot.here") },
-          { keys: ["⇧↵"], label: t("palette.foot.all") },
-          { keys: ["⌘Y"], label: t("palette.foot.peek") }
-        ]
-      : level === 1
-        ? [
-            { keys: ["↵"], label: t("palette.foot.beside") },
-            { keys: ["⌥↵"], label: t("palette.foot.here") },
-            { keys: ["⇧↵"], label: t("palette.foot.all") },
-            { keys: ["⌘Y"], label: t("palette.foot.peek") }
-          ]
-        : [
-            { keys: ["↵"], label: t("palette.foot.shortBeside") },
-            { keys: ["⌥↵"], label: t("palette.foot.shortHere") },
-            { keys: ["⇧↵"], label: t("palette.foot.shortAll") },
-            { keys: ["⌘Y"], label: t("palette.foot.peek") }
-          ];
+  type FootItem = { keys: string[]; label: string };
+  const choose: FootItem = { keys: ["↑", "↓"], label: t("palette.foot.choose") };
+  const enter: FootItem = {
+    keys: ["↵"],
+    label: askRow
+      ? t("palette.foot.ask")
+      : level === 2
+        ? t("palette.foot.shortBeside")
+        : t("palette.foot.beside")
+  };
+  const here: FootItem = {
+    keys: ["⌥↵"],
+    label: level === 2 ? t("palette.foot.shortHere") : t("palette.foot.here")
+  };
+  const all: FootItem = {
+    keys: ["⇧↵"],
+    label: level === 2 ? t("palette.foot.shortAll") : t("palette.foot.all")
+  };
+  const peek: FootItem = { keys: ["⌘Y"], label: t("palette.foot.peek") };
+  const items: FootItem[] = [
+    ...(level === 0 ? [choose] : []),
+    enter,
+    here,
+    ...(hasResults ? [all] : []),
+    ...(hasResults && !askRow ? [peek] : [])
+  ];
   return (
     <div
       aria-label={t("palette.foot.label")}
@@ -775,7 +794,7 @@ export function Palette({
             />
           ) : null}
         </div>
-        <FootKeys t={t} count={count} />
+        <FootKeys t={t} count={count} askRow={activeRow?.type === "ask"} hasResults={objectRows} />
       </Command>
     </div>
   );
