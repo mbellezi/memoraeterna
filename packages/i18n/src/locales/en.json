@@ -4345,8 +4345,7 @@
       "error": "The search could not be done right now.",
       "errorKept": "Nothing was changed, and the actions still work.",
       "noCommand": "No action matches “{query}”.",
-      "noResult": "Nothing with “{query}”.",
-      "searching": "Searching"
+      "noResult": "Nothing with “{query}”."
     }
   },
   "preview": {

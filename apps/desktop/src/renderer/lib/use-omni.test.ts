@@ -142,6 +142,41 @@ describe("the omni controller", () => {
     expect(omni.getSnapshot().status).toBe("ready");
   });
 
+  it("refreshes a ready answer in place, and keeps it when the refresh fails", async () => {
+    const { calls, search } = reader();
+    const omni = new OmniController({ search });
+    omni.refresh();
+    expect(calls).toHaveLength(0);
+    omni.request(ask("fer"));
+    omni.refresh();
+    expect(calls).toHaveLength(1);
+    calls[0]?.resolve(["old"]);
+    await settle();
+    omni.refresh();
+    // The answer stays on screen, as ready, while the new one is on its way.
+    expect(omni.getSnapshot()).toMatchObject({ status: "ready", version: 1 });
+    calls[1]?.resolve(["new"]);
+    await settle();
+    expect(omni.getSnapshot()).toMatchObject({ status: "ready", version: 2 });
+    expect(omni.getSnapshot().items[0]?.title).toBe("new");
+    omni.refresh();
+    calls[2]?.reject();
+    await settle();
+    expect(omni.getSnapshot()).toMatchObject({ status: "ready", version: 2 });
+    expect(omni.getSnapshot().items[0]?.title).toBe("new");
+  });
+
+  it("does not refresh a failed answer: it stays visible and retryable", async () => {
+    const { calls, search } = reader();
+    const omni = new OmniController({ search });
+    omni.request(ask("fer"));
+    calls[0]?.reject();
+    await settle();
+    omni.refresh();
+    expect(calls).toHaveLength(1);
+    expect(omni.getSnapshot().status).toBe("error");
+  });
+
   it("sends the kinds, the scope and the limit, and the sequence number of the latest key", async () => {
     const { calls, search } = reader();
     const sent: Array<[number, string]> = [];

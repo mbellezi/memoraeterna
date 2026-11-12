@@ -58,3 +58,13 @@ export function reportedState(snapshot: Pick<OmniSnapshot, "status" | "items">):
 export function isPassage(address: string): boolean {
   return parseObjectAddress(address)?.anchor?.passage !== undefined;
 }
+
+/**
+ * Which notice a degraded answer shows. With no word to look for inside the texts nothing but
+ * titles and names was searched, so that one is the true one even when the meaning arm was also
+ * missing; the meaning arm's notice (word matches only) holds only when the words did run.
+ */
+export function degradedNotice(degraded: readonly ("ann" | "fts")[]): "ann" | "fts" | null {
+  if (degraded.includes("fts")) return "fts";
+  return degraded.includes("ann") ? "ann" : null;
+}

@@ -33,7 +33,7 @@ export function title(_summary: ObjectSummary | null, t: Translator): string {
 
 export function Component({ t, address, mode, active, onState, onOpen, current }: PanelProps) {
   const ask = parseSearchAddress(address);
-  const omni = useOmni(ask === null ? null : searchParams(ask), { enabled: active });
+  const omni = useOmni(ask === null ? null : searchParams(ask), { enabled: active, retain: true });
   const reported = ask === null ? "error" : reportedState(omni);
   useEffect(() => onState(reported), [onState, reported]);
   if (ask === null) return null;

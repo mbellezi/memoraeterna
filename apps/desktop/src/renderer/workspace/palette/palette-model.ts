@@ -3,7 +3,7 @@ import type { ObjectKind } from "@app/domain";
 import type { SearchOmniItem } from "../../../shared/ipc-search";
 import type { OmniParams } from "../../lib/use-omni";
 import type { DestinationId } from "../destinations";
-import { formatView } from "../route";
+import { formatView, routeLimits } from "../route";
 import type { WorkspaceAction, WorkspaceState } from "../state";
 import { matchCommands, type ResolvedCommand } from "./commands";
 import { foldText } from "./highlight";
@@ -307,6 +307,25 @@ export function paletteKey(event: PaletteKeyInput): PaletteKeyAction | null {
 export type PaletteEffect =
   { type: "open"; address: string; replace: boolean } | { type: "run"; commandId: string };
 
+/**
+ * The Question panel's address for a typed question. A question longer than the address accepts is
+ * cut (never refused: a refused address would throw out of the key handler and open nothing).
+ */
+export function askAddress(question: string): string {
+  let text = question.slice(0, routeLimits.maxTextLength);
+  for (;;) {
+    // Never end on half a surrogate pair.
+    if (/[\ud800-\udbff]$/.test(text)) text = text.slice(0, -1);
+    try {
+      return formatView({ view: "ask", question: text });
+    } catch (error) {
+      // `formatView` throws on an address the parser would refuse (too long once encoded).
+      if (text.length <= 1) throw error;
+      text = text.slice(0, Math.floor(text.length * 0.8));
+    }
+  }
+}
+
 export function activate(row: PaletteRow, how: OpenHow): PaletteEffect {
   const replace = how === "here";
   switch (row.type) {
@@ -319,7 +338,7 @@ export function activate(row: PaletteRow, how: OpenHow): PaletteEffect {
       // In `?` mode the Question panel streams the answer (D14).
       return {
         type: "open",
-        address: formatView({ view: "ask", question: row.question }),
+        address: askAddress(row.question),
         replace
       };
   }

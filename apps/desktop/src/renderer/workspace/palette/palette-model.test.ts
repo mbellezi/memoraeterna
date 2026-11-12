@@ -2,10 +2,12 @@ import { describe, expect, it } from "vitest";
 import { createTranslator } from "@app/i18n";
 
 import type { SearchOmniItem } from "../../../shared/ipc-search";
+import { parseAddress, routeLimits } from "../route";
 import { defaultWorkspace } from "../state";
 import { matchCommands, resolveCommands, runCommand, type PaletteActions } from "./commands";
 import {
   activate,
+  askAddress,
   buildPalette,
   moreEffect,
   omniParamsFor,
@@ -233,6 +235,19 @@ describe("the keys", () => {
       address: "memora://ask?q=theme",
       replace: false
     });
+  });
+
+  it("cuts a question longer than an address accepts instead of opening nothing", () => {
+    for (const filler of ["a", "ç", "😀"]) {
+      const effect = activate(
+        { type: "ask", id: "ask", question: filler.repeat(routeLimits.maxTextLength + 500) },
+        "beside"
+      );
+      expect(effect).toMatchObject({ type: "open" });
+      const address = effect.type === "open" ? effect.address : "";
+      expect(parseAddress(address)).not.toBeNull();
+      expect(askAddress("short")).toBe("memora://ask?q=short");
+    }
   });
 
   it("opens the results panel for the box, narrowed by its prefix, and not for > or ?", () => {

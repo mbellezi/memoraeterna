@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { objectKinds } from "@app/domain";
 
 import {
+  degradedNotice,
   isPassage,
   parseSearchAddress,
   reportedState,
@@ -75,5 +76,12 @@ describe("the search results panel", () => {
 
   it("has a filter chip for every kind", () => {
     expect([...filterKinds].sort()).toEqual([...objectKinds].sort());
+  });
+
+  it("shows the notice that is true: no words to search outranks the missing meaning arm", () => {
+    expect(degradedNotice([])).toBeNull();
+    expect(degradedNotice(["ann"])).toBe("ann");
+    expect(degradedNotice(["fts"])).toBe("fts");
+    expect(degradedNotice(["ann", "fts"])).toBe("fts");
   });
 });

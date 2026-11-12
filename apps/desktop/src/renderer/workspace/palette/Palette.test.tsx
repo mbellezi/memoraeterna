@@ -4,6 +4,7 @@ import { createElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createTranslator } from "@app/i18n";
 
+import { quickLookTarget } from "../QuickLookModel";
 import { createPreviewBatcher } from "../preview-batcher";
 import { defaultWorkspace } from "../state";
 import { Palette } from "./Palette";
@@ -55,6 +56,12 @@ async function open(initialQuery: string) {
   return { effects, onClose };
 }
 
+/** The address of the row cmdk marks selected (the one Enter opens). */
+function highlightedAddress(): string | null {
+  const row = dom.document.querySelector("[data-palette-row][aria-selected=true]");
+  return row?.getAttribute("data-quick-look") ?? null;
+}
+
 const root = () => dom.document.querySelector("[cmdk-root]") as HTMLElement;
 
 describe("Cmd-K", () => {
@@ -84,11 +91,33 @@ describe("Cmd-K", () => {
 
   it("Enter opens the highlighted row beside, and closes", async () => {
     const { effects, onClose } = await open("ferment");
+    const highlighted = highlightedAddress();
+    expect(highlighted).toMatch(/^memora:\/\/topic\//);
     dom.key(root(), "Enter");
-    expect(effects).toEqual([
-      expect.objectContaining({ type: "open", replace: false, address: expect.any(String) })
-    ]);
+    expect(effects).toEqual([{ type: "open", replace: false, address: highlighted }]);
     expect(onClose).toHaveBeenCalled();
+  });
+
+  it("Enter opens the row the arrows moved to, not the first", async () => {
+    const { effects } = await open("ferment");
+    const first = highlightedAddress();
+    dom.key(root(), "ArrowDown");
+    await settle();
+    const second = highlightedAddress();
+    expect(second).not.toBe(first);
+    dom.key(root(), "Enter");
+    expect(effects).toEqual([{ type: "open", replace: false, address: second }]);
+  });
+
+  it("Cmd-Y peeks at the highlighted row, and at the next one after ArrowDown", async () => {
+    await open("ferment");
+    const first = highlightedAddress();
+    expect(quickLookTarget(dom.document)).toBe(first);
+    dom.key(root(), "ArrowDown");
+    await settle();
+    const second = highlightedAddress();
+    expect(second).not.toBe(first);
+    expect(quickLookTarget(dom.document)).toBe(second);
   });
 
   it("Option-Enter opens it in this panel and Shift-Enter opens the results panel", async () => {

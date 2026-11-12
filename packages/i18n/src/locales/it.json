@@ -4343,8 +4343,7 @@
       "error": "Non è stato possibile cercare ora.",
       "errorKept": "Nulla è stato modificato e le azioni continuano a funzionare.",
       "noCommand": "Nessuna azione corrisponde a “{query}”.",
-      "noResult": "Niente per “{query}”.",
-      "searching": "Ricerca in corso"
+      "noResult": "Niente per “{query}”."
     }
   },
   "preview": {

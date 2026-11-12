@@ -1,4 +1,4 @@
-import { useLayoutEffect, useState, useSyncExternalStore } from "react";
+import { useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { ObjectKind } from "@app/domain";
 
 import type { SearchOmniInput, SearchOmniItem, SearchOmniResult } from "../../shared/ipc-search";
@@ -81,6 +81,8 @@ interface InFlight {
   key: string;
   params: OmniParams;
   seq: number;
+  /** A refresh in place: its failure leaves the answer on screen as it was. */
+  quiet: boolean;
 }
 
 /** The state behind `useOmni`, with no React in it, so the rules can be proven on their own. */
@@ -133,17 +135,27 @@ export class OmniController {
     if (this.inFlight === null) this.send();
   }
 
+  /**
+   * Asks the wanted query again without leaving the answer on screen: for a view shown again after
+   * it was hidden. Only a ready answer is refreshed (a failure stays visible and retryable), and a
+   * failed refresh keeps the answer it replaces.
+   */
+  refresh(): void {
+    if (this.snapshot.status !== "ready" || this.wanted === null || this.inFlight !== null) return;
+    this.send(true);
+  }
+
   private newId(): string {
     return this.options.newId ? this.options.newId() : `omni-${this.prefix}-${++this.counter}`;
   }
 
-  private send(): void {
+  private send(quiet = false): void {
     const params = this.wanted;
     const key = this.wantedKey;
     if (params === null || key === null) return;
     const seq = this.options.seq?.() ?? 0;
     const id = this.newId();
-    const flight: InFlight = { id, key, params, seq };
+    const flight: InFlight = { id, key, params, seq, quiet };
     this.inFlight = flight;
     this.options.onSend?.(seq, id);
     const input: SearchOmniInput = {
@@ -177,6 +189,7 @@ export class OmniController {
     }
     // An answer to another request is not an answer to this one: the query failed.
     if (result === null || result.requestId !== flight.id) {
+      if (flight.quiet) return;
       this.set({ ...this.snapshot, status: "error" });
       return;
     }
@@ -206,6 +219,12 @@ const defaultSearch = (input: SearchOmniInput): Promise<SearchOmniResult> => {
 export interface UseOmniOptions {
   /** False asks for nothing (the palette is closed); default true. */
   enabled?: boolean;
+  /**
+   * With `enabled` false: keep the last answer and the wanted query instead of dropping them, and
+   * refresh in place when enabled again (a hidden panel that keeps its data and its scroll). A hook
+   * never enabled asks for nothing.
+   */
+  retain?: boolean;
   /** Write the latency marks of spec 3.5 (Cmd-K only). */
   instrument?: boolean;
   /** Tests and screens: the reader. */
@@ -234,11 +253,21 @@ export function useOmni(
     controller.getSnapshot,
     controller.getSnapshot
   );
-  const wanted = enabled ? params : null;
+  const retain = options.retain ?? false;
+  const shown = useRef(false);
+  const wasEnabled = useRef(false);
   // Equal asks are one ask (`request` compares keys), so this may run on every render.
   useLayoutEffect(() => {
-    controller.request(wanted);
-  }, [controller, wanted]);
+    const was = shown.current;
+    const wasOn = wasEnabled.current;
+    wasEnabled.current = enabled;
+    if (enabled) shown.current = true;
+    // Hidden, a retaining hook leaves the answer and the wanted query as they are.
+    if (!enabled && retain && was) return;
+    controller.request(enabled ? params : null);
+    // Shown again: the answer stays, and is asked for again in place when its query is unchanged.
+    if (enabled && retain && was && !wasOn) controller.refresh();
+  }, [controller, params, enabled, retain]);
 
   // The answer is on the screen after this commit's next frame.
   const painted = snapshot.seq;

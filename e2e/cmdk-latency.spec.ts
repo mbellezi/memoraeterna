@@ -9,10 +9,12 @@
 // X3(a) note asks for) are reported, and the whole report is written beside the run's evidence.
 //
 // Profile: `MEMORA_CMDK_PROFILE` (an absolute ENV-C clone under `.cache/f5/scratch/`, closed, no
-// `postmaster.pid`) is cloned into the run; without it the spec clones BASE-J like the others. Run
-// from the proof worktree, in a slot window, with `npm run journeys -- --grep cmdk-latency`.
+// `postmaster.pid`) is cloned into the run. It is required: the bar is stated on ENV-C's library, so a
+// run on a smaller one (BASE-J) would meet it and prove nothing. The source's name is written into
+// the report and the annotations. Run from the proof worktree, in a slot window, with
+// `MEMORA_CMDK_PROFILE=<abs path> npm run journeys -- --grep cmdk-latency`.
 import { mkdir, writeFile } from "node:fs/promises";
-import { isAbsolute, join } from "node:path";
+import { basename, isAbsolute, join } from "node:path";
 
 import { currentNoteSql } from "@app/db";
 import { expect, test } from "@playwright/test";
@@ -32,7 +34,6 @@ import {
 import {
   captureStep,
   launchMemora,
-  openClone,
   setContentSize,
   waitForDatabase,
   type MemoraSession
@@ -57,11 +58,19 @@ const titleSql: Record<OmniQueryKind, string> = {
   question: "select id::text as id, left(text, 200) as title from questions"
 };
 
-async function openSession(): Promise<MemoraSession> {
-  const run = journeysRun();
+/** The ENV-C clone this run measures; the spec refuses to run without one. */
+function profileSource(): string {
   const source = process.env.MEMORA_CMDK_PROFILE?.trim();
-  if (!source) return openClone(run, "cmdk-latency");
+  if (!source)
+    throw new Error(
+      "MEMORA_CMDK_PROFILE is required: bar X3(b) is measured on an ENV-C clone, never on BASE-J"
+    );
   if (!isAbsolute(source)) throw new Error("MEMORA_CMDK_PROFILE must be an absolute path");
+  return source;
+}
+
+async function openSession(source: string): Promise<MemoraSession> {
+  const run = journeysRun();
   const userDataDir = await cloneProfile(source, profileDir(run, "cmdk-latency"), run.repoRoot);
   return launchMemora({ run, userDataDir });
 }
@@ -69,7 +78,9 @@ async function openSession(): Promise<MemoraSession> {
 test("cmdk-latency: Cmd-K p95 from a key to its paint stays within 100 ms", async () => {
   test.setTimeout(90 * 60_000);
   const run = journeysRun();
-  const session = await openSession();
+  const source = profileSource();
+  const profile = basename(source);
+  const session = await openSession(source);
   let db: Awaited<ReturnType<typeof openProfileDb>> | null = null;
   try {
     const { page } = session;
@@ -95,9 +106,23 @@ test("cmdk-latency: Cmd-K p95 from a key to its paint stays within 100 ms", asyn
         typed = prefix;
         await page.waitForTimeout(keyDelayMs);
       }
-      // The last answer reaches the screen: a paint of the last key's query.
-      await expect(palette).not.toHaveAttribute("data-state", "loading", { timeout: 10_000 });
-      await page.waitForTimeout(150);
+      // The last answer reaches the screen: a paint of a request sent at or after the last key. (The
+      // palette's `data-state` is no signal: while the last query is on its way it still shows the
+      // answer before it.)
+      await page.waitForFunction(
+        () => {
+          const detail = (entry: PerformanceEntry) =>
+            (entry as PerformanceMark).detail as { seq: number };
+          const keys = performance.getEntriesByName("omni:key", "mark").map(detail);
+          if (keys.length === 0) return false;
+          const last = Math.max(...keys.map((key) => key.seq));
+          return performance
+            .getEntriesByName("omni:paint", "mark")
+            .some((entry) => detail(entry).seq >= last);
+        },
+        undefined,
+        { timeout: 15_000 }
+      );
       marks.push(...(await readMarks(page, "omni:")));
       await clearMarks(page, "omni:");
       // Escape is not an edit key: the next query starts from an empty box and no mark.
@@ -110,7 +135,7 @@ test("cmdk-latency: Cmd-K p95 from a key to its paint stays within 100 ms", asyn
     await mkdir(evidence, { recursive: true });
     await writeFile(
       join(evidence, "report.json"),
-      `${JSON.stringify({ bar: { p95Ms: p95BarMs }, queries: queries.length, report }, null, 2)}\n`
+      `${JSON.stringify({ bar: { p95Ms: p95BarMs }, profile, queries: queries.length, report }, null, 2)}\n`
     );
     // One look at the palette with results, in both themes, for the record.
     await page.keyboard.press("Meta+K");
@@ -120,6 +145,7 @@ test("cmdk-latency: Cmd-K p95 from a key to its paint stays within 100 ms", asyn
     await page.keyboard.press("Escape");
 
     test.info().annotations.push(
+      { type: "profile", description: profile },
       {
         type: "latency",
         description: `p50 ${report.latency.p50} ms, p95 ${report.latency.p95} ms, max ${report.latency.max} ms over ${report.keys} keys`

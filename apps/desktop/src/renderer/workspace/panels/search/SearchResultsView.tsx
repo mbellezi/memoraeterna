@@ -16,7 +16,7 @@ import { markPieces, queryTerms } from "../../palette/highlight";
 import { rowMeta } from "../../palette/Palette";
 import { useResolved } from "../../palette/use-resolved";
 import { formatView } from "../../route";
-import { isPassage, searchLimit, toggleKind, type SearchAsk } from "./search-model";
+import { degradedNotice, isPassage, searchLimit, toggleKind, type SearchAsk } from "./search-model";
 
 /**
  * The search results panel (design record §11; spec 3.5): everything the library holds for a
@@ -328,11 +328,13 @@ export function SearchResultsView({
       : t(items.length === 1 ? "palette.results.countOne" : "palette.results.countMany", {
           values: { count: items.length }
         });
-  const notice = omni.degraded.includes("ann")
-    ? t("palette.results.degradedAnn")
-    : omni.degraded.includes("fts")
+  const degraded = degradedNotice(omni.degraded);
+  const notice =
+    degraded === "fts"
       ? t("palette.results.degradedFts")
-      : null;
+      : degraded === "ann"
+        ? t("palette.results.degradedAnn")
+        : null;
   return (
     <div className="grid max-w-(--measure) gap-4">
       {heading}

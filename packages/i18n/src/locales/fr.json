@@ -4350,8 +4350,7 @@
       "error": "Impossible de chercher pour l’instant.",
       "errorKept": "Rien n’a été modifié, et les actions fonctionnent toujours.",
       "noCommand": "Aucune action ne correspond à “{query}”.",
-      "noResult": "Rien pour “{query}”.",
-      "searching": "Recherche en cours"
+      "noResult": "Rien pour “{query}”."
     }
   },
   "preview": {

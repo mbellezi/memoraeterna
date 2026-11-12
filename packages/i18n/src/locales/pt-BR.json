@@ -4348,8 +4348,7 @@
       "error": "Não foi possível buscar agora.",
       "errorKept": "Nada foi alterado, e as ações continuam funcionando.",
       "noCommand": "Nenhuma ação combina com “{query}”.",
-      "noResult": "Nada com “{query}”.",
-      "searching": "Buscando"
+      "noResult": "Nada com “{query}”."
     }
   },
   "preview": {

@@ -4352,8 +4352,7 @@
       "error": "No se pudo buscar ahora.",
       "errorKept": "No se cambió nada y las acciones siguen funcionando.",
       "noCommand": "Ninguna acción coincide con “{query}”.",
-      "noResult": "Nada con “{query}”.",
-      "searching": "Buscando"
+      "noResult": "Nada con “{query}”."
     }
   },
   "preview": {
