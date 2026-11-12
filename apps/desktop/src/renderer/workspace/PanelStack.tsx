@@ -25,6 +25,7 @@ import type { RibbonPlace } from "./PathRibbon";
 import { destinationTitleKeys, hasNavigator } from "./shell-model";
 import {
   layout,
+  type Density,
   type LayoutChrome,
   type Panel,
   type PanelAddress,
@@ -85,6 +86,11 @@ export interface PanelProps {
    * callback is stable for the panel's life.
    */
   onLeaveGuard?: (guard: LeaveGuard | null) => void;
+  /** For a root: the density kept per device (the Library header's toggle, D18) and how to change it. */
+  density?: Density;
+  onDensity?: (density: Density) => void;
+  /** For a root: the shell's Add command (Cmd-N), for an empty destination that offers it. */
+  onAdd?: () => void;
 }
 
 /** A panel kind, as its `*.panel.tsx` module exports it. */
@@ -333,6 +339,8 @@ export interface PanelStackProps {
   /** Focus mode (⌘⇧F): the sheet beside spines, its content centred; Esc leaves it. */
   focusMode?: boolean;
   onToggleFocusMode?: () => void;
+  /** The shell's Add command, given to the roots (the empty Library offers it). */
+  onAdd?: () => void;
   /** The panel modules; the files of `panels/` by default (a screen or a test passes its own). */
   registry?: readonly PanelModule[];
   /** The pin of the top panel's object; absent, the frame draws no pin. */
@@ -357,6 +365,7 @@ export function PanelStack({
   shown = true,
   focusMode = false,
   onToggleFocusMode,
+  onAdd,
   registry = panelRegistry,
   pin
 }: PanelStackProps) {
@@ -746,6 +755,9 @@ export function PanelStack({
           onState={(state) => report(key, state)}
           onPlace={(place) => reportPlace(key, place)}
           onOpen={openFrom(-1)}
+          density={workspace.density}
+          onDensity={(density) => dispatch({ type: "setDensity", density })}
+          {...(onAdd ? { onAdd } : {})}
           {...(mode === "compact" && next ? { current: addressOf(next) } : {})}
         />
       </div>

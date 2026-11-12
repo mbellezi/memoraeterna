@@ -73,7 +73,8 @@ describe("App", () => {
     );
 
     expect(html).toContain("Memora Eterna");
-    expect(html).toContain("dark");
+    // The Library's root is the new table (T149); the old screen's "dark:" classes no longer show.
+    expect(html).toContain('data-surface="destination-library"');
     for (const name of ["Home", "Explore", "Library", "Inbox", "Map", "Settings"])
       expect(html).toContain(`aria-label="${name}"`);
     expect(html).toContain('data-surface="shell"');

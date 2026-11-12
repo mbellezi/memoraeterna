@@ -137,6 +137,7 @@ import {
   type AiModelParameterCapabilities,
   type AiOutputContract,
   type AiOutputSchema,
+  type AiPresetId,
   type AiSchemaMode,
   type BudgetClass,
   type DecisionsStatus,
@@ -1007,7 +1008,6 @@ export class AiService {
     const created = await createAiConfigRepository(this.requirePool()).createProfile({
       name: input.name,
       isDefault: input.isDefault,
-      privacyMode: input.privacyMode,
       outputLanguage: input.outputLanguage,
       ...(input.description !== undefined ? { description: input.description } : {})
     });
@@ -1060,9 +1060,6 @@ export class AiService {
       await repository.updateProfile({
         id: input.id,
         ...(input.name !== undefined ? { name: input.name } : {}),
-        ...(input.modelId !== undefined
-          ? { privacyMode: input.localModelId ? "offline_only" : "allow_remote" }
-          : {}),
         ...(input.outputLanguage !== undefined ? { outputLanguage: input.outputLanguage } : {}),
         ...(input.providerConfigId !== undefined
           ? { providerConfigId: input.providerConfigId }
@@ -1249,6 +1246,11 @@ export class AiService {
     return this.classRouteService().applyPreset(input);
   }
 
+  /** What a setup gives per route and for the decider, read without writing (F5 T160). */
+  public presetDefaults(preset: AiPresetId) {
+    return this.classRouteService().presetDefaults(preset);
+  }
+
   public testClassRoute(route: AiClassRouteTarget): Promise<AiClassRoutes> {
     return this.classRouteService().testClassRoute(route);
   }
@@ -1371,7 +1373,6 @@ export class AiService {
     await repository.setProfileTask({
       profileId: input.profileId,
       task: input.task,
-      fallbackPolicy: "block",
       parameters: normalizeAiModelParameters(input.parameters, parameterCapabilities)
     });
     this.configCache.invalidate();
@@ -4304,7 +4305,6 @@ function mapProfile(record: AiProfileRecord): AiProfile {
     name: record.name,
     description: record.description,
     isDefault: record.isDefault,
-    privacyMode: record.privacyMode,
     outputLanguage: record.outputLanguage as AiProfile["outputLanguage"],
     providerConfigId: record.providerConfigId,
     localModelId: record.localModelId,

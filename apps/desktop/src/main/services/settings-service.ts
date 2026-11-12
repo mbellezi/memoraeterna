@@ -362,6 +362,14 @@ export class SettingsService {
     this.defaultLocale = options.desktopLocale;
   }
 
+  /**
+   * The language the macOS locale names: what a new library starts with and what a reset of a
+   * language setting restores (F5 D18, Q35: the registry's `osLocale` default).
+   */
+  public osLanguage(): string {
+    return normalizeLanguageCode(this.defaultLocale);
+  }
+
   public async getImportDirectory(): Promise<string | undefined> {
     try {
       const saved = importDirectorySchema.safeParse(

@@ -56,14 +56,18 @@ import { viewHistoryBounds } from "../shared/view-history";
 import * as exploreRoot from "./workspace/destinations/explore/ExploreRoot";
 import { ExploreNavigator, hoistAction } from "./workspace/destinations/explore/ExploreNavigator";
 import { ContextDockContext } from "./workspace/context-dock";
+import { contextMode } from "./workspace/layout-config";
 import { PanelStack, panelRegistry } from "./workspace/PanelStack";
 import { AddSourceContext } from "./workspace/workspace-bridge";
 import { QuickLookHost } from "./workspace/QuickLook";
+import { PaletteHost } from "./workspace/palette/PaletteHost";
+import { palette } from "./workspace/palette/palette-store";
 import { toggleQuickLook } from "./workspace/QuickLookModel";
 import { Shell } from "./workspace/Shell";
 import { hasNavigator, hostedViewIds, legacyHostFor } from "./workspace/shell-model";
 import type { WorkspaceState } from "./workspace/state";
 import type { KeymapResult } from "./workspace/keymap";
+import { useContextPanel } from "./workspace/use-context-panel";
 import { useViewportWidth, useWorkspace } from "./workspace/use-workspace";
 import * as legacyPanel from "./workspace/views/legacy.panel";
 import {
@@ -207,6 +211,17 @@ export function App({
   const storageSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { toasts, push: pushToast, dismiss: dismissToast } = useToasts();
   const t = useMemo(() => createTranslator(appSettings.language), [appSettings.language]);
+  // F5 T143: the context panel beside the stack, which follows the focused panel's object.
+  const contextHost = useContextPanel({
+    t,
+    workspace,
+    dispatch,
+    viewportWidth,
+    stackShown: legacyView === null && workspace.destination !== "settings",
+    focusMode,
+    // Until the note link picker lands (T141/T150) "Ligar a outra nota" opens the palette to find the note.
+    onLink: () => handleWorkspaceResult({ type: "openPalette" })
+  });
   const isDarkMode = useResolvedTheme(appSettings.themeMode) === "dark";
   // The preference the startup screen of the next launch starts from; the boot defaults are not stored.
   useEffect(() => {
@@ -548,13 +563,14 @@ export function App({
   });
   const openInbox = useStableCallback(() => goToView("inbox"));
 
-  // What a shortcut of the workspace does. Until the palette (T145), Adicionar's picker (T150) and
-  // the panel stack (T136) land, Cmd-K and Cmd-N open the old Search and Add content views, and the
-  // commands of a stack that is not there yet do nothing.
+  // What a shortcut of the workspace does. Until the Add picker (T150) and the panel stack (T136)
+  // land, Cmd-N opens the old Add content view, and the commands of a stack that is not there yet
+  // do nothing.
   const handleWorkspaceResult = useStableCallback((result: KeymapResult) => {
     switch (result.type) {
       case "openPalette":
-        return goToView("search");
+        // Cmd-K (T145): a second press closes it.
+        return palette.toggle();
       case "newImport":
         return goToView("import");
       case "toggleFocusMode":
@@ -563,7 +579,14 @@ export function App({
         // Cmd-Y, from anywhere: the sheet peeks at the row the keyboard is on (Space does it too).
         return toggleQuickLook();
       case "cycleRegion":
+        return;
       case "contextTab":
+        // ⌥1-⌥6 choose a tab of the context panel (T143).
+        contextHost.command(result);
+        return;
+      case "toggleContext":
+        // ⌘⇧\ hides the docked panel, and opens or closes the strip's overlay below 1280 px.
+        if (!contextHost.command(result)) dispatch(result);
         return;
       case "go":
         return goToPlace(result.destination);
@@ -755,21 +778,24 @@ export function App({
             <ExploreNavigator t={t} workspace={workspace} dispatch={dispatch} />
           ) : undefined
         }
+        context={contextHost.element}
       >
         <LegacyViewsContext.Provider value={legacyViews}>
           <AddSourceContext.Provider value={addSource}>
-            {/* The context panel joins the layout with its card (T143); until then nothing docks,
-                and a note's body lists its relations in full. */}
-            <ContextDockContext.Provider value={false}>
+            {/* A note's body lists its relations in full unless the context panel is docked. */}
+            <ContextDockContext.Provider
+              value={contextHost.present && contextMode(viewportWidth) === "docked"}
+            >
               <PanelStack
                 t={t}
                 workspace={workspace}
                 dispatch={dispatch}
                 viewportWidth={viewportWidth}
-                chrome={{ navigator: showNavigator, context: false }}
+                chrome={{ navigator: showNavigator, context: contextHost.present }}
                 shown={stackShown}
                 focusMode={focusMode}
                 onToggleFocusMode={toggleFocusMode}
+                onAdd={() => handleWorkspaceResult({ type: "newImport" })}
                 registry={stackRegistry}
                 pin={pin}
               />
@@ -783,6 +809,21 @@ export function App({
         </LegacyViewsContext.Provider>
       </Shell>
       <QuickLookHost t={t} />
+      <PaletteHost
+        t={t}
+        workspace={workspace}
+        dispatch={(actions) => {
+          // An opened object is shown on the stack, so an old screen over it gives way.
+          setLegacyView(null);
+          for (const action of actions) dispatch(action);
+        }}
+        actions={{
+          go: goToPlace,
+          addSource: () => handleWorkspaceResult({ type: "newImport" }),
+          toggleTheme: toggleThemeMode,
+          toggleFocusMode
+        }}
+      />
       <ToastViewport
         toasts={toasts}
         dismissLabel={t("shell.toasts.dismiss")}

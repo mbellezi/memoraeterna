@@ -40,7 +40,7 @@ describe("the renderer's push subscriptions", () => {
       "../components/RecentObjects.tsx": ["watchViewHistoryChanged("],
       "../components/topics/TopicNavigator.tsx": ["followNavigatorEvents("],
       "../components/topic-page/topic-page-controller.ts": ["onTreeChanged"],
-      "../components/topic-shape/shape-controller.ts": ["onTreeChanged"],
+      "../workspace/destinations/map/shape/shape-controller.ts": ["onTreeChanged"],
       "../components/activity/activity-controller.ts": ['"model.loading"'],
       "../components/ImportView.tsx": ["watchImportProgress("],
       "./topics-pulse.ts": ['"tree.changed"'],

@@ -118,6 +118,19 @@ describe("sheet", () => {
     expect(seen).toEqual(["prevented", "caller"]);
   });
 
+  it("lifts off a dense list only when asked: the lift shadow, nothing else changes", () => {
+    const sheet = (lift: boolean) =>
+      renderToStaticMarkup(
+        <Sheet open onOpenChange={noop}>
+          <SheetContent title="x" portal={false} lift={lift}>
+            <p>Peeking</p>
+          </SheetContent>
+        </Sheet>
+      );
+    expect(sheet(false)).not.toContain("--shadow-lift");
+    expect(sheet(true)).toContain("[box-shadow:var(--shadow-lift)]!");
+  });
+
   it("keeps focus on the row at open and close", () => {
     type Props = { onOpenAutoFocus: (e: Event) => void; onCloseAutoFocus: (e: Event) => void };
     const content = SheetContent({ title: "x", portal: false }) as ReactElement<Props>;

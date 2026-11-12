@@ -206,6 +206,7 @@ function QuickLookBlock() {
         <SheetContent
           title="Lactic fermentation"
           portal={false}
+          lift
           className="static! mx-auto max-w-full! translate-x-0!"
         >
           <SheetHeader className="flex-wrap gap-x-4 gap-y-1">
