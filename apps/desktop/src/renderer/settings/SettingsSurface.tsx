@@ -229,11 +229,12 @@ export function SettingsSurface({
       section,
       describe: (id) => index?.get(id),
       read: read.status,
+      active,
       rowState: (id) => snapshot.rows[id] ?? "idle",
       highlighted,
       reset: (id, confirmed) => store.reset(id, confirmed)
     }),
-    [t, section, index, read.status, snapshot.rows, highlighted, store]
+    [t, section, index, read.status, active, snapshot.rows, highlighted, store]
   );
 
   if (!visited) return null;

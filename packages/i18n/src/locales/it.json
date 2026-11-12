@@ -4840,6 +4840,148 @@
       "updated": "ultimo aggiornamento: {date}"
     }
   },
+  "settingsGeneral": {
+    "language": {
+      "connectionsNote": "Le descrizioni dei collegamenti già scritte si possono rifare in",
+      "defaultOs": "come macOS: {language}"
+    },
+    "saveFailed": "Impossibile salvare. Non è cambiato nulla.",
+    "theme": {
+      "dark": "Scuro",
+      "light": "Chiaro",
+      "system": "Sistema"
+    }
+  },
+  "settingsLibrary": {
+    "backup": {
+      "action": "Fai il backup ora",
+      "done": "Backup completato.",
+      "failed": "Non è stato possibile fare il backup.",
+      "running": "Backup in corso…",
+      "savedIn": "Salvato in {path}",
+      "verified": "Un ripristino di prova è riuscito."
+    },
+    "plans": {
+      "deleteAction": "Elimina",
+      "deleteAsk": "Eliminare «{name}»?",
+      "defaultNone": "nessun piano salvato",
+      "deleteConfirm": "Elimina piano",
+      "deleteKept": "Le fonti già importate restano come sono.",
+      "empty": "Nessun piano di importazione salvato. Salvane uno durante l’importazione.",
+      "loadFailed": "Impossibile leggere i piani di importazione salvati.",
+      "loadKept": "Non è cambiato nulla.",
+      "renameAction": "Rinomina",
+      "renameLabel": "Nome del piano",
+      "saveFailed": "Impossibile salvare. Non è cambiato nulla."
+    },
+    "storage": {
+      "database": "Database locale",
+      "files": "File conservati",
+      "filesNote": "gli originali che hai inviato",
+      "sourcesMany": "{count} fonti",
+      "sourcesOne": "{count} fonte",
+      "where": "Entrambi stanno nella cartella dei dati di Memora su questo Mac, e il loro posto è fisso. Per avere gli originali in una cartella tua, attiva la copia qui sotto; per portare tutto su un altro disco, usa il backup."
+    },
+    "uploads": {
+      "change": "Cambia cartella",
+      "choose": "Scegli una cartella",
+      "needsFolder": "Scegli prima la cartella: le copie hanno bisogno di un posto.",
+      "noFolder": "Nessuna cartella scelta",
+      "off": "Disattivato",
+      "on": "Attivato",
+      "pathHint": "Incolla il percorso completo di una cartella di questo Mac.",
+      "pathLabel": "Percorso della cartella",
+      "pathRejected": "Un percorso completo inizia con «/» e indica una cartella che esiste.",
+      "readFailed": "Impossibile leggere la cartella delle copie.",
+      "saveFailed": "Impossibile salvare. Non è cambiato nulla.",
+      "willReceive": "Questa cartella inizierà a ricevere le copie quando attivi l’opzione."
+    }
+  },
+  "settingsPrivacy": {
+    "callLog": {
+      "full": "L’acquisizione completa è attiva: conserva prompt e risposte interi.",
+      "light": "Conserva tempi, modelli e token; prompt e risposte interi solo con l’acquisizione completa.",
+      "none": "Il registro delle chiamate IA è vuoto.",
+      "open": "Vedi ed elimina in Avanzate",
+      "readFailed": "Impossibile leggere il registro delle chiamate.",
+      "summaryMany": "Il registro delle chiamate IA conserva {count} chiamate su questo Mac.",
+      "summaryOne": "Il registro delle chiamate IA conserva {count} chiamata su questo Mac."
+    },
+    "history": {
+      "action": "Cancella…",
+      "confirm": "Cancella i Recenti",
+      "dialogBody": "Cancella l’elenco degli elementi aperti da poco su questo Mac. Gli elementi fissati restano.",
+      "dialogTitle": "Cancellare i Recenti?",
+      "doneMany": "{count} elementi sono usciti dai Recenti.",
+      "doneNone": "I Recenti erano già vuoti.",
+      "doneOne": "{count} elemento è uscito dai Recenti.",
+      "failed": "Impossibile cancellare i Recenti. Non è cambiato nulla."
+    },
+    "leaves": {
+      "books": "Dati dei libri",
+      "booksAuto": "Open Library e Google Books",
+      "booksGoogle": "Google Books",
+      "booksOpenLibrary": "Open Library",
+      "changeInAi": "Cambia in IA",
+      "cloud": "Nel cloud",
+      "cloudVia": "Nel cloud · {name}",
+      "columns": {
+        "job": "Lavoro",
+        "what": "Cosa esce, e solo quando il lavoro lo richiede",
+        "where": "Dove gira"
+      },
+      "credentials": "Credenziali conservate su questo Mac (solo i nomi; i valori non compaiono mai): {names}.",
+      "decisions": "OpenAI Decisions",
+      "internet": "Su internet · {name}",
+      "local": "Su questo Mac",
+      "noCredentials": "Nessuna credenziale è conservata su questo Mac.",
+      "noModel": "Nessun modello scelto",
+      "nothing": "Niente",
+      "off": "Disattivato",
+      "readFailed": "Impossibile leggere cosa esce da questo Mac.",
+      "readKept": "Non è cambiato nulla.",
+      "tableLabel": "Cosa esce da questo Mac, per lavoro",
+      "what": {
+        "answer": "La tua domanda e le note citate",
+        "books": "ISBN, DOI, titolo e autori",
+        "decide": "Titoli e idee delle note confrontate",
+        "decisions": "Titolo, idea e inizio del testo delle note confrontate",
+        "embed": "Estratti delle tue fonti e note",
+        "judge": "Note ed estratti confrontati",
+        "writeFast": "Estratti delle fonti e riassunti",
+        "writeQuality": "Estratti delle fonti"
+      }
+    },
+    "questions": {
+      "action": "Elimina le domande…",
+      "confirm": "Elimina le domande",
+      "countMany": "{count} domande salvate",
+      "countMore": "Più di {count} domande salvate",
+      "countNone": "Nessuna domanda salvata.",
+      "countOne": "{count} domanda salvata",
+      "dialogBody": "Elimina tutte le domande salvate e le loro risposte. Le tue fonti e le tue note restano. Non si può annullare.",
+      "dialogTitle": "Eliminare tutte le domande?",
+      "doneMany": "{count} domande eliminate.",
+      "doneNone": "Non c’erano domande da eliminare.",
+      "doneOne": "{count} domanda eliminata.",
+      "failed": "Impossibile eliminare le domande. Non è cambiato nulla.",
+      "readFailed": "Impossibile contare le domande salvate."
+    },
+    "reset": {
+      "action": "Ripristina tutto…",
+      "backupLink": "Fai prima un backup",
+      "confirm": "Ripristina tutto",
+      "dialogBody": "Cancella biblioteca, indici di ricerca, grafi, domande, cronologie, collegamenti, preferenze e file conservati. Restano profili, provider, rotte e modelli installati; i backup e i tuoi file personali non vengono toccati.",
+      "dialogTitle": "Ripristinare tutto?",
+      "dialogWarn": "Non si può annullare.",
+      "failed": "Non è stato possibile completare il ripristino. Controlla i permessi dei file e riprova.",
+      "noUndo": "Non si può annullare.",
+      "reload": "Ricarica Memora",
+      "running": "Ripristino…",
+      "warnings": "Il ripristino è terminato, ma alcuni file conservati non si sono potuti rimuovere."
+    },
+    "working": "In corso…"
+  },
   "settingsRegistry": {
     "activeMatchingPresetId": {
       "help": "Bilanciata è l’insieme calibrato ed è di sola lettura. Per modificare i valori, crea o duplica una preimpostazione.",

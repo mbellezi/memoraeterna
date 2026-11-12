@@ -4842,6 +4842,148 @@
       "updated": "last updated {date}"
     }
   },
+  "settingsGeneral": {
+    "language": {
+      "connectionsNote": "Connection descriptions already written can be redone in",
+      "defaultOs": "same as macOS: {language}"
+    },
+    "saveFailed": "This could not be saved. Nothing was changed.",
+    "theme": {
+      "dark": "Dark",
+      "light": "Light",
+      "system": "System"
+    }
+  },
+  "settingsLibrary": {
+    "backup": {
+      "action": "Back up now",
+      "done": "Backup finished.",
+      "failed": "The backup could not be made.",
+      "running": "Backing up…",
+      "savedIn": "Saved in {path}",
+      "verified": "A test restore passed."
+    },
+    "plans": {
+      "deleteAction": "Delete",
+      "deleteAsk": "Delete “{name}”?",
+      "defaultNone": "no saved plans",
+      "deleteConfirm": "Delete plan",
+      "deleteKept": "Sources already imported keep what was made.",
+      "empty": "No saved import plans yet. Save one while importing.",
+      "loadFailed": "Your saved import plans could not be read.",
+      "loadKept": "Nothing was changed.",
+      "renameAction": "Rename",
+      "renameLabel": "Name of the plan",
+      "saveFailed": "This could not be saved. Nothing was changed."
+    },
+    "storage": {
+      "database": "Local database",
+      "files": "Stored files",
+      "filesNote": "the originals you sent",
+      "sourcesMany": "{count} sources",
+      "sourcesOne": "{count} source",
+      "where": "Both live inside Memora’s data folder on this Mac, and their place is fixed. To keep the originals in a folder of yours, turn on the copy below; to move everything to another disk, use Backup."
+    },
+    "uploads": {
+      "change": "Change folder",
+      "choose": "Choose a folder",
+      "needsFolder": "Choose the folder first: the copies need somewhere to go.",
+      "noFolder": "No folder chosen yet",
+      "off": "Off",
+      "on": "On",
+      "pathHint": "Paste the full path of a folder on this Mac.",
+      "pathLabel": "Folder path",
+      "pathRejected": "A full path starts with “/” and names a folder that exists.",
+      "readFailed": "The copy folder could not be read.",
+      "saveFailed": "This could not be saved. Nothing was changed.",
+      "willReceive": "This folder starts receiving the copies once you turn this on."
+    }
+  },
+  "settingsPrivacy": {
+    "callLog": {
+      "full": "Full capture is on: it keeps whole prompts and answers.",
+      "light": "It keeps times, models and tokens; whole prompts and answers only with full capture.",
+      "none": "The AI call log is empty.",
+      "open": "View and delete in Advanced",
+      "readFailed": "The call log could not be read.",
+      "summaryMany": "The AI call log keeps {count} calls on this Mac.",
+      "summaryOne": "The AI call log keeps {count} call on this Mac."
+    },
+    "history": {
+      "action": "Clear…",
+      "confirm": "Clear Recents",
+      "dialogBody": "This erases the list of items opened recently on this Mac. Pinned items stay.",
+      "dialogTitle": "Clear Recents?",
+      "doneMany": "{count} items removed from Recents.",
+      "doneNone": "Recents was already empty.",
+      "doneOne": "{count} item removed from Recents.",
+      "failed": "Recents could not be cleared. Nothing was changed."
+    },
+    "leaves": {
+      "books": "Book details",
+      "booksAuto": "Open Library and Google Books",
+      "booksGoogle": "Google Books",
+      "booksOpenLibrary": "Open Library",
+      "changeInAi": "Change in AI",
+      "cloud": "In the cloud",
+      "cloudVia": "In the cloud · {name}",
+      "columns": {
+        "job": "Job",
+        "what": "What leaves, only when the job asks",
+        "where": "Where it runs"
+      },
+      "credentials": "Credentials kept on this Mac (names only; the values never appear): {names}.",
+      "decisions": "OpenAI Decisions",
+      "internet": "On the internet · {name}",
+      "local": "On this Mac",
+      "noCredentials": "No credentials are kept on this Mac.",
+      "noModel": "No model chosen",
+      "nothing": "Nothing",
+      "off": "Off",
+      "readFailed": "What leaves this Mac could not be read.",
+      "readKept": "Nothing was changed.",
+      "tableLabel": "What leaves this Mac, by job",
+      "what": {
+        "answer": "Your question and the notes it cites",
+        "books": "ISBN, DOI, title and authors",
+        "decide": "Titles and ideas of the notes compared",
+        "decisions": "Title, idea and start of the text of the notes compared",
+        "embed": "Excerpts of your sources and notes",
+        "judge": "Notes and excerpts compared",
+        "writeFast": "Excerpts of sources, and summaries",
+        "writeQuality": "Excerpts of sources"
+      }
+    },
+    "questions": {
+      "action": "Delete questions…",
+      "confirm": "Delete questions",
+      "countMany": "{count} saved questions",
+      "countMore": "More than {count} saved questions",
+      "countNone": "No saved questions.",
+      "countOne": "{count} saved question",
+      "dialogBody": "This erases every saved question and its answers. Your sources and notes stay. It cannot be undone.",
+      "dialogTitle": "Delete all questions?",
+      "doneMany": "{count} questions deleted.",
+      "doneNone": "There were no questions to delete.",
+      "doneOne": "{count} question deleted.",
+      "failed": "The questions could not be deleted. Nothing was changed.",
+      "readFailed": "The saved questions could not be counted."
+    },
+    "reset": {
+      "action": "Reset everything…",
+      "backupLink": "Make a backup first",
+      "confirm": "Reset everything",
+      "dialogBody": "This erases your library, search indexes, graphs, questions, histories, connections, preferences and stored files. Profiles, providers, routes and installed models stay; backups and your personal files are not touched.",
+      "dialogTitle": "Reset everything?",
+      "dialogWarn": "This cannot be undone.",
+      "failed": "The reset could not be finished. Check the file permissions and try again.",
+      "noUndo": "This cannot be undone.",
+      "reload": "Reload Memora",
+      "running": "Resetting…",
+      "warnings": "The reset is done, but some stored files could not be removed."
+    },
+    "working": "Working…"
+  },
   "settingsRegistry": {
     "activeMatchingPresetId": {
       "help": "Balanced is the calibrated set and is read only. To edit values, create or duplicate a preset.",
