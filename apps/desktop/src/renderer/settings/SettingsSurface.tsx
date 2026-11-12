@@ -7,6 +7,7 @@ import {
   useRef,
   useState,
   useSyncExternalStore,
+  type ComponentType,
   type KeyboardEvent
 } from "react";
 import { ChevronDown } from "lucide-react";
@@ -21,7 +22,7 @@ import { cn } from "../lib/cn";
 import { GenericSection } from "./GenericSection";
 import { InlineAction } from "./InlineAction";
 import { SectionNav } from "./SectionNav";
-import { SettingsContext, type SettingsContextValue } from "./settings-context";
+import { SettingsContext, type SectionState, type SettingsContextValue } from "./settings-context";
 import {
   changedCounts,
   changedIn,
@@ -97,6 +98,10 @@ export function SettingsSurface({
   const [query, setQuery] = useState(initialQuery);
   const [highlighted, setHighlighted] = useState<string | null>(null);
   const [pendingRow, setPendingRow] = useState<string | null>(null);
+  // Rows that appear after the section mounted (a read of its own) ask the request to look again.
+  const [rowsTick, setRowsTick] = useState(0);
+  const [sectionState, setSectionState] = useState<SectionState | null>(null);
+  const rowsChanged = useCallback(() => setRowsTick((tick) => tick + 1), []);
 
   const { store, snapshot } = useSettingsStore(active && visited);
   const read = snapshot.read;
@@ -155,7 +160,7 @@ export function SettingsSurface({
     setPendingRow(null);
     if (timer.current !== null) clearTimeout(timer.current);
     timer.current = setTimeout(() => setHighlighted(null), highlightMs);
-  }, [pendingRow, active, section, query, read.status]);
+  }, [pendingRow, active, section, query, read.status, rowsTick]);
   useEffect(
     () => () => {
       if (timer.current !== null) clearTimeout(timer.current);
@@ -231,11 +236,14 @@ export function SettingsSurface({
       section,
       describe: (id) => index?.get(id),
       read: read.status,
+      active,
       rowState: (id) => snapshot.rows[id] ?? "idle",
       highlighted,
-      reset: (id, confirmed) => store.reset(id, confirmed)
+      reset: (id, confirmed) => store.reset(id, confirmed),
+      rowsChanged,
+      reportState: setSectionState
     }),
-    [t, section, index, read.status, snapshot.rows, highlighted, store]
+    [t, section, index, read.status, active, snapshot.rows, highlighted, store, rowsChanged]
   );
 
   if (!visited) return null;
@@ -248,7 +256,7 @@ export function SettingsSurface({
   return (
     <div
       data-surface={surface}
-      data-state={state}
+      data-state={state === "success" && sectionState !== null ? sectionState : state}
       hidden={!active}
       className={cn("grid h-full min-h-0 bg-background text-foreground", columns)}
     >
@@ -318,6 +326,7 @@ export function SettingsSurface({
                   t={t}
                   groups={groupsOf(section, registry)}
                   controls={sections[section] !== undefined}
+                  Bars={sections[section]?.Skeleton}
                 />
               ) : read.status === "error" ? (
                 <ErrorState
@@ -363,16 +372,19 @@ function capRows(groups: readonly SettingGroup[], limit: number): SettingGroup[]
 /**
  * The bars of a section while its values are read: the title's line, then the section's own groups
  * and rows (as many as it has, so nothing jumps when the values arrive), with a control-sized block
- * only where the section draws a control. A long section stops at a screenful.
+ * only where the section draws a control. A long section stops at a screenful. A section that
+ * registers its own bars (`Skeleton` in the sections registry) draws those instead.
  */
 function SettingsSkeleton({
   t,
   groups,
-  controls
+  controls,
+  Bars
 }: {
   t: Translator;
   groups: readonly SettingGroup[];
   controls: boolean;
+  Bars?: ComponentType | undefined;
 }) {
   const labels = ["w-44", "w-32", "w-40", "w-36"];
   const helps = ["w-80", "w-72", "w-60", "w-64"];
@@ -381,23 +393,27 @@ function SettingsSkeleton({
     <LoadingState t={t} className="mt-4 max-w-[45rem]">
       <div>
         <Skeleton className="mt-1 h-3 w-44" />
-        {bars.map(({ group, entries: rows }, index) => {
-          return (
-            <div key={group}>
-              <Skeleton className={cn("h-3 w-24", index === 0 ? "mt-8" : "mt-10")} />
-              {rows.map((entry, at) => (
-                <div
-                  key={entry.id}
-                  className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-6 gap-y-2 border-b border-border py-4"
-                >
-                  <Skeleton className={cn("h-3.5", labels[at % labels.length])} />
-                  {controls ? <Skeleton className="row-span-2 h-8 w-40 rounded-md" /> : null}
-                  <Skeleton className={cn("h-3 max-w-full", helps[at % helps.length])} />
-                </div>
-              ))}
-            </div>
-          );
-        })}
+        {Bars ? (
+          <Bars />
+        ) : (
+          bars.map(({ group, entries: rows }, index) => {
+            return (
+              <div key={group}>
+                <Skeleton className={cn("h-3 w-24", index === 0 ? "mt-8" : "mt-10")} />
+                {rows.map((entry, at) => (
+                  <div
+                    key={entry.id}
+                    className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-6 gap-y-2 border-b border-border py-4"
+                  >
+                    <Skeleton className={cn("h-3.5", labels[at % labels.length])} />
+                    {controls ? <Skeleton className="row-span-2 h-8 w-40 rounded-md" /> : null}
+                    <Skeleton className={cn("h-3 max-w-full", helps[at % helps.length])} />
+                  </div>
+                ))}
+              </div>
+            );
+          })
+        )}
       </div>
     </LoadingState>
   );

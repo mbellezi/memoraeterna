@@ -17,11 +17,30 @@ export interface SettingsContextValue {
   /** The saved value, the default and whether they differ, by registry id; null until read. */
   describe: (id: string) => SettingDescription | undefined;
   read: "loading" | "error" | "ready";
+  /**
+   * Settings is on screen. It stays mounted while another place is shown, so a section that reads
+   * more than `describe` (a count, a status) reads again when this turns true, and listens to
+   * nothing while it is false.
+   */
+  active: boolean;
   rowState: (id: string) => RowReset;
   /** The row highlighted for 2 s after a link or a search result took the person to it. */
   highlighted: string | null;
   reset: (id: string, confirmed?: boolean) => Promise<ResetOutcome>;
+  /**
+   * A section whose rows appear after the surface mounted them (they wait on a read of their own)
+   * says so when they are on screen, so a row a link or a search result asked for is then found.
+   */
+  rowsChanged: () => void;
+  /**
+   * A section that holds pages with their own reads (Diagnostics) tells the frame the state those
+   * pages are in; null when it has nothing to say. The frame uses it only while the saved values
+   * themselves are shown.
+   */
+  reportState: (state: SectionState | null) => void;
 }
+
+export type SectionState = "loading" | "empty" | "error" | "success";
 
 export const SettingsContext = createContext<SettingsContextValue | null>(null);
 

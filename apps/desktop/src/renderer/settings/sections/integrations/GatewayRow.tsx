@@ -11,13 +11,8 @@ import type { SettingEntryV2 } from "../../../../shared/settings-registry";
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
 import { Skeleton } from "../../../components/ui/skeleton";
-import {
-  PageRow,
-  ReadProblem,
-  SelectControl,
-  StatusLine,
-  type StatusTone
-} from "../../SettingControls";
+import { PageRow } from "../../PageRow";
+import { ReadProblem, SelectControl, StatusLine, type StatusTone } from "../../SettingControls";
 import { useSettings } from "../../settings-context";
 import { labelOf, helpOf } from "../../settings-model";
 import { clientKindLabel, gatewayMeta } from "./integrations-model";
@@ -88,7 +83,8 @@ export function GatewayRow({
         meta ?? (gateway.status === "loading" ? <Skeleton className="h-3.5 w-24" /> : undefined)
       }
       open={open}
-      onToggle={() => setOpened(!open)}
+      onOpenChange={setOpened}
+      bodyClassName="pb-4"
     >
       {gateway.status === "loading" ? (
         <div className="grid gap-2">

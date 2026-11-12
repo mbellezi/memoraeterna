@@ -99,13 +99,22 @@ export function groupsOf(
 export const describeIndexOf = (entries: readonly SettingDescription[]): DescribeIndex =>
   new Map(entries.map((entry) => [entry.id, entry]));
 
+/**
+ * A key, a token or a sign-in. What is saved shows on its own line ("Connected", "Key saved"), so it is
+ * never counted or marked as a changed setting, and "Restore all" never touches one.
+ */
+export const isCredential = (entry: SettingEntryV2): boolean => entry.category === "credential";
+
+const isChanged = (entry: SettingEntryV2, index: DescribeIndex): boolean =>
+  !isCredential(entry) && index.get(entry.id)?.changed === true;
+
 /** The entries of a section that differ from their default, in the registry's order. */
 export function changedIn(
   section: SettingsSectionId,
   index: DescribeIndex,
   registry: readonly SettingEntryV2[] = settingsRegistryV2
 ): SettingEntryV2[] {
-  return entriesOf(section, registry).filter((entry) => index.get(entry.id)?.changed === true);
+  return entriesOf(section, registry).filter((entry) => isChanged(entry, index));
 }
 
 export function changedCounts(
@@ -116,8 +125,7 @@ export function changedCounts(
     SettingsSectionId,
     number
   >;
-  for (const entry of registry)
-    if (index.get(entry.id)?.changed === true) counts[entry.section] += 1;
+  for (const entry of registry) if (isChanged(entry, index)) counts[entry.section] += 1;
   return counts;
 }
 

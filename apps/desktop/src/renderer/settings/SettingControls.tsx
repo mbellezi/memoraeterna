@@ -5,7 +5,6 @@ import type { MessageKey, Translator } from "@app/i18n";
 import { RunningRing, SolidCheck, SolidTriangle } from "../components/ui/solid-glyphs";
 import { InlineAction } from "./InlineAction";
 import { cn } from "../lib/cn";
-import { useSettings } from "./settings-context";
 
 /**
  * The controls the Knowledge and Integrations sections share (F5 T164, design record §7.6 and the
@@ -410,88 +409,5 @@ export function ReadProblem({
         {t("shell.actions.retry")}
       </InlineAction>
     </span>
-  );
-}
-
-/**
- * The row of a setting that opens a page of its own, in place (a disclosure): label, help, a summary
- * at the right and a chevron. It is a registry row like the others: it carries `data-setting-id`,
- * takes focus for a link, and lights for two seconds.
- */
-export function PageRow({
-  id,
-  label,
-  help,
-  meta,
-  open,
-  onToggle,
-  children
-}: {
-  id: string;
-  label: string;
-  help: string;
-  meta?: ReactNode;
-  open: boolean;
-  onToggle: () => void;
-  children: ReactNode;
-}) {
-  const { highlighted } = useSettings();
-  const bodyId = useId();
-  return (
-    <div
-      role="group"
-      aria-label={label}
-      data-setting-id={id}
-      tabIndex={-1}
-      className={cn(
-        "relative border-b border-border outline-none",
-        "transition-colors [transition-duration:var(--motion-slow)]",
-        "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent",
-        highlighted === id
-          ? "-mx-4 bg-surface-selected px-4 [box-shadow:inset_2px_0_0_var(--accent)]"
-          : ""
-      )}
-    >
-      <button
-        type="button"
-        aria-expanded={open}
-        aria-controls={bodyId}
-        onClick={onToggle}
-        className={cn(
-          "group -mx-3 grid w-[calc(100%+1.5rem)] grid-cols-[minmax(0,1fr)_auto_1rem] items-center gap-x-4 gap-y-1",
-          "rounded-md border-0 bg-transparent px-3 py-4 text-left",
-          "focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent"
-        )}
-      >
-        <span
-          className={cn(
-            "min-w-0 text-base font-medium leading-5 text-foreground [overflow-wrap:anywhere]",
-            "group-hover:underline group-hover:decoration-border-strong group-hover:underline-offset-[3px]"
-          )}
-        >
-          {label}
-        </span>
-        <span className="col-start-1 max-w-[27.5rem] text-sm text-secondary-foreground [text-wrap:pretty]">
-          {help}
-        </span>
-        {meta ? (
-          <span className="col-start-2 row-span-2 row-start-1 text-right text-sm tabular-nums text-secondary-foreground">
-            {meta}
-          </span>
-        ) : null}
-        <ChevronDown
-          aria-hidden="true"
-          className={cn(
-            "col-start-3 row-span-2 row-start-1 size-4 text-secondary-foreground transition-transform",
-            open && "rotate-180"
-          )}
-        />
-      </button>
-      {open ? (
-        <div id={bodyId} className="pb-4">
-          {children}
-        </div>
-      ) : null}
-    </div>
   );
 }
