@@ -268,7 +268,7 @@ export function DeliveryProgress({
     </div>
   );
 }
-function ProjectionDiff({
+export function ProjectionDiff({
   t,
   diff,
   busy,

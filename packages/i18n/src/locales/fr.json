@@ -5438,5 +5438,169 @@
       "themeMode": "thème sombre clair nuit mode apparence couleurs schéma système visuel",
       "uploadCopies": "copies importés conserver originaux fichiers copie dossier imports seconde sauvegarde des envois enregistrer"
     }
+  },
+  "settingsIntegrations": {
+    "books": {
+      "auto": "Automatique : Open Library, puis Google Books",
+      "googleBooks": "Google Books seulement",
+      "keyConfirm": "Enregistrer",
+      "keyFailed": "Impossible de garder la clé en sécurité. Réessayez.",
+      "keyNone": "Aucune clé",
+      "keyReplace": "Changer la clé…",
+      "keySave": "Enregistrer la clé…",
+      "keySaved": "Clé enregistrée, chiffrée sur ce Mac",
+      "off": "Désactivé",
+      "openLibrary": "Open Library seulement",
+      "saveFailed": "Impossible de changer. Le choix précédent reste."
+    },
+    "gateway": {
+      "address": "Adresse",
+      "clientType": "Type d’app",
+      "clients": "Qui est associé",
+      "copied": "Copié.",
+      "copy": "Copier",
+      "copyFailed": "Impossible de copier. Sélectionnez le texte et copiez-le à la main.",
+      "createPairing": "Créer l’association",
+      "displayName": "Nom de l’app (facultatif)",
+      "kinds": {
+        "chromeExtension": "Extension Chrome",
+        "obsidianPlugin": "Plugin Obsidian"
+      },
+      "localOnly": "Elle ne répond qu’aux apps associées, et seulement sur ce Mac.",
+      "metaFailed": "Indisponible",
+      "metaMany": "{count} apps · {state}",
+      "metaOne": "{count} app · {state}",
+      "noClients": "Aucune app n’est associée pour l’instant. Associez l’extension Chrome ou le plugin Obsidian.",
+      "pair": "Associer une app…",
+      "pairFailed": "Impossible de créer l’association. Rien n’a été conservé.",
+      "pairNeedsReady": "Pour associer, la connexion locale doit être prête.",
+      "pairedSince": "Associée {since}",
+      "readFailed": "Impossible de lire la connexion locale.",
+      "revoke": "Révoquer",
+      "revokeAsk": "Révoquer l’accès de {name} ? Elle devra être associée de nouveau.",
+      "revokeFailed": "Impossible de révoquer. L’accès reste comme avant.",
+      "states": {
+        "failed": "en échec",
+        "ready": "prête",
+        "starting": "en démarrage",
+        "stopped": "arrêtée"
+      },
+      "today": "aujourd’hui",
+      "tokenDone": "Je l’ai copié",
+      "tokenTitle": "Code d’association",
+      "tokenWarning": "Copiez-le maintenant : il ne s’affiche qu’une fois et n’est pas conservé ici."
+    },
+    "layout": {
+      "needsSync": "Pour l’appliquer, la synchronisation avec Obsidian doit être activée.",
+      "needsVault": "Choisissez le dossier du coffre pour pouvoir copier les fichiers.",
+      "readFailed": "Impossible de lire l’état du coffre.",
+      "review": "Le changement est préparé. Vérifiez les fichiers, fermez les éditeurs et appliquez."
+    },
+    "moreInAdvanced": "Le dossier de Memora dans le coffre et la langue des dossiers se trouvent dans",
+    "openAdvanced": "Avancé › Obsidian",
+    "review": {
+      "hint": "Ce qui vous attend après que Memora a écrit dans le coffre : des pages modifiées des deux côtés, des fichiers qui n’ont pas pu être écrits et des modifications du plugin.",
+      "none": "rien en attente",
+      "title": "Relectures du coffre",
+      "waitingMany": "{count} en attente",
+      "waitingOne": "{count} en attente",
+      "working": "Mise à jour des pages du coffre…"
+    },
+    "scope": {
+      "all": "Toutes les sources",
+      "choose": "Choisir des sources…",
+      "countMany": "{count} sources choisies",
+      "countOne": "{count} source choisie",
+      "readFailed": "Impossible de lire les sources du coffre.",
+      "save": "Enregistrer les sources",
+      "saveFailed": "Impossible d’enregistrer. Le choix précédent reste."
+    },
+    "sync": {
+      "conflictsMany": "{count} conflits",
+      "conflictsOne": "{count} conflit",
+      "failed": "La dernière synchronisation s’est arrêtée. Rien n’a été perdu ; réessayez.",
+      "last": "Synchronisé {when}",
+      "needsVault": "Choisissez le dossier du coffre ci-dessus pour activer la synchronisation.",
+      "never": "Pas encore synchronisé.",
+      "now": "Synchroniser maintenant",
+      "off": "Désactivée",
+      "on": "Activée",
+      "paused": "En pause",
+      "pausedNote": "En pause : Memora garde tout et ne synchronise pas tant que vous ne la réactivez pas.",
+      "readFailed": "Impossible de lire l’état de la synchronisation.",
+      "saveFailed": "Impossible de changer la synchronisation. Le choix précédent reste.",
+      "statusFailed": "Impossible de voir la dernière synchronisation."
+    },
+    "vault": {
+      "change": "Changer de dossier…",
+      "choose": "Choisir un dossier…",
+      "none": "Aucun coffre choisi",
+      "pickFailed": "Impossible d’ouvrir le sélecteur de dossier.",
+      "readFailed": "Impossible de lire le dossier du coffre."
+    },
+    "when": {
+      "other": "{date}, {time}",
+      "today": "aujourd’hui, {time}",
+      "yesterday": "hier, {time}"
+    }
+  },
+  "settingsKnowledge": {
+    "autonomy": {
+      "auto": {
+        "description": "Applique et garde Annuler. Ce qui touche à vos modifications ou ce que vous avez épinglé vous attend toujours.",
+        "label": "Automatique"
+      },
+      "off": {
+        "description": "L’IA n’écrit rien en arrière-plan. Les notes trouvent quand même leur place dans l’arbre.",
+        "label": "Désactivée"
+      },
+      "suggest": {
+        "description": "Propose chaque changement et attend votre décision dans la Boîte de réception.",
+        "label": "Suggérer"
+      }
+    },
+    "cap": {
+      "invalid": "Saisissez un montant de 0 à {max}.",
+      "meter": "Dépenses du mois par rapport au plafond",
+      "spent": "{spent} sur {cap} dépensés ce mois-ci",
+      "stateExhausted": "Le plafond est atteint. Le travail dans le cloud attend le mois prochain ou un plafond plus haut.",
+      "statePaused": "Le travail dans le cloud est en pause près du plafond. Reprenez-le depuis Activité ou relevez le plafond."
+    },
+    "groups": {
+      "scheduleIntro": "Vaut pour tout le travail en arrière-plan. Les imports et vos demandes n’attendent jamais."
+    },
+    "intro": "Le Jardinier est le travail en arrière-plan de Memora : il place les notes dans l’arbre, trouve des liens et garde les vues d’ensemble à jour, toujours avec Annuler. Ici, vous décidez jusqu’où il va seul.",
+    "labels": {
+      "doneMany": "{count} descriptions mises à jour",
+      "doneOne": "{count} description mise à jour",
+      "failed": "Les descriptions n’ont pas pu être écrites. Celles déjà prêtes ont été conservées.",
+      "generateMissing": "Générer celles qui manquent",
+      "queued": "En file d’attente pour écrire les descriptions.",
+      "readFailed": "Impossible de voir où en est ce travail.",
+      "rewriteAll": "Tout réécrire…",
+      "rewriteAsk": "Réécrire les descriptions de toutes les connexions en {language} ? Les actuelles seront remplacées.",
+      "rewriteConfirm": "Réécrire",
+      "running": "Écriture des descriptions…",
+      "startFailed": "Impossible de démarrer. Rien n’a été modifié."
+    },
+    "pause": {
+      "action": "Mettre en pause",
+      "default": "En cours",
+      "resume": "Reprendre"
+    },
+    "saving": {
+      "failed": "Enregistrement impossible. La valeur précédente est revenue.",
+      "saved": "Enregistré.",
+      "saving": "Enregistrement…"
+    },
+    "states": {
+      "controlsError": "Impossible de lire les réglages du Jardinier.",
+      "controlsKept": "Rien n’a été modifié : il garde les valeurs qui s’appliquaient déjà."
+    },
+    "treeShape": {
+      "balanced": "Équilibrée",
+      "broad": "Large",
+      "deep": "Profonde"
+    }
   }
 }
