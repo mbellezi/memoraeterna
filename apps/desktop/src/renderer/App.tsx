@@ -22,7 +22,6 @@ import {
   type LanguageCode,
   type MessageKey
 } from "@app/i18n";
-import { formatObjectAddress } from "@app/domain";
 import type {
   AppSettings,
   AppSettingsUpdate,
