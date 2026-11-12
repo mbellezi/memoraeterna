@@ -185,7 +185,12 @@ describe("the active contract of Settings › Knowledge and Integrations", () =>
     "%s: listens and reads while shown, nothing while hidden, one fresh read on return",
     async (section, readNames, eventTypes) => {
       await show(section, true);
-      for (const name of readNames) expect(count(name), `${name} read once`).toBeGreaterThan(0);
+      // `settings.get` and `settings.getApp` are shared by several followers of one section, so
+      // they only have to be read; every other read runs exactly once on mount (no double read).
+      for (const name of readNames) {
+        if (name.startsWith("settings.get")) expect(count(name), `${name} read`).toBeGreaterThan(0);
+        else expect(count(name), `${name} read once on mount`).toBe(1);
+      }
       for (const type of eventTypes)
         expect(bus.listening(type), `${type} followed`).toBeGreaterThan(0);
 
