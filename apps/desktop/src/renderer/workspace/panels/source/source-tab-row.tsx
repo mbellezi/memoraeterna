@@ -39,7 +39,7 @@ export function SourceTabRow<T extends string>({
       <div
         role="tablist"
         aria-label={label}
-        className="mb-5 flex flex-wrap gap-x-5 border-b border-border"
+        className="mb-5 flex flex-wrap gap-x-3 border-b border-border"
       >
         {items.map((item, index) => {
           const current = item.id === value;
@@ -71,8 +71,8 @@ export function SourceTabRow<T extends string>({
                 focusTab(target);
               }}
               className={cn(
-                "-mb-px inline-flex items-baseline gap-1.5 border-b-2 py-2 text-sm whitespace-nowrap",
-                "focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-accent",
+                "-mb-px inline-flex items-baseline first:-ml-1 gap-1.5 rounded-sm border-b-2 px-1 py-2 text-sm whitespace-nowrap",
+                "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent",
                 current
                   ? "border-accent font-semibold text-accent"
                   : "border-transparent font-medium text-secondary-foreground hover:text-foreground"

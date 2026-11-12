@@ -2716,6 +2716,7 @@
       "page": "p. {page}",
       "passage": "passage {index}",
       "placing": "Looking for a place in the tree…",
+      "section": "section {name}",
       "seeAll": "See all {count} notes",
       "showMore": "Show {count} more",
       "unplaced": "No place yet"

@@ -78,12 +78,27 @@ describe("the note rows", () => {
     expect(noteRows(changed, now, false).map((row) => row.id)).toEqual(noteIds.slice(2));
   });
 
-  it("say where a note rests: a page when its passage has one, else the passage's number", () => {
-    const rows = noteRows(detail, now, false);
-    const sections = rows.map((row) => row.section);
+  it("fall back to the page or the passage when the text has fewer than two sections", () => {
+    const [document] = detail.documents;
+    const plain = {
+      ...detail,
+      documents: [
+        { ...document!, canonicalMarkdown: "# Title\n\nBody.\n", chunks: document!.chunks }
+      ]
+    };
+    const sections = noteRows(plain, now, false).map((row) => row.section);
     expect(sections).toContainEqual({ kind: "page", page: 9 });
     expect(sections).toContainEqual({ kind: "passage", index: 1 });
-    expect(sectionWords({ kind: "page", page: 9 }, pt)).toBe("p. 9");
+    expect(sections.some((section) => section?.kind === "heading")).toBe(false);
+  });
+
+  it("say where a note rests: its section first, in words", () => {
+    const sections = noteRows(detail, now, false).map((row) => row.section);
+    expect(sections).toContainEqual({ kind: "heading", title: "Introduction" });
+    expect(sections).toContainEqual({ kind: "heading", title: "Medellín" });
+    expect(sectionWords({ kind: "heading", title: "Medellín" }, pt)).toBe("seção Medellín");
+    expect(sectionWords({ kind: "heading", title: "Medellín" }, en)).toBe("section Medellín");
+    expect(sectionWords({ kind: "page", page: 9 }, pt)).toBe("p.\u00a09");
     expect(sectionWords({ kind: "passage", index: 3 }, pt)).toBe("trecho 3");
     expect(sectionWords({ kind: "passage", index: 3 }, en)).toBe("passage 3");
   });

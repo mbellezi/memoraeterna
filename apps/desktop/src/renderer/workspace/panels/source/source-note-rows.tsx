@@ -111,12 +111,19 @@ export function SourceNoteRows({
               <span className="text-sm leading-5 font-medium text-foreground [text-wrap:pretty]">
                 {row.title}
               </span>
-              <span className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5">
+              <span className="flex min-w-0 flex-wrap items-baseline gap-x-1.5 gap-y-0.5">
                 <Place path={paths.get(row.id)} generating={generating} t={t} />
                 {row.section ? (
-                  <span className="text-xs leading-5 whitespace-nowrap text-muted-foreground">
-                    <span aria-hidden="true">· </span>
-                    {sectionWords(row.section, t)}
+                  <span className="inline-flex max-w-full min-w-0 items-baseline gap-x-1.5 text-xs leading-5 whitespace-nowrap text-muted-foreground">
+                    <span aria-hidden="true">·</span>
+                    <span
+                      className="min-w-0 truncate"
+                      {...(row.section.kind === "heading"
+                        ? { title: sectionWords(row.section, t) }
+                        : {})}
+                    >
+                      {sectionWords(row.section, t)}
+                    </span>
                   </span>
                 ) : null}
               </span>

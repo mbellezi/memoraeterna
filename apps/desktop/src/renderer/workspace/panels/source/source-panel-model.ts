@@ -36,8 +36,14 @@ export function passageOf(anchor: ObjectAnchor | undefined): PassageAnchor | nul
   return { chunkId: anchor.passage ?? null, sourceSpanId: anchor.span ?? null, documentId: null };
 }
 
-/** Where a note rests in the text: a page when the passage has one, else the passage's number. */
-export type NoteSection = { kind: "page"; page: number } | { kind: "passage"; index: number };
+/**
+ * Where a note rests in the text: the section (the heading the passage sits under) when the text
+ * has sections, else a page when the passage has one, else the passage's number.
+ */
+export type NoteSection =
+  | { kind: "heading"; title: string }
+  | { kind: "page"; page: number }
+  | { kind: "passage"; index: number };
 
 export interface NoteRow {
   id: string;
@@ -50,19 +56,78 @@ export interface NoteRow {
   fresh: boolean;
 }
 
-function sectionOf(detail: SourceDetail, chunkId: string): NoteSection | null {
+interface Heading {
+  offset: number;
+  level: number;
+  title: string;
+}
+
+/** The ATX headings of a Markdown text with their offsets, fenced code left out. */
+function headingsOf(markdown: string): Heading[] {
+  const found: Heading[] = [];
+  let offset = 0;
+  let fenced = false;
+  for (const line of markdown.split("\n")) {
+    if (/^\s{0,3}(```|~~~)/u.test(line)) fenced = !fenced;
+    else if (!fenced) {
+      const match = /^\s{0,3}(#{1,6})[ \t]+(.+?)[ \t]*#*[ \t]*$/u.exec(line);
+      if (match) found.push({ offset, level: match[1]!.length, title: match[2]!.trim() });
+    }
+    offset += line.length + 1;
+  }
+  return found;
+}
+
+/**
+ * The headings that divide a document into sections: those of the shallowest level that occurs at
+ * least twice (one title heading divides nothing), the rule the ruler's own sections follow.
+ */
+function sectionHeadings(markdown: string): Heading[] {
+  const all = headingsOf(markdown);
+  const counts = new Map<number, number>();
+  for (const heading of all) counts.set(heading.level, (counts.get(heading.level) ?? 0) + 1);
+  const level = [...counts]
+    .filter(([, count]) => count >= 2)
+    .map(([value]) => value)
+    .sort((left, right) => left - right)[0];
+  return level === undefined ? [] : all.filter((heading) => heading.level === level);
+}
+
+function sectionOf(
+  detail: SourceDetail,
+  headings: ReadonlyMap<string, Heading[]>,
+  chunkId: string
+): NoteSection | null {
   for (const document of detail.documents) {
     const chunk = document.chunks.find((candidate) => candidate.id === chunkId);
-    if (chunk)
-      return chunk.page
-        ? { kind: "page", page: chunk.page }
-        : { kind: "passage", index: chunk.chunkIndex + 1 };
+    if (!chunk) continue;
+    if (chunk.startOffset !== null) {
+      let under: Heading | undefined;
+      for (const heading of headings.get(document.id) ?? [])
+        if (heading.offset <= chunk.startOffset) under = heading;
+      if (under) return { kind: "heading", title: under.title };
+    }
+    return chunk.page
+      ? { kind: "page", page: chunk.page }
+      : { kind: "passage", index: chunk.chunkIndex + 1 };
   }
   return null;
 }
 
+/** The note's section as words ("seção Medellín", "p. 7", "trecho 3"). */
+export function sectionWords(section: NoteSection, t: Translator): string {
+  return section.kind === "heading"
+    ? t("sourcePage.notes.section", { values: { name: section.title } })
+    : section.kind === "page"
+      ? t("sourcePage.notes.page", { values: { page: section.page } })
+      : t("sourcePage.notes.passage", { values: { index: section.index } });
+}
+
 /** The source's notes, newest first (the order the design lists them while they arrive). */
 export function noteRows(detail: SourceDetail, now: number, generating: boolean): NoteRow[] {
+  const headings = new Map(
+    detail.documents.map((document) => [document.id, sectionHeadings(document.canonicalMarkdown)])
+  );
   return detail.atomicNotes
     .filter((note) => note.supersessionStatus === "current" && note.status !== "rejected")
     .map((note) => ({
@@ -70,20 +135,13 @@ export function noteRows(detail: SourceDetail, now: number, generating: boolean)
       address: `memora://note/${note.id}`,
       title: note.title,
       createdAt: note.createdAt,
-      section: sectionOf(detail, note.evidenceChunkId),
+      section: sectionOf(detail, headings, note.evidenceChunkId),
       fresh: generating && now - Date.parse(note.createdAt) <= freshNoteMs
     }))
     .sort(
       (left, right) =>
         Date.parse(right.createdAt) - Date.parse(left.createdAt) || left.id.localeCompare(right.id)
     );
-}
-
-/** The note's section as words ("p. 7", "trecho 3"). */
-export function sectionWords(section: NoteSection, t: Translator): string {
-  return section.kind === "page"
-    ? t("sourcePage.notes.page", { values: { page: section.page } })
-    : t("sourcePage.notes.passage", { values: { index: section.index } });
 }
 
 // ---------------------------------------------------------------------------
