@@ -5453,9 +5453,7 @@
       "title": "Passare a {setup}?"
     },
     "credential": {
-      "hide": "Nascondi",
-      "save": "Salva",
-      "show": "Mostra"
+      "save": "Salva"
     },
     "decisions": {
       "calibrated": "Le relazioni sopra la sua soglia calibrata vengono applicate automaticamente; le altre sono suggerimenti che puoi tenere o rimuovere.",
@@ -5476,7 +5474,6 @@
         "testOk": "OpenAI ha accettato la chiave.",
         "testing": "Prova in corso…"
       },
-      "keyRemoved": "La chiave OpenAI è stata rimossa.",
       "keySaved": "La chiave OpenAI è stata salvata.",
       "lastFallback": "L'ultima volta ha deciso invece il ranker locale: {reason}.",
       "noticeBody": "Finché è attivo, il titolo, l'idea e i primi {characters} caratteri del testo di ogni nota confrontata, e delle note con cui viene confrontata (comprese quelle già confrontate prima), vengono inviati a OpenAI (l'API Decisions, modello {model}) con la tua chiave OpenAI Platform. Per impostazione predefinita OpenAI non addestra sui dati dell'API e può conservare le richieste fino a 30 giorni per monitorare gli abusi. Memora non controlla questa conservazione. Non viene inviato nulla se è spento, nella configurazione Locale o senza una chiave.",
@@ -5643,7 +5640,6 @@
         "signedIn": "Accesso effettuato. Scegli il modello da usare."
       },
       "modelsLabel": "Modelli",
-      "noModels": "Nessun modello aggiunto.",
       "purpose": {
         "embedding": "Ricerca",
         "generation": "Scrittura",
@@ -5690,7 +5686,6 @@
       "button": "Prova",
       "failed": "La prova non è riuscita",
       "failedWith": "La prova non è riuscita: {reason}",
-      "invalidOutput": "Il modello ha risposto, ma non nella forma che la prova si aspetta.",
       "none": "Nessun ranker",
       "passed": "Prova superata",
       "passedMs": "Prova superata in {ms} ms",

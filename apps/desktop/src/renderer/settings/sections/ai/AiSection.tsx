@@ -23,7 +23,7 @@ import {
   setupCards,
   setupNameKeys
 } from "./ai-model";
-import { ExpandButton, GroupHeading, GroupIntro } from "./ai-parts";
+import { AreaNotice, ExpandButton, GroupHeading, GroupIntro } from "./ai-parts";
 import { useRowProps } from "./ai-rows";
 import { CredentialRow } from "./CredentialRow";
 import { DecisionsRow } from "./DecisionsRow";
@@ -213,13 +213,16 @@ export function AiSection() {
 
   const intros: Record<string, ReactNode> = {
     routes: (
-      <GroupIntro>
-        {core && routesAreEmpty(core.routes)
-          ? t("settingsAi.routes.empty")
-          : core?.routes.preset === "custom"
-            ? t("settingsAi.routes.introCustom")
-            : t("settingsAi.routes.intro")}
-      </GroupIntro>
+      <>
+        <GroupIntro>
+          {core && routesAreEmpty(core.routes)
+            ? t("settingsAi.routes.empty")
+            : core?.routes.preset === "custom"
+              ? t("settingsAi.routes.introCustom")
+              : t("settingsAi.routes.intro")}
+        </GroupIntro>
+        <AreaNotice message={notice("routes")} className="mt-2" />
+      </>
     ),
     thisMac: <GroupIntro>{t("settingsAi.thisMac.intro")}</GroupIntro>
   };

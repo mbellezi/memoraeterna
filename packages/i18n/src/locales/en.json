@@ -5455,9 +5455,7 @@
       "title": "Switch to {setup}?"
     },
     "credential": {
-      "hide": "Hide",
-      "save": "Save",
-      "show": "Show"
+      "save": "Save"
     },
     "decisions": {
       "calibrated": "Relations above its calibrated threshold are applied automatically; the others are suggestions you can keep or remove.",
@@ -5478,7 +5476,6 @@
         "testOk": "OpenAI accepted the key.",
         "testing": "Testing…"
       },
-      "keyRemoved": "The OpenAI key was removed.",
       "keySaved": "The OpenAI key was saved.",
       "lastFallback": "The last time, the local ranker decided instead: {reason}.",
       "noticeBody": "While this is on, the title, the idea statement and the first {characters} characters of the text of each note being compared, and of the notes it is compared with (including those it was compared with before), are sent to OpenAI (the Decisions API, model {model}) with your own OpenAI Platform key. By default OpenAI does not train on API data, and it may keep requests for up to 30 days to monitor abuse. Memora does not control that retention. Nothing is sent while this is off, in the Local setup, or without a key.",
@@ -5645,7 +5642,6 @@
         "signedIn": "Signed in. Choose the model to use."
       },
       "modelsLabel": "Models",
-      "noModels": "No model added yet.",
       "purpose": {
         "embedding": "Search",
         "generation": "Writing",
@@ -5692,7 +5688,6 @@
       "button": "Test",
       "failed": "Test failed",
       "failedWith": "Test failed: {reason}",
-      "invalidOutput": "The model answered, but not in the form the test expects.",
       "none": "No ranker",
       "passed": "Test passed",
       "passedMs": "Test passed in {ms} ms",

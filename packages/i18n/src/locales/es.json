@@ -5462,9 +5462,7 @@
       "title": "¿Cambiar a {setup}?"
     },
     "credential": {
-      "hide": "Ocultar",
-      "save": "Guardar",
-      "show": "Mostrar"
+      "save": "Guardar"
     },
     "decisions": {
       "calibrated": "Las relaciones por encima de su umbral calibrado se aplican automáticamente; las demás son sugerencias que puedes conservar o quitar.",
@@ -5485,7 +5483,6 @@
         "testOk": "OpenAI aceptó la clave.",
         "testing": "Probando…"
       },
-      "keyRemoved": "Se quitó la clave de OpenAI.",
       "keySaved": "Se guardó la clave de OpenAI.",
       "lastFallback": "La última vez decidió el clasificador local en su lugar: {reason}.",
       "noticeBody": "Mientras esté activado, el título, la idea y los primeros {characters} caracteres del texto de cada nota comparada, y de las notas con las que se compara (incluidas las que ya se compararon antes), se envían a OpenAI (la API Decisions, modelo {model}) con tu propia clave de OpenAI Platform. Por defecto OpenAI no entrena con los datos de la API y puede conservar las solicitudes hasta 30 días para vigilar abusos. Memora no controla esa retención. No se envía nada si está desactivado, en la configuración Local o sin clave.",
@@ -5652,7 +5649,6 @@
         "signedIn": "Sesión iniciada. Elige el modelo que usar."
       },
       "modelsLabel": "Modelos",
-      "noModels": "Aún no se añadió ningún modelo.",
       "purpose": {
         "embedding": "Búsqueda",
         "generation": "Escritura",
@@ -5699,7 +5695,6 @@
       "button": "Probar",
       "failed": "La prueba falló",
       "failedWith": "La prueba falló: {reason}",
-      "invalidOutput": "El modelo respondió, pero no en la forma que espera la prueba.",
       "none": "Sin reordenador",
       "passed": "Prueba superada",
       "passedMs": "Prueba superada en {ms} ms",

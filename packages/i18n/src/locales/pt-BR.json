@@ -5458,9 +5458,7 @@
       "title": "Trocar para {setup}?"
     },
     "credential": {
-      "hide": "Ocultar",
-      "save": "Salvar",
-      "show": "Mostrar"
+      "save": "Salvar"
     },
     "decisions": {
       "calibrated": "As relações acima do seu limiar calibrado são aplicadas automaticamente; as demais são sugestões que você pode manter ou remover.",
@@ -5481,7 +5479,6 @@
         "testOk": "A OpenAI aceitou a chave.",
         "testing": "Testando…"
       },
-      "keyRemoved": "A chave da OpenAI foi removida.",
       "keySaved": "A chave da OpenAI foi salva.",
       "lastFallback": "Da última vez, o ranqueador local decidiu no lugar: {reason}.",
       "noticeBody": "Enquanto estiver ligado, o título, a ideia e os primeiros {characters} caracteres do texto de cada nota comparada, e das notas com que ela é comparada (inclusive as comparadas antes), são enviados à OpenAI (a API Decisions, modelo {model}) com a sua própria chave da OpenAI Platform. Por padrão a OpenAI não treina com dados da API e pode guardar as requisições por até 30 dias para monitorar abusos. O Memora não controla essa retenção. Nada é enviado com ele desligado, na configuração Local ou sem uma chave.",
@@ -5648,7 +5645,6 @@
         "signedIn": "Login feito. Escolha o modelo a usar."
       },
       "modelsLabel": "Modelos",
-      "noModels": "Nenhum modelo adicionado ainda.",
       "purpose": {
         "embedding": "Busca",
         "generation": "Escrita",
@@ -5695,7 +5691,6 @@
       "button": "Testar",
       "failed": "O teste falhou",
       "failedWith": "O teste falhou: {reason}",
-      "invalidOutput": "O modelo respondeu, mas não no formato que o teste espera.",
       "none": "Sem ranqueador",
       "passed": "Teste aprovado",
       "passedMs": "Teste aprovado em {ms} ms",

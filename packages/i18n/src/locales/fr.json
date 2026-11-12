@@ -5460,9 +5460,7 @@
       "title": "Passer à {setup} ?"
     },
     "credential": {
-      "hide": "Masquer",
-      "save": "Enregistrer",
-      "show": "Afficher"
+      "save": "Enregistrer"
     },
     "decisions": {
       "calibrated": "Les relations au-dessus de son seuil calibré sont appliquées automatiquement ; les autres sont des suggestions que vous pouvez garder ou supprimer.",
@@ -5483,7 +5481,6 @@
         "testOk": "OpenAI a accepté la clé.",
         "testing": "Test en cours…"
       },
-      "keyRemoved": "La clé OpenAI a été supprimée.",
       "keySaved": "La clé OpenAI a été enregistrée.",
       "lastFallback": "La dernière fois, le classeur local a décidé à sa place : {reason}.",
       "noticeBody": "Tant qu'il est activé, le titre, l'idée et les {characters} premiers caractères du texte de chaque note comparée, et des notes avec lesquelles elle est comparée (y compris celles comparées auparavant), sont envoyés à OpenAI (l'API Decisions, modèle {model}) avec votre propre clé OpenAI Platform. Par défaut, OpenAI n'entraîne pas ses modèles sur les données de l'API et peut conserver les requêtes jusqu'à 30 jours pour surveiller les abus. Memora ne contrôle pas cette conservation. Rien n'est envoyé s'il est désactivé, dans la configuration Locale ou sans clé.",
@@ -5650,7 +5647,6 @@
         "signedIn": "Connecté. Choisissez le modèle à utiliser."
       },
       "modelsLabel": "Modèles",
-      "noModels": "Aucun modèle ajouté pour l’instant.",
       "purpose": {
         "embedding": "Recherche",
         "generation": "Écriture",
@@ -5697,7 +5693,6 @@
       "button": "Tester",
       "failed": "Le test a échoué",
       "failedWith": "Le test a échoué : {reason}",
-      "invalidOutput": "Le modèle a répondu, mais pas sous la forme attendue par le test.",
       "none": "Pas de reclasseur",
       "passed": "Test réussi",
       "passedMs": "Test réussi en {ms} ms",
