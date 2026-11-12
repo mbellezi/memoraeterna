@@ -80,17 +80,17 @@ export interface PanelProps {
   onOpen: (address: PanelAddress, options?: { replace?: boolean }) => void;
   /** For a root in its compact form: the address of the panel it opened (`aria-current`). */
   current?: PanelAddress;
-  /** For a root: the density kept per device (the Library header's toggle, D18) and how to change it. */
-  density?: Density;
-  onDensity?: (density: Density) => void;
-  /** For a root: the shell's Add command (Cmd-N), for an empty destination that offers it. */
-  onAdd?: () => void;
   /**
    * A panel that can hold unsaved work registers its guard here (null withdraws it): the workspace
    * asks it before a move that would unmount the panel (close, Back, a fold into a spine). The
    * callback is stable for the panel's life.
    */
   onLeaveGuard?: (guard: LeaveGuard | null) => void;
+  /** For a root: the density kept per device (the Library header's toggle, D18) and how to change it. */
+  density?: Density;
+  onDensity?: (density: Density) => void;
+  /** For a root: the shell's Add command (Cmd-N), for an empty destination that offers it. */
+  onAdd?: () => void;
 }
 
 /** A panel kind, as its `*.panel.tsx` module exports it. */

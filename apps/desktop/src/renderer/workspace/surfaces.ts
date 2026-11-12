@@ -131,6 +131,19 @@ export const surfaces: readonly SurfaceEntry[] = [
   destination("library", "Library"),
   destination("inbox", "Inbox"),
   destination("map", "Map"),
+  // The Inbox and the Map as the previous panel of a stack: their list and table in the 240 px column.
+  entry(
+    "destination-inbox-compact",
+    "destination",
+    "components/inbox/InboxView.tsx",
+    "workspace/destinations/inbox/inbox-compact.screen.tsx"
+  ),
+  entry(
+    "destination-map-compact",
+    "destination",
+    "workspace/destinations/map/shape/MapTable.tsx",
+    "workspace/destinations/map/map-compact.screen.tsx"
+  ),
   entry(
     "map-relations",
     "destination",
@@ -154,6 +167,13 @@ export const surfaces: readonly SurfaceEntry[] = [
   panel("ask"),
   panel("search"),
   panel("import"),
+  // The advanced import on a stored source, scrolled to the end of its form (the footer on the edge).
+  entry(
+    "import-edit",
+    "panel",
+    "workspace/panels/import-scroller.tsx",
+    "workspace/panels/import-edit.screen.tsx"
+  ),
 
   // The context panel and its six tabs (D31).
   entry(
@@ -231,8 +251,8 @@ export const surfaces: readonly SurfaceEntry[] = [
   entry(
     "shape",
     "hosted",
-    "components/topic-shape/ShapeScreen.tsx",
-    "components/topic-shape/shape.screen.tsx"
+    "workspace/destinations/map/shape/ShapeScreen.tsx",
+    "workspace/destinations/map/shape/shape.screen.tsx"
   ),
   entry(
     "activity",

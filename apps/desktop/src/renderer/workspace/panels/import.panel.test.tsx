@@ -8,7 +8,12 @@ import { Component } from "./import.panel";
 
 // The wizard and the native dialog are not what is tested: the panel's guard is. The stubs expose
 // what the panel gives them.
-let wizard: { onDirtyChange?: (dirty: boolean) => void; onSaved?: (id: string) => void } = {};
+let wizard: {
+  onDirtyChange?: (dirty: boolean) => void;
+  onSaved?: (id: string) => void;
+  metadataEnrichmentEnabled?: boolean;
+  editing?: unknown;
+} = {};
 vi.mock("../../components/ImportView", () => ({
   ImportView: (props: typeof wizard) => {
     wizard = props;
@@ -105,5 +110,55 @@ describe("the advanced import panel's leave guard", () => {
     const go = vi.fn();
     guard?.(go);
     expect(go).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("the advanced import panel's first read", () => {
+  // The shared setup already mounted a healthy new import: start again on a fresh DOM.
+  const setApp = async (app: unknown) => {
+    await dom.dispose();
+    dom = createTestDom();
+    (dom.window as unknown as { app: unknown }).app = app;
+  };
+  const mountAt = async (address: string) => {
+    await dom.render(
+      <Component
+        t={en}
+        address={address}
+        mode="full"
+        active
+        onState={() => undefined}
+        onPlace={() => undefined}
+        onOpen={onOpen}
+      />
+    );
+    await dom.act(async () => undefined);
+  };
+  const failing = async () => {
+    throw new Error("settings could not be read");
+  };
+
+  it("opens a new import with the metadata lookup off when the settings cannot be read", async () => {
+    wizard = {};
+    await setApp({
+      settings: { getApp: failing },
+      knowledge: { getSourceDetail: async () => null }
+    });
+    await mountAt("memora://import");
+    expect(dom.document.querySelector('[data-testid="wizard"]')).not.toBeNull();
+    expect(wizard.metadataEnrichmentEnabled).toBe(false);
+    expect(dom.document.body.textContent).not.toContain("could not be opened");
+  });
+
+  it("tells a source that cannot be opened for editing only at the edit address", async () => {
+    wizard = {};
+    await setApp({
+      settings: { getApp: failing },
+      knowledge: { getSourceDetail: async () => null }
+    });
+    await mountAt("memora://import?source=00000000-0000-4000-8000-000000000042");
+    expect(dom.document.querySelector('[data-testid="wizard"]')).toBeNull();
+    expect(dom.document.body.textContent).toContain("This source could not be opened for editing.");
+    expect(dom.document.body.textContent).toContain("Retry");
   });
 });

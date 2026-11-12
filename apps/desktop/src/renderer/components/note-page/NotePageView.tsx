@@ -4,6 +4,8 @@ import { formatObjectAddress, type NotePage } from "@app/domain";
 import type { Translator } from "@app/i18n";
 
 import type { ObjectNavigation, PassageAnchor } from "../../lib/object-navigation";
+import { cn } from "../../lib/cn";
+import { dispatchClosePanel } from "../../lib/close-panel";
 import { ObjectKindGlyph } from "../glyphs";
 import { Button } from "../ui/button";
 import { EmptyState } from "../ui/empty-state";
@@ -96,7 +98,14 @@ export function NotePageView(props: NotePageViewProps) {
   if (embedded && props.compact && load.status === "ready")
     return <NoteCompact t={t} page={load.page} />;
   return (
-    <div className="flex flex-col gap-4">
+    <div
+      className={cn(
+        "@container flex flex-col gap-4",
+        // The page's column is capped; focus mode centres it (panel-stack-styles), and otherwise it
+        // starts on the ribbon's edge.
+        embedded && "w-full max-w-264"
+      )}
+    >
       {embedded ? null : (
         <div className="flex items-center gap-3">
           <Button type="button" variant="secondary" onClick={props.onBack}>
@@ -146,18 +155,32 @@ export function NotePageView(props: NotePageViewProps) {
  * page, no wider than the reading measure; one plain sentence in place with what is kept and one
  * retry; and what a note that is gone says. The page itself is the success state.
  */
-function EmbeddedStates({ t, load, onRetry }: NotePageViewProps) {
+function EmbeddedStates({ t, load, compact, onRetry }: NotePageViewProps) {
   if (load.status === "loading")
     return (
-      <LoadingState t={t} className="max-w-(--measure) gap-4">
-        <Skeleton className="h-4 w-1/3" />
-        <Skeleton className="h-7 w-4/5" />
-        <Skeleton className="w-1/2" />
-        <SkeletonLines lines={5} className="mt-3" />
+      // The wide sheet keeps its margin while it loads (from 760 px: the text column and the
+      // Evidence margin), so the page does not jump when the note arrives.
+      <LoadingState
+        t={t}
+        className="max-w-(--measure) gap-4 @min-[760px]:max-w-none @min-[760px]:grid-cols-[minmax(0,600px)_264px] @min-[760px]:gap-x-12"
+      >
+        <div className="grid min-w-0 gap-4">
+          <Skeleton className="h-4 w-1/3" />
+          <Skeleton className="h-7 w-4/5" />
+          <Skeleton className="w-1/2" />
+          <SkeletonLines lines={5} className="mt-3" />
+        </div>
+        <div className="hidden min-w-0 gap-3 @min-[760px]:grid">
+          <Skeleton className="h-4 w-1/3" />
+          <SkeletonLines lines={4} />
+        </div>
       </LoadingState>
     );
   if (load.status === "error")
-    return (
+    // The previous panel is quiet: the top panel's one sentence and retry say the failure.
+    return compact ? (
+      <p className="m-0 text-sm text-muted-foreground">{t("explore.compactError")}</p>
+    ) : (
       <ErrorState
         t={t}
         className="max-w-(--measure)"
@@ -167,9 +190,22 @@ function EmbeddedStates({ t, load, onRetry }: NotePageViewProps) {
         onRetry={onRetry}
       />
     );
+  // The previous panel says only a neutral word for a gone object: the top panel's box says what
+  // happened, once.
+  if (load.status === "missing" && compact)
+    return <p className="m-0 text-sm text-muted-foreground">{t("explore.compactGone")}</p>;
   if (load.status === "missing")
     return (
-      <EmptyState className="max-w-(--measure)" headline={t("explore.note.goneHeadline")}>
+      <EmptyState
+        className="max-w-(--measure)"
+        headline={t("explore.note.goneHeadline")}
+        action={
+          // The one way on: the top panel closes and the person is back at the one before it.
+          <Button type="button" onClick={() => void dispatchClosePanel()}>
+            {t("panelFrame.close")}
+          </Button>
+        }
+      >
         {t("explore.note.goneBody")}
       </EmptyState>
     );
@@ -208,44 +244,74 @@ function NoteArticle(props: NotePageViewProps & { page: NotePage }) {
   const { t, page } = props;
   const { note } = page;
   const primary = page.evidence.items.find((item) => item.primary) ?? null;
+  const embedded = props.embedded === true;
+  const header = (
+    <NoteHeader
+      t={t}
+      page={page}
+      headingRef={props.headingRef}
+      editRef={props.editRef}
+      editing={props.editing}
+      review={props.review}
+      onMarkReviewed={props.onMarkReviewed}
+      onStartEdit={props.onStartEdit}
+      onDraftChange={props.onDraftChange}
+      onSave={props.onSave}
+      onCancelEdit={props.onCancelEdit}
+      onDiscardAndReload={props.onDiscardAndReload}
+      onEscapeEdit={props.onEscapeEdit}
+      onOpenNote={props.onOpenNote}
+      place={props.place}
+      embedded={embedded}
+    />
+  );
+  const where = embedded ? null : (
+    <WhereIsThisView
+      t={t}
+      variant="page"
+      state={{
+        status: "ready",
+        address: formatObjectAddress({ kind: "note", id: note.id }),
+        result: page.placement
+      }}
+      openFailed={props.openFailed}
+      onOpen={props.onOpenPlacement}
+      onRetry={props.onRetry}
+    />
+  );
+  const evidence = (
+    <NoteEvidence
+      t={t}
+      evidence={page.evidence}
+      quiet={embedded}
+      onOpenPassage={props.onOpenPassage}
+    />
+  );
   return (
     <article
       aria-label={t("notePage.articleLabel", { values: { title: note.title } })}
-      className="flex w-full max-w-190 flex-col gap-8 pb-12"
+      className={cn("flex w-full flex-col gap-8 pb-12", !embedded && "max-w-190")}
     >
-      <NoteHeader
-        t={t}
-        page={page}
-        headingRef={props.headingRef}
-        editRef={props.editRef}
-        editing={props.editing}
-        review={props.review}
-        onMarkReviewed={props.onMarkReviewed}
-        onStartEdit={props.onStartEdit}
-        onDraftChange={props.onDraftChange}
-        onSave={props.onSave}
-        onCancelEdit={props.onCancelEdit}
-        onDiscardAndReload={props.onDiscardAndReload}
-        onEscapeEdit={props.onEscapeEdit}
-        onOpenNote={props.onOpenNote}
-        place={props.place}
-      />
-      <NoteBodyText t={t} note={note} />
-      {props.embedded ? null : (
-        <WhereIsThisView
-          t={t}
-          variant="page"
-          state={{
-            status: "ready",
-            address: formatObjectAddress({ kind: "note", id: note.id }),
-            result: page.placement
-          }}
-          openFailed={props.openFailed}
-          onOpen={props.onOpenPlacement}
-          onRetry={props.onRetry}
-        />
+      {embedded ? (
+        // The wide sheet (design record 6.3): from 760 px the text column keeps its 600 px and
+        // Evidence moves into a 264 px margin, top-aligned with the title; below it, the margin
+        // folds into the body in the same order.
+        <div className="grid min-w-0 gap-8 @min-[760px]:grid-cols-[minmax(0,600px)_264px] @min-[760px]:gap-x-12">
+          <div className="flex min-w-0 flex-col gap-6">
+            {header}
+            <NoteBodyText t={t} note={note} embedded citations={page.evidence.items.length} />
+          </div>
+          {/* Folded under the prose (below 760 px) the quotes keep the prose's measure. */}
+          <div className="min-w-0 max-w-(--measure) @min-[760px]:max-w-none">{evidence}</div>
+        </div>
+      ) : (
+        <>
+          {header}
+          <NoteBodyText t={t} note={note} />
+          {where}
+          {evidence}
+        </>
       )}
-      <NoteEvidence t={t} evidence={page.evidence} onOpenPassage={props.onOpenPassage} />
       <NoteRelations
         t={t}
         thisId={note.id}
@@ -261,6 +327,7 @@ function NoteArticle(props: NotePageViewProps & { page: NotePage }) {
         focusRequest={props.relationFocus}
         graph={props.graph}
         view={props.relationsView ?? "full"}
+        embedded={embedded}
         onCardEvent={props.onCardEvent}
         onOpenNote={props.onOpenNote}
         onRetryExplanation={props.onRetryExplanation}

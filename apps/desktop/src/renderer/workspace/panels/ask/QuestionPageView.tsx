@@ -26,6 +26,7 @@ import {
 import { AnswerParagraphView } from "./AnswerParagraph";
 import { AskComposer } from "./AskComposer";
 import { objectOfScope } from "./ask-scope";
+import { readOf } from "./ask-session";
 import { MetaClauses } from "./MetaClauses";
 import type { LauncherSend } from "./ask-launcher";
 import type { QuestionSnapshot } from "./question-controller";
@@ -181,6 +182,25 @@ function QuestionMeta({
   );
 }
 
+/**
+ * What the Question was about, as the sources list's scope line writes it ("toda a biblioteca",
+ * "tópico: …"); null until the title of a topic or source is read.
+ */
+function useScopeValue(t: Translator, question: QuestionView): string | null {
+  const object = objectOfScope(question.scope);
+  const preview = useObjectPreview(object ?? "", object !== null);
+  const { scope } = question;
+  if (scope.kind === "library") return t("askPanel.launcher.scope.library");
+  if (scope.kind === "sources" && scope.sourceIds.length > 1)
+    return t("askPanel.band.sourcesMany", { values: { count: scope.sourceIds.length } });
+  if (preview.state.status !== "ready") return null;
+  const title = titleOf(preview.state.item, t("objects.kinds.topic"));
+  return t(
+    scope.kind === "topic" ? "askPanel.launcher.scope.topic" : "askPanel.launcher.scope.source",
+    { values: { title } }
+  );
+}
+
 function VersionPicker({
   t,
   version,
@@ -265,7 +285,10 @@ function LoadedQuestion({
   const numbering = useMemo(() => numberCitations(shown.paragraphs), [shown.paragraphs]);
   const { sources, numberOf } = numbering;
   const cited = citedObjectCount(sources);
+  const scopeValue = useScopeValue(t, question);
+  const read = readOf(question.id) ?? null;
   const activeEntry = sources.find((entry) => entry.number === active) ?? null;
+  const tray = viewportWidth < trayBelow && sources.length > 0;
   const grounded = shown.paragraphs.length > 0;
   // An Ask that found nothing to rest on is the "nothing found" page, not a failure to retry.
   const noGrounding = foundNothing(shown);
@@ -326,7 +349,7 @@ function LoadedQuestion({
     );
 
   const body: ReactNode = failed ? (
-    <div data-stage="failed" className="grid min-w-0 max-w-(--measure) gap-4">
+    <div data-stage="failed" className="grid min-w-0 max-w-(--measure) gap-2">
       <ErrorState
         t={t}
         message={
@@ -335,9 +358,24 @@ function LoadedQuestion({
             : t("askPanel.failed.message")
         }
         kept={grounded ? t("askPanel.failed.kept") : t("askPanel.failed.keptNothing")}
-        retryLabel={t("shell.actions.retry")}
-        {...(canAskAgain ? { onRetry: onAskAgain } : {})}
       />
+      {canAskAgain ? (
+        // The ways out sit on one row at the failure's own text column (the glyph and its gap are
+        // 1.5rem): the retry, and, for a route that did not answer, another route chosen in Settings.
+        <div className="flex flex-wrap items-center gap-2 pl-6">
+          <Button variant="secondary" onClick={onAskAgain}>
+            {t("shell.actions.retry")}
+          </Button>
+          {shown.error !== "questions.errors.interrupted" ? (
+            <Button
+              variant="ghost"
+              onClick={() => onOpen(formatView({ view: "settings", section: "ai" }))}
+            >
+              {t("askPanel.failed.otherRoute")}
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
       {failedAction ? (
         <p role="status" className="m-0 text-xs text-secondary-foreground">
           {t("askPanel.failed.again")}
@@ -383,103 +421,129 @@ function LoadedQuestion({
     />
   );
 
+  // From 1280 px the context is docked and no tray reads the citations. Where the panel is also
+  // wide enough (58rem), the sources list stands in a column beside the answer, the context position
+  // of §6.4; narrower, it follows the answer in the one column. The `contents` wrapper keeps both in
+  // one tree, so a window that crosses 1280 px remounts nothing.
+  const wide = viewportWidth >= trayBelow;
   return (
-    <article
-      aria-label={question.text}
-      data-question-status={question.status}
-      className={cn(sectionGap, "max-w-2xl")}
-    >
-      <header className="grid min-w-0 gap-1.5">
-        <div className="flex items-start gap-2">
-          <ObjectKindGlyph
-            kind="question"
-            size={20}
-            className={cn("mt-[5px]", objectKindTextClass.question)}
-          />
-          {title}
-        </div>
-        <QuestionMeta t={t} question={question} shown={shown} compact={false} />
-      </header>
-
-      {body}
-
-      {noGrounding ? null : (
-        <div className="grid min-w-0 max-w-(--measure) gap-4">
-          {grounded ? (
-            shown.paragraphs.map((paragraph, index) => (
-              <AnswerParagraphView
-                key={index}
-                t={t}
-                paragraph={paragraph}
-                numberOf={numberOf}
-                entryId={(number) => entryElementId(idBase, number)}
-                onActivate={setActive}
-                onOpen={openCitation}
-                activeNumber={active}
-                // The caret says the next words are coming, at the place the eye is reading.
-                writing={shown.live && index === shown.paragraphs.length - 1}
+    <div className="@container min-w-0">
+      <article
+        aria-label={question.text}
+        data-question-status={question.status}
+        className={cn(
+          sectionGap,
+          "max-w-2xl",
+          wide &&
+            "@[58rem]:max-w-none @[58rem]:grid-cols-[minmax(0,40rem)_minmax(15rem,20rem)] @[58rem]:gap-x-10",
+          // The tray covers the panel's foot: whatever takes focus (the follow-up field, the version
+          // arrows, a button) scrolls clear of it, as the list's rows do.
+          tray && "[&_:is(textarea,button,a)]:scroll-mb-36"
+        )}
+      >
+        <div
+          className={cn(
+            "contents",
+            wide && "@[58rem]:grid @[58rem]:min-w-0 @[58rem]:content-start @[58rem]:gap-6"
+          )}
+        >
+          <header className="grid min-w-0 gap-1.5">
+            <div className="flex items-start gap-2">
+              <ObjectKindGlyph
+                kind="question"
+                size={20}
+                className={cn("mt-[5px]", objectKindTextClass.question)}
               />
-            ))
-          ) : shown.live ? (
-            <SkeletonLines lines={4} />
-          ) : null}
-          {grounded ? (
-            <p className="m-0 text-xs text-muted-foreground [text-wrap:pretty]">
-              {t(
-                shown.live && question.scope.kind !== "topic"
-                  ? "askPanel.answer.savedPlace"
-                  : "askPanel.answer.saved"
-              )}
-            </p>
-          ) : null}
-          {shown.versions > 1 && !shown.live && shown.version > 0 ? (
-            <VersionPicker
+              {title}
+            </div>
+            <QuestionMeta t={t} question={question} shown={shown} compact={false} />
+          </header>
+
+          {body}
+
+          {noGrounding ? null : (
+            <div className="grid min-w-0 max-w-(--measure) gap-4">
+              {grounded ? (
+                shown.paragraphs.map((paragraph, index) => (
+                  <AnswerParagraphView
+                    key={index}
+                    t={t}
+                    paragraph={paragraph}
+                    numberOf={numberOf}
+                    entryId={(number) => entryElementId(idBase, number)}
+                    onActivate={setActive}
+                    onOpen={openCitation}
+                    activeNumber={active}
+                    // The caret says the next words are coming, at the place the eye is reading.
+                    writing={shown.live && index === shown.paragraphs.length - 1}
+                  />
+                ))
+              ) : shown.live ? (
+                <SkeletonLines lines={4} />
+              ) : null}
+              {grounded ? (
+                <p className="m-0 text-xs text-muted-foreground [text-wrap:pretty]">
+                  {t(
+                    shown.live && question.scope.kind !== "topic"
+                      ? "askPanel.answer.savedPlace"
+                      : "askPanel.answer.saved"
+                  )}
+                </p>
+              ) : null}
+              {shown.versions > 1 && !shown.live && shown.version > 0 ? (
+                <VersionPicker
+                  t={t}
+                  version={shown.version}
+                  versions={shown.versions}
+                  onPick={(version) => setPick({ version, among: shown.versions })}
+                />
+              ) : null}
+            </div>
+          )}
+
+          <div className="order-1 grid min-w-0 max-w-(--measure) gap-1.5">
+            <AskComposer
               t={t}
-              version={shown.version}
-              versions={shown.versions}
-              onPick={(version) => setPick({ version, among: shown.versions })}
+              value={draft}
+              inputRef={field}
+              onChange={(value) => {
+                followUp.onEdit();
+                setDraft(value);
+              }}
+              onSend={() => followUp.onSend(draft)}
+              busy={followUp.send.status === "asking"}
+              label={t("askPanel.followUp.label")}
+              placeholder={t("askPanel.followUp.placeholder")}
+              sendLabel={t("askPanel.followUp.send")}
             />
-          ) : null}
+            {followUp.send.status === "error" ? (
+              <p role="status" className="m-0 text-xs text-secondary-foreground">
+                {t("askPanel.launcher.error.message")} {t("askPanel.launcher.error.kept")}
+              </p>
+            ) : null}
+          </div>
         </div>
-      )}
 
-      <SourcesRail
-        t={t}
-        sources={sources}
-        idBase={idBase}
-        headingId={headingId}
-        hint={t(viewportWidth < trayBelow ? "askPanel.tray.empty" : "askPanel.sources.hint")}
-        active={active}
-        tray={viewportWidth < trayBelow}
-        onActivate={setActive}
-        onOpen={(address) => open(address)()}
-      />
-
-      <div className="grid min-w-0 max-w-(--measure) gap-1.5">
-        <AskComposer
+        <SourcesRail
           t={t}
-          value={draft}
-          inputRef={field}
-          onChange={(value) => {
-            followUp.onEdit();
-            setDraft(value);
-          }}
-          onSend={() => followUp.onSend(draft)}
-          busy={followUp.send.status === "asking"}
-          label={t("askPanel.followUp.label")}
-          placeholder={t("askPanel.followUp.placeholder")}
-          sendLabel={t("askPanel.followUp.send")}
+          sources={sources}
+          idBase={idBase}
+          headingId={headingId}
+          hint={t(tray ? "askPanel.tray.empty" : "askPanel.sources.hint")}
+          active={active}
+          tray={tray}
+          scope={scopeValue}
+          read={read}
+          live={shown.live}
+          {...(wide
+            ? { className: "@[58rem]:col-start-2 @[58rem]:row-start-1 @[58rem]:self-start" }
+            : {})}
+          onActivate={setActive}
+          onOpen={(address) => open(address)()}
         />
-        {followUp.send.status === "error" ? (
-          <p role="status" className="m-0 text-xs text-secondary-foreground">
-            {t("askPanel.launcher.error.message")} {t("askPanel.launcher.error.kept")}
-          </p>
-        ) : null}
-      </div>
 
-      {viewportWidth < trayBelow && sources.length > 0 ? (
-        <PassageTray t={t} entry={activeEntry} />
-      ) : null}
-    </article>
+        {tray ? <PassageTray t={t} entry={activeEntry} /> : null}
+      </article>
+    </div>
   );
 }

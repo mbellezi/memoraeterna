@@ -30,8 +30,41 @@ export function requestOf(questionId: string): string | undefined {
   return requests.get(questionId);
 }
 
+/** One passage the Ask read and did not cite: where it is, and why it did not bear on the answer. */
+export interface ReadNotCited {
+  /** The passage's address (`memora://source/<id>#passage=<chunk>`). */
+  address: string;
+  /** The Ask's own words for leaving it out; absent, the page says it did not bear on the question. */
+  reason?: string | undefined;
+}
+
+/** What the Ask's retrieval reported of what it read, for the sources list's "Lidas, não citadas". */
+export interface ReadSummary {
+  /** Every passage read, cited or not. */
+  passages: number;
+  /** The sources those passages sit in. */
+  sources: number;
+  notCited: readonly ReadNotCited[];
+}
+
+const reads = new Map<string, ReadSummary>();
+
+/**
+ * Keeps what the retrieval of a Question's Ask reported it had read. Nothing in the bus or in the
+ * stored Question carries it yet (the data gap of the card report), so until the Ask reports it
+ * the page says it is not kept; the page reads the same record once it exists.
+ */
+export function rememberRead(questionId: string, read: ReadSummary): void {
+  reads.set(questionId, read);
+}
+
+export function readOf(questionId: string): ReadSummary | undefined {
+  return reads.get(questionId);
+}
+
 /** For tests: forget everything. */
 export function forgetAsks(): void {
   asked.clear();
   requests.clear();
+  reads.clear();
 }

@@ -88,9 +88,6 @@
   --color-stance-depends-on: var(--stance-depends-on);
   --color-stance-example-of: var(--stance-example-of);
   --color-stance-related: var(--stance-related);
-
-  /* The graph canvas is dark in both themes: its focus ring is its label colour (9.6:1 or more there). */
-  --color-graph-label: var(--graph-label);
 }
 
 @layer base {
@@ -154,13 +151,16 @@
 }
 
 @layer components {
-  /* The graph canvas is dark in both themes; it reads the --graph-* tokens. */
+  /*
+   * The old Knowledge Graph screen (removed by F5 T157) is still a dark island: its element carries
+   * `.dark`, so these are the dark theme's surfaces. Every other graph reads the theme.
+   */
   .graph-surface {
     color-scheme: dark;
     background: radial-gradient(
       circle at center,
-      var(--graph-canvas-center) 0%,
-      var(--graph-canvas-edge) 62%
+      var(--surface-soft) 0%,
+      var(--surface-canvas) 62%
     );
   }
 }

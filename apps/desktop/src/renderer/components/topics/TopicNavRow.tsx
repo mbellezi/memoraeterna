@@ -1,4 +1,4 @@
-import type { CSSProperties, KeyboardEvent, ReactNode } from "react";
+import { useState, type CSSProperties, type KeyboardEvent, type ReactNode } from "react";
 import {
   ChevronRight,
   CornerDownRight,
@@ -96,13 +96,16 @@ function Count({
   value,
   spoken,
   format,
-  onDemand = false
+  onDemand = false,
+  menuRoom = false
 }: {
   value: number | null;
   spoken: string;
   format: (value: number) => string;
   /** Drawn over the row's end on hover and focus only, taking no width from the name. */
   onDemand?: boolean;
+  /** The row has its actions button at the end: the count stops short of it, never over it. */
+  menuRoom?: boolean;
 }) {
   if (value === null) return null;
   return (
@@ -112,7 +115,11 @@ function Count({
         className={cn(
           "min-w-5 text-right text-xs tabular-nums text-muted-foreground",
           onDemand
-            ? "pointer-events-none absolute inset-y-0 right-2 flex items-center bg-soft pl-1 opacity-0 group-hover/row:opacity-100 group-focus-within/row:opacity-100"
+            ? cn(
+                // Inside the 2 px focus ring (3 px from the top and the bottom), so the ring stays whole.
+                "pointer-events-none absolute inset-y-[3px] flex items-center rounded-sm bg-soft pl-1 opacity-0 group-hover/row:opacity-100 group-focus-within/row:opacity-100",
+                menuRoom ? "right-8" : "right-2"
+              )
             : "shrink-0"
         )}
       >
@@ -197,10 +204,15 @@ export function TopicNavRow({
       title={title?.tooltip}
       style={{ ...style, paddingLeft: baseInset + (row.level - 1) * levelIndent }}
       className={cn(
-        "group/row relative flex items-center gap-1 rounded-md pr-2 text-sm outline-none",
+        "group/row relative flex items-center gap-1 rounded-md pr-2 text-sm",
         wrap ? "min-h-7 py-1" : "h-7",
-        "focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent",
-        selected ? "bg-accent-soft font-semibold text-foreground" : "text-foreground hover:bg-soft"
+        // One declaration for the ring: two utilities for `outline-style` would be decided by the
+        // stylesheet's order, and the ring would not show.
+        "focus-visible:[outline-offset:-2px] focus-visible:[outline:2px_solid_var(--accent)]",
+        // The open row: the soft accent fill and the 2 px accent bar (design record 5.3).
+        selected
+          ? "bg-accent-soft font-semibold text-foreground before:absolute before:inset-y-1 before:left-0 before:w-0.5 before:rounded-full before:bg-accent before:content-['']"
+          : "text-foreground hover:bg-soft"
       )}
       onClick={() => onActivate(row)}
       onFocus={() => onFocusRow(row.key)}
@@ -223,6 +235,8 @@ export function TopicNavRow({
         wrap={wrap}
         onLines={onLines}
         quietCount={quietCounts && !selected}
+        open={selected}
+        menuRoom={Boolean(ops && actionRow)}
       />
       {ops && actionRow ? (
         <button
@@ -277,18 +291,27 @@ function NameLabel({
   text,
   unnamed,
   wrap,
-  onLines
+  onLines,
+  countRoom,
+  onDropCount
 }: {
   text: string;
   unnamed: boolean;
   wrap: boolean;
   onLines: ((lines: number) => void) | undefined;
+  countRoom: number;
+  onDropCount: (dropped: boolean) => void;
 }) {
   const className = unnamed ? "italic text-muted-foreground" : undefined;
   return wrap ? (
     <WrappedLabel text={text} onLines={onLines} {...(className ? { className } : {})} />
   ) : (
-    <FittedLabel text={text} {...(className ? { className } : {})} />
+    <FittedLabel
+      text={text}
+      countRoom={countRoom}
+      onDropCount={onDropCount}
+      {...(className ? { className } : {})}
+    />
   );
 }
 
@@ -299,7 +322,9 @@ function RowContent({
   ops,
   wrap,
   onLines,
-  quietCount
+  quietCount,
+  open,
+  menuRoom
 }: {
   t: Translator;
   row: NavRow;
@@ -308,7 +333,15 @@ function RowContent({
   wrap: boolean;
   onLines: ((key: string, lines: number) => void) | undefined;
   quietCount: boolean;
+  /** The open row keeps its count in the row; any other drops it before a word of its name is cut. */
+  open: boolean;
+  menuRoom: boolean;
 }) {
+  const [countDropped, setCountDropped] = useState(false);
+  // The room a count takes beside a name: its digits and the gap before it.
+  const roomFor = (value: number | null) =>
+    open || quietCount || value === null ? 0 : 4 + Math.max(20, format(value).length * 7);
+  const onDemand = quietCount || (countDropped && !open);
   const key = row.key;
   const reportLines = onLines ? (lines: number) => onLines(key, lines) : undefined;
   switch (row.type) {
@@ -333,6 +366,8 @@ function RowContent({
               unnamed={node.title === null}
               wrap={wrap}
               onLines={reportLines}
+              countRoom={roomFor(node.items)}
+              onDropCount={setCountDropped}
             />
           )}
           {node.management === "human" ? (
@@ -351,7 +386,8 @@ function RowContent({
             value={node.items}
             spoken={t("topics.navigator.itemCount", { values: { count: node.items } })}
             format={format}
-            onDemand={quietCount}
+            onDemand={onDemand}
+            menuRoom={menuRoom}
           />
         </>
       );
@@ -362,7 +398,13 @@ function RowContent({
         <>
           <ObjectKindGlyph kind={leaf.kind} className={objectKindTextClass[leaf.kind]} />
           <span className="sr-only">{t(`topics.navigator.kinds.${leaf.kind}`)}: </span>
-          <FittedLabel text={leafLabel(t, leaf)} />
+          <FittedLabel
+            text={leafLabel(t, leaf)}
+            countRoom={roomFor(
+              leaf.kind === "source" && leaf.noteCount > 0 ? leaf.noteCount : null
+            )}
+            onDropCount={setCountDropped}
+          />
           {leaf.role === "secondary" ? (
             <Mark label={t("topics.navigator.marks.alsoHere")} className="text-muted-foreground">
               <CornerDownRight aria-hidden="true" className="size-3" />
@@ -379,7 +421,8 @@ function RowContent({
               value={leaf.noteCount}
               spoken={t("topics.navigator.noteCount", { values: { count: leaf.noteCount } })}
               format={format}
-              onDemand={quietCount}
+              onDemand={onDemand}
+              menuRoom={menuRoom}
             />
           ) : null}
         </>
@@ -394,7 +437,8 @@ function RowContent({
             value={row.count}
             spoken={t("topics.navigator.itemCount", { values: { count: row.count } })}
             format={format}
-            onDemand={quietCount}
+            onDemand={onDemand}
+            menuRoom={menuRoom}
           />
         </>
       );
@@ -409,6 +453,8 @@ function RowContent({
             unnamed={place.title === null}
             wrap={wrap}
             onLines={reportLines}
+            countRoom={roomFor(place.count)}
+            onDropCount={setCountDropped}
           />
           {place.pinned || place.management === "pinned" ? <PinMark t={t} /> : null}
           <HealthMark t={t} health={place.health} />
@@ -416,7 +462,8 @@ function RowContent({
             value={place.count}
             spoken={placeCountLabel(t, place)}
             format={format}
-            onDemand={quietCount}
+            onDemand={onDemand}
+            menuRoom={menuRoom}
           />
         </>
       );

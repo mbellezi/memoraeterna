@@ -18,7 +18,15 @@ const noop = () => undefined;
 
 export const fixtures: ScreenModule["fixtures"] = {
   success: { ...shellFixtures.success, ...writerFixtures(true) },
-  empty: { ...shellFixtures.empty, ...writerFixtures(false) }
+  empty: { ...shellFixtures.empty, ...writerFixtures(false) },
+  // Only the mode's reading fails: the shell beneath is calm, so the card shows the one failure.
+  error: {
+    ...shellFixtures.success,
+    ...writerFixtures(true),
+    "ai.listProfiles": () => {
+      throw new Error("The profiles could not be read.");
+    }
+  }
 };
 
 /**

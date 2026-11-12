@@ -14,6 +14,7 @@ import {
   shownAnswer,
   splitParagraph,
   streamFor,
+  uncitedPassages,
   type AnswerParagraph,
   type StreamState
 } from "./answer-model";
@@ -195,6 +196,30 @@ describe("the citations in reading order", () => {
   it("lists a citation its text never marks after the marked ones of that paragraph", () => {
     const { sources } = numberCitations([paragraph("Only [e2].", [1, 2])]);
     expect(sources.map((entry) => entry.citation.ordinal)).toEqual([2, 1]);
+  });
+
+  it("lists as not cited only the passages no citation points at, and names the citation of the same source", () => {
+    const { sources } = numberCitations([paragraph("A [e1], B [e2], C [e3].", [1, 2, 3])]);
+    const bare = (address: string | undefined) => (address ?? "").split("&span=")[0] as string;
+    // Chunks 51 and 52 sit in source 11 (cited twice), chunk 53 in source 12.
+    const elsewhere = (address: string, chunk: string) =>
+      address.replace(/passage=[^&]+/, `passage=${chunk}`);
+    const other51 = elsewhere(
+      citationAddresses[0] as string,
+      "00000000-0000-4000-8000-0000000000aa"
+    );
+    const unknown =
+      "memora://source/00000000-0000-4000-8000-0000000000bb#passage=00000000-0000-4000-8000-0000000000cc";
+    const result = uncitedPassages(sources, [
+      { address: bare(citationAddresses[0]) },
+      { address: other51 },
+      { address: citationAddresses[2] as string },
+      { address: unknown }
+    ]);
+    expect(result.map((entry) => [entry.item.address, entry.sibling])).toEqual([
+      [other51, 1],
+      [unknown, null]
+    ]);
   });
 
   it("breaks a paragraph into words and chips, a chip attached to the word before it", () => {

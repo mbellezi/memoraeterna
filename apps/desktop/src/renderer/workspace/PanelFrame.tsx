@@ -139,8 +139,8 @@ export function PanelFrame({
   const compact = mode === "compact";
   const objectPanel = kind !== null && address.startsWith(`memora://${kind}/`);
   // A panel whose object failed says so once, in its body: the ribbon's own failure line is for a
-  // place that fails while the object reads.
-  const ribbon = objectPanel && state !== "error";
+  // place that fails while the object reads. An object that is gone has no place to show.
+  const ribbon = objectPanel && state !== "error" && state !== "empty";
   // The ribbon draws an edge under it only while content slides beneath it.
   const [scrolled, setScrolled] = useState(false);
 
@@ -285,7 +285,9 @@ export function PanelFrame({
         data-panel-body=""
         onScroll={(event) => setScrolled(event.currentTarget.scrollTop > 0)}
         className={cn(
-          "min-h-0 flex-1 overflow-auto",
+          // `relative`: an absolutely positioned node of the page (a screen-reader-only label) is
+          // held by the body's own scroll area and never lengthens the window.
+          "relative min-h-0 flex-1 overflow-auto",
           compact ? "px-4 pb-8" : "px-(--top-pl) pb-12",
           // The ribbon holds the body's top padding itself, so its opaque box starts at the edge of
           // the scroll area and no text shows above it.

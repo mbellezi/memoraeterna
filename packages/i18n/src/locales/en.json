@@ -317,6 +317,13 @@
     }
   },
   "inbox": {
+    "consequence": {
+      "keep": "The connection stays and counts as your decision.",
+      "remove": "The connection goes, and the Gardener does not suggest it again.",
+      "restore": "The connection comes back and counts as your decision."
+    },
+    "summary": "{count} decisions · riskiest first",
+    "summaryOne": "1 decision waits for you",
     "title": "Inbox",
     "description": "What needs your judgment, the most important first.",
     "badge": "{count} waiting",
@@ -325,14 +332,16 @@
       "error": "Your Inbox could not be loaded.",
       "empty": {
         "title": "Nothing needs you",
-        "body": "Your library organizes itself. When something needs your judgment, it appears here."
+        "body": "The Gardener asks here when a change is risky."
       },
       "emptyFiltered": "Nothing matches this filter.",
       "loadMore": "Load more",
       "loadingMore": "Loading more...",
-      "moreFailed": "More items could not be loaded."
+      "moreFailed": "More items could not be loaded.",
+      "errorKept": "Nothing was decided or changed."
     },
     "filters": {
+      "kind": "Type",
       "label": "Filter the Inbox",
       "all": "All",
       "chip": "{kind}: {count}",
@@ -346,6 +355,17 @@
       "medium": "medium confidence ({percent})",
       "low": "low confidence ({percent})",
       "unknown": "unknown confidence"
+    },
+    "kind": {
+      "review": "To review",
+      "quarantined": "Failed task",
+      "contradiction": "Contradiction",
+      "suggestion": "Suggested connection",
+      "withdrawn": "Withdrawn connection",
+      "duplicate": "Duplicate",
+      "obsidianConflict": "Obsidian conflict",
+      "budget": "Spending limit",
+      "backlog": "Optional re-match"
     },
     "kinds": {
       "review": "To review",
@@ -406,7 +426,7 @@
         "divergenceBody": "The overview of “{topic}” was extended, and some new evidence disagrees with what it says. The disagreement is kept beside the text, never merged into it. Keep it there, or dismiss this. Points of disagreement: {count}."
       },
       "suggestion": {
-        "title": "Suggested connection · {confidence}",
+        "title": "Keep this connection?",
         "body": "Suggestion: “{first}” {relation} “{second}”. Keep it to make it your decision, or remove it.",
         "hint": "Nothing is deleted: only the connection changes. If you remove it, it is not suggested again."
       },
@@ -481,17 +501,31 @@
       "hide": "Hide"
     },
     "keys": {
+      "barNote": "Single-key shortcuts do not work inside text fields.",
+      "short": {
+        "apply": "accept",
+        "dismiss": "dismiss",
+        "edit": "edit",
+        "help": "shortcuts",
+        "move": "navigate",
+        "open": "open",
+        "remove": "remove",
+        "retry": "retry",
+        "undo": "undo"
+      },
       "toggle": "Keyboard shortcuts",
       "title": "Keyboard shortcuts",
       "move": "Next or previous item",
       "open": "Go to the details",
       "apply": "Apply or keep",
-      "dismiss": "Dismiss or remove",
+      "dismiss": "Dismiss: it leaves the Inbox and nothing changes",
       "retry": "Retry",
       "undo": "Undo the last decision",
       "help": "Show or hide this help",
       "note": "These keys work while the list or the details have focus, never while you type or in a dialog.",
-      "money": "Continuing past the spending limit is a button, never a key."
+      "money": "Continuing past the spending limit is a button, never a key.",
+      "remove": "Remove a connection: it is never suggested again",
+      "edit": "Edit the names before applying"
     },
     "result": {
       "applied": "Applied.",
@@ -534,7 +568,8 @@
         "empty": "No overview yet",
         "divergences": "Where the new evidence disagrees",
         "divergence": "Paragraphs {existing} and {new}: {summary}"
-      }
+      },
+      "legend": "Small blocks, by letter"
     },
     "errors": {
       "invalidCursor": "The list changed meanwhile. Load it again.",
@@ -3236,7 +3271,7 @@
         "button": "Ask about this topic"
       },
       "health": {
-        "good": "Good health",
+        "good": "balanced size",
         "attention": "Needs attention",
         "violation": "Structure problem"
       },
@@ -3424,11 +3459,13 @@
         "titles": {
           "build": "Topics were built from your notes.",
           "rebalance": "The structure was rebalanced.",
-          "rebalanceItems": "The structure was rebalanced. Items moved: {count}.",
+          "rebalanceItems": "{count} items moved when the structure was rebalanced.",
+          "rebalanceItemsOne": "1 item moved when the structure was rebalanced.",
           "audit": "Old topic redirects were shortened.",
           "areas": "Areas were regrouped.",
           "naming": "Topics were named.",
-          "namingCount": "Topics named: {count}.",
+          "namingCount": "{count} topics were named.",
+          "namingCountOne": "1 topic was named.",
           "human": "You changed the structure.",
           "rebuild": "Topics were rebuilt.",
           "other": "The structure changed."
@@ -4369,9 +4406,7 @@
     },
     "titleBar": {
       "add": "Add",
-      "addFile": "Choose file…",
       "addMore": "More ways to add",
-      "addMoreOptions": "More import options…",
       "addSource": "Add source",
       "omniLabel": "Search, open or ask",
       "omniPlaceholder": "Search, open or ask…",
@@ -4701,6 +4736,138 @@
       "mentions": "Mentions"
     }
   },
+  "explore": {
+    "compactError": "Unavailable",
+    "compactGone": "No longer here",
+    "navigator": {
+      "branch": "Branch",
+      "branchLabel": "Showing only one branch of the tree",
+      "errorKept": "Pinned and Recents are still here.",
+      "pinHint": "Pin what you always open: ⌘D in the open panel.",
+      "wholeTree": "Whole tree"
+    },
+    "note": {
+      "alsoInInbox": "also in the Inbox",
+      "connections": "Connections",
+      "error": "Could not open this note.",
+      "errorKept": "The rest of Explore stays open and your notes are untouched.",
+      "explainedLocally": "explanation written by the local AI",
+      "gardenerConfidence": "Gardener · {word} confidence",
+      "gardenerSuggestion": "Gardener suggestion · decide whenever you like",
+      "goneBody": "It may have been merged into another note or removed. Nothing else changed.",
+      "goneHeadline": "This note is no longer in your library.",
+      "moreRelations": "{count} more",
+      "suggestionsMany": "{count} suggestions",
+      "suggestionsOne": "{count} suggestion",
+      "summaryHint": "Each connection, with its evidence, is in the context panel."
+    },
+    "root": {
+      "addFirst": "Add your first source",
+      "areasLead": "Choose an area to open it beside. Whatever you open stays here, side by side.",
+      "areasTitle": "Your areas",
+      "emptyBody": "Whatever you open appears here, one panel beside the other. The oldest ones fold into strips on the left, with their kind and title in view; one click reopens them. That way the path that led here is never lost.",
+      "emptyHeadline": "Nothing open yet",
+      "error": "Could not load your areas.",
+      "errorKept": "Your sources and notes are untouched.",
+      "keyClose": "closes the focused panel",
+      "keyOpen": "opens beside",
+      "keyPeek": "peeks without opening",
+      "keySpace": "Space",
+      "keysLabel": "Keys"
+    },
+    "topic": {
+      "error": "Could not open this topic.",
+      "errorKept": "The rest of Explore stays open and your notes are untouched.",
+      "goneBody": "It may have been merged into another topic or removed. Nothing else changed.",
+      "goneHeadline": "This topic is no longer in the tree.",
+      "noDirectNotes": "No notes of its own yet. The notes are in the subtopics."
+    }
+  },
+  "addFlow": {
+    "busy": {
+      "button": "Reading…",
+      "reading": "Reading {name}…",
+      "readingFile": "Reading the file…",
+      "waiting": "{count} waiting"
+    },
+    "drop": {
+      "after": "After you drop, you go to the first source in Explore and watch the notes arrive.",
+      "label": "Drop files to add them",
+      "modeError": "The import mode could not be read, so the files are saved as Searchable and organized.",
+      "modeLabel": "Mode",
+      "modeNote": "{hint}. Change it in the Add menu.",
+      "noFiles": "Drop a file to add it",
+      "titleMany": "Drop to add {count} files",
+      "titleOne": "Drop to add 1 file"
+    },
+    "failure": {
+      "close": "Close",
+      "empty": "{name} is empty.",
+      "generic": "The file could not be added.",
+      "kept": "Nothing was saved, and everything else is as it was.",
+      "keptSome": "The files that could be read were added, and everything else is as it was.",
+      "more": "Also not added: {count}.",
+      "noText": "{name} has no text Memora can read.",
+      "noTextNoName": "That file has no text Memora can read.",
+      "notAFile": "{name} is not a file.",
+      "shortMany": "Files not added.",
+      "shortOne": "File not added.",
+      "symlink": "{name} is a shortcut. Drop the original file instead.",
+      "tooLarge": "{name} is too large to import.",
+      "tooLargeNoName": "That file is too large to import.",
+      "unreadable": "{name} could not be read.",
+      "unsupported": "Memora does not read files like {name} yet.",
+      "unsupportedNoName": "Memora does not read that kind of file yet."
+    },
+    "importPanel": {
+      "errors": {
+        "kept": "Nothing was changed.",
+        "open": "This source could not be opened for editing."
+      },
+      "gone": {
+        "action": "Open the Library",
+        "body": "It may have been removed from the Library. Nothing else changed.",
+        "title": "This source no longer exists."
+      },
+      "leave": {
+        "description": "You changed this import and did not save it. Keep working to finish it, or discard what you entered and go on.",
+        "discard": "Discard and go on",
+        "keep": "Keep working",
+        "title": "Leave without saving?"
+      },
+      "title": "Advanced import"
+    },
+    "menu": {
+      "file": "Choose a file…",
+      "fileHint": "PDF, EPUB, Word, Markdown and text",
+      "foot": "This applies to the next imports; each source can change later. Dropping files anywhere in the window works too.",
+      "label": "Ways to add",
+      "link": "Paste a link",
+      "linkHint": "a web page or a video",
+      "modeHeading": "When importing",
+      "more": "More import options…",
+      "note": "Write a note",
+      "noteHint": "goes to No place until it gets a topic"
+    },
+    "modes": {
+      "error": "Could not check whether a model is ready to write.",
+      "errorKept": "Choosing a file still works and imports as Searchable and organized.",
+      "searchable": {
+        "hint": "passages for search and a place in the tree, without notes",
+        "name": "Searchable and organized"
+      },
+      "secondBrain": {
+        "hint": "short notes, a place in the tree and connections",
+        "hintNeedsModel": "short notes, a place in the tree and connections · needs a model that is ready to write",
+        "hintRecommended": "short notes, a place in the tree and connections · recommended: a model is ready to write",
+        "name": "Second brain"
+      },
+      "storeOnly": {
+        "hint": "the file stays in the Library, without AI",
+        "name": "Just keep it"
+      }
+    }
+  },
   "entityPage": {
     "aliases": "Other names:",
     "articleLabel": "Entity: {name}",
@@ -4842,6 +5009,137 @@
       "errorKept": "Nothing was changed, and the actions still work.",
       "noCommand": "No action matches “{query}”.",
       "noResult": "Nothing with “{query}”."
+    }
+  },
+  "askPanel": {
+    "answer": {
+      "label": "Answer",
+      "saved": "Saved in Questions. Each citation leads to the exact passage.",
+      "savedPlace": "Saved in Questions. Its place in the tree comes from the citations when the answer ends. Each citation leads to the exact passage."
+    },
+    "band": {
+      "again": "Ask again",
+      "answering": "Writing the answer",
+      "answeringSourcesMany": "{count} sources cited so far",
+      "answeringSourcesOne": "{count} source cited so far",
+      "canceled": "Stopped by you",
+      "continue": "Continue",
+      "doneOn": "Answered on {date}",
+      "retrieving": "Reading the library",
+      "retrievingHint": "looking for the passages that answer this",
+      "sourcesMany": "{count} sources",
+      "sourcesOne": "{count} source",
+      "stale": "May be outdated: a cited source changed after the answer.",
+      "stop": "Stop",
+      "waiting": "Waiting for the cloud AI to answer",
+      "waitingHint": "the answer continues from here"
+    },
+    "chip": {
+      "labelPlain": "Citation {number}"
+    },
+    "compact": {
+      "error": "Could not open."
+    },
+    "empty": {
+      "add": "Add a source",
+      "body": "Rephrase the question, or add a source that covers it.",
+      "headline": "I found nothing in your library about this.",
+      "rephrase": "Rephrase"
+    },
+    "error": {
+      "kept": "Your library is as it was.",
+      "message": "This question could not be opened."
+    },
+    "failed": {
+      "again": "Could not ask again.",
+      "kept": "What was written before it stopped is kept below.",
+      "keptNothing": "Your question is saved, so you can ask again.",
+      "message": "The AI route did not answer.",
+      "otherRoute": "Use another route",
+      "stop": "Could not stop the answer."
+    },
+    "followUp": {
+      "label": "Follow-up question",
+      "placeholder": "Keep asking, in the same scope…",
+      "send": "Ask"
+    },
+    "kind": "Ask",
+    "launcher": {
+      "draftLabel": "Your question",
+      "empty": {
+        "body": "Ask about what you saved. Each question is kept in Library › Questions, with its answer.",
+        "headline": "Nothing asked yet."
+      },
+      "error": {
+        "kept": "Your words are still in the field.",
+        "message": "The question could not be sent."
+      },
+      "heading": "Ask your library",
+      "hintAsk": "to ask",
+      "hintNewline": "new line",
+      "lead": "The answer cites the exact passages it rests on. It is saved in Questions and never changes your notes.",
+      "long": "Keep it under 1,000 characters.",
+      "placeholder": "What do you want to know?",
+      "recent": {
+        "heading": "Recent questions",
+        "label": "Open a recent question"
+      },
+      "scope": {
+        "label": "Scope",
+        "library": "whole library",
+        "source": "source: {title}",
+        "topic": "topic: {title}",
+        "unsupported": "Only the whole library, a topic or a source can be asked about.",
+        "unsupportedKept": "Nothing was asked."
+      },
+      "short": "Write at least 3 characters.",
+      "starting": "Sending the question…",
+      "submit": "Ask"
+    },
+    "meta": {
+      "asked": "Asked on {date}",
+      "cloud": "cloud AI",
+      "local": "local AI",
+      "scopeLibrary": "scope: whole library",
+      "scopeSource": "scope: source {title}",
+      "scopeSources": "scope: {count} sources",
+      "scopeTopic": "scope: topic {title}"
+    },
+    "missing": {
+      "action": "See Questions",
+      "body": "It may have been deleted. Your notes and sources are as they were.",
+      "headline": "This question is no longer in the library."
+    },
+    "sources": {
+      "changed": "changed since the answer",
+      "heading": "Evidence for this answer",
+      "hint": "The numbers are those of the citations.",
+      "label": "Passages cited by this answer",
+      "open": "Open the passage beside",
+      "passagesMany": "{count} passages cited",
+      "passagesOne": "{count} passage cited",
+      "readFailed": "The passage could not be read.",
+      "readFromMany": "from {count} sources",
+      "readFromOne": "from {count} source",
+      "readNotCited": "Read, not cited",
+      "readNotCitedReason": "not used in the answer",
+      "readNotCitedSibling": "Another passage of source {number}",
+      "readPassagesMany": "{count} passages read",
+      "readPassagesOne": "{count} passage read",
+      "reading": "reading…",
+      "removed": "passage removed",
+      "seeSource": "see the source"
+    },
+    "tray": {
+      "empty": "Hover or focus a citation to read its passage here.",
+      "heading": "Citation {number}",
+      "label": "Passage of the citation"
+    },
+    "versions": {
+      "label": "Answer versions",
+      "next": "Next version",
+      "of": "Version {version} of {total}",
+      "previous": "Previous version"
     }
   },
   "preview": {
@@ -5247,252 +5545,160 @@
       "label": "Keep a copy of uploaded files"
     }
   },
-  "askPanel": {
-    "answer": {
-      "label": "Answer",
-      "saved": "Saved in Questions. Each citation leads to the exact passage.",
-      "savedPlace": "Saved in Questions. Its place in the tree comes from the citations when the answer ends. Each citation leads to the exact passage."
-    },
+  "map": {
     "band": {
-      "again": "Ask again",
-      "answering": "Writing the answer",
-      "answeringSourcesMany": "{count} sources cited so far",
-      "answeringSourcesOne": "{count} source cited so far",
-      "canceled": "Stopped by you",
-      "continue": "Continue",
-      "doneOn": "Answered on {date}",
-      "retrieving": "Reading the library",
-      "retrievingHint": "looking for the passages that answer this",
-      "sourcesMany": "{count} sources",
-      "sourcesOne": "{count} source",
-      "stale": "May be outdated: a cited source changed after the answer.",
-      "stop": "Stop",
-      "waiting": "Waiting for the cloud AI to answer",
-      "waitingHint": "the answer continues from here"
+      "action": "Back",
+      "back": "goes back to {topic}, where you were.",
+      "whole": "You are seeing the whole tree."
     },
-    "chip": {
-      "labelPlain": "Citation {number}"
+    "chart": {
+      "columns": {
+        "areas": "Areas",
+        "subtopics": "Subtopics",
+        "topics": "Topics"
+      },
+      "deeper": "{count} topics sit deeper: the table lists them all, and Enter zooms into a branch.",
+      "deeperOne": "1 topic sits deeper: the table lists it, and Enter zooms into a branch.",
+      "here": "here",
+      "label": "Topic tree. Each block is a button that selects a topic: arrows move, Enter zooms in.",
+      "legend": {
+        "attention": "needs attention",
+        "direct": "notes placed directly in the topic",
+        "height": "Height = notes",
+        "here": "here = holds where you were",
+        "selected": "selected"
+      },
+      "merged": "Small blocks are grouped; the table lists each one.",
+      "moreTopics": "{count} more · {notes}"
     },
-    "compact": {
-      "error": "Could not open."
+    "count": {
+      "topics": "{count} topics",
+      "topicsOne": "1 topic"
+    },
+    "display": {
+      "both": "Chart and table",
+      "label": "Display",
+      "table": "Table only"
+    },
+    "health": {
+      "attention": "needs attention",
+      "good": "balanced",
+      "violation": "over the limit"
+    },
+    "inspector": {
+      "next": "Next step",
+      "nextInbox": "See the proposal in the Inbox",
+      "selected": "Selected",
+      "table": "The same numbers as a table"
+    },
+    "lens": {
+      "label": "Map views",
+      "relations": "Graph",
+      "shape": "Tree"
+    },
+    "relations": {
+      "action": "See the Tree",
+      "body": "It will show how your topics connect. Until then, the Tree shows their size and health.",
+      "headline": "The graph of connections is on its way"
+    },
+    "selected": {
+      "growth": "{growth} notes in {days} days",
+      "growthOne": "{growth} note in {days} days",
+      "subtopics": "{count} direct subtopics",
+      "subtopicsOne": "1 direct subtopic"
+    },
+    "shape": {
+      "description": "Size and health of the tree: {notes} in {topics}",
+      "descriptionPlain": "Size and health of the tree."
+    },
+    "states": {
+      "empty": "The map appears when there are topics.",
+      "emptyAdd": "Add a source",
+      "emptyBody": "When your first source becomes notes, topics are born on their own and the map shows them here.",
+      "error": "The map could not be loaded.",
+      "errorKept": "Your sources and notes are untouched."
+    },
+    "table": {
+      "caption": "The same numbers as the chart, one row per topic",
+      "growth": "7 days",
+      "health": "Health",
+      "notes": "Notes",
+      "topic": "Topic"
+    },
+    "title": "Map",
+    "warnings": {
+      "dismiss": "Dismiss"
+    }
+  },
+  "mapRelations": {
+    "canvas": {
+      "hint": "Arrows move through the notes, then the connections; Enter opens a note; Esc clears.",
+      "label": "Graph of {scope}: {notes} notes and {relations} connections.",
+      "openHint": "Click to open the note beside the Map."
+    },
+    "controls": {
+      "fit": "Fit to view",
+      "zoomIn": "Zoom in",
+      "zoomOut": "Zoom out"
+    },
+    "depth": {
+      "help": "Which level of subtopics gives the dots their colour",
+      "label": "Colour by subtopic at",
+      "one": "level 1",
+      "three": "level 3",
+      "two": "level 2"
+    },
+    "description": "Connections between the notes of a branch",
+    "edge": {
+      "description": "“{first}” {verb} “{second}”.",
+      "suggested": "Suggested: not yet confirmed."
     },
     "empty": {
-      "add": "Add a source",
-      "body": "Rephrase the question, or add a source that covers it.",
-      "headline": "I found nothing in your library about this.",
-      "rephrase": "Rephrase"
+      "body": "Connections appear here when notes of this branch are linked to each other. Pick another branch, or see the Tree.",
+      "headline": "No connections in this branch yet",
+      "missing": "This branch is no longer in the tree.",
+      "missingBody": "It may have been merged into another topic. Pick another branch, or see the Tree.",
+      "noTopics": "The graph appears when there are topics.",
+      "noTopicsBody": "When the first source becomes notes, topics are born on their own and the graph shows how their notes connect.",
+      "tree": "See the Tree"
     },
     "error": {
-      "kept": "Your library is as it was.",
-      "message": "This question could not be opened."
-    },
-    "failed": {
-      "again": "Could not ask again.",
-      "kept": "What was written before it stopped is kept below.",
-      "keptNothing": "Your question is saved, so you can ask again.",
-      "message": "The AI route did not answer.",
-      "stop": "Could not stop the answer."
-    },
-    "followUp": {
-      "label": "Follow-up question",
-      "placeholder": "Keep asking, in the same scope…",
-      "send": "Ask"
-    },
-    "kind": "Ask",
-    "launcher": {
-      "draftLabel": "Your question",
-      "empty": {
-        "body": "Ask about what you saved. Each question is kept in Library › Questions, with its answer.",
-        "headline": "Nothing asked yet."
-      },
-      "error": {
-        "kept": "Your words are still in the field.",
-        "message": "The question could not be sent."
-      },
-      "heading": "Ask your library",
-      "hintAsk": "to ask",
-      "hintNewline": "new line",
-      "lead": "The answer cites the exact passages it rests on. It is saved in Questions and never changes your notes.",
-      "long": "Keep it under 1,000 characters.",
-      "placeholder": "What do you want to know?",
-      "recent": {
-        "heading": "Recent questions",
-        "label": "Open a recent question"
-      },
-      "scope": {
-        "label": "Scope",
-        "library": "whole library",
-        "source": "source: {title}",
-        "topic": "topic: {title}",
-        "unsupported": "Only the whole library, a topic or a source can be asked about.",
-        "unsupportedKept": "Nothing was asked."
-      },
-      "short": "Write at least 3 characters.",
-      "starting": "Sending the question…",
-      "submit": "Ask"
-    },
-    "meta": {
-      "asked": "Asked on {date}",
-      "cloud": "cloud AI",
-      "local": "local AI",
-      "scopeLibrary": "scope: whole library",
-      "scopeSource": "scope: source {title}",
-      "scopeSources": "scope: {count} sources",
-      "scopeTopic": "scope: topic {title}"
-    },
-    "missing": {
-      "action": "See Questions",
-      "body": "It may have been deleted. Your notes and sources are as they were.",
-      "headline": "This question is no longer in the library."
-    },
-    "sources": {
-      "changed": "changed since the answer",
-      "heading": "Evidence for this answer",
-      "hint": "The numbers are those of the citations.",
-      "label": "Passages cited by this answer",
-      "open": "Open the passage beside",
-      "passagesMany": "{count} passages cited",
-      "passagesOne": "{count} passage cited",
-      "readFailed": "The passage could not be read.",
-      "reading": "reading…",
-      "removed": "passage removed",
-      "seeSource": "see the source"
-    },
-    "tray": {
-      "empty": "Hover or focus a citation to read its passage here.",
-      "heading": "Citation {number}",
-      "label": "Passage of the citation",
-      "open": "open the passage beside"
-    },
-    "versions": {
-      "label": "Answer versions",
-      "next": "Next version",
-      "of": "Version {version} of {total}",
-      "previous": "Previous version"
-    }
-  },
-  "explore": {
-    "navigator": {
-      "branch": "Branch",
-      "branchLabel": "Showing only one branch of the tree",
-      "wholeTree": "Whole tree"
-    },
-    "note": {
-      "alsoInInbox": "also in the Inbox",
-      "error": "Could not open this note.",
-      "errorKept": "The rest of Explore stays open and your notes are untouched.",
-      "gardenerSuggestion": "Gardener suggestion · decide whenever you like",
-      "goneBody": "It may have been merged into another note or removed. Nothing else changed.",
-      "goneHeadline": "This note is no longer in your library.",
-      "moreRelations": "{count} more",
-      "suggestionsMany": "{count} suggestions",
-      "suggestionsOne": "{count} suggestion",
-      "summaryHint": "Each connection, with its evidence, is in the context panel."
-    },
-    "root": {
-      "addFirst": "Add your first source",
-      "areasLead": "Choose an area to open it beside. Whatever you open stays here, side by side.",
-      "areasTitle": "Your areas",
-      "emptyBody": "Whatever you open appears here, one panel beside the other. The oldest ones fold into strips on the left, with their kind and title in view; one click reopens them. That way the path that led here is never lost.",
-      "emptyHeadline": "Nothing open yet",
-      "error": "Could not load your areas.",
-      "errorKept": "Your sources and notes are untouched.",
-      "keyClose": "closes the focused panel",
-      "keyOpen": "opens beside",
-      "keyPeek": "peeks without opening",
-      "keySpace": "Space",
-      "keysLabel": "Keys",
-      "unsorted": "Waiting for a place: {count}"
-    },
-    "topic": {
-      "error": "Could not open this topic.",
-      "errorKept": "The rest of Explore stays open and your notes are untouched.",
-      "goneBody": "It may have been merged into another topic or removed. Nothing else changed.",
-      "goneHeadline": "This topic is no longer in the tree.",
-      "noDirectNotes": "No notes of its own yet. The notes are in the subtopics."
-    }
-  },
-  "addFlow": {
-    "busy": {
-      "button": "Reading…",
-      "reading": "Reading {name}…",
-      "readingFile": "Reading the file…",
-      "waiting": "{count} waiting"
-    },
-    "drop": {
-      "after": "After you drop, you go to the first source in Explore and watch the notes arrive.",
-      "label": "Drop files to add them",
-      "modeError": "The import mode could not be read, so the files are saved as Searchable and organized.",
-      "modeLabel": "Mode",
-      "modeNote": "{hint}. Change it in the Add menu.",
-      "noFiles": "Drop a file to add it",
-      "titleMany": "Drop to add {count} files",
-      "titleOne": "Drop to add 1 file"
+      "kept": "Your notes and connections are as they were.",
+      "message": "The graph could not be loaded."
     },
     "failure": {
-      "close": "Close",
-      "empty": "{name} is empty.",
-      "generic": "The file could not be added.",
-      "kept": "Nothing was saved, and everything else is as it was.",
-      "keptSome": "The files that could be read were added, and everything else is as it was.",
-      "more": "Also not added: {count}.",
-      "noText": "{name} has no text Memora can read.",
-      "noTextNoName": "That file has no text Memora can read.",
-      "notAFile": "{name} is not a file.",
-      "symlink": "{name} is a shortcut. Drop the original file instead.",
-      "tooLarge": "{name} is too large to import.",
-      "tooLargeNoName": "That file is too large to import.",
-      "unreadable": "{name} could not be read.",
-      "unsupported": "Memora does not read files like {name} yet.",
-      "unsupportedNoName": "Memora does not read that kind of file yet."
+      "context": "The graph stopped drawing.",
+      "layout": "The graph could not be arranged.",
+      "unavailable": "This window cannot draw the graph.",
+      "unavailableBody": "The table lists the same connections.",
+      "unavailableTree": "The Tree shows this branch’s topics and notes; each note lists its connections."
     },
-    "importPanel": {
-      "errors": {
-        "kept": "Nothing was changed.",
-        "open": "This source could not be opened for editing."
-      },
-      "gone": {
-        "action": "Open the Library",
-        "body": "It may have been removed from the Library. Nothing else changed.",
-        "title": "This source no longer exists."
-      },
-      "leave": {
-        "description": "You changed this import and did not save it. Keep working to finish it, or discard what you entered and go on.",
-        "discard": "Discard and go on",
-        "keep": "Keep working",
-        "title": "Leave without saving?"
-      },
-      "title": "Advanced import"
+    "group": {
+      "description": "{topic}. Notes drawn: {notes}. Connections to other topics: {count}."
     },
-    "menu": {
-      "file": "Choose a file…",
-      "fileHint": "PDF, EPUB, Word, Markdown and text",
-      "foot": "This applies to the next imports; each source can change later. Dropping files anywhere in the window works too.",
-      "label": "Ways to add",
-      "link": "Paste a link",
-      "linkHint": "a web page or a video",
-      "modeHeading": "When importing",
-      "more": "More import options…",
-      "note": "Write a note",
-      "noteHint": "goes to No place until it gets a topic"
+    "legend": {
+      "direct": "{topic} (direct notes)",
+      "label": "Legend",
+      "lines": "Line = connection:",
+      "suggested": "dashed = suggested",
+      "thickness": "Zoomed out, each topic becomes a label and a line's thickness counts the connections.",
+      "topics": "Dot colour = topic:",
+      "unplaced": "no place in the tree"
     },
-    "modes": {
-      "error": "Could not check whether a model is ready to write.",
-      "errorKept": "Choosing a file still works and imports as Searchable and organized.",
-      "searchable": {
-        "hint": "passages for search and a place in the tree, without notes",
-        "name": "Searchable and organized"
-      },
-      "secondBrain": {
-        "hint": "short notes, a place in the tree and connections",
-        "hintNeedsModel": "short notes, a place in the tree and connections · needs a model that is ready to write",
-        "hintRecommended": "short notes, a place in the tree and connections · recommended: a model is ready to write",
-        "name": "Second brain"
-      },
-      "storeOnly": {
-        "hint": "the file stays in the Library, without AI",
-        "name": "Just keep it"
-      }
-    }
+    "node": {
+      "description": "{title}. Topic: {topic}. Connections: {count}.",
+      "meta": "Topic: {topic} · Connections: {count}"
+    },
+    "scope": {
+      "above": "Above",
+      "areas": "Areas",
+      "beside": "Beside",
+      "inside": "Inside",
+      "label": "Branch: {title}",
+      "menu": "Choose the branch",
+      "source": "Source: {title}",
+      "sourceUnnamed": "this source"
+    },
+    "untitledTopic": "Untitled topic"
   }
 }

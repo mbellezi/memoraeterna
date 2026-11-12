@@ -69,10 +69,10 @@ describe("the panel frame", () => {
     ).not.toContain("data-path-ribbon");
   });
 
-  it("says a failed object once: no ribbon failure line above the body's error", () => {
+  it("says a failed object once, and shows no place for one that is gone", () => {
     expect(frame({ state: "error" })).not.toContain("data-path-ribbon");
     expect(frame({ state: "loading" })).toContain("data-path-ribbon");
-    expect(frame({ state: "empty" })).toContain("data-path-ribbon");
+    expect(frame({ state: "empty" })).not.toContain("data-path-ribbon");
   });
 
   it("gives the top panel Foco and close, and the arrows only where history exists", () => {
@@ -315,10 +315,14 @@ describe("the path ribbon", () => {
     );
     const line = html.match(/<nav[^>]*><span class="([^"]*)">(.*)<\/span><\/nav>/u);
     expect(line?.[1]).toContain("flex-wrap");
-    // The line's children are the glyph, then each crumb and separator: no wrapper in between.
+    // The line's children are the glyph, then each crumb with the separator that follows it; the
+    // last crumb stands alone. No wrapper holds the whole path, so it never drops under the glyph.
     const children = (line?.[2] ?? "").replace(/<svg.*?<\/svg>/u, "");
-    expect(children.startsWith("<a ")).toBe(true);
+    expect(children.startsWith('<span class="inline-flex max-w-full')).toBe(true);
     expect(children.match(/data-segment=/gu)).toHaveLength(3);
+    // A separator is never the first thing of the line: it comes after the crumb it belongs to.
+    expect(children.match(/<span[^>]*aria-hidden="true"[^>]*>›<\/span>/gu)).toHaveLength(2);
+    expect(children).toMatch(/<\/a><span[^>]*aria-hidden="true"[^>]*>›<\/span><\/span>/u);
     expect(html).not.toContain("Mostrar o caminho inteiro");
   });
 

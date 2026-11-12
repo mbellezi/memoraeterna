@@ -8,10 +8,11 @@ import { Button } from "../../components/ui/button";
 import { EmptyState } from "../../components/ui/empty-state";
 import { ErrorState } from "../../components/ui/error-state";
 import { NoteLeaveDialog, type LeaveCopy } from "../../components/note-page/NoteLeaveDialog";
-import { LoadingState, Skeleton, SkeletonLines } from "../../components/ui/skeleton";
+import { LoadingState } from "../../components/ui/skeleton";
 import type { PanelLoadState } from "../PanelFrame";
 import type { PanelProps } from "../PanelStack";
 import { parseViewAddress } from "../route";
+import { ImportScroller, ImportSkeleton } from "./import-scroller";
 
 /**
  * The advanced import panel (D32, T150): the old import wizard hosted in the panel stack until F6
@@ -59,14 +60,21 @@ function useImportData(sourceId: string | null, active: boolean) {
     void (async () => {
       let data: Data;
       try {
+        // A new import reads only whether the metadata lookup is on; if that read fails the wizard
+        // still opens, with the lookup off, so no sentence about editing a source is ever told
+        // for an import that has no source.
         const [app, source] = await Promise.all([
-          window.app.settings.getApp(),
+          sourceId ? window.app.settings.getApp() : window.app.settings.getApp().catch(() => null),
           sourceId ? window.app.knowledge.getSourceDetail(sourceId) : Promise.resolve(null)
         ]);
         data =
           sourceId && source === null
             ? { status: "gone" }
-            : { status: "ready", metadataEnrichmentEnabled: app.metadataEnrichmentEnabled, source };
+            : {
+                status: "ready",
+                metadataEnrichmentEnabled: app?.metadataEnrichmentEnabled ?? false,
+                source
+              };
       } catch {
         data = { status: "error" };
       }
@@ -143,10 +151,8 @@ export function Component({ t, address, active, onState, onOpen, onLeaveGuard }:
   if (data.status === "loading")
     return (
       <Body>
-        <LoadingState t={t} className="max-w-(--measure)">
-          <Skeleton className="h-6 w-3/5" />
-          <Skeleton className="w-2/5" />
-          <SkeletonLines lines={4} className="mt-2" />
+        <LoadingState t={t}>
+          <ImportSkeleton />
         </LoadingState>
       </Body>
     );
@@ -180,18 +186,20 @@ export function Component({ t, address, active, onState, onOpen, onLeaveGuard }:
     );
   return (
     <>
-      <ImportView
-        t={t}
-        active={active}
-        metadataEnrichmentEnabled={data.metadataEnrichmentEnabled}
-        {...(data.source ? { editing: data.source } : {})}
-        onDirtyChange={guard.setDirty}
-        // A saved source replaces this panel: the person lands on it, with its generation strip.
-        onSaved={(sourceItemId) => {
-          guard.setDirty(false);
-          onOpen(formatObjectAddress({ kind: "source", id: sourceItemId }), { replace: true });
-        }}
-      />
+      <ImportScroller>
+        <ImportView
+          t={t}
+          active={active}
+          metadataEnrichmentEnabled={data.metadataEnrichmentEnabled}
+          {...(data.source ? { editing: data.source } : {})}
+          onDirtyChange={guard.setDirty}
+          // A saved source replaces this panel: the person lands on it, with its generation strip.
+          onSaved={(sourceItemId) => {
+            guard.setDirty(false);
+            onOpen(formatObjectAddress({ kind: "source", id: sourceItemId }), { replace: true });
+          }}
+        />
+      </ImportScroller>
       {guard.leaving ? (
         <NoteLeaveDialog
           t={t}

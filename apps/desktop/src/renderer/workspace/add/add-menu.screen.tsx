@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 
 import { screenTranslator } from "../screen-locale";
 import type { ScreenModule } from "../surfaces";
+import { AddFailureNotice } from "./AddFailureNotice";
 import { AddMenu } from "./AddMenu";
 import { writerFixtures } from "./add-screen-fixtures";
 import { AddFlow } from "./add-flow";
@@ -20,7 +21,10 @@ export const fixtures: ScreenModule["fixtures"] = {
   empty: {
     ...writerFixtures(false),
     "ingestion.extractFileMetadata": null
-  }
+  },
+  // The picker fails and nothing else does: one failure, told once in the status slot. (The menu's
+  // own "could not read the mode" notice is one cause of its own, tested in add-dom.test.tsx.)
+  error: writerFixtures(true)
 };
 
 function newFlow() {
@@ -32,19 +36,21 @@ function newFlow() {
   });
 }
 
-/** The title bar's right end, where Adicionar sits. */
+/** The title bar's right end: the status slot, where a failed add is told, and Adicionar. */
 function Strip({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex h-12 min-w-0 flex-1 items-start justify-end pr-1 pt-2">{children}</div>
+    <div className="flex h-12 min-w-0 flex-1 items-start justify-end gap-3 pr-1 pt-2">
+      {children}
+    </div>
   );
 }
 
 /**
- * Adicionar over the window's desk: the menu open on the right (its state is the surface's state:
- * reading the mode, no model ready, the mode unreadable, or all well), and on the left a second
- * Adicionar whose file picker is used the moment it shows, so a failed add is seen in place under
- * its button. In the loading state that second one is reading; in the others the picker is canceled
- * or fails.
+ * Adicionar over the window's desk. On the left, one whose file picker is used the moment it shows:
+ * reading in the loading state, canceled in the others, failed in the error state, told in the
+ * status slot beside the button. On the right, the menu held open (its state is the reading of the
+ * mode: loading, no model ready, or all well). The first surface in the page gives the capture's
+ * state, so the picker's comes first.
  */
 function AddScreen() {
   const [menuFlow] = useState(newFlow);
@@ -54,12 +60,13 @@ function AddScreen() {
     void pickFlow.pickFile();
   }, [menuFlow, pickFlow]);
   return (
-    <div className="flex min-h-[560px] flex-row-reverse gap-6 bg-background">
+    <div className="flex min-h-[560px] gap-6 bg-background">
       <Strip>
-        <AddMenu t={t} flow={menuFlow} portal={false} openMenu />
+        <AddFailureNotice t={t} flow={pickFlow} />
+        <AddMenu t={t} flow={pickFlow} portal={false} />
       </Strip>
       <Strip>
-        <AddMenu t={t} flow={pickFlow} portal={false} />
+        <AddMenu t={t} flow={menuFlow} portal={false} openMenu />
       </Strip>
     </div>
   );

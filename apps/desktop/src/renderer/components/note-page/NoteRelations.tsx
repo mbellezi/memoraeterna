@@ -28,6 +28,7 @@ import {
   cardContent,
   interpolateNodes,
   isLinkedOnly,
+  relationSentence,
   relationStateKey,
   type RelationGroup,
   type ReviewDirection,
@@ -166,6 +167,18 @@ function MetaName({ t, label, name }: { t: Translator; label: MessageKey; name: 
   );
 }
 
+/**
+ * The stance as the wide sheet says it (design record 6.3): "supports this note" or "this note
+ * extends", the direction a directed relation was given; null when nobody gave it one.
+ */
+function stancePhrase(t: Translator, relation: NotePageRelation): string | null {
+  const sentence = relationSentence(relation);
+  if (sentence.key !== "notePage.card.sentence") return null;
+  const verb = t(sentence.verbKey);
+  const note = t("notePage.card.thisNoteObject");
+  return sentence.subject === "other" ? `${verb} ${note}` : `${note} ${verb}`;
+}
+
 function RelationRow({
   t,
   thisId,
@@ -177,12 +190,14 @@ function RelationRow({
   onCardEvent,
   onOpenNote,
   onRetryExplanation,
-  onReview
+  onReview,
+  embedded
 }: {
   t: Translator;
   thisId: string;
   thisPrimary: NotePageEvidence | null;
   relation: NotePageRelation;
+  embedded: boolean;
   open: boolean;
   explanation: ExplanationState | null;
   review: ReviewState | null;
@@ -200,9 +215,15 @@ function RelationRow({
   // A suggested relation says so; its confidence is in the card. A row with no state chip (an
   // applied one) says its band, so the list always tells how sure the matcher was (D42).
   const bandKey = stateKey ? null : bandWordKey(relation);
+  // In a panel a suggestion is drawn as one: a dashed outline, and its two answers on the row.
+  const suggestion = embedded && relation.state === "suggested";
+  const reviewing = review?.status === "pending";
   return (
     <li
-      className="relative"
+      className={cn(
+        "relative",
+        suggestion && "my-1 rounded-md border border-dashed border-border-strong"
+      )}
       data-relation-id={id}
       onPointerEnter={() => onCardEvent({ type: "pointerEnter", id })}
       onPointerLeave={() => onCardEvent({ type: "pointerLeave", id })}
@@ -229,8 +250,13 @@ function RelationRow({
         )}
         onClick={() => onOpenNote(other.id)}
       >
-        <span className="flex-none basis-26 pt-1">
-          <RelationStanceLabel type={relation.type} t={t} linked={isLinkedOnly(relation)} />
+        <span className={cn("flex-none basis-26 pt-1", embedded && "@min-[760px]:basis-44")}>
+          <RelationStanceLabel
+            type={relation.type}
+            t={t}
+            linked={isLinkedOnly(relation)}
+            phrase={embedded ? stancePhrase(t, relation) : null}
+          />
         </span>
         <span className="flex min-w-0 flex-1 basis-80 flex-col gap-1.5">
           <span className="flex gap-2">
@@ -265,16 +291,19 @@ function RelationRow({
             ) : null}
             {bandKey ? (
               <span>
-                {interpolateNodes(t("notePage.card.confidence"), {
-                  word: (
-                    <strong className="font-semibold text-secondary-foreground">
-                      {t(bandKey)}
-                    </strong>
-                  )
-                })}
+                {interpolateNodes(
+                  t(embedded ? "explore.note.gardenerConfidence" : "notePage.card.confidence"),
+                  {
+                    word: (
+                      <strong className="font-semibold text-secondary-foreground">
+                        {embedded ? t(bandKey).toLocaleLowerCase(t.locale) : t(bandKey)}
+                      </strong>
+                    )
+                  }
+                )}
               </span>
             ) : null}
-            {relation.decidedBy ? (
+            {relation.decidedBy && !embedded ? (
               <span className="inline-flex items-center gap-1">
                 <Check className="size-3" aria-hidden="true" />
                 <MetaName
@@ -284,7 +313,12 @@ function RelationRow({
                 />
               </span>
             ) : null}
-            {relation.explanation?.writtenBy ? (
+            {embedded && relation.explainedBy?.kind === "local" ? (
+              <span className="inline-flex items-center gap-1">
+                <Sparkles className="size-3" aria-hidden="true" />
+                {t("explore.note.explainedLocally")}
+              </span>
+            ) : relation.explanation?.writtenBy ? (
               <span className="inline-flex items-center gap-1">
                 <Sparkles className="size-3" aria-hidden="true" />
                 <MetaName
@@ -297,6 +331,35 @@ function RelationRow({
           </span>
         </span>
       </button>
+      {suggestion ? (
+        <div className="flex flex-wrap items-center gap-2 px-3 pb-3">
+          <Button
+            type="button"
+            variant="secondary"
+            aria-disabled={reviewing || undefined}
+            onClick={() => {
+              if (!reviewing) onReview(id, "keep");
+            }}
+          >
+            {t("notePage.card.keep")}
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            aria-disabled={reviewing || undefined}
+            onClick={() => {
+              if (!reviewing) onReview(id, "remove");
+            }}
+          >
+            {t("notePage.card.remove")}
+          </Button>
+          {review?.status === "failed" ? (
+            <span role="alert" className="text-xs text-danger">
+              {t("notePage.card.reviewFailed")}
+            </span>
+          ) : null}
+        </div>
+      ) : null}
       {open ? (
         <RelationEvidenceCard
           t={t}
@@ -314,6 +377,7 @@ function RelationRow({
 }
 
 interface ListProps {
+  embedded: boolean;
   t: Translator;
   thisId: string;
   thisPrimary: NotePageEvidence | null;
@@ -337,6 +401,7 @@ function RelationList({
         <RelationRow
           key={relation.id}
           t={props.t}
+          embedded={props.embedded}
           thisId={props.thisId}
           thisPrimary={props.thisPrimary}
           relation={relation}
@@ -457,6 +522,7 @@ export function NoteRelations({
   focusRequest,
   graph,
   view: listView = "full",
+  embedded = false,
   onCardEvent,
   onOpenNote,
   onRetryExplanation,
@@ -482,6 +548,8 @@ export function NoteRelations({
   graph?: RelationsGraph | undefined;
   /** The full list, or the stance summary while the context panel lists the relations. */
   view?: "full" | "summary";
+  /** In a panel: "Connections", directional phrases, no Graph tab (the context panel draws it). */
+  embedded?: boolean;
   onCardEvent: (event: CardEvent) => void;
   onOpenNote: (noteId: string) => void;
   onRetryExplanation: (relationId: string) => void;
@@ -508,9 +576,10 @@ export function NoteRelations({
   const empty = relations.total === 0 && withdrawn.total === 0 && earlierVersions.total === 0;
   // The Graph tab draws the shown relations: with none there is nothing to choose between.
   const summary = listView === "summary" && relations.total > 0;
-  const tabs = graph !== undefined && relations.total > 0 && !summary;
+  const tabs = graph !== undefined && relations.total > 0 && !summary && !embedded;
   const drawing = drawsGraph({ tabs, state: { view, graphUnavailable } });
   const list: ListProps = {
+    embedded,
     t,
     thisId,
     thisPrimary,
@@ -548,7 +617,15 @@ export function NoteRelations({
   }, [focusRequest, relations, withdrawn, earlierVersions]);
 
   return (
-    <section ref={section} aria-labelledby={headingId} className="flex flex-col gap-2">
+    <section
+      ref={section}
+      aria-labelledby={headingId}
+      className={cn(
+        "flex flex-col gap-2",
+        // The rows keep the prose's measure folded, and the text column's width on the wide sheet.
+        embedded && "max-w-(--measure) @min-[760px]:max-w-[600px]"
+      )}
+    >
       <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
         <h2
           id={headingId}
@@ -556,7 +633,7 @@ export function NoteRelations({
           tabIndex={-1}
           className={cn("text-lg font-semibold", focusRing)}
         >
-          {t("notePage.relations.title")}
+          {t(embedded ? "explore.note.connections" : "notePage.relations.title")}
         </h2>
         {relations.total > 0 ? (
           <span className="text-sm text-muted-foreground tabular-nums">{relations.total}</span>

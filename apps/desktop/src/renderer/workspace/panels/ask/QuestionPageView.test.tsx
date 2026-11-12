@@ -9,11 +9,13 @@ import { applyDelta, applyStatus, emptyStream, streamFor, type StreamState } fro
 import {
   askFixture,
   citationAddresses,
+  readFixture,
   deltaParagraphs,
   questionFixture,
   questionPanelFixtures
 } from "./ask-fixtures";
 import { enterSends } from "./AskComposer";
+import { forgetAsks, rememberRead } from "./ask-session";
 import type { QuestionSnapshot } from "./question-controller";
 import { questionState } from "./question-state";
 import { QuestionPageView, trayBelow, type QuestionPageViewProps } from "./QuestionPageView";
@@ -135,7 +137,11 @@ describe("citation chips, in the DOM", () => {
     expect(text).toContain("Citation 1");
     expect(text).toContain("Food microbiology, ch. 3");
     expect(text).toContain("Lactic acid bacteria lower the pH");
-    expect(text).toContain("open the passage beside");
+    expect(text).toContain("Open the passage beside");
+    // One wording and one keycap position for the tray and for an expanded entry.
+    expect(tray()?.querySelector("kbd")?.previousSibling?.textContent).toContain(
+      "Open the passage beside"
+    );
     // The list marks the entry but stays closed: one passage is never drawn twice.
     expect(entry(1).hasAttribute("data-active")).toBe(true);
     expect(entry(1).querySelector("mark")).toBeNull();
@@ -156,6 +162,167 @@ describe("citation chips, in the DOM", () => {
     await dom.render(<QuestionPageView {...props(done())} />);
     const heading = dom.document.querySelector("section h2")?.textContent ?? "";
     expect(heading.replaceAll("\u00a0", " ")).toContain("3 passages cited · 2 sources");
+  });
+
+  it("writes the scope and what was read in the sources heading, and lists what was read and not cited", async () => {
+    forgetAsks();
+    rememberRead(askFixture.questionId, readFixture);
+    await dom.render(<QuestionPageView {...props(done())} />);
+    await settle();
+    const heading = dom.document.querySelector("section h2")?.textContent ?? "";
+    expect(heading).toContain("Scope: whole library · 5 passages read from 3 sources");
+    const group = dom.document.querySelector('[role="group"]') as HTMLElement;
+    expect(group.querySelector("h3")?.textContent).toBe("Read, not cited (2)");
+    const rows = group.querySelectorAll("[data-read-not-cited]");
+    expect(rows).toHaveLength(2);
+    expect(rows[0]?.textContent).toContain("Home canning basics");
+    expect(rows[0]?.textContent).toContain("had nothing about keeping fermented food");
+    // The second is another passage of a source the answer cites (3), and the Ask gave no reason:
+    // the row says which passage it is and never that the source had nothing on the question.
+    expect(rows[1]?.textContent).toContain("Kefir and kombucha at home");
+    expect(rows[1]?.textContent).toContain("Another passage of source 3");
+    expect(rows[1]?.textContent).not.toContain("did not bear");
+    expect(rows[1]?.textContent).not.toContain("nothing");
+    await dom.act(() => (rows[0] as HTMLElement).click());
+    expect(opened).toEqual([readFixture.notCited[0]?.address]);
+    forgetAsks();
+  });
+
+  it("lists only what the answer does not cite, and says a passage no more than the app knows", async () => {
+    forgetAsks();
+    const [first, second] = citationAddresses as [string, string, string];
+    const bare = (address: string) => address.split("&span=")[0] as string;
+    rememberRead(askFixture.questionId, {
+      passages: 6,
+      sources: 3,
+      notCited: [
+        // A passage the answer cites, read with or without its span: never "not cited".
+        { address: bare(first), reason: "had nothing about this question" },
+        { address: second },
+        ...readFixture.notCited.slice(0, 1).map(({ address }) => ({ address })),
+        ...readFixture.notCited.slice(1)
+      ]
+    });
+    await dom.render(<QuestionPageView {...props(done())} />);
+    await settle();
+    const group = dom.document.querySelector('[role="group"]') as HTMLElement;
+    expect(group.querySelector("h3")?.textContent).toBe("Read, not cited (2)");
+    const rows = [...group.querySelectorAll("[data-read-not-cited]")];
+    expect(rows.map((row) => row.textContent)).toEqual([
+      expect.stringContaining("Home canning basics"),
+      expect.stringContaining("Kefir and kombucha at home")
+    ]);
+    // A source the answer does not cite at all: only that the answer did not use it.
+    expect(rows[0]?.textContent).toContain("not used in the answer");
+    expect(group.textContent).not.toContain("had nothing about this question");
+    expect(group.textContent).not.toContain("nothing on");
+    forgetAsks();
+  });
+
+  it("shows no group at all when every read passage is cited", async () => {
+    forgetAsks();
+    rememberRead(askFixture.questionId, {
+      passages: 3,
+      sources: 2,
+      notCited: [{ address: citationAddresses[0] as string }]
+    });
+    await dom.render(<QuestionPageView {...props(done())} />);
+    await settle();
+    expect(dom.document.querySelector('[role="group"]')).toBeNull();
+    forgetAsks();
+  });
+
+  it("shows no group when the Ask kept nothing of what it read, and not while it writes", async () => {
+    forgetAsks();
+    await dom.render(<QuestionPageView {...props(done())} />);
+    expect(dom.document.querySelector('[role="group"]')).toBeNull();
+    forgetAsks();
+    rememberRead(askFixture.questionId, readFixture);
+    const running = applyDelta(streamFor(request), {
+      requestId: request,
+      paragraphs: deltaParagraphs(2),
+      restart: false
+    });
+    await dom.render(
+      <QuestionPageView {...props(snapshot(questionFixture("running"), running))} />
+    );
+    expect(dom.document.querySelector('[role="group"]')).toBeNull();
+    forgetAsks();
+  });
+
+  it("places the sources list in a column beside the answer from 1280 px, where the panel is wide enough", async () => {
+    await dom.render(<QuestionPageView {...props(done(), { viewportWidth: trayBelow })} />);
+    await settle();
+    const section = dom.document.querySelector("section") as HTMLElement;
+    expect(section.className).toContain("@[58rem]:col-start-2");
+    expect(dom.document.querySelector("article")?.className).toContain("@[58rem]:grid-cols-");
+    // Below 1280 px the list follows the answer in one column, and the tray reads the passages.
+    await dom.render(<QuestionPageView {...props(done(), { viewportWidth: trayBelow - 1 })} />);
+    await settle();
+    expect(dom.document.querySelector("section")?.className).not.toContain("col-start-2");
+    expect(dom.document.querySelector("article")?.className).not.toContain("@[58rem]");
+  });
+
+  it("keeps every focusable row of the sources list clear of the tray below 1280 px", async () => {
+    forgetAsks();
+    rememberRead(askFixture.questionId, readFixture);
+    await dom.render(<QuestionPageView {...props(done(), { viewportWidth: trayBelow - 1 })} />);
+    await settle();
+    await hover(chip(1));
+    await settle();
+    // The tray is at most 8rem tall (`max-h-32`): a focused row scrolls 9rem clear of the foot.
+    expect(tray()?.className).toContain("max-h-32");
+    const rows = [
+      ...dom.document.querySelectorAll("[data-source-entry], [data-read-not-cited]")
+    ] as HTMLElement[];
+    expect(rows).toHaveLength(5);
+    for (const row of rows) expect(row.className.split(" ")).toContain("scroll-mb-36");
+    // The follow-up field and every other control of the page keep the same clearance.
+    expect(dom.document.querySelector("article")?.className).toContain(
+      "[&_:is(textarea,button,a)]:scroll-mb-36"
+    );
+    // With no tray (1280 px and up) nothing needs the margin.
+    await dom.render(<QuestionPageView {...props(done(), { viewportWidth: trayBelow })} />);
+    await settle();
+    expect(dom.document.querySelectorAll("[data-source-entry].scroll-mb-36")).toHaveLength(0);
+    expect(dom.document.querySelectorAll("[data-read-not-cited].scroll-mb-36")).toHaveLength(0);
+    forgetAsks();
+  });
+
+  it("clamps an idle passage to one line and draws the active one only in the tray below 1280", async () => {
+    await dom.render(<QuestionPageView {...props(done(), { viewportWidth: 960 })} />);
+    await settle();
+    await hover(chip(2));
+    await settle();
+    const idle = entry(1).querySelector(".font-reading");
+    // `block` would undo the clamp's own display.
+    expect(idle?.className).toContain("line-clamp-1");
+    expect(idle?.className.split(" ")).not.toContain("block");
+    // The active entry shows no passage: its text lives in the tray alone.
+    expect(entry(2).querySelector(".font-reading")).toBeNull();
+    expect(tray()?.textContent).toContain("fills the space");
+  });
+
+  it("offers another route after a route failure, in Settings", async () => {
+    const failed = applyStatus(streamFor(request), {
+      requestId: request,
+      stage: "failed",
+      error: "The provider returned an error."
+    });
+    const view = snapshot(questionFixture("running"), failed);
+    expect(questionState(view)).toBe("error");
+    await dom.render(<QuestionPageView {...props(view)} />);
+    expect(dom.document.body.textContent).toContain("The AI route did not answer.");
+    const other = [...dom.document.querySelectorAll("button")].find(
+      (node) => node.textContent === "Use another route"
+    ) as HTMLElement;
+    // The retry and the other route sit on one row.
+    const retry = [...dom.document.querySelectorAll("button")].find(
+      (node) => node.textContent === "Retry"
+    ) as HTMLElement;
+    expect(retry.parentElement).toBe(other.parentElement);
+    await dom.act(() => other.click());
+    expect(opened).toEqual(["memora://settings/ai"]);
   });
 
   it("gives every chip the same lead and puts no margin after it", async () => {

@@ -12,6 +12,7 @@ import type { LegacyViewId } from "../../shared/app-menu";
 import { ActivityHost } from "../components/activity/ActivityHost";
 import type { ActivityNavigation } from "../components/activity/activity-model";
 import { cn } from "../lib/cn";
+import { AddStatusSlot } from "./add/AddFailureNotice";
 import { AddMenu } from "./add/AddMenu";
 import type { AddFlow } from "./add/add-flow";
 import { DropHost } from "./add/DropOverlay";
@@ -197,13 +198,15 @@ export function Shell({
         onOpenPalette={onOpenPalette}
         add={<AddMenu t={t} flow={addFlow} />}
         status={
-          <ActivityHost
-            t={t}
-            onNavigate={onNavigateActivity}
-            onOpenInbox={onOpenInbox}
-            hideNeedsYou={place === "home" && legacyView === null}
-            compact={pillDropsWaiting(width)}
-          />
+          <AddStatusSlot t={t} flow={addFlow}>
+            <ActivityHost
+              t={t}
+              onNavigate={onNavigateActivity}
+              onOpenInbox={onOpenInbox}
+              hideNeedsYou={place === "home" && legacyView === null}
+              compact={pillDropsWaiting(width)}
+            />
+          </AddStatusSlot>
         }
       />
       <div className="flex min-h-0 min-w-0">

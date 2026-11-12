@@ -247,12 +247,15 @@ function Paragraphs(props: TopicOverviewSectionProps & { overview: ReadyOverview
   const unsupported = new Set(overview.support.unsupported);
   const byNumber = new Map(overview.citations.map((citation) => [citation.n, citation]));
   return (
-    <div lang={overview.language} className="flex max-w-190 flex-col gap-3">
+    <div lang={overview.language} className="flex max-w-(--measure) flex-col gap-3">
       {overview.paragraphs.map((paragraph, index) => (
         <p key={index} className="font-reading text-base leading-7 text-foreground">
-          {paragraphSegments(paragraph.text, overview.citations).map((segment, at) =>
+          {paragraphSegments(paragraph.text, overview.citations).map((segment, at, all) =>
             segment.kind === "text" ? (
-              <span key={at}>{segment.text}</span>
+              // A numeral sits tight to its word: the space the writer left before it is dropped.
+              <span key={at}>
+                {all[at + 1]?.kind === "citation" ? segment.text.trimEnd() : segment.text}
+              </span>
             ) : (
               <Citations
                 key={at}
@@ -301,7 +304,7 @@ function Citations({
   actions: TopicPageActions;
 }) {
   return (
-    <sup className="ml-0.5 inline-flex gap-0.5 font-sans">
+    <sup className="inline-flex gap-px font-sans">
       {numbers.map((n) => {
         const citation = byNumber.get(n);
         return citation ? (
@@ -350,12 +353,12 @@ function CitationMarker({
     >
       <button
         type="button"
-        className="rounded-sm px-0.5 text-xs font-semibold text-accent hover:bg-soft hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+        className="rounded-sm px-px [font-size:inherit] font-semibold text-accent hover:bg-soft hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
         aria-label={citationLabel(t, citation)}
         aria-describedby={open ? cardId : undefined}
         onClick={openPassage}
       >
-        [{citation.n}]
+        {citation.n}
       </button>
       {open ? (
         <span

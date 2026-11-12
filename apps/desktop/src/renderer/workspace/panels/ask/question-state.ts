@@ -3,9 +3,9 @@ import type { QuestionSnapshot } from "./question-controller";
 
 /**
  * What the panel's frame is told: the page's state in the four words of the contract. A Question
- * that is not there is empty, so is an Ask that found nothing in the library to rest on; a
- * failed Ask still has its page (the failure is drawn in place, with the partial answer kept), so
- * the ribbon and the Question stay.
+ * that is not there is empty, so is an Ask that found nothing in the library to rest on; an Ask
+ * that failed is an error (its one quiet sentence is drawn in place, with the partial answer kept
+ * under the title), and the frame, which says a failure once, draws no ribbon over it.
  */
 export function questionState(
   snapshot: QuestionSnapshot
@@ -15,5 +15,6 @@ export function questionState(
   if (load.status === "error") return "error";
   if (load.status === "missing") return "empty";
   const shown = shownAnswer(load.question, stream);
-  return foundNothing(shown) ? "empty" : "success";
+  if (foundNothing(shown)) return "empty";
+  return shown.stage === "failed" ? "error" : "success";
 }

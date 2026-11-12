@@ -4,10 +4,13 @@ import { stances } from "../../lib/relation-stance";
 import {
   fallbackGraphPalette,
   graphStanceTokenNames,
+  graphTopicColourCount,
+  graphTopicTokenName,
   graphTokenNames,
   parseGraphColor,
   readGraphPalette,
   samePalette,
+  topicColour,
   watchGraphPalette,
   type ThemeChangeSource,
   type TokenStyleReader
@@ -58,7 +61,7 @@ describe("the graph token reader", () => {
     expect(palette.stance.supports).toBe("#010203");
     expect(palette.stance.depends_on).toBe("#0a0b0c");
     // Everything it could not read falls back to the value tokens.css declares.
-    expect(palette.canvasEdge).toBe(fallbackGraphPalette.canvasEdge);
+    expect(palette.canvas).toBe(fallbackGraphPalette.canvas);
     expect(palette.stance.related).toBe(fallbackGraphPalette.stance.related);
   });
 
@@ -73,12 +76,12 @@ describe("the graph token reader", () => {
     expect(palette.note).toBe(fallbackGraphPalette.note);
     expect(palette.stance.supports).toBe(fallbackGraphPalette.stance.supports);
     for (const value of [
-      palette.canvasCenter,
-      palette.canvasEdge,
+      palette.canvas,
       palette.label,
       palette.labelMuted,
       palette.note,
-      ...stances.map((stance) => palette.stance[stance])
+      ...stances.map((stance) => palette.stance[stance]),
+      ...palette.topic
     ])
       expect(value).toMatch(/^#[0-9a-f]{6}$/u);
   });
@@ -123,6 +126,26 @@ describe("the graph token reader", () => {
     root();
     scheme();
     expect(seen).toEqual(["#336699", "#112233"]);
+  });
+
+  it("reads the twelve topic colours in order and maps a colour index to its token, wrapping", () => {
+    expect(graphTopicTokenName(0)).toBe("--graph-topic-1");
+    expect(graphTopicTokenName(11)).toBe("--graph-topic-12");
+    expect(graphTopicTokenName(12)).toBe("--graph-topic-1");
+    expect(graphTopicTokenName(-1)).toBe("--graph-topic-12");
+    const palette = readGraphPalette(
+      element,
+      styleOf({ "--graph-topic-1": "#010101", "--graph-topic-12": "#0C0C0C" })
+    );
+    expect(palette.topic).toHaveLength(graphTopicColourCount);
+    expect(topicColour(palette, 0)).toBe("#010101");
+    expect(topicColour(palette, 11)).toBe("#0c0c0c");
+    expect(topicColour(palette, 13)).toBe(fallbackGraphPalette.topic[1]);
+    // A theme that changes one topic colour is a different palette.
+    expect(samePalette(palette, readGraphPalette(element, styleOf({})))).toBe(false);
+    // The canvas reads the theme's surface, not a canvas of its own.
+    expect(graphTokenNames.canvas).toBe("--surface-raised");
+    expect(graphStanceTokenNames.depends_on).toBe("--stance-depends-on");
   });
 
   it("compares palettes by every colour", () => {

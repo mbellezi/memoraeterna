@@ -70,6 +70,10 @@ export function TopicMap({
         <span className="text-xs text-muted-foreground">{t("topics.page.map.hint")}</span>
       </div>
       {empty ? <p className="text-sm text-muted-foreground">{t("topics.page.empty")}</p> : null}
+      {page.subtopics.length > 0 && page.centralNotes.length === 0 ? (
+        // An area of the tree: its notes are in the subtopics below (design record 6.1).
+        <p className="m-0 text-sm text-secondary-foreground">{t("explore.topic.noDirectNotes")}</p>
+      ) : null}
       {page.subtopics.length > 0 ? (
         <Subtopics t={t} page={page} hidden={hiddenSubtopics} actions={actions} />
       ) : null}

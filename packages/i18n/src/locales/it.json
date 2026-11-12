@@ -317,6 +317,13 @@
     }
   },
   "inbox": {
+    "consequence": {
+      "keep": "Il collegamento resta e conta come tua decisione.",
+      "remove": "Il collegamento esce e il Giardiniere non lo suggerisce più.",
+      "restore": "Il collegamento torna e conta come tua decisione."
+    },
+    "summary": "{count} decisioni · la più rischiosa per prima",
+    "summaryOne": "1 decisione ti aspetta",
     "title": "Posta in arrivo",
     "description": "Ciò che richiede il tuo giudizio, il più importante per primo.",
     "badge": "{count} in attesa",
@@ -325,14 +332,16 @@
       "error": "Impossibile caricare la posta in arrivo.",
       "empty": {
         "title": "Niente richiede la tua attenzione",
-        "body": "La tua libreria si organizza da sola. Quando qualcosa richiede il tuo giudizio, comparirà qui."
+        "body": "Il Giardiniere chiede qui quando un cambio è rischioso."
       },
       "emptyFiltered": "Nessun elemento corrisponde a questo filtro.",
       "loadMore": "Carica altri",
       "loadingMore": "Caricamento di altri...",
-      "moreFailed": "Impossibile caricare altri elementi."
+      "moreFailed": "Impossibile caricare altri elementi.",
+      "errorKept": "Non è stato deciso né modificato nulla."
     },
     "filters": {
+      "kind": "Tipo",
       "label": "Filtra la posta in arrivo",
       "all": "Tutto",
       "chip": "{kind}: {count}",
@@ -346,6 +355,17 @@
       "medium": "confidenza media ({percent})",
       "low": "confidenza bassa ({percent})",
       "unknown": "confidenza sconosciuta"
+    },
+    "kind": {
+      "review": "Da rivedere",
+      "quarantined": "Attività non riuscita",
+      "contradiction": "Contraddizione",
+      "suggestion": "Collegamento suggerito",
+      "withdrawn": "Collegamento ritirato",
+      "duplicate": "Duplicato",
+      "obsidianConflict": "Conflitto di Obsidian",
+      "budget": "Limite di spesa",
+      "backlog": "Nuovo abbinamento facoltativo"
     },
     "kinds": {
       "review": "Da rivedere",
@@ -406,7 +426,7 @@
         "divergenceBody": "La panoramica di “{topic}” è stata ampliata e alcune nuove evidenze non concordano con ciò che dice. Il disaccordo resta accanto al testo, mai fuso con esso. Mantienilo lì oppure scarta questo elemento. Punti di disaccordo: {count}."
       },
       "suggestion": {
-        "title": "Collegamento suggerito · {confidence}",
+        "title": "Mantenere questo collegamento?",
         "body": "Suggerimento: “{first}” {relation} “{second}”. Mantienilo perché conti come una tua decisione, oppure rimuovilo.",
         "hint": "Non viene cancellato nulla: cambia solo il collegamento. Se lo rimuovi, non verrà più suggerito."
       },
@@ -481,17 +501,31 @@
       "hide": "Nascondi"
     },
     "keys": {
+      "barNote": "Le scorciatoie a un solo tasto non funzionano nei campi di testo.",
+      "short": {
+        "apply": "accetta",
+        "dismiss": "scarta",
+        "edit": "modifica",
+        "help": "scorciatoie",
+        "move": "naviga",
+        "open": "apri",
+        "remove": "rimuovi",
+        "retry": "riprova",
+        "undo": "annulla"
+      },
       "toggle": "Scorciatoie da tastiera",
       "title": "Scorciatoie da tastiera",
       "move": "Elemento successivo o precedente",
       "open": "Vai ai dettagli",
       "apply": "Applica o mantieni",
-      "dismiss": "Scarta o rimuovi",
+      "dismiss": "Ignorare: esce dalla posta e non cambia nulla",
       "retry": "Riprova",
       "undo": "Annulla l'ultima decisione",
       "help": "Mostra o nascondi questo aiuto",
       "note": "Questi tasti funzionano mentre la lista o i dettagli hanno il focus, mai mentre scrivi o in una finestra di dialogo.",
-      "money": "Continuare oltre il limite di spesa è un pulsante, mai un tasto."
+      "money": "Continuare oltre il limite di spesa è un pulsante, mai un tasto.",
+      "remove": "Rimuovere una connessione: non viene più suggerita",
+      "edit": "Modificare i nomi prima di applicare"
     },
     "result": {
       "applied": "Applicato.",
@@ -534,7 +568,8 @@
         "empty": "Ancora nessuna panoramica",
         "divergences": "Dove le nuove evidenze non concordano",
         "divergence": "Paragrafi {existing} e {new}: {summary}"
-      }
+      },
+      "legend": "Blocchi piccoli, per lettera"
     },
     "errors": {
       "invalidCursor": "Nel frattempo la lista è cambiata. Caricala di nuovo.",
@@ -3236,7 +3271,7 @@
         "button": "Chiedi su questo argomento"
       },
       "health": {
-        "good": "Stato buono",
+        "good": "dimensione equilibrata",
         "attention": "Richiede attenzione",
         "violation": "Problema di struttura"
       },
@@ -3424,11 +3459,13 @@
         "titles": {
           "build": "Gli argomenti sono stati creati dalle tue note.",
           "rebalance": "La struttura è stata riequilibrata.",
-          "rebalanceItems": "La struttura è stata riequilibrata. Elementi spostati: {count}.",
+          "rebalanceItems": "{count} elementi sono stati spostati quando la struttura è stata riequilibrata.",
+          "rebalanceItemsOne": "1 elemento è stato spostato quando la struttura è stata riequilibrata.",
           "audit": "I reindirizzamenti di vecchi argomenti sono stati accorciati.",
           "areas": "Le aree sono state raggruppate di nuovo.",
           "naming": "Gli argomenti hanno ricevuto un nome.",
-          "namingCount": "Argomenti con un nuovo nome: {count}.",
+          "namingCount": "{count} argomenti hanno ricevuto un nome.",
+          "namingCountOne": "1 argomento ha ricevuto un nome.",
           "human": "Hai modificato la struttura.",
           "rebuild": "Gli argomenti sono stati ricostruiti.",
           "other": "La struttura è cambiata."
@@ -4369,9 +4406,7 @@
     },
     "titleBar": {
       "add": "Aggiungi",
-      "addFile": "Scegli file…",
       "addMore": "Altri modi per aggiungere",
-      "addMoreOptions": "Altre opzioni di importazione…",
       "addSource": "Aggiungi fonte",
       "omniLabel": "Cerca, apri o chiedi",
       "omniPlaceholder": "Cerca, apri o chiedi…",
@@ -4701,6 +4736,138 @@
       "mentions": "Menzioni"
     }
   },
+  "explore": {
+    "compactError": "Non disponibile",
+    "compactGone": "Non è più qui",
+    "navigator": {
+      "branch": "Ramo",
+      "branchLabel": "Mostrando solo un ramo dell’albero",
+      "errorKept": "Fissati e Recenti sono ancora qui.",
+      "pinHint": "Fissa ciò che apri sempre: ⌘D nel pannello aperto.",
+      "wholeTree": "Albero intero"
+    },
+    "note": {
+      "alsoInInbox": "anche nella Posta in arrivo",
+      "connections": "Connessioni",
+      "error": "Impossibile aprire questa nota.",
+      "errorKept": "Il resto di Esplora resta aperto e le tue note non sono cambiate.",
+      "explainedLocally": "spiegazione scritta dall’IA locale",
+      "gardenerConfidence": "Giardiniere · confidenza {word}",
+      "gardenerSuggestion": "suggerimento del Giardiniere · decidi quando vuoi",
+      "goneBody": "Potrebbe essere stata unita a un’altra nota o rimossa. Nient’altro è cambiato.",
+      "goneHeadline": "Questa nota non è più nella tua libreria.",
+      "moreRelations": "altre {count}",
+      "suggestionsMany": "{count} suggerimenti",
+      "suggestionsOne": "{count} suggerimento",
+      "summaryHint": "Ogni connessione, con la sua evidenza, è nel pannello di contesto."
+    },
+    "root": {
+      "addFirst": "Aggiungi la prima fonte",
+      "areasLead": "Scegli un’area per aprirla accanto. Ciò che apri resta qui, un pannello accanto all’altro.",
+      "areasTitle": "Le tue aree",
+      "emptyBody": "Tutto ciò che apri compare qui, un pannello accanto all’altro. I più vecchi si ripiegano in strisce a sinistra, con tipo e titolo in vista; un clic li riapre. Così il percorso fin qui non si perde mai.",
+      "emptyHeadline": "Ancora nulla di aperto",
+      "error": "Impossibile caricare le tue aree.",
+      "errorKept": "Le tue fonti e le tue note non sono cambiate.",
+      "keyClose": "chiude il pannello attivo",
+      "keyOpen": "apre accanto",
+      "keyPeek": "dà un’occhiata senza aprire",
+      "keySpace": "Spazio",
+      "keysLabel": "Tasti"
+    },
+    "topic": {
+      "error": "Impossibile aprire questo argomento.",
+      "errorKept": "Il resto di Esplora resta aperto e le tue note non sono cambiate.",
+      "goneBody": "Potrebbe essere stato unito a un altro argomento o rimosso. Nient’altro è cambiato.",
+      "goneHeadline": "Questo argomento non è più nell’albero.",
+      "noDirectNotes": "Ancora nessuna nota propria. Le note sono negli argomenti secondari."
+    }
+  },
+  "addFlow": {
+    "busy": {
+      "button": "Lettura…",
+      "reading": "Lettura di {name}…",
+      "readingFile": "Lettura del file…",
+      "waiting": "{count} in attesa"
+    },
+    "drop": {
+      "after": "Dopo aver rilasciato, vai alla prima fonte in Esplora e vedi arrivare le note.",
+      "label": "Rilascia i file per aggiungerli",
+      "modeError": "Non è stato possibile leggere la modalità di importazione, quindi i file entrano come Ricercabile e organizzato.",
+      "modeLabel": "Modalità",
+      "modeNote": "{hint}. Cambiala nel menu Aggiungi.",
+      "noFiles": "Rilascia un file per aggiungerlo",
+      "titleMany": "Rilascia per aggiungere {count} file",
+      "titleOne": "Rilascia per aggiungere 1 file"
+    },
+    "failure": {
+      "close": "Chiudi",
+      "empty": "{name} è vuoto.",
+      "generic": "Non è stato possibile aggiungere il file.",
+      "kept": "Non è stato salvato nulla e il resto è com'era.",
+      "keptSome": "I file leggibili sono stati aggiunti e il resto è com'era.",
+      "more": "Altri non aggiunti: {count}.",
+      "noText": "{name} non contiene testo che Memora possa leggere.",
+      "noTextNoName": "Quel file non contiene testo che Memora possa leggere.",
+      "notAFile": "{name} non è un file.",
+      "shortMany": "File non aggiunti.",
+      "shortOne": "File non aggiunto.",
+      "symlink": "{name} è un collegamento. Rilascia il file originale.",
+      "tooLarge": "{name} è troppo grande per essere importato.",
+      "tooLargeNoName": "Quel file è troppo grande per essere importato.",
+      "unreadable": "Non è stato possibile leggere {name}.",
+      "unsupported": "Memora non legge ancora file come {name}.",
+      "unsupportedNoName": "Memora non legge ancora quel tipo di file."
+    },
+    "importPanel": {
+      "errors": {
+        "kept": "Non è stato modificato nulla.",
+        "open": "Non è stato possibile aprire questa fonte per la modifica."
+      },
+      "gone": {
+        "action": "Apri la Biblioteca",
+        "body": "Potrebbe essere stata rimossa dalla Biblioteca. Nient'altro è cambiato.",
+        "title": "Questa fonte non esiste più."
+      },
+      "leave": {
+        "description": "Hai modificato questa importazione senza salvarla. Continua per completarla oppure scarta quello che hai inserito e vai avanti.",
+        "discard": "Scarta ed esci",
+        "keep": "Continua qui",
+        "title": "Uscire senza salvare?"
+      },
+      "title": "Importazione avanzata"
+    },
+    "menu": {
+      "file": "Scegli un file…",
+      "fileHint": "PDF, EPUB, Word, Markdown e testo",
+      "foot": "Vale per le prossime importazioni; ogni fonte può cambiare dopo. Anche rilasciare file ovunque nella finestra funziona.",
+      "label": "Modi di aggiungere",
+      "link": "Incolla un link",
+      "linkHint": "una pagina web o un video",
+      "modeHeading": "All'importazione",
+      "more": "Altre opzioni di importazione…",
+      "note": "Scrivi una nota",
+      "noteHint": "va in Senza posto finché non ha un argomento"
+    },
+    "modes": {
+      "error": "Non è stato possibile verificare se c'è un modello pronto a scrivere.",
+      "errorKept": "Scegliere un file funziona ancora e importa come Ricercabile e organizzato.",
+      "searchable": {
+        "hint": "passaggi per la ricerca e un posto nell'albero, senza note",
+        "name": "Ricercabile e organizzato"
+      },
+      "secondBrain": {
+        "hint": "note brevi, un posto nell'albero e connessioni",
+        "hintNeedsModel": "note brevi, un posto nell'albero e connessioni · richiede un modello pronto a scrivere",
+        "hintRecommended": "note brevi, un posto nell'albero e connessioni · consigliato: c'è un modello pronto a scrivere",
+        "name": "Secondo cervello"
+      },
+      "storeOnly": {
+        "hint": "il file resta nella Biblioteca, senza IA",
+        "name": "Solo archiviare"
+      }
+    }
+  },
   "entityPage": {
     "aliases": "Altri nomi:",
     "articleLabel": "Entità: {name}",
@@ -4842,6 +5009,137 @@
       "errorKept": "Nulla è stato modificato e le azioni continuano a funzionare.",
       "noCommand": "Nessuna azione corrisponde a “{query}”.",
       "noResult": "Niente per “{query}”."
+    }
+  },
+  "askPanel": {
+    "answer": {
+      "label": "Risposta",
+      "saved": "Salvata in Domande. Ogni citazione porta al passaggio esatto.",
+      "savedPlace": "Salvata in Domande. Il suo posto nell’albero deriva dalle citazioni quando la risposta sarà finita. Ogni citazione porta al passaggio esatto."
+    },
+    "band": {
+      "again": "Rifai",
+      "answering": "Scrittura della risposta",
+      "answeringSourcesMany": "{count} fonti citate finora",
+      "answeringSourcesOne": "{count} fonte citata finora",
+      "canceled": "Interrotta da te",
+      "continue": "Continua",
+      "doneOn": "Risposta il {date}",
+      "retrieving": "Lettura della biblioteca",
+      "retrievingHint": "ricerca dei passaggi che rispondono",
+      "sourcesMany": "{count} fonti",
+      "sourcesOne": "{count} fonte",
+      "stale": "Potrebbe essere superata: una fonte citata è cambiata dopo la risposta.",
+      "stop": "Interrompi",
+      "waiting": "In attesa della risposta dell’IA nel cloud",
+      "waitingHint": "la risposta continua da qui"
+    },
+    "chip": {
+      "labelPlain": "Citazione {number}"
+    },
+    "compact": {
+      "error": "Impossibile aprire."
+    },
+    "empty": {
+      "add": "Aggiungi una fonte",
+      "body": "Riformula la domanda o aggiungi una fonte che tratti l’argomento.",
+      "headline": "Non ho trovato nulla nella tua biblioteca su questo.",
+      "rephrase": "Riformula"
+    },
+    "error": {
+      "kept": "La tua biblioteca è rimasta com’era.",
+      "message": "Impossibile aprire questa domanda."
+    },
+    "failed": {
+      "again": "Impossibile rifare la domanda.",
+      "kept": "Ciò che era stato scritto prima dell’interruzione è conservato qui sotto.",
+      "keptNothing": "La tua domanda è salvata: puoi rifarla.",
+      "message": "Il percorso IA non ha risposto.",
+      "otherRoute": "Usa un altro percorso",
+      "stop": "Impossibile interrompere la risposta."
+    },
+    "followUp": {
+      "label": "Domanda di approfondimento",
+      "placeholder": "Continua a chiedere, nello stesso ambito…",
+      "send": "Chiedi"
+    },
+    "kind": "Chiedi",
+    "launcher": {
+      "draftLabel": "La tua domanda",
+      "empty": {
+        "body": "Chiedi di ciò che hai salvato. Ogni domanda resta in Biblioteca › Domande, con la sua risposta.",
+        "headline": "Ancora nessuna domanda."
+      },
+      "error": {
+        "kept": "Le tue parole sono ancora nel campo.",
+        "message": "Impossibile inviare la domanda."
+      },
+      "heading": "Chiedi alla tua biblioteca",
+      "hintAsk": "per chiedere",
+      "hintNewline": "nuova riga",
+      "lead": "La risposta cita i passaggi esatti su cui si basa. Viene salvata in Domande e non modifica mai le tue note.",
+      "long": "Usa al massimo 1.000 caratteri.",
+      "placeholder": "Cosa vuoi sapere?",
+      "recent": {
+        "heading": "Domande recenti",
+        "label": "Apri una domanda recente"
+      },
+      "scope": {
+        "label": "Ambito",
+        "library": "tutta la biblioteca",
+        "source": "fonte: {title}",
+        "topic": "argomento: {title}",
+        "unsupported": "Si può chiedere solo di tutta la biblioteca, di un argomento o di una fonte.",
+        "unsupportedKept": "Non è stato chiesto nulla."
+      },
+      "short": "Scrivi almeno 3 caratteri.",
+      "starting": "Invio della domanda…",
+      "submit": "Chiedi"
+    },
+    "meta": {
+      "asked": "Chiesta il {date}",
+      "cloud": "IA nel cloud",
+      "local": "IA locale",
+      "scopeLibrary": "ambito: tutta la biblioteca",
+      "scopeSource": "ambito: fonte {title}",
+      "scopeSources": "ambito: {count} fonti",
+      "scopeTopic": "ambito: argomento {title}"
+    },
+    "missing": {
+      "action": "Vedi Domande",
+      "body": "Potrebbe essere stata eliminata. Le tue note e le tue fonti sono rimaste come erano.",
+      "headline": "Questa domanda non è più nella biblioteca."
+    },
+    "sources": {
+      "changed": "cambiata dopo la risposta",
+      "heading": "Prove di questa risposta",
+      "hint": "I numeri sono quelli delle citazioni.",
+      "label": "Passaggi citati da questa risposta",
+      "open": "Apri il passaggio accanto",
+      "passagesMany": "{count} passaggi citati",
+      "passagesOne": "{count} passaggio citato",
+      "readFailed": "Impossibile leggere il passaggio.",
+      "readFromMany": "da {count} fonti",
+      "readFromOne": "da {count} fonte",
+      "readNotCited": "Letti, non citati",
+      "readNotCitedReason": "non usato nella risposta",
+      "readNotCitedSibling": "Un altro passaggio della fonte {number}",
+      "readPassagesMany": "{count} passaggi letti",
+      "readPassagesOne": "{count} passaggio letto",
+      "reading": "lettura…",
+      "removed": "passaggio rimosso",
+      "seeSource": "vedi la fonte"
+    },
+    "tray": {
+      "empty": "Passa il mouse o il focus su una citazione per leggere qui il suo passaggio.",
+      "heading": "Citazione {number}",
+      "label": "Passaggio della citazione"
+    },
+    "versions": {
+      "label": "Versioni della risposta",
+      "next": "Versione successiva",
+      "of": "Versione {version} di {total}",
+      "previous": "Versione precedente"
     }
   },
   "preview": {
@@ -5247,252 +5545,160 @@
       "label": "Conserva una copia dei file caricati"
     }
   },
-  "askPanel": {
-    "answer": {
-      "label": "Risposta",
-      "saved": "Salvata in Domande. Ogni citazione porta al passaggio esatto.",
-      "savedPlace": "Salvata in Domande. Il suo posto nell’albero deriva dalle citazioni quando la risposta sarà finita. Ogni citazione porta al passaggio esatto."
-    },
+  "map": {
     "band": {
-      "again": "Rifai",
-      "answering": "Scrittura della risposta",
-      "answeringSourcesMany": "{count} fonti citate finora",
-      "answeringSourcesOne": "{count} fonte citata finora",
-      "canceled": "Interrotta da te",
-      "continue": "Continua",
-      "doneOn": "Risposta il {date}",
-      "retrieving": "Lettura della biblioteca",
-      "retrievingHint": "ricerca dei passaggi che rispondono",
-      "sourcesMany": "{count} fonti",
-      "sourcesOne": "{count} fonte",
-      "stale": "Potrebbe essere superata: una fonte citata è cambiata dopo la risposta.",
-      "stop": "Interrompi",
-      "waiting": "In attesa della risposta dell’IA nel cloud",
-      "waitingHint": "la risposta continua da qui"
+      "action": "Indietro",
+      "back": "torna a {topic}, dove eri.",
+      "whole": "Stai vedendo l’albero intero."
     },
-    "chip": {
-      "labelPlain": "Citazione {number}"
+    "chart": {
+      "columns": {
+        "areas": "Aree",
+        "subtopics": "Sottoargomenti",
+        "topics": "Argomenti"
+      },
+      "deeper": "{count} argomenti sono più in profondità: la tabella li elenca tutti e Invio ingrandisce un ramo.",
+      "deeperOne": "1 argomento è più in profondità: la tabella lo elenca e Invio ingrandisce un ramo.",
+      "here": "qui",
+      "label": "Albero degli argomenti. Ogni blocco è un pulsante che seleziona un argomento: le frecce si spostano e Invio ingrandisce.",
+      "legend": {
+        "attention": "richiede attenzione",
+        "direct": "note collocate direttamente nell’argomento",
+        "height": "Altezza = note",
+        "here": "qui = contiene dove eri",
+        "selected": "selezionato"
+      },
+      "merged": "I blocchi piccoli sono raggruppati; la tabella elenca ciascuno.",
+      "moreTopics": "{count} in più · {notes}"
     },
-    "compact": {
-      "error": "Impossibile aprire."
+    "count": {
+      "topics": "{count} argomenti",
+      "topicsOne": "1 argomento"
+    },
+    "display": {
+      "both": "Grafico e tabella",
+      "label": "Visualizzazione",
+      "table": "Solo tabella"
+    },
+    "health": {
+      "attention": "richiede attenzione",
+      "good": "equilibrato",
+      "violation": "oltre il limite"
+    },
+    "inspector": {
+      "next": "Prossimo passo",
+      "nextInbox": "Vedi la proposta nella Posta in arrivo",
+      "selected": "Selezionato",
+      "table": "Gli stessi numeri in tabella"
+    },
+    "lens": {
+      "label": "Viste della mappa",
+      "relations": "Grafo",
+      "shape": "Albero"
+    },
+    "relations": {
+      "action": "Vedi l’albero",
+      "body": "Mostrerà come si collegano i tuoi argomenti. Nel frattempo, l’Albero ne mostra dimensione e stato di salute.",
+      "headline": "Il grafo delle connessioni arriverà presto"
+    },
+    "selected": {
+      "growth": "{growth} note in {days} giorni",
+      "growthOne": "{growth} nota in {days} giorni",
+      "subtopics": "{count} sottoargomenti diretti",
+      "subtopicsOne": "1 sottoargomento diretto"
+    },
+    "shape": {
+      "description": "Dimensione e salute dell’albero: {notes} in {topics}",
+      "descriptionPlain": "Dimensione e salute dell’albero."
+    },
+    "states": {
+      "empty": "La mappa compare quando ci sono argomenti.",
+      "emptyAdd": "Aggiungi una fonte",
+      "emptyBody": "Quando la tua prima fonte diventa note, gli argomenti nascono da soli e la mappa li mostra qui.",
+      "error": "Non è stato possibile caricare la mappa.",
+      "errorKept": "Le tue fonti e le tue note sono intatte."
+    },
+    "table": {
+      "caption": "Gli stessi numeri del grafico, una riga per argomento",
+      "growth": "7 giorni",
+      "health": "Salute",
+      "notes": "Note",
+      "topic": "Argomento"
+    },
+    "title": "Mappa",
+    "warnings": {
+      "dismiss": "Scarta"
+    }
+  },
+  "mapRelations": {
+    "canvas": {
+      "hint": "Le frecce scorrono le note e poi le connessioni; Invio apre la nota; Esc azzera.",
+      "label": "Grafo di {scope}: {notes} note e {relations} connessioni.",
+      "openHint": "Fai clic per aprire la nota accanto alla Mappa."
+    },
+    "controls": {
+      "fit": "Inquadra",
+      "zoomIn": "Avvicina",
+      "zoomOut": "Allontana"
+    },
+    "depth": {
+      "help": "Quale livello di sottoargomenti dà il colore ai punti",
+      "label": "Colore per sottoargomento di",
+      "one": "1º livello",
+      "three": "3º livello",
+      "two": "2º livello"
+    },
+    "description": "Connessioni tra le note di un ramo",
+    "edge": {
+      "description": "«{first}» {verb} «{second}».",
+      "suggested": "Suggerita: non ancora confermata."
     },
     "empty": {
-      "add": "Aggiungi una fonte",
-      "body": "Riformula la domanda o aggiungi una fonte che tratti l’argomento.",
-      "headline": "Non ho trovato nulla nella tua biblioteca su questo.",
-      "rephrase": "Riformula"
+      "body": "Le connessioni compaiono qui quando le note di questo ramo si collegano tra loro. Scegli un altro ramo o guarda l’Albero.",
+      "headline": "Ancora nessuna connessione in questo ramo",
+      "missing": "Questo ramo non è più nell’albero.",
+      "missingBody": "Potrebbe essere stato unito a un altro argomento. Scegli un altro ramo o guarda l’Albero.",
+      "noTopics": "Il grafo compare quando ci sono argomenti.",
+      "noTopicsBody": "Quando la prima fonte diventa note, gli argomenti nascono da soli e il grafo mostra come si collegano le loro note.",
+      "tree": "Vedi l’Albero"
     },
     "error": {
-      "kept": "La tua biblioteca è rimasta com’era.",
-      "message": "Impossibile aprire questa domanda."
-    },
-    "failed": {
-      "again": "Impossibile rifare la domanda.",
-      "kept": "Ciò che era stato scritto prima dell’interruzione è conservato qui sotto.",
-      "keptNothing": "La tua domanda è salvata: puoi rifarla.",
-      "message": "Il percorso IA non ha risposto.",
-      "stop": "Impossibile interrompere la risposta."
-    },
-    "followUp": {
-      "label": "Domanda di approfondimento",
-      "placeholder": "Continua a chiedere, nello stesso ambito…",
-      "send": "Chiedi"
-    },
-    "kind": "Chiedi",
-    "launcher": {
-      "draftLabel": "La tua domanda",
-      "empty": {
-        "body": "Chiedi di ciò che hai salvato. Ogni domanda resta in Biblioteca › Domande, con la sua risposta.",
-        "headline": "Ancora nessuna domanda."
-      },
-      "error": {
-        "kept": "Le tue parole sono ancora nel campo.",
-        "message": "Impossibile inviare la domanda."
-      },
-      "heading": "Chiedi alla tua biblioteca",
-      "hintAsk": "per chiedere",
-      "hintNewline": "nuova riga",
-      "lead": "La risposta cita i passaggi esatti su cui si basa. Viene salvata in Domande e non modifica mai le tue note.",
-      "long": "Usa al massimo 1.000 caratteri.",
-      "placeholder": "Cosa vuoi sapere?",
-      "recent": {
-        "heading": "Domande recenti",
-        "label": "Apri una domanda recente"
-      },
-      "scope": {
-        "label": "Ambito",
-        "library": "tutta la biblioteca",
-        "source": "fonte: {title}",
-        "topic": "argomento: {title}",
-        "unsupported": "Si può chiedere solo di tutta la biblioteca, di un argomento o di una fonte.",
-        "unsupportedKept": "Non è stato chiesto nulla."
-      },
-      "short": "Scrivi almeno 3 caratteri.",
-      "starting": "Invio della domanda…",
-      "submit": "Chiedi"
-    },
-    "meta": {
-      "asked": "Chiesta il {date}",
-      "cloud": "IA nel cloud",
-      "local": "IA locale",
-      "scopeLibrary": "ambito: tutta la biblioteca",
-      "scopeSource": "ambito: fonte {title}",
-      "scopeSources": "ambito: {count} fonti",
-      "scopeTopic": "ambito: argomento {title}"
-    },
-    "missing": {
-      "action": "Vedi Domande",
-      "body": "Potrebbe essere stata eliminata. Le tue note e le tue fonti sono rimaste come erano.",
-      "headline": "Questa domanda non è più nella biblioteca."
-    },
-    "sources": {
-      "changed": "cambiata dopo la risposta",
-      "heading": "Prove di questa risposta",
-      "hint": "I numeri sono quelli delle citazioni.",
-      "label": "Passaggi citati da questa risposta",
-      "open": "Apri il passaggio accanto",
-      "passagesMany": "{count} passaggi citati",
-      "passagesOne": "{count} passaggio citato",
-      "readFailed": "Impossibile leggere il passaggio.",
-      "reading": "lettura…",
-      "removed": "passaggio rimosso",
-      "seeSource": "vedi la fonte"
-    },
-    "tray": {
-      "empty": "Passa il mouse o il focus su una citazione per leggere qui il suo passaggio.",
-      "heading": "Citazione {number}",
-      "label": "Passaggio della citazione",
-      "open": "apri il passaggio accanto"
-    },
-    "versions": {
-      "label": "Versioni della risposta",
-      "next": "Versione successiva",
-      "of": "Versione {version} di {total}",
-      "previous": "Versione precedente"
-    }
-  },
-  "explore": {
-    "navigator": {
-      "branch": "Ramo",
-      "branchLabel": "Mostrando solo un ramo dell’albero",
-      "wholeTree": "Albero intero"
-    },
-    "note": {
-      "alsoInInbox": "anche nella Posta in arrivo",
-      "error": "Impossibile aprire questa nota.",
-      "errorKept": "Il resto di Esplora resta aperto e le tue note non sono cambiate.",
-      "gardenerSuggestion": "suggerimento del Giardiniere · decidi quando vuoi",
-      "goneBody": "Potrebbe essere stata unita a un’altra nota o rimossa. Nient’altro è cambiato.",
-      "goneHeadline": "Questa nota non è più nella tua libreria.",
-      "moreRelations": "altre {count}",
-      "suggestionsMany": "{count} suggerimenti",
-      "suggestionsOne": "{count} suggerimento",
-      "summaryHint": "Ogni connessione, con la sua evidenza, è nel pannello di contesto."
-    },
-    "root": {
-      "addFirst": "Aggiungi la prima fonte",
-      "areasLead": "Scegli un’area per aprirla accanto. Ciò che apri resta qui, un pannello accanto all’altro.",
-      "areasTitle": "Le tue aree",
-      "emptyBody": "Tutto ciò che apri compare qui, un pannello accanto all’altro. I più vecchi si ripiegano in strisce a sinistra, con tipo e titolo in vista; un clic li riapre. Così il percorso fin qui non si perde mai.",
-      "emptyHeadline": "Ancora nulla di aperto",
-      "error": "Impossibile caricare le tue aree.",
-      "errorKept": "Le tue fonti e le tue note non sono cambiate.",
-      "keyClose": "chiude il pannello attivo",
-      "keyOpen": "apre accanto",
-      "keyPeek": "dà un’occhiata senza aprire",
-      "keySpace": "Spazio",
-      "keysLabel": "Tasti",
-      "unsorted": "In attesa di un posto: {count}"
-    },
-    "topic": {
-      "error": "Impossibile aprire questo argomento.",
-      "errorKept": "Il resto di Esplora resta aperto e le tue note non sono cambiate.",
-      "goneBody": "Potrebbe essere stato unito a un altro argomento o rimosso. Nient’altro è cambiato.",
-      "goneHeadline": "Questo argomento non è più nell’albero.",
-      "noDirectNotes": "Ancora nessuna nota propria. Le note sono negli argomenti secondari."
-    }
-  },
-  "addFlow": {
-    "busy": {
-      "button": "Lettura…",
-      "reading": "Lettura di {name}…",
-      "readingFile": "Lettura del file…",
-      "waiting": "{count} in attesa"
-    },
-    "drop": {
-      "after": "Dopo aver rilasciato, vai alla prima fonte in Esplora e vedi arrivare le note.",
-      "label": "Rilascia i file per aggiungerli",
-      "modeError": "Non è stato possibile leggere la modalità di importazione, quindi i file entrano come Ricercabile e organizzato.",
-      "modeLabel": "Modalità",
-      "modeNote": "{hint}. Cambiala nel menu Aggiungi.",
-      "noFiles": "Rilascia un file per aggiungerlo",
-      "titleMany": "Rilascia per aggiungere {count} file",
-      "titleOne": "Rilascia per aggiungere 1 file"
+      "kept": "Le tue note e connessioni sono intatte.",
+      "message": "Impossibile caricare il grafo."
     },
     "failure": {
-      "close": "Chiudi",
-      "empty": "{name} è vuoto.",
-      "generic": "Non è stato possibile aggiungere il file.",
-      "kept": "Non è stato salvato nulla e il resto è com'era.",
-      "keptSome": "I file leggibili sono stati aggiunti e il resto è com'era.",
-      "more": "Altri non aggiunti: {count}.",
-      "noText": "{name} non contiene testo che Memora possa leggere.",
-      "noTextNoName": "Quel file non contiene testo che Memora possa leggere.",
-      "notAFile": "{name} non è un file.",
-      "symlink": "{name} è un collegamento. Rilascia il file originale.",
-      "tooLarge": "{name} è troppo grande per essere importato.",
-      "tooLargeNoName": "Quel file è troppo grande per essere importato.",
-      "unreadable": "Non è stato possibile leggere {name}.",
-      "unsupported": "Memora non legge ancora file come {name}.",
-      "unsupportedNoName": "Memora non legge ancora quel tipo di file."
+      "context": "Il grafo non viene più disegnato.",
+      "layout": "Impossibile disporre il grafo.",
+      "unavailable": "Questa finestra non può disegnare il grafo.",
+      "unavailableBody": "La tabella riporta le stesse connessioni.",
+      "unavailableTree": "L’Albero mostra gli argomenti e le note di questo ramo; ogni nota elenca le sue connessioni."
     },
-    "importPanel": {
-      "errors": {
-        "kept": "Non è stato modificato nulla.",
-        "open": "Non è stato possibile aprire questa fonte per la modifica."
-      },
-      "gone": {
-        "action": "Apri la Biblioteca",
-        "body": "Potrebbe essere stata rimossa dalla Biblioteca. Nient'altro è cambiato.",
-        "title": "Questa fonte non esiste più."
-      },
-      "leave": {
-        "description": "Hai modificato questa importazione senza salvarla. Continua per completarla oppure scarta quello che hai inserito e vai avanti.",
-        "discard": "Scarta ed esci",
-        "keep": "Continua qui",
-        "title": "Uscire senza salvare?"
-      },
-      "title": "Importazione avanzata"
+    "group": {
+      "description": "{topic}. Note nel grafo: {notes}. Connessioni con altri argomenti: {count}."
     },
-    "menu": {
-      "file": "Scegli un file…",
-      "fileHint": "PDF, EPUB, Word, Markdown e testo",
-      "foot": "Vale per le prossime importazioni; ogni fonte può cambiare dopo. Anche rilasciare file ovunque nella finestra funziona.",
-      "label": "Modi di aggiungere",
-      "link": "Incolla un link",
-      "linkHint": "una pagina web o un video",
-      "modeHeading": "All'importazione",
-      "more": "Altre opzioni di importazione…",
-      "note": "Scrivi una nota",
-      "noteHint": "va in Senza posto finché non ha un argomento"
+    "legend": {
+      "direct": "{topic} (note dirette)",
+      "label": "Legenda",
+      "lines": "Linea = connessione:",
+      "suggested": "tratteggiata = suggerita",
+      "thickness": "Da lontano, ogni argomento diventa un’etichetta e lo spessore della linea conta le connessioni.",
+      "topics": "Colore del punto = argomento:",
+      "unplaced": "senza posto nell’albero"
     },
-    "modes": {
-      "error": "Non è stato possibile verificare se c'è un modello pronto a scrivere.",
-      "errorKept": "Scegliere un file funziona ancora e importa come Ricercabile e organizzato.",
-      "searchable": {
-        "hint": "passaggi per la ricerca e un posto nell'albero, senza note",
-        "name": "Ricercabile e organizzato"
-      },
-      "secondBrain": {
-        "hint": "note brevi, un posto nell'albero e connessioni",
-        "hintNeedsModel": "note brevi, un posto nell'albero e connessioni · richiede un modello pronto a scrivere",
-        "hintRecommended": "note brevi, un posto nell'albero e connessioni · consigliato: c'è un modello pronto a scrivere",
-        "name": "Secondo cervello"
-      },
-      "storeOnly": {
-        "hint": "il file resta nella Biblioteca, senza IA",
-        "name": "Solo archiviare"
-      }
-    }
+    "node": {
+      "description": "{title}. Argomento: {topic}. Connessioni: {count}.",
+      "meta": "Argomento: {topic} · Connessioni: {count}"
+    },
+    "scope": {
+      "above": "Sopra",
+      "areas": "Aree",
+      "beside": "Accanto",
+      "inside": "Dentro",
+      "label": "Ramo: {title}",
+      "menu": "Scegli il ramo",
+      "source": "Fonte: {title}",
+      "sourceUnnamed": "questa fonte"
+    },
+    "untitledTopic": "Argomento senza nome"
   }
 }

@@ -54,7 +54,6 @@ import { useDeepLinks } from "./workspace/destinations/explore/deep-link";
 import { usePins } from "./workspace/pin-object";
 import { viewHistoryBounds } from "../shared/view-history";
 import * as exploreRoot from "./workspace/destinations/explore/ExploreRoot";
-import { ExploreActionsContext } from "./workspace/destinations/explore/explore-actions";
 import { ExploreNavigator, hoistAction } from "./workspace/destinations/explore/ExploreNavigator";
 import { ContextDockContext } from "./workspace/context-dock";
 import { contextMode } from "./workspace/layout-config";
@@ -579,7 +578,7 @@ export function App({
     }
   });
 
-  // What a shortcut of the workspace does; the commands of a stack that is not there yet do nothing.
+  // What a shortcut of the workspace does: the commands of a stack that is not there yet do nothing.
   const handleWorkspaceResult = useStableCallback((result: KeymapResult) => {
     switch (result.type) {
       case "openPalette":
@@ -614,7 +613,7 @@ export function App({
     }
   });
 
-  // Home's first run and Explore's "Add your first source" offer the same Add as Cmd-N.
+  // Home's first run, Explore's empty root and the empty Library offer the same Add as Cmd-N.
   const addSource = useStableCallback(() => handleWorkspaceResult({ type: "newImport" }));
 
   // An Obsidian conflict of the Inbox is solved in Settings, under Connections.
@@ -796,26 +795,24 @@ export function App({
       >
         <LegacyViewsContext.Provider value={legacyViews}>
           <AddSourceContext.Provider value={addSource}>
-            <ExploreActionsContext.Provider value={{ onAddSource: addSource }}>
-              {/* A note's body lists its relations in full unless the context panel is docked beside it. */}
-              <ContextDockContext.Provider
-                value={contextHost.present && contextMode(viewportWidth) === "docked"}
-              >
-                <PanelStack
-                  t={t}
-                  workspace={workspace}
-                  dispatch={dispatch}
-                  viewportWidth={viewportWidth}
-                  chrome={{ navigator: showNavigator, context: contextHost.present }}
-                  shown={stackShown}
-                  focusMode={focusMode}
-                  onToggleFocusMode={toggleFocusMode}
-                  onAdd={() => handleWorkspaceResult({ type: "newImport" })}
-                  registry={stackRegistry}
-                  pin={pin}
-                />
-              </ContextDockContext.Provider>
-            </ExploreActionsContext.Provider>
+            {/* A note's body lists its relations in full unless the context panel is docked. */}
+            <ContextDockContext.Provider
+              value={contextHost.present && contextMode(viewportWidth) === "docked"}
+            >
+              <PanelStack
+                t={t}
+                workspace={workspace}
+                dispatch={dispatch}
+                viewportWidth={viewportWidth}
+                chrome={{ navigator: showNavigator, context: contextHost.present }}
+                shown={stackShown}
+                focusMode={focusMode}
+                onToggleFocusMode={toggleFocusMode}
+                onAdd={addSource}
+                registry={stackRegistry}
+                pin={pin}
+              />
+            </ContextDockContext.Provider>
           </AddSourceContext.Provider>
           {stackShown ? null : (
             <LegacyScreen
