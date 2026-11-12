@@ -40,7 +40,7 @@ export function TaskHistoryView({ t, state }: { t: Translator; state: TaskHistor
       <LoadingState t={t} className="max-w-[45rem]">
         <div className="grid gap-3 pt-1">
           {[0, 1, 2, 3].map((row) => (
-            <div key={row} className="grid grid-cols-[3rem_minmax(0,1fr)_6rem_4rem] gap-3">
+            <div key={row} className="grid grid-cols-[6.5rem_minmax(0,1fr)_9rem_4.5rem] gap-3">
               <Skeleton className="h-3.5" />
               <Skeleton className="h-3.5 w-4/5" />
               <Skeleton className="h-3.5" />
@@ -94,8 +94,14 @@ export function TaskHistoryView({ t, state }: { t: Translator; state: TaskHistor
         )}
       </p>
       <div className="overflow-x-auto">
-        <table className="w-full border-collapse">
+        <table className="w-full min-w-[34rem] table-fixed border-collapse">
           <caption className="sr-only">{t("diagnostics.taskHistory.caption")}</caption>
+          <colgroup>
+            <col className="w-[6.5rem]" />
+            <col />
+            <col className="w-48" />
+            <col className="w-[4.5rem]" />
+          </colgroup>
           <thead>
             <tr className="border-b border-border">
               <th scope="col" className={headClass}>
@@ -151,7 +157,11 @@ export function TaskHistoryView({ t, state }: { t: Translator; state: TaskHistor
         </table>
       </div>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-        <Button variant="ghost" onClick={() => setClearing({ step: "asking" })}>
+        <Button
+          variant="ghost"
+          className="-ml-[13px]"
+          onClick={() => setClearing({ step: "asking" })}
+        >
           {t("diagnostics.taskHistory.clear")}
         </Button>
         {cleared !== null ? (

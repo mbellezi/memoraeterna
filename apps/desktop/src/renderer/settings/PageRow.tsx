@@ -45,8 +45,8 @@ export function PageRow({
       data-setting-id={id}
       tabIndex={-1}
       className={cn(
-        "relative border-b border-border outline-none transition-colors [transition-duration:var(--motion-slow)]",
-        "focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent",
+        "relative border-b border-border transition-colors [transition-duration:var(--motion-slow)]",
+        "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent",
         lit ? "-mx-4 bg-surface-selected px-4 [box-shadow:inset_2px_0_0_var(--accent)]" : ""
       )}
     >
@@ -56,7 +56,7 @@ export function PageRow({
         aria-controls={bodyId}
         onClick={() => setOpen((value) => !value)}
         className={cn(
-          "group grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-x-6 gap-y-1 rounded-md border-0 bg-transparent py-4 text-left",
+          "group -mx-3 grid w-[calc(100%+1.5rem)] grid-cols-[minmax(0,1fr)_auto] items-center gap-x-6 gap-y-1 rounded-md border-0 bg-transparent px-3 py-4 text-left",
           "focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent"
         )}
       >
@@ -80,7 +80,7 @@ export function PageRow({
         </span>
       </button>
       {open ? (
-        <div id={bodyId} className="pb-5">
+        <div id={bodyId} className="pb-5 empty:hidden">
           {children}
         </div>
       ) : null}

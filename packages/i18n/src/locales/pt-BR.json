@@ -1064,32 +1064,32 @@
     "relationLabels": { "invalidOutput": "A IA retornou descrições de relações inválidas." },
     "common": {
       "unknown": "Algo deu errado.",
-      "network": "A requisicao de rede falhou.",
-      "offline": "Esta acao precisa de conexao.",
-      "permissionDenied": "Permissao negada.",
-      "notFound": "O item solicitado nao foi encontrado.",
-      "validationFailed": "Algumas informacoes sao invalidas.",
-      "unauthorized": "Autorizacao obrigatoria.",
-      "timeout": "A operacao excedeu o tempo limite.",
+      "network": "A requisição de rede falhou.",
+      "offline": "Esta ação precisa de conexão.",
+      "permissionDenied": "Permissão negada.",
+      "notFound": "O item solicitado não foi encontrado.",
+      "validationFailed": "Algumas informações são inválidas.",
+      "unauthorized": "Autorização obrigatória.",
+      "timeout": "A operação excedeu o tempo limite.",
       "conflict": "O item foi alterado em outro lugar.",
-      "fileTooLarge": "O arquivo e grande demais.",
-      "unsupportedFile": "Este tipo de arquivo nao e suportado.",
-      "missingConfiguration": "Uma configuracao obrigatoria esta ausente."
+      "fileTooLarge": "O arquivo é grande demais.",
+      "unsupportedFile": "Este tipo de arquivo não é suportado.",
+      "missingConfiguration": "Uma configuração obrigatória está ausente."
     },
     "database": {
-      "notReady": "O banco local ainda nao esta pronto."
+      "notReady": "O banco local ainda não está pronto."
     },
     "backup": {
       "verificationFailed": "Não foi possível verificar o backup, então não confie nele. Os arquivos continuam na pasta escolhida, marcados como não verificados. Tente novamente.",
       "insufficientDisk": "Não há espaço livre em disco suficiente para verificar o backup. Libere espaço e tente novamente; os arquivos não verificados continuam na pasta escolhida."
     },
     "conversion": {
-      "emptyResult": "O conversor nao retornou texto utilizavel.",
-      "doclingUnavailable": "O conversor local de documentos nao esta instalado.",
+      "emptyResult": "O conversor não retornou texto utilizável.",
+      "doclingUnavailable": "O conversor local de documentos não está instalado.",
       "doclingFailed": "O conversor local de documentos falhou."
     },
     "ingestion": {
-      "aggregateSummaryUnavailable": "Nao foi possivel gerar o resumo consolidado.",
+      "aggregateSummaryUnavailable": "Não foi possível gerar o resumo consolidado.",
       "aggregateSummaryMissingSubparts": "O resumo consolidado aguarda os resumos de todas as subpartes.",
       "urlInvalid": "Informe um endereço HTTPS válido.",
       "urlUnsafe": "Este endereço não pode ser carregado com segurança.",
@@ -1103,36 +1103,36 @@
     },
     "ai": {
       "noCompatibleModel": "Nenhum modelo compativel esta configurado.",
-      "unsupportedTask": "O modelo selecionado nao executa esta tarefa.",
-      "providerUnavailable": "O provedor de IA nao esta respondendo. A tarefa sera tentada de novo em breve.",
-      "secureStorageUnavailable": "O armazenamento seguro de credenciais nao esta disponivel.",
+      "unsupportedTask": "O modelo selecionado não executa esta tarefa.",
+      "providerUnavailable": "O provedor de IA não está respondendo. A tarefa será tentada de novo em breve.",
+      "secureStorageUnavailable": "O armazenamento seguro de credenciais não está disponível.",
       "missingCredential": "A credencial do provedor esta ausente.",
-      "connectionFailed": "O teste de conexao com o modelo falhou.",
+      "connectionFailed": "O teste de conexão com o modelo falhou.",
       "oauthLoginFailed": "A autenticacao com o ChatGPT falhou.",
-      "oauthStateMismatch": "Nao foi possivel verificar o retorno do OAuth.",
-      "oauthCallbackUnavailable": "Nao foi possivel iniciar o retorno OAuth local.",
+      "oauthStateMismatch": "Não foi possível verificar o retorno do OAuth.",
+      "oauthCallbackUnavailable": "Não foi possível iniciar o retorno OAuth local.",
       "oauthTimedOut": "A autenticacao com o ChatGPT expirou.",
       "oauthNotConnected": "Entre com o ChatGPT antes de salvar este modelo.",
       "contextWindowLimit": "O contexto configurado excede o limite descoberto do modelo.",
-      "oauthRefreshFailed": "A sessao do ChatGPT expirou. Entre novamente.",
-      "oauthCredentialInvalid": "A credencial salva do ChatGPT e invalida.",
-      "oauthTokenResponseInvalid": "O ChatGPT retornou uma resposta de autenticacao invalida.",
-      "oauthTokenExchangeFailed": "O ChatGPT nao conseguiu concluir a troca de token."
+      "oauthRefreshFailed": "A sessão do ChatGPT expirou. Entre novamente.",
+      "oauthCredentialInvalid": "A credencial salva do ChatGPT é inválida.",
+      "oauthTokenResponseInvalid": "O ChatGPT retornou uma resposta de autenticação inválida.",
+      "oauthTokenExchangeFailed": "O ChatGPT não conseguiu concluir a troca de token."
     },
     "localModels": {
-      "notFound": "O modelo local nao foi encontrado.",
-      "notReady": "O modelo local nao esta instalado e pronto.",
-      "licenseRequired": "Aceite a licenca do modelo antes do download.",
+      "notFound": "O modelo local não foi encontrado.",
+      "notReady": "O modelo local não está instalado e pronto.",
+      "licenseRequired": "Aceite a licença do modelo antes do download.",
       "unsupported_platform": "MLX exige um Mac com Apple Silicon.",
-      "insufficient_memory": "Esta maquina nao tem memoria suficiente para o modelo.",
-      "insufficientDisk": "Nao ha espaco livre suficiente para o modelo.",
+      "insufficient_memory": "Esta máquina não tem memória suficiente para o modelo.",
+      "insufficientDisk": "Não há espaço livre suficiente para o modelo.",
       "downloadHttp": "O download do modelo falhou.",
       "sizeMismatch": "Um arquivo do modelo baixado tem tamanho incorreto.",
       "checksumMismatch": "Um arquivo do modelo falhou na verificacao de checksum.",
       "unsafePath": "O modelo contem um caminho de arquivo inseguro.",
-      "invalidRuntimeResponse": "O runtime local retornou uma resposta invalida.",
+      "invalidRuntimeResponse": "O runtime local retornou uma resposta inválida.",
       "runtimeFailed": "O runtime do modelo local falhou.",
-      "runtimeUnavailable": "O runtime do modelo local nao esta instalado.",
+      "runtimeUnavailable": "O runtime do modelo local não está instalado.",
       "modelBusy": "O modelo esta em uso.",
       "profileInUse": "Substitua este modelo nos perfis afetados antes de remove-lo.",
       "canceled": "O download do modelo foi cancelado.",
@@ -4988,7 +4988,7 @@
     },
     "advancedPrompts": {
       "help": "As instruções que o Memora envia aos modelos, por categoria. Editar uma cria uma revisão nova; a anterior fica guardada.",
-      "label": "Prompts"
+      "label": "Instruções dos modelos"
     },
     "advancedSimilarityRuns": {
       "help": "Comparações gravadas com os diagnósticos ligados. Apagar não muda nenhuma conexão.",
@@ -5055,7 +5055,7 @@
       "label": "Este Mac"
     },
     "atomicNoteMatchingSettingsMaxRerankOutputTokens": {
-      "help": "O máximo de tokens que a IA pode escrever ao posicionar uma nota. Padrão: 4.096.",
+      "help": "O máximo de tokens que a IA pode escrever ao posicionar uma nota.",
       "label": "Limite de saída por nota"
     },
     "bookLookup": {
@@ -5063,19 +5063,19 @@
       "label": "Buscar dados de livros na internet"
     },
     "canonicalMatchingSettingsConfirmationBatchSize": {
-      "help": "Quantas identidades vão para a IA numa chamada de confirmação. Padrão: 12.",
+      "help": "Quantas identidades vão para a IA numa chamada de confirmação.",
       "label": "Identidades por confirmação"
     },
     "canonicalMatchingSettingsConfirmationMaxCharacters": {
-      "help": "O tamanho de texto que uma chamada de confirmação pode ter. Uma identidade maior que isso vai sozinha. Padrão: 12.000.",
+      "help": "O tamanho de texto que uma chamada de confirmação pode ter. Uma identidade maior que isso vai sozinha.",
       "label": "Tamanho da confirmação em caracteres"
     },
     "canonicalMatchingSettingsEntityCandidateLimit": {
-      "help": "Quantas entidades parecidas a IA compara com cada entidade nova. Padrão: 3.",
+      "help": "Quantas entidades parecidas a IA compara com cada entidade nova.",
       "label": "Candidatos por entidade"
     },
     "canonicalMatchingSettingsRelationTypeCandidateLimit": {
-      "help": "Quantos tipos de relação parecidos a IA compara com cada tipo novo. Padrão: 3.",
+      "help": "Quantos tipos de relação parecidos a IA compara com cada tipo novo.",
       "label": "Candidatos por tipo de relação"
     },
     "contentLanguage": {
@@ -5091,7 +5091,7 @@
       "label": "Diagnósticos das operações"
     },
     "entityIdentitySimilarityThreshold": {
-      "help": "O quanto duas entidades precisam se parecer para a IA conferir se são a mesma. Mais alto, menos candidatos. Padrão: 0,92.",
+      "help": "O quanto duas entidades precisam se parecer para a IA conferir se são a mesma. Mais alto, menos candidatos.",
       "label": "Semelhança entre entidades"
     },
     "graphWheelZoomSensitivity": {
@@ -5194,7 +5194,7 @@
       "label": "Token da Hugging Face"
     },
     "managedRoot": {
-      "help": "A pasta, dentro do cofre, onde o Memora escreve seus arquivos. Padrão: Memora.",
+      "help": "A pasta, dentro do cofre, onde o Memora escreve seus arquivos.",
       "label": "Pasta do Memora no cofre"
     },
     "metadataGoogleBooks": {
@@ -5254,7 +5254,7 @@
       "label": "Descrições das conexões"
     },
     "relationTypeSimilarityThreshold": {
-      "help": "O quanto dois tipos de relação precisam se parecer para a IA conferir se são o mesmo. Mais alto, menos candidatos. Padrão: 0,92.",
+      "help": "O quanto dois tipos de relação precisam se parecer para a IA conferir se são o mesmo. Mais alto, menos candidatos.",
       "label": "Semelhança entre tipos de relação"
     },
     "relationsDeciderMode": {
@@ -5266,11 +5266,11 @@
       "label": "Decidir as conexões com o OpenAI Decisions"
     },
     "sourceRelationSettingsEvidenceChunksPerSource": {
-      "help": "Quantos trechos de cada fonte a IA lê ao comparar um par. Padrão: 2.",
+      "help": "Quantos trechos de cada fonte a IA lê ao comparar um par.",
       "label": "Trechos de evidência por fonte"
     },
     "sourceRelationSettingsEvidenceMaxCharacters": {
-      "help": "O maior pedaço de um trecho que a IA lê. Padrão: 800.",
+      "help": "O maior pedaço de um trecho que a IA lê.",
       "label": "Caracteres por trecho"
     },
     "sourceRelationSettingsIncludeWeakTypes": {
@@ -5278,31 +5278,31 @@
       "label": "Permitir relações fracas"
     },
     "sourceRelationSettingsMaxInputTokens": {
-      "help": "O máximo de tokens de entrada que uma fonte e seus capítulos podem usar numa execução. Uma chamada pode passar disso; as seguintes param. Padrão: 60.000.",
+      "help": "O máximo de tokens de entrada que uma fonte e seus capítulos podem usar numa execução. Uma chamada pode passar disso; as seguintes param.",
       "label": "Orçamento de entrada"
     },
     "sourceRelationSettingsMaxOutputTokens": {
-      "help": "O máximo de tokens que a IA pode escrever ao comparar duas fontes. Padrão: 4.096.",
+      "help": "O máximo de tokens que a IA pode escrever ao comparar duas fontes.",
       "label": "Limite de saída por par de fontes"
     },
     "sourceRelationSettingsMaxRelationsPerPair": {
-      "help": "O máximo de conexões mantidas entre duas fontes. Padrão: 4.",
+      "help": "O máximo de conexões mantidas entre duas fontes.",
       "label": "Relações por par de fontes"
     },
     "sourceRelationSettingsMinConfidence": {
-      "help": "Conexões que a evidência sustenta abaixo desta confiança são descartadas. Padrão: 0,85.",
+      "help": "Conexões que a evidência sustenta abaixo desta confiança são descartadas.",
       "label": "Confiança mínima"
     },
     "sourceRelationSettingsMinImportance": {
-      "help": "Conexões que a IA avalia abaixo desta importância são descartadas. Padrão: 0,75.",
+      "help": "Conexões que a IA avalia abaixo desta importância são descartadas.",
       "label": "Importância mínima"
     },
     "sourceRelationSettingsSummaryMaxCharacters": {
-      "help": "Quanto do resumo de cada fonte entra numa comparação. Padrão: 1.000.",
+      "help": "Quanto do resumo de cada fonte entra numa comparação.",
       "label": "Caracteres de resumo por fonte"
     },
     "summaryMinimumWordCount": {
-      "help": "Evita gastar uma chamada de IA com itens pequenos demais. Use 0 para desligar. Padrão: 40.",
+      "help": "Evita gastar uma chamada de IA com itens pequenos demais. Use 0 para desligar.",
       "label": "Mínimo de palavras para gerar resumo"
     },
     "themeMode": {
@@ -5734,9 +5734,9 @@
       },
       "countMany": "{count} chamadas registradas",
       "countOne": "{count} chamada registrada",
-      "emptyBody": "Cada chamada a um modelo, local ou na nuvem, é registrada aqui com o trabalho, o modelo, o tempo e os tokens. A lista enche conforme o Memora trabalha.",
+      "emptyBody": "A primeira aparece aqui assim que o Memora chamar um modelo.",
       "emptyTitle": "Nenhuma chamada de IA registrada ainda",
-      "errorKept": "Nada foi alterado.",
+      "errorKept": "Os registros continuam guardados; nada foi apagado.",
       "errorTitle": "Não deu para ler o registro de chamadas.",
       "filterAll": "Todas",
       "filterFailed": "Só com falha",
@@ -5761,7 +5761,7 @@
       "captureTitle": "Guardar prompts e respostas completos?",
       "captureWarning": "Os registros podem conter o texto inteiro das fontes e ocupar bastante espaço. Desligue depois do diagnóstico."
     },
-    "errorKept": "Nada foi alterado.",
+    "errorKept": "Os registros continuam guardados; nada foi apagado.",
     "errorTitle": "Não deu para ler o diagnóstico.",
     "intro": "Para investigar problemas. Aqui aparecem os nomes técnicos dos trabalhos.",
     "jobTypes": {
@@ -5844,9 +5844,9 @@
       },
       "countMany": "{count} execuções terminadas",
       "countOne": "{count} execução terminada",
-      "emptyBody": "Importações e outros trabalhos em segundo plano que terminaram, falharam ou foram cancelados aparecem aqui. O que o Memora está fazendo agora fica na Atividade.",
+      "emptyBody": "Cada importação ou outro trabalho aparece aqui quando termina.",
       "emptyTitle": "Nenhum trabalho terminado ainda",
-      "errorKept": "Nada foi alterado.",
+      "errorKept": "Os registros continuam guardados; nada foi apagado.",
       "errorTitle": "Não deu para ler o histórico de trabalhos.",
       "outcomes": {
         "canceled": "Cancelado",

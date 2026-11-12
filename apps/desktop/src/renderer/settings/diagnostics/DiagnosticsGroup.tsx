@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { Translator } from "@app/i18n";
 
 import type { AppSettingsUpdate } from "../../../shared/ipc";
 import type { SettingEntryV2 } from "../../../shared/settings-registry";
 import { Button } from "../../components/ui/button";
+import { ErrorState } from "../../components/ui/error-state";
 import { SolidTriangle } from "../../components/ui/solid-glyphs";
 import { PageRow } from "../PageRow";
 import { RegistryRow } from "../SettingRow";
@@ -20,24 +21,60 @@ import { useCallLog, useTaskHistory } from "./use-call-log";
 type PageName = "calls" | "tasks";
 type Report = (page: PageName, state: SectionState | null) => void;
 
-/** A page that reads only while it is open: the hook lives in the body PageRow mounts. */
-function CallLogPage({ t, report }: { t: Translator; report: Report }) {
+/** Reads again when the group asks every page to (one retry for one cause); never on mount. */
+function useRetryOnRequest(requests: number, retry: () => void) {
+  const seen = useRef(requests);
+  useEffect(() => {
+    if (seen.current === requests) return;
+    seen.current = requests;
+    retry();
+  }, [requests, retry]);
+}
+
+/**
+ * A page that reads only while it is open: the hook lives in the body PageRow mounts. When both
+ * pages failed (one cause: the diagnostics reads are unavailable) the group says so once above them
+ * and each page keeps reading but draws nothing (`quiet`), so one retry runs both reads.
+ */
+function CallLogPage({
+  t,
+  report,
+  retryRequests,
+  quiet
+}: {
+  t: Translator;
+  report: Report;
+  retryRequests: number;
+  quiet: boolean;
+}) {
   const state = useCallLog(true);
   const shown = callLogState(state.read, state.filter);
   useEffect(() => {
     report("calls", shown);
     return () => report("calls", null);
   }, [report, shown]);
-  return <CallLogView t={t} state={state} />;
+  useRetryOnRequest(retryRequests, state.retry);
+  return quiet ? null : <CallLogView t={t} state={state} />;
 }
-function TaskHistoryPage({ t, report }: { t: Translator; report: Report }) {
+function TaskHistoryPage({
+  t,
+  report,
+  retryRequests,
+  quiet
+}: {
+  t: Translator;
+  report: Report;
+  retryRequests: number;
+  quiet: boolean;
+}) {
   const state = useTaskHistory(true);
   const shown = taskHistoryState(state.read, t, new Date());
   useEffect(() => {
     report("tasks", shown);
     return () => report("tasks", null);
   }, [report, shown]);
-  return <TaskHistoryView t={t} state={state} />;
+  useRetryOnRequest(retryRequests, state.retry);
+  return quiet ? null : <TaskHistoryView t={t} state={state} />;
 }
 
 type Step = "idle" | "asking" | "working";
@@ -218,6 +255,9 @@ export function DiagnosticsGroup({
     []
   );
   const open = Object.values(pages);
+  // Both pages failed: one failure and one retry for the one cause, not two of each.
+  const [retryRequests, setRetryRequests] = useState(0);
+  const bothFailed = pages.calls === "error" && pages.tasks === "error";
   const framed = open.length === 0 ? null : diagnosticsState(open);
   useEffect(() => {
     reportState(framed);
@@ -245,8 +285,24 @@ export function DiagnosticsGroup({
         entries={{ mode: byId("debugMode"), capture: byId("debugFullCapture") }}
         saveApp={saveApp}
       />
-      {page("advanced.callLog", <CallLogPage t={t} report={report} />)}
-      {page("advanced.taskHistory", <TaskHistoryPage t={t} report={report} />)}
+      {bothFailed ? (
+        <ErrorState
+          t={t}
+          className="my-4"
+          message={t("diagnostics.errorTitle")}
+          kept={t("diagnostics.errorKept")}
+          retryLabel={t("shell.actions.retry")}
+          onRetry={() => setRetryRequests((count) => count + 1)}
+        />
+      ) : null}
+      {page(
+        "advanced.callLog",
+        <CallLogPage t={t} report={report} retryRequests={retryRequests} quiet={bothFailed} />
+      )}
+      {page(
+        "advanced.taskHistory",
+        <TaskHistoryPage t={t} report={report} retryRequests={retryRequests} quiet={bothFailed} />
+      )}
       {similarity ? <SimilarityRunsRow entry={similarity} /> : null}
     </>
   );

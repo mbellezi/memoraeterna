@@ -101,7 +101,7 @@ function CalibrationNotice({
         </span>
       </p>
       <div className="pl-7">
-        <Button
+        <InlineAction
           onClick={() => {
             void app
               .save((current) => restoreCalibratedUpdate(current))
@@ -112,7 +112,7 @@ function CalibrationNotice({
         >
           <RotateCcw aria-hidden="true" />
           {t("settingsAdvanced.matching.restoreCalibrated")}
-        </Button>
+        </InlineAction>
       </div>
     </div>
   );

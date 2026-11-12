@@ -121,7 +121,7 @@ describe("the call log", () => {
       error: null
     });
     expect(bad).toMatchObject({ duration: null, tokens: null, resultLabel: "Falhou" });
-    expect(bad?.error).toBe("A operacao excedeu o tempo limite.");
+    expect(bad?.error).toBe("A operação excedeu o tempo limite.");
   });
 
   it("says an error that is not a message key as it is", () => {

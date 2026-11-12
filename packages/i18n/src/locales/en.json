@@ -4985,7 +4985,7 @@
     },
     "advancedPrompts": {
       "help": "The instructions Memora sends to the models, by category. Editing one creates a new revision; the earlier one is kept.",
-      "label": "Prompts"
+      "label": "Model instructions"
     },
     "advancedSimilarityRuns": {
       "help": "Comparisons recorded while diagnostics were on. Clearing them changes no connection.",
@@ -5052,7 +5052,7 @@
       "label": "This Mac"
     },
     "atomicNoteMatchingSettingsMaxRerankOutputTokens": {
-      "help": "The most tokens the AI may write when it places one note. Default 4,096.",
+      "help": "The most tokens the AI may write when it places one note.",
       "label": "Output limit per note"
     },
     "bookLookup": {
@@ -5060,19 +5060,19 @@
       "label": "Look up book details online"
     },
     "canonicalMatchingSettingsConfirmationBatchSize": {
-      "help": "How many identities go to the AI in one confirmation call. Default 12.",
+      "help": "How many identities go to the AI in one confirmation call.",
       "label": "Identities per confirmation"
     },
     "canonicalMatchingSettingsConfirmationMaxCharacters": {
-      "help": "The text size a confirmation call may reach. One identity larger than this still goes alone. Default 12,000.",
+      "help": "The text size a confirmation call may reach. One identity larger than this still goes alone.",
       "label": "Confirmation size in characters"
     },
     "canonicalMatchingSettingsEntityCandidateLimit": {
-      "help": "How many similar entities the AI compares with each new one. Default 3.",
+      "help": "How many similar entities the AI compares with each new one.",
       "label": "Candidates per entity"
     },
     "canonicalMatchingSettingsRelationTypeCandidateLimit": {
-      "help": "How many similar relation types the AI compares with each new one. Default 3.",
+      "help": "How many similar relation types the AI compares with each new one.",
       "label": "Candidates per relation type"
     },
     "contentLanguage": {
@@ -5088,7 +5088,7 @@
       "label": "Operation diagnostics"
     },
     "entityIdentitySimilarityThreshold": {
-      "help": "How alike two entities must be before the AI checks whether they are the same. Higher finds fewer candidates. Default 0.92.",
+      "help": "How alike two entities must be before the AI checks whether they are the same. Higher finds fewer candidates.",
       "label": "Entity similarity"
     },
     "graphWheelZoomSensitivity": {
@@ -5191,7 +5191,7 @@
       "label": "Hugging Face token"
     },
     "managedRoot": {
-      "help": "The folder, inside the vault, where Memora writes its files. Default Memora.",
+      "help": "The folder, inside the vault, where Memora writes its files.",
       "label": "Memora folder in the vault"
     },
     "metadataGoogleBooks": {
@@ -5251,7 +5251,7 @@
       "label": "Connection descriptions"
     },
     "relationTypeSimilarityThreshold": {
-      "help": "How alike two relation types must be before the AI checks whether they are the same. Higher finds fewer candidates. Default 0.92.",
+      "help": "How alike two relation types must be before the AI checks whether they are the same. Higher finds fewer candidates.",
       "label": "Relation type similarity"
     },
     "relationsDeciderMode": {
@@ -5263,11 +5263,11 @@
       "label": "Decide connections with OpenAI Decisions"
     },
     "sourceRelationSettingsEvidenceChunksPerSource": {
-      "help": "How many passages of each source the AI reads when it compares a pair. Default 2.",
+      "help": "How many passages of each source the AI reads when it compares a pair.",
       "label": "Evidence passages per source"
     },
     "sourceRelationSettingsEvidenceMaxCharacters": {
-      "help": "The longest piece of a passage the AI reads. Default 800.",
+      "help": "The longest piece of a passage the AI reads.",
       "label": "Characters per passage"
     },
     "sourceRelationSettingsIncludeWeakTypes": {
@@ -5275,31 +5275,31 @@
       "label": "Allow weak relations"
     },
     "sourceRelationSettingsMaxInputTokens": {
-      "help": "The most input tokens one source and its chapters may use in a run. A call can pass it; the next ones then stop. Default 60,000.",
+      "help": "The most input tokens one source and its chapters may use in a run. A call can pass it; the next ones then stop.",
       "label": "Input budget"
     },
     "sourceRelationSettingsMaxOutputTokens": {
-      "help": "The most tokens the AI may write when it compares two sources. Default 4,096.",
+      "help": "The most tokens the AI may write when it compares two sources.",
       "label": "Output limit per source pair"
     },
     "sourceRelationSettingsMaxRelationsPerPair": {
-      "help": "The most connections kept between two sources. Default 4.",
+      "help": "The most connections kept between two sources.",
       "label": "Relations per source pair"
     },
     "sourceRelationSettingsMinConfidence": {
-      "help": "Connections the evidence supports below this confidence are dropped. Default 0.85.",
+      "help": "Connections the evidence supports below this confidence are dropped.",
       "label": "Minimum confidence"
     },
     "sourceRelationSettingsMinImportance": {
-      "help": "Connections the AI scores below this importance are dropped. Default 0.75.",
+      "help": "Connections the AI scores below this importance are dropped.",
       "label": "Minimum importance"
     },
     "sourceRelationSettingsSummaryMaxCharacters": {
-      "help": "How much of each source’s summary goes into a comparison. Default 1,000.",
+      "help": "How much of each source’s summary goes into a comparison.",
       "label": "Summary characters per source"
     },
     "summaryMinimumWordCount": {
-      "help": "Saves an AI call on items too small to summarise. Use 0 to turn it off. Default 40.",
+      "help": "Saves an AI call on items too small to summarise. Use 0 to turn it off.",
       "label": "Minimum words for a summary"
     },
     "themeMode": {
@@ -5731,9 +5731,9 @@
       },
       "countMany": "{count} calls recorded",
       "countOne": "{count} call recorded",
-      "emptyBody": "Every call to a model, local or in the cloud, is recorded here with its job, model, time and tokens. It fills as Memora works.",
+      "emptyBody": "The first one appears here as soon as Memora calls a model.",
       "emptyTitle": "No AI calls recorded yet",
-      "errorKept": "Nothing was changed.",
+      "errorKept": "The records are still stored; nothing was deleted.",
       "errorTitle": "The call log could not be read.",
       "filterAll": "All",
       "filterFailed": "Failed only",
@@ -5758,7 +5758,7 @@
       "captureTitle": "Keep complete prompts and responses?",
       "captureWarning": "The logs may hold the whole text of your sources and take a lot of space. Turn this off after the diagnosis."
     },
-    "errorKept": "Nothing was changed.",
+    "errorKept": "The records are still stored; nothing was deleted.",
     "errorTitle": "The diagnostics could not be read.",
     "intro": "For investigating problems. The jobs’ technical names appear here.",
     "jobTypes": {
@@ -5841,9 +5841,9 @@
       },
       "countMany": "{count} finished runs",
       "countOne": "{count} finished run",
-      "emptyBody": "Imports and other background work that finished, failed or was canceled appear here. What Memora is doing now is in Activity.",
+      "emptyBody": "Each import or other job appears here when it finishes.",
       "emptyTitle": "No finished jobs yet",
-      "errorKept": "Nothing was changed.",
+      "errorKept": "The records are still stored; nothing was deleted.",
       "errorTitle": "The job history could not be read.",
       "outcomes": {
         "canceled": "Canceled",

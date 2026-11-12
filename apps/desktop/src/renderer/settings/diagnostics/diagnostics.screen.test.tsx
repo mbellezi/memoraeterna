@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { fixtures, render } from "./diagnostics.screen";
 
-type Mode = "loading" | "empty" | "error" | "success";
+type Mode = "loading" | "empty" | "error" | "success" | "callsFail";
 let dom: TestDom;
 let calls: string[];
 
@@ -25,7 +25,13 @@ const settle = () => dom.act(() => void vi.advanceTimersByTime(0));
 const mount = async (mode: Mode) => {
   dom = createTestDom();
   calls = [];
-  const set = mode === "empty" || mode === "success" ? fixtures[mode] : (fixtures[mode] ?? {});
+  // "callsFail": the job history reads and the call log does not.
+  const set =
+    mode === "callsFail"
+      ? { ...fixtures.success, "monitoring.list": undefined }
+      : mode === "empty" || mode === "success"
+        ? fixtures[mode]
+        : (fixtures[mode] ?? {});
   const call =
     (path: string) =>
     (...args: unknown[]) => {
@@ -90,14 +96,35 @@ describe("the Diagnostics screen: Advanced as the app shows it, both pages open"
     expect(text()).toContain("No finished jobs yet");
   });
 
-  it("says each page's failure in place with its own retry, which reads only that page again", async () => {
+  it("says one failure once when both pages fail, with one retry that reads both again", async () => {
     await mount("error");
     expect(state()).toBe("error");
-    expect(dom.document.querySelectorAll('[role="alert"]')).toHaveLength(2);
-    expect(text()).toContain("Nothing was changed.");
+    expect(dom.document.querySelectorAll('[role="alert"]')).toHaveLength(1);
+    expect(text()).toContain("The diagnostics could not be read.");
+    expect(text()).toContain("nothing was deleted");
+    expect(dom.document.querySelector("table")).toBeNull();
     expect(reads("monitoring.list")).toBe(1);
     expect(reads("jobs.list")).toBe(1);
+    const retries = [...dom.document.querySelectorAll("button")].filter(
+      (button) => button.textContent === "Retry"
+    );
+    expect(retries).toHaveLength(1);
+    await dom.act(
+      () => void retries[0]?.dispatchEvent(new dom.window.Event("click", { bubbles: true }))
+    );
+    await settle();
+    expect(reads("monitoring.list")).toBe(2);
+    expect(reads("jobs.list")).toBe(2);
+  });
+
+  it("says a page's failure in its own place when only that page fails, with its own retry", async () => {
+    await mount("callsFail");
+    expect(state()).toBe("error");
+    expect(dom.document.querySelectorAll('[role="alert"]')).toHaveLength(1);
     const log = dom.document.querySelector('[data-setting-id="advanced.callLog"]');
+    const history = dom.document.querySelector('[data-setting-id="advanced.taskHistory"]');
+    expect(log?.querySelector('[role="alert"]')).not.toBeNull();
+    expect(history?.querySelector("table")).not.toBeNull();
     const retry = [...(log?.querySelectorAll("button") ?? [])].find(
       (button) => button.textContent === "Retry"
     );

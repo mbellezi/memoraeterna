@@ -14,6 +14,8 @@ export const fullWindow = true;
 
 export const surface = "settings-diagnostics";
 
+const noop = () => undefined;
+
 const t = screenTranslator();
 
 const minutesAgo = (minutes: number): string =>
@@ -178,6 +180,7 @@ export function render() {
       <SettingsSurface
         t={t}
         surface={surface}
+        onOpenClassic={noop}
         initialSection="advanced"
         sections={{ advanced: { id: "advanced", Section: DiagnosticsBody } }}
       />

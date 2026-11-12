@@ -11,8 +11,8 @@ import { clampValue, formatValue, parseNumber, type MatchingControlSpec } from "
  */
 
 const fieldBox =
-  "h-8 rounded-md border border-border-strong bg-surface px-3 text-sm text-foreground outline-none transition-colors " +
-  "hover:bg-surface-hover focus-visible:border-accent focus-visible:outline-2 focus-visible:outline-offset-1 " +
+  "h-8 rounded-md border border-border-strong bg-surface px-3 text-sm text-foreground transition-colors " +
+  "hover:bg-surface-hover focus-visible:border-accent focus-visible:outline-2 focus-visible:outline-offset-2 " +
   "focus-visible:outline-accent disabled:cursor-not-allowed disabled:border-border disabled:bg-soft disabled:text-muted-foreground";
 
 /** A switch: a button with `role="switch"`, named by the setting's label. */

@@ -4992,7 +4992,7 @@
     },
     "advancedPrompts": {
       "help": "Las instrucciones que Memora envía a los modelos, por categoría. Editar una crea una revisión nueva; la anterior se conserva.",
-      "label": "Prompts"
+      "label": "Instrucciones de los modelos"
     },
     "advancedSimilarityRuns": {
       "help": "Comparaciones registradas con los diagnósticos activados. Borrarlas no cambia ninguna conexión.",
@@ -5059,7 +5059,7 @@
       "label": "Este Mac"
     },
     "atomicNoteMatchingSettingsMaxRerankOutputTokens": {
-      "help": "El máximo de tokens que la IA puede escribir al ubicar una nota. Predeterminado: 4.096.",
+      "help": "El máximo de tokens que la IA puede escribir al ubicar una nota.",
       "label": "Límite de salida por nota"
     },
     "bookLookup": {
@@ -5067,19 +5067,19 @@
       "label": "Buscar datos de libros en internet"
     },
     "canonicalMatchingSettingsConfirmationBatchSize": {
-      "help": "Cuántas identidades van a la IA en una llamada de confirmación. Predeterminado: 12.",
+      "help": "Cuántas identidades van a la IA en una llamada de confirmación.",
       "label": "Identidades por confirmación"
     },
     "canonicalMatchingSettingsConfirmationMaxCharacters": {
-      "help": "El tamaño de texto que puede alcanzar una llamada de confirmación. Una identidad mayor se envía sola. Predeterminado: 12.000.",
+      "help": "El tamaño de texto que puede alcanzar una llamada de confirmación. Una identidad mayor se envía sola.",
       "label": "Tamaño de la confirmación en caracteres"
     },
     "canonicalMatchingSettingsEntityCandidateLimit": {
-      "help": "Cuántas entidades parecidas compara la IA con cada entidad nueva. Predeterminado: 3.",
+      "help": "Cuántas entidades parecidas compara la IA con cada entidad nueva.",
       "label": "Candidatos por entidad"
     },
     "canonicalMatchingSettingsRelationTypeCandidateLimit": {
-      "help": "Cuántos tipos de relación parecidos compara la IA con cada tipo nuevo. Predeterminado: 3.",
+      "help": "Cuántos tipos de relación parecidos compara la IA con cada tipo nuevo.",
       "label": "Candidatos por tipo de relación"
     },
     "contentLanguage": {
@@ -5095,7 +5095,7 @@
       "label": "Diagnósticos de las operaciones"
     },
     "entityIdentitySimilarityThreshold": {
-      "help": "Cuánto deben parecerse dos entidades para que la IA compruebe si son la misma. Más alto, menos candidatos. Predeterminado: 0,92.",
+      "help": "Cuánto deben parecerse dos entidades para que la IA compruebe si son la misma. Más alto, menos candidatos.",
       "label": "Similitud entre entidades"
     },
     "graphWheelZoomSensitivity": {
@@ -5198,7 +5198,7 @@
       "label": "Token de Hugging Face"
     },
     "managedRoot": {
-      "help": "La carpeta, dentro de la bóveda, donde escribe Memora sus archivos. Predeterminado: Memora.",
+      "help": "La carpeta, dentro de la bóveda, donde escribe Memora sus archivos.",
       "label": "Carpeta de Memora en la bóveda"
     },
     "metadataGoogleBooks": {
@@ -5258,7 +5258,7 @@
       "label": "Descripciones de las conexiones"
     },
     "relationTypeSimilarityThreshold": {
-      "help": "Cuánto deben parecerse dos tipos de relación para que la IA compruebe si son el mismo. Más alto, menos candidatos. Predeterminado: 0,92.",
+      "help": "Cuánto deben parecerse dos tipos de relación para que la IA compruebe si son el mismo. Más alto, menos candidatos.",
       "label": "Similitud entre tipos de relación"
     },
     "relationsDeciderMode": {
@@ -5270,11 +5270,11 @@
       "label": "Decidir las conexiones con OpenAI Decisions"
     },
     "sourceRelationSettingsEvidenceChunksPerSource": {
-      "help": "Cuántos fragmentos de cada fuente lee la IA al comparar un par. Predeterminado: 2.",
+      "help": "Cuántos fragmentos de cada fuente lee la IA al comparar un par.",
       "label": "Fragmentos de evidencia por fuente"
     },
     "sourceRelationSettingsEvidenceMaxCharacters": {
-      "help": "El trozo más largo de un fragmento que lee la IA. Predeterminado: 800.",
+      "help": "El trozo más largo de un fragmento que lee la IA.",
       "label": "Caracteres por fragmento"
     },
     "sourceRelationSettingsIncludeWeakTypes": {
@@ -5282,31 +5282,31 @@
       "label": "Permitir relaciones débiles"
     },
     "sourceRelationSettingsMaxInputTokens": {
-      "help": "El máximo de tokens de entrada que una fuente y sus capítulos pueden usar en una ejecución. Una llamada puede pasarse; las siguientes se detienen. Predeterminado: 60.000.",
+      "help": "El máximo de tokens de entrada que una fuente y sus capítulos pueden usar en una ejecución. Una llamada puede pasarse; las siguientes se detienen.",
       "label": "Presupuesto de entrada"
     },
     "sourceRelationSettingsMaxOutputTokens": {
-      "help": "El máximo de tokens que la IA puede escribir al comparar dos fuentes. Predeterminado: 4.096.",
+      "help": "El máximo de tokens que la IA puede escribir al comparar dos fuentes.",
       "label": "Límite de salida por par de fuentes"
     },
     "sourceRelationSettingsMaxRelationsPerPair": {
-      "help": "El máximo de conexiones que se conservan entre dos fuentes. Predeterminado: 4.",
+      "help": "El máximo de conexiones que se conservan entre dos fuentes.",
       "label": "Relaciones por par de fuentes"
     },
     "sourceRelationSettingsMinConfidence": {
-      "help": "Las conexiones que la evidencia respalda por debajo de esta confianza se descartan. Predeterminado: 0,85.",
+      "help": "Las conexiones que la evidencia respalda por debajo de esta confianza se descartan.",
       "label": "Confianza mínima"
     },
     "sourceRelationSettingsMinImportance": {
-      "help": "Las conexiones que la IA puntúa por debajo de esta importancia se descartan. Predeterminado: 0,75.",
+      "help": "Las conexiones que la IA puntúa por debajo de esta importancia se descartan.",
       "label": "Importancia mínima"
     },
     "sourceRelationSettingsSummaryMaxCharacters": {
-      "help": "Cuánto del resumen de cada fuente entra en una comparación. Predeterminado: 1.000.",
+      "help": "Cuánto del resumen de cada fuente entra en una comparación.",
       "label": "Caracteres de resumen por fuente"
     },
     "summaryMinimumWordCount": {
-      "help": "Evita gastar una llamada de IA en elementos demasiado pequeños. Usa 0 para desactivarlo. Predeterminado: 40.",
+      "help": "Evita gastar una llamada de IA en elementos demasiado pequeños. Usa 0 para desactivarlo.",
       "label": "Mínimo de palabras para generar un resumen"
     },
     "themeMode": {
@@ -5738,9 +5738,9 @@
       },
       "countMany": "{count} llamadas registradas",
       "countOne": "{count} llamada registrada",
-      "emptyBody": "Cada llamada a un modelo, local o en la nube, se registra aquí con su tarea, modelo, tiempo y tokens. La lista se llena a medida que Memora trabaja.",
+      "emptyBody": "La primera aparecerá aquí en cuanto Memora llame a un modelo.",
       "emptyTitle": "Aún no hay llamadas de IA registradas",
-      "errorKept": "No se cambió nada.",
+      "errorKept": "Los registros siguen guardados; no se borró nada.",
       "errorTitle": "No se pudo leer el registro de llamadas.",
       "filterAll": "Todas",
       "filterFailed": "Solo con error",
@@ -5765,7 +5765,7 @@
       "captureTitle": "¿Guardar prompts y respuestas completos?",
       "captureWarning": "Los registros pueden contener el texto entero de tus fuentes y ocupar mucho espacio. Desactívalo tras el diagnóstico."
     },
-    "errorKept": "No se cambió nada.",
+    "errorKept": "Los registros siguen guardados; no se borró nada.",
     "errorTitle": "No se pudo leer el diagnóstico.",
     "intro": "Para investigar problemas. Aquí aparecen los nombres técnicos de las tareas.",
     "jobTypes": {
@@ -5848,9 +5848,9 @@
       },
       "countMany": "{count} ejecuciones terminadas",
       "countOne": "{count} ejecución terminada",
-      "emptyBody": "Aquí aparecen las importaciones y otras tareas en segundo plano que terminaron, fallaron o se cancelaron. Lo que Memora hace ahora está en Actividad.",
+      "emptyBody": "Cada importación u otra tarea aparece aquí cuando termina.",
       "emptyTitle": "Aún no hay tareas terminadas",
-      "errorKept": "No se cambió nada.",
+      "errorKept": "Los registros siguen guardados; no se borró nada.",
       "errorTitle": "No se pudo leer el historial de tareas.",
       "outcomes": {
         "canceled": "Cancelada",

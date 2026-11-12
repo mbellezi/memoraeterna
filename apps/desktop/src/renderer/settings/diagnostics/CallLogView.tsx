@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import type { Translator } from "@app/i18n";
 
 import { Button } from "../../components/ui/button";
@@ -6,6 +6,7 @@ import { EmptyState } from "../../components/ui/empty-state";
 import { ErrorState } from "../../components/ui/error-state";
 import { RunningRing, SolidCheck, SolidTriangle } from "../../components/ui/solid-glyphs";
 import { LoadingState, Skeleton } from "../../components/ui/skeleton";
+import { ToggleGroup, ToggleGroupItem } from "../../components/ui/toggle-group";
 import { cn } from "../../lib/cn";
 import {
   callLogState,
@@ -19,6 +20,8 @@ import type { CallLogState } from "./use-call-log";
 
 const headClass = "py-2 pr-3 text-left text-xs font-semibold text-secondary-foreground";
 const cellClass = "py-2 pr-3 align-top text-sm text-foreground";
+/** A technical name stays on one line (it is read and copied whole); one too long ends in an ellipsis, full text on hover. */
+const nameCell = "overflow-hidden text-ellipsis whitespace-nowrap";
 
 /** The glyph and colour of a call's result: a state is a solid shape plus a word (design record §4.1). */
 function ResultMark({ result }: { result: CallResult }) {
@@ -47,19 +50,17 @@ export function CallLogView({ t, state }: { t: Translator; state: CallLogState }
     { id: "failed", label: t("diagnostics.callLog.filterFailed") }
   ];
   const chips = (
-    <div role="group" aria-label={t("diagnostics.callLog.filterLabel")} className="flex gap-1">
+    <ToggleGroup
+      label={t("diagnostics.callLog.filterLabel")}
+      value={filter}
+      onValueChange={state.setFilter}
+    >
       {filters.map((option) => (
-        <Button
-          key={option.id}
-          variant="chip"
-          size="sm"
-          aria-pressed={filter === option.id}
-          onClick={() => state.setFilter(option.id)}
-        >
+        <ToggleGroupItem key={option.id} value={option.id}>
           {option.label}
-        </Button>
+        </ToggleGroupItem>
       ))}
-    </div>
+    </ToggleGroup>
   );
   const skeleton = (
     <LoadingState t={t} className="max-w-[45rem]">
@@ -67,7 +68,7 @@ export function CallLogView({ t, state }: { t: Translator; state: CallLogState }
         {[0, 1, 2, 3, 4].map((row) => (
           <div
             key={row}
-            className="grid grid-cols-[3rem_7rem_minmax(0,1fr)_3.5rem_3.5rem_5rem] gap-3"
+            className="grid grid-cols-[6rem_7rem_10.5rem_3.75rem_3.75rem_minmax(0,1fr)] gap-3"
           >
             {["w-full", "w-full", "w-4/5", "w-full", "w-full", "w-full"].map((width, cell) => (
               <Skeleton key={cell} className={cn("h-3.5", width)} />
@@ -129,8 +130,16 @@ export function CallLogView({ t, state }: { t: Translator; state: CallLogState }
         <EmptyState variant="compact" headline={t("diagnostics.callLog.noneFailed")} />
       ) : (
         <div className="overflow-x-auto">
-          <table className="w-full border-collapse">
+          <table className="w-full min-w-[38rem] table-fixed border-collapse">
             <caption className="sr-only">{t("diagnostics.callLog.caption")}</caption>
+            <colgroup>
+              <col className="w-24" />
+              <col className="w-28" />
+              <col className="w-[10.5rem]" />
+              <col className="w-[3.75rem]" />
+              <col className="w-[3.75rem]" />
+              <col />
+            </colgroup>
             <thead>
               <tr className="border-b border-border">
                 <th scope="col" className={headClass}>
@@ -154,43 +163,55 @@ export function CallLogView({ t, state }: { t: Translator; state: CallLogState }
               </tr>
             </thead>
             <tbody>
-              {rows.map((row) => (
-                <tr key={row.id} className="border-b border-border last:border-b-0">
-                  <td
-                    className={cn(cellClass, "whitespace-nowrap tabular-nums")}
-                    title={row.whenFull}
-                  >
-                    {row.when}
-                  </td>
-                  <td className={cn(cellClass, "font-mono text-xs [overflow-wrap:anywhere]")}>
-                    {row.job}
-                  </td>
-                  <td className={cn(cellClass, "[overflow-wrap:anywhere]")}>
-                    {row.model ?? <span className="text-muted-foreground">—</span>}
-                  </td>
-                  <td className={cn(cellClass, "whitespace-nowrap text-right tabular-nums")}>
-                    {row.duration ?? <span className="text-muted-foreground">—</span>}
-                  </td>
-                  <td className={cn(cellClass, "whitespace-nowrap text-right tabular-nums")}>
-                    {row.tokens ?? <span className="text-muted-foreground">—</span>}
-                  </td>
-                  <td className={cn(cellClass, "pr-0")}>
-                    <span className="flex items-start gap-1.5">
-                      <span className="mt-0.5">
-                        <ResultMark result={row.result} />
-                      </span>
-                      <span className="min-w-0">
-                        {row.resultLabel}
-                        {row.error ? (
-                          <span className="block text-xs text-secondary-foreground [overflow-wrap:anywhere]">
-                            {row.error}
+              {rows.map((row) => {
+                // The reason a call failed reads across the table under its row, not in the narrow
+                // Result column where it would wrap word by word.
+                const cell = row.error ? cn(cellClass, "pb-1") : cellClass;
+                return (
+                  <Fragment key={row.id}>
+                    <tr
+                      className={row.error ? undefined : "border-b border-border last:border-b-0"}
+                    >
+                      <td
+                        className={cn(cell, "whitespace-nowrap tabular-nums")}
+                        title={row.whenFull}
+                      >
+                        {row.when}
+                      </td>
+                      <td className={cn(cell, nameCell, "font-mono text-xs")} title={row.job}>
+                        {row.job}
+                      </td>
+                      <td className={cn(cell, nameCell, "text-xs")} title={row.model ?? undefined}>
+                        {row.model ?? <span className="text-muted-foreground">—</span>}
+                      </td>
+                      <td className={cn(cell, "whitespace-nowrap text-right tabular-nums")}>
+                        {row.duration ?? <span className="text-muted-foreground">—</span>}
+                      </td>
+                      <td className={cn(cell, "whitespace-nowrap text-right tabular-nums")}>
+                        {row.tokens ?? <span className="text-muted-foreground">—</span>}
+                      </td>
+                      <td className={cn(cell, "pr-0")}>
+                        <span className="flex items-start gap-1.5">
+                          <span className="mt-0.5">
+                            <ResultMark result={row.result} />
                           </span>
-                        ) : null}
-                      </span>
-                    </span>
-                  </td>
-                </tr>
-              ))}
+                          <span className="min-w-0">{row.resultLabel}</span>
+                        </span>
+                      </td>
+                    </tr>
+                    {row.error ? (
+                      <tr className="border-b border-border last:border-b-0">
+                        <td
+                          colSpan={6}
+                          className="pb-2 pr-0 pt-0 text-xs text-secondary-foreground [overflow-wrap:anywhere]"
+                        >
+                          {row.error}
+                        </td>
+                      </tr>
+                    ) : null}
+                  </Fragment>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -206,7 +227,11 @@ export function CallLogView({ t, state }: { t: Translator; state: CallLogState }
             })}
           </p>
         ) : null}
-        <Button variant="ghost" onClick={() => setPruning(true)}>
+        <Button
+          variant="ghost"
+          className={next === null && totals.count <= rows.length ? "-ml-[13px]" : undefined}
+          onClick={() => setPruning(true)}
+        >
           {t("diagnostics.callLog.prune")}
         </Button>
         {deleted !== null ? (
