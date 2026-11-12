@@ -241,8 +241,8 @@
         "divergenceBody": "La panoramica di “{topic}” è stata ampliata e alcune nuove evidenze non concordano con ciò che dice. Il disaccordo resta accanto al testo, mai fuso con esso. Mantienilo lì oppure scarta questo elemento. Punti di disaccordo: {count}."
       },
       "suggestion": {
-        "title": "Un collegamento suggerito attende la tua conferma",
-        "body": "È stato suggerito un collegamento tra “{first}” e “{second}”: {confidence}. Mantienilo perché conti come una tua decisione, oppure rimuovilo.",
+        "title": "Collegamento suggerito · {confidence}",
+        "body": "Suggerimento: “{first}” {relation} “{second}”. Mantienilo perché conti come una tua decisione, oppure rimuovilo.",
         "hint": "Non viene cancellato nulla: cambia solo il collegamento. Se lo rimuovi, non verrà più suggerito."
       },
       "withdrawn": {

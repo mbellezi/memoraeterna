@@ -257,7 +257,7 @@ describe("the Inbox screen", () => {
 
   it("shows a suggestion by both notes and its confidence, offering keep and remove and no dismiss", () => {
     const html = view(stateOf([item("suggestion")]));
-    expect(html).toContain("A suggested connection needs your confirmation");
+    expect(html).toContain("Suggested connection · medium confidence (64%)");
     expect(html).toContain("“Daylight sets the body clock”");
     expect(html).toContain("“Morning light shifts sleep timing”");
     expect(html).toContain("medium confidence (64%)");
@@ -265,8 +265,11 @@ describe("the Inbox screen", () => {
     expect(html).toContain(">Remove<");
     expect(html).not.toContain(">Dismiss<");
     expect(html).not.toContain(">Apply<");
-    // The relation's type stays in its own line.
-    expect(html).toContain("Connection: ");
+    // The relation is named once, in the sentence, not again in a line of its own.
+    expect(html).toContain("” supports “");
+    expect(html).not.toContain("Connection: ");
+    // Remove carries no X: x only dismisses (D34), and a suggestion has no dismiss.
+    expect(html).not.toContain('aria-keyshortcuts="X"');
   });
 
   it("words an unknown confidence with no number (D33, Q37)", () => {

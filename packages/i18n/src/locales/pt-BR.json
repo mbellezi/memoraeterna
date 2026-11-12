@@ -241,8 +241,8 @@
         "divergenceBody": "A visão geral de “{topic}” foi ampliada, e parte das novas evidências discorda do que ela diz. A discordância fica ao lado do texto, nunca misturada a ele. Mantenha-a ali ou descarte este item. Pontos de discordância: {count}."
       },
       "suggestion": {
-        "title": "Uma conexão sugerida espera sua confirmação",
-        "body": "Foi sugerida uma conexão entre “{first}” e “{second}”: {confidence}. Mantenha a conexão para que conte como decisão sua ou remova a conexão.",
+        "title": "Conexão sugerida · {confidence}",
+        "body": "Sugestão: “{first}” {relation} “{second}”. Mantenha para que conte como decisão sua, ou remova.",
         "hint": "Nada é apagado: só a conexão muda. Se você a remover, ela não volta a ser sugerida."
       },
       "withdrawn": {

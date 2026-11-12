@@ -241,8 +241,8 @@
         "divergenceBody": "El resumen de «{topic}» se amplió y algunas pruebas nuevas discrepan de lo que dice. La discrepancia queda junto al texto, nunca mezclada con él. Consérvala ahí o descarta este elemento. Puntos de discrepancia: {count}."
       },
       "suggestion": {
-        "title": "Una conexión sugerida espera tu confirmación",
-        "body": "Se sugirió una conexión entre «{first}» y «{second}»: {confidence}. Consérvala para que cuente como decisión tuya o elimínala.",
+        "title": "Conexión sugerida · {confidence}",
+        "body": "Sugerencia: «{first}» {relation} «{second}». Consérvala para que cuente como decisión tuya o elimínala.",
         "hint": "No se borra nada: solo cambia la conexión. Si la eliminas, no se vuelve a sugerir."
       },
       "withdrawn": {
