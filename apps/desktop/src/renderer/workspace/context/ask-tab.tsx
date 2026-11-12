@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { CircleCheck } from "lucide-react";
 import { formatObjectAddress } from "@app/domain";
 import type { MessageKey, Translator } from "@app/i18n";
 
 import type { QuestionListItemView } from "../../../shared/ipc-questions";
 import { ErrorState } from "../../components/ui/error-state";
+import { SolidCheck } from "../../components/ui/solid-glyphs";
 import { LoadingState, Skeleton } from "../../components/ui/skeleton";
 import { useAppEvent } from "../../lib/app-events";
 import { useObjectKindChanged } from "../../lib/object-events";
@@ -12,7 +12,7 @@ import { useStableCallback } from "../../lib/stable-callback";
 import { AskComposer } from "../panels/ask/AskComposer";
 import { AskLauncherController } from "../panels/ask/ask-launcher";
 import { askTextState } from "../panels/ask/ask-scope";
-import { answerDate } from "../panels/ask/StatusBand";
+import { whenText } from "../destinations/home/home-text";
 import {
   askTabState,
   askTarget,
@@ -95,9 +95,7 @@ export function IndexedNotice({ t, line }: { t: Translator; line: IndexedLine })
           .join(" ");
   return (
     <p className="m-0 flex items-start gap-1.5 text-xs leading-5 text-secondary-foreground [text-wrap:pretty]">
-      {line.kind === "indexed" ? (
-        <CircleCheck aria-hidden="true" className="mt-[3px] size-3 flex-none text-success" />
-      ) : null}
+      {line.kind === "indexed" ? <SolidCheck className="mt-0.5 text-success" /> : null}
       <span className="min-w-0">{text}</span>
     </p>
   );
@@ -113,6 +111,16 @@ function AskLoadingScope({ t }: { t: Translator }) {
         <Skeleton className="h-3 w-3/5" />
       </div>
       <Skeleton className="h-12 w-full rounded-lg" />
+    </LoadingState>
+  );
+}
+
+/** The milestone line's place while a source's progress is read, so the list below does not jump. */
+function IndexedLoading({ t }: { t: Translator }) {
+  return (
+    <LoadingState t={t} className="gap-1.5">
+      <Skeleton className="h-3 w-full" />
+      <Skeleton className="h-3 w-3/5" />
     </LoadingState>
   );
 }
@@ -142,6 +150,10 @@ export interface AskViewProps {
   sendFailed: boolean;
   /** Only a source has a milestone line. */
   indexed: IndexedLine | null;
+  /** The source's progress is still being read: its line's place is kept. */
+  indexedLoading?: boolean;
+  /** The clock of the dates ("ontem, 18:40"), fixed when the tab opens. */
+  now: number;
   earlier: Read<readonly QuestionListItemView[]>;
   onOpen: ContextTabProps["onOpen"];
   onRetryScope: () => void;
@@ -194,7 +206,11 @@ export function AskView(props: AskViewProps) {
                 {t("askPanel.launcher.starting")}
               </p>
             ) : null}
-            {props.indexed ? <IndexedNotice t={t} line={props.indexed} /> : null}
+            {props.indexed ? (
+              <IndexedNotice t={t} line={props.indexed} />
+            ) : props.indexedLoading ? (
+              <IndexedLoading t={t} />
+            ) : null}
           </div>
           {sendFailed ? (
             <ErrorState
@@ -234,7 +250,8 @@ export function AskView(props: AskViewProps) {
                       title: item.text
                     }}
                     path={false}
-                    meta={[answerDate(t, item.createdAt)].filter((part) => part !== "")}
+                    showKind
+                    meta={[whenText(t, item.createdAt, props.now)]}
                     onOpen={props.onOpen}
                   />
                 ))}
@@ -341,6 +358,7 @@ export function AskTab(props: ContextTabProps) {
   useAppEvent("job.progress", progress.reread, active && kind === "source" && live);
   const indexed =
     kind === "source" && progress.read.status === "ready" ? indexedLine(progress.read.value) : null;
+  const [now] = useState(() => Date.now());
 
   const sendFailed = snapshot.send.status === "error";
   const state = askTabState({
@@ -366,6 +384,8 @@ export function AskTab(props: ContextTabProps) {
       sending={snapshot.send.status === "asking"}
       sendFailed={sendFailed}
       indexed={indexed}
+      indexedLoading={kind === "source" && progress.read.status === "loading"}
+      now={now}
       earlier={earlier}
       onOpen={onOpen}
       onRetryScope={placed.retry}

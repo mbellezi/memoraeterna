@@ -1,5 +1,5 @@
 import type { ScreenModule } from "../surfaces";
-import { ContextColumn, focusedNote, t } from "./context-fixtures";
+import { address, ContextColumn, ids, t } from "./context-fixtures";
 import { HistoryTab } from "./history-tab";
 
 export const surface = "context-history";
@@ -34,7 +34,11 @@ const change = (
   undo: fields.undo
 });
 
-/** What happened to the note in focus, newest first: a mix of the stores and of the states a row has. */
+/**
+ * What happened because of the source in focus, newest first: a mix of the stores and of the states
+ * a row has. The surface shows a source, so its empty state shows the copy that names what a
+ * source's history lists.
+ */
 const changes = [
   change(1, {
     kind: "relation",
@@ -90,9 +94,9 @@ export function render() {
     <ContextColumn>
       <HistoryTab
         t={t}
-        address={focusedNote.address}
-        kind="note"
-        id={focusedNote.id}
+        address={address("source", ids.source)}
+        kind="source"
+        id={ids.source}
         active
         onOpen={noop}
       />

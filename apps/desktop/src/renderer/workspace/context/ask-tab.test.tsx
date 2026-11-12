@@ -46,6 +46,7 @@ const view = (t: typeof en, props: Partial<AskViewProps> = {}) =>
         sending={false}
         sendFailed={false}
         indexed={null}
+        now={Date.parse("2026-11-11T12:00:00.000Z")}
         earlier={{ status: "ready", value: [] }}
         onOpen={() => undefined}
         onRetryScope={() => undefined}
@@ -69,6 +70,12 @@ describe("the Ask tab's four states", () => {
     expect(html).toContain('data-state="loading"');
     expect(html).toContain("<textarea");
     expect(html).toContain("Perguntar a esta fonte");
+  });
+
+  it("loading a source's progress keeps the place of its line", () => {
+    const html = view(pt, { indexedLoading: true });
+    expect(html).toContain('role="status"');
+    expect(html).not.toContain("Já dá para perguntar");
   });
 
   it("empty teaches what is kept and where", () => {

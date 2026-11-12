@@ -9,6 +9,7 @@ import { useStableCallback } from "../../lib/stable-callback";
 import { cn } from "../../lib/cn";
 import { whenText } from "../destinations/home/home-text";
 import { countText } from "../context-model";
+import { formatView } from "../route";
 import {
   ContextEmpty,
   ContextError,
@@ -58,19 +59,23 @@ const noteKeys = {
   blocked: "activity.done.undoBlocked"
 } as const satisfies Record<HistoryNote, MessageKey>;
 
+const inboxAddress = formatView({ view: "inbox" });
+
 /** The thread: one 1 px line behind the nodes, which are solid when the change stands. */
 function HistoryRow({
   t,
   change,
   local,
   now,
-  onUndo
+  onUndo,
+  onOpen
 }: {
   t: Translator;
   change: ChangeSetSummary;
   local: HistoryUndo | undefined;
   now: number;
   onUndo: (change: ChangeSetSummary) => void;
+  onOpen: ContextTabProps["onOpen"];
 }) {
   const row = historyRow(change, local);
   const sentence = changeSetTitle(t, change);
@@ -85,7 +90,13 @@ function HistoryRow({
     if (!active || active === note.ownerDocument.body) note.focus();
   }, [undone]);
   return (
-    <li className="relative grid gap-0.5 pl-5">
+    <li
+      className={cn(
+        "relative grid gap-0.5 pl-5",
+        // The thread runs from this row's node to the next one, and stops at the last node.
+        "not-last:after:absolute not-last:after:top-[0.9rem] not-last:after:-bottom-[1.4rem] not-last:after:left-[3.5px] not-last:after:w-px not-last:after:bg-[var(--thread)]"
+      )}
+    >
       <span
         aria-hidden="true"
         className={cn(
@@ -106,7 +117,12 @@ function HistoryRow({
           whenText(t, change.at, now)
         ]}
       />
-      {row.note ? (
+      {row.note === "waiting" ? (
+        // The decision is made in the Caixa de entrada: the line takes the person there.
+        <div className="mt-0.5">
+          <ContextLink onClick={() => onOpen(inboxAddress)}>{t(noteKeys.waiting)}</ContextLink>
+        </div>
+      ) : row.note ? (
         <p
           ref={noteRef}
           {...(undone ? { role: "status", tabIndex: -1 } : {})}
@@ -144,6 +160,7 @@ export function HistoryView({
   undo,
   now,
   onUndo,
+  onOpen,
   onRetry
 }: {
   t: Translator;
@@ -152,6 +169,7 @@ export function HistoryView({
   undo: Readonly<Record<string, HistoryUndo>>;
   now: number;
   onUndo: (change: ChangeSetSummary) => void;
+  onOpen: ContextTabProps["onOpen"];
   onRetry: () => void;
 }) {
   const items = read.status === "ready" ? read.value.items : [];
@@ -181,7 +199,7 @@ export function HistoryView({
       ) : (
         <ol
           aria-label={t("contextPanel.history.label")}
-          className="relative m-0 grid list-none gap-4 p-0 before:absolute before:top-2 before:bottom-2 before:left-[3.5px] before:w-px before:bg-[var(--thread)]"
+          className="relative m-0 grid list-none gap-4 p-0"
         >
           {items.map((change) => (
             <HistoryRow
@@ -191,6 +209,7 @@ export function HistoryView({
               local={undo[historyUndoKey(change)]}
               now={now}
               onUndo={onUndo}
+              onOpen={onOpen}
             />
           ))}
         </ol>
@@ -200,7 +219,7 @@ export function HistoryView({
 }
 
 export function HistoryTab(props: ContextTabProps) {
-  const { t, kind, id, address, active, onState, onCount } = props;
+  const { t, kind, id, address, active, onState, onCount, onOpen } = props;
   const { read, reread, retry } = useContextRead<{ items: ChangeSetSummary[] }>({
     key: `history:${address}`,
     active,
@@ -242,6 +261,7 @@ export function HistoryTab(props: ContextTabProps) {
       undo={undo}
       now={now}
       onUndo={onUndo}
+      onOpen={onOpen}
       onRetry={retry}
     />
   );

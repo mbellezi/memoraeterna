@@ -46,6 +46,7 @@ const view = (
         undo={undo}
         now={Date.parse("2026-11-11T12:00:00.000Z")}
         onUndo={() => undefined}
+        onOpen={() => undefined}
         onRetry={() => undefined}
       />
     )
@@ -101,6 +102,28 @@ describe("the History tab's four states", () => {
     expect(html).toContain("Desfeita");
     // Only the applied change the store can undo offers Desfazer.
     expect(html.match(/aria-label="Desfazer: /g)).toHaveLength(1);
+  });
+
+  it("takes a waiting row to the Caixa de entrada and words its date without filler", () => {
+    const html = view(pt, {
+      status: "ready",
+      value: {
+        items: [
+          change(1, { status: "pending_review", origin: "rebalance", undo: "unavailable" }),
+          change(2, { at: "2026-11-03T18:40:00.000Z" })
+        ]
+      }
+    });
+    // The decision is made in the Inbox, so the line is the way there, not a bare sentence.
+    expect(html).toMatch(/<button[^>]*>Espera sua decisão na Caixa de entrada<\/button>/u);
+    expect(html).toContain("3\u00a0nov, ");
+    expect(html).not.toMatch(/ de nov|nov\./u);
+  });
+
+  it("draws the thread between nodes only, so it stops at the last one", () => {
+    const html = view(pt, { status: "ready", value: { items: [change(1), change(2)] } });
+    expect(html).not.toContain("before:bottom-2");
+    expect(html).toContain("not-last:after:");
   });
 
   it("says it lists the most recent when it is full, and a change once reads singular", () => {
