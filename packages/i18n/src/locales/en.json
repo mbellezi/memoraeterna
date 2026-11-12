@@ -5359,7 +5359,7 @@
     },
     "advancedPrompts": {
       "help": "The instructions Memora sends to the models, by category. Editing one creates a new revision; the earlier one is kept.",
-      "label": "Prompts"
+      "label": "Model instructions"
     },
     "advancedSimilarityRuns": {
       "help": "Comparisons recorded while diagnostics were on. Clearing them changes no connection.",
@@ -5426,7 +5426,7 @@
       "label": "This Mac"
     },
     "atomicNoteMatchingSettingsMaxRerankOutputTokens": {
-      "help": "The most tokens the AI may write when it places one note. Default 4,096.",
+      "help": "The most tokens the AI may write when it places one note.",
       "label": "Output limit per note"
     },
     "bookLookup": {
@@ -5434,19 +5434,19 @@
       "label": "Look up book details online"
     },
     "canonicalMatchingSettingsConfirmationBatchSize": {
-      "help": "How many identities go to the AI in one confirmation call. Default 12.",
+      "help": "How many identities go to the AI in one confirmation call.",
       "label": "Identities per confirmation"
     },
     "canonicalMatchingSettingsConfirmationMaxCharacters": {
-      "help": "The text size a confirmation call may reach. One identity larger than this still goes alone. Default 12,000.",
+      "help": "The text size a confirmation call may reach. One identity larger than this still goes alone.",
       "label": "Confirmation size in characters"
     },
     "canonicalMatchingSettingsEntityCandidateLimit": {
-      "help": "How many similar entities the AI compares with each new one. Default 3.",
+      "help": "How many similar entities the AI compares with each new one.",
       "label": "Candidates per entity"
     },
     "canonicalMatchingSettingsRelationTypeCandidateLimit": {
-      "help": "How many similar relation types the AI compares with each new one. Default 3.",
+      "help": "How many similar relation types the AI compares with each new one.",
       "label": "Candidates per relation type"
     },
     "contentLanguage": {
@@ -5462,7 +5462,7 @@
       "label": "Operation diagnostics"
     },
     "entityIdentitySimilarityThreshold": {
-      "help": "How alike two entities must be before the AI checks whether they are the same. Higher finds fewer candidates. Default 0.92.",
+      "help": "How alike two entities must be before the AI checks whether they are the same. Higher finds fewer candidates.",
       "label": "Entity similarity"
     },
     "graphWheelZoomSensitivity": {
@@ -5565,7 +5565,7 @@
       "label": "Hugging Face token"
     },
     "managedRoot": {
-      "help": "The folder, inside the vault, where Memora writes its files. Default Memora.",
+      "help": "The folder, inside the vault, where Memora writes its files.",
       "label": "Memora folder in the vault"
     },
     "metadataGoogleBooks": {
@@ -5625,7 +5625,7 @@
       "label": "Connection descriptions"
     },
     "relationTypeSimilarityThreshold": {
-      "help": "How alike two relation types must be before the AI checks whether they are the same. Higher finds fewer candidates. Default 0.92.",
+      "help": "How alike two relation types must be before the AI checks whether they are the same. Higher finds fewer candidates.",
       "label": "Relation type similarity"
     },
     "relationsDeciderMode": {
@@ -5637,11 +5637,11 @@
       "label": "Decide connections with OpenAI Decisions"
     },
     "sourceRelationSettingsEvidenceChunksPerSource": {
-      "help": "How many passages of each source the AI reads when it compares a pair. Default 2.",
+      "help": "How many passages of each source the AI reads when it compares a pair.",
       "label": "Evidence passages per source"
     },
     "sourceRelationSettingsEvidenceMaxCharacters": {
-      "help": "The longest piece of a passage the AI reads. Default 800.",
+      "help": "The longest piece of a passage the AI reads.",
       "label": "Characters per passage"
     },
     "sourceRelationSettingsIncludeWeakTypes": {
@@ -5649,31 +5649,31 @@
       "label": "Allow weak relations"
     },
     "sourceRelationSettingsMaxInputTokens": {
-      "help": "The most input tokens one source and its chapters may use in a run. A call can pass it; the next ones then stop. Default 60,000.",
+      "help": "The most input tokens one source and its chapters may use in a run. A call can pass it; the next ones then stop.",
       "label": "Input budget"
     },
     "sourceRelationSettingsMaxOutputTokens": {
-      "help": "The most tokens the AI may write when it compares two sources. Default 4,096.",
+      "help": "The most tokens the AI may write when it compares two sources.",
       "label": "Output limit per source pair"
     },
     "sourceRelationSettingsMaxRelationsPerPair": {
-      "help": "The most connections kept between two sources. Default 4.",
+      "help": "The most connections kept between two sources.",
       "label": "Relations per source pair"
     },
     "sourceRelationSettingsMinConfidence": {
-      "help": "Connections the evidence supports below this confidence are dropped. Default 0.85.",
+      "help": "Connections the evidence supports below this confidence are dropped.",
       "label": "Minimum confidence"
     },
     "sourceRelationSettingsMinImportance": {
-      "help": "Connections the AI scores below this importance are dropped. Default 0.75.",
+      "help": "Connections the AI scores below this importance are dropped.",
       "label": "Minimum importance"
     },
     "sourceRelationSettingsSummaryMaxCharacters": {
-      "help": "How much of each source’s summary goes into a comparison. Default 1,000.",
+      "help": "How much of each source’s summary goes into a comparison.",
       "label": "Summary characters per source"
     },
     "summaryMinimumWordCount": {
-      "help": "Saves an AI call on items too small to summarise. Use 0 to turn it off. Default 40.",
+      "help": "Saves an AI call on items too small to summarise. Use 0 to turn it off.",
       "label": "Minimum words for a summary"
     },
     "themeMode": {
@@ -5810,7 +5810,8 @@
       "context": "The graph stopped drawing.",
       "layout": "The graph could not be arranged.",
       "unavailable": "This window cannot draw the graph.",
-      "unavailableBody": "The table lists the same connections."
+      "unavailableBody": "The table lists the same connections.",
+      "unavailableTree": "The Tree shows this branch’s topics and notes; each note lists its connections."
     },
     "group": {
       "description": "{topic}. Notes drawn: {notes}. Connections to other topics: {count}."
@@ -6349,6 +6350,229 @@
         "hybrid": "Search and comparison run here at no cost; writing uses your provider.",
         "local": "Everything runs here and nothing leaves this Mac."
       }
+    }
+  },
+  "settingsAdvanced": {
+    "decider": {
+      "auto": "Automatic",
+      "autoHelp": "Follows your models: the ranker when one is validated, otherwise the judge.",
+      "generative": "Judge only",
+      "generativeHelp": "The judge decides every connection: slower, and it sends the notes’ text out if the judge runs in the cloud.",
+      "ranker": "Ranker only",
+      "rankerElse": "Ranker, otherwise judge",
+      "rankerElseHelp": "The ranker decides, and the judge steps in when no ranker is validated.",
+      "rankerHelp": "Only a validated ranker decides; without one, matching waits."
+    },
+    "groups": {
+      "diagnosticsIntro": "For investigating problems. The jobs’ technical names appear here.",
+      "matchingIntro": "Each decision keeps the values it was made with; a new value only applies to new decisions. To redo old ones, use the Inbox.",
+      "processingModels": "Processing and models"
+    },
+    "intro": "Rarely needed: the defaults suit most libraries. The matching values were measured; change them only if you know why.",
+    "layout": {
+      "failed": "The change could not be prepared. Nothing was moved.",
+      "followsNotes": "Same as the notes ({language})",
+      "hint": "Choosing another language does not move anything yet: it prepares the change, which you review and apply in Integrations.",
+      "noVault": "Choose an Obsidian vault first; until then there are no folders to name.",
+      "openIntegrations": "Open Integrations",
+      "prepared": "The change is ready to review. Apply it in Integrations, with Obsidian’s editors closed.",
+      "preparing": "Preparing the change…"
+    },
+    "matching": {
+      "deleteBody": "The matching values go back to the calibrated set. Connections already found do not change.",
+      "deleteConfirm": "Delete preset",
+      "deleteTitle": "Delete “{name}”?",
+      "differenceItem": "{label} ({current} instead of {calibrated})",
+      "differsList": "Different: {list}.",
+      "differsMany": "{count} values differ from the calibrated set.",
+      "differsNote": "Connections found with these values were not measured.",
+      "differsOne": "{count} value differs from the calibrated set.",
+      "errorKept": "Your saved values stay as they were.",
+      "errorTitle": "The matching presets could not be read.",
+      "nameInvalid": "Give the preset a name of up to 100 characters.",
+      "nameNew": "Name of the new preset",
+      "nameRename": "New name of the preset",
+      "nameSave": "Save",
+      "off": "off",
+      "on": "on",
+      "presetCopyName": "{name} (copy)",
+      "presetCreate": "Create preset",
+      "presetCustomNamed": "Custom: {name}",
+      "presetDelete": "Delete",
+      "presetDuplicate": "Duplicate",
+      "presetLimit": "You can keep up to 50 presets.",
+      "presetPrevious": "Earlier settings",
+      "presetRecommended": "Balanced (recommended)",
+      "presetRename": "Rename",
+      "restoreCalibrated": "Restore the calibrated values",
+      "subgroups": {
+        "identity": {
+          "intro": "From the knowledge graph: how the AI joins similar relation types and entities that are the same.",
+          "title": "Relation types and entity identity"
+        },
+        "notes": {
+          "intro": "How much the AI may write when it judges the connections between notes.",
+          "title": "Notes"
+        },
+        "sources": {
+          "intro": "Relations link whole sources; connections, in Knowledge, link notes.",
+          "title": "Relations between sources"
+        }
+      }
+    },
+    "prompts": {
+      "body": "Open the editor to read, change or restore a prompt.",
+      "close": "Close the prompts",
+      "open": "Open the prompts"
+    },
+    "rootFailed": "That name could not be saved. Use a folder name inside the vault, without “..” and without a leading “/”.",
+    "rootHint": "A folder name inside the vault, not a path.",
+    "saveFailed": "The change could not be saved. Nothing was changed.",
+    "units": {
+      "characters": "characters",
+      "tokens": "tokens",
+      "words": "words"
+    }
+  },
+  "diagnostics": {
+    "callLog": {
+      "caption": "The latest AI calls",
+      "columns": {
+        "job": "Job",
+        "model": "Model",
+        "result": "Result",
+        "time": "Time",
+        "tokens": "Tokens",
+        "when": "When"
+      },
+      "countMany": "{count} calls recorded",
+      "countOne": "{count} call recorded",
+      "emptyBody": "The first one appears here as soon as Memora calls a model.",
+      "emptyTitle": "No AI calls recorded yet",
+      "errorKept": "The records are still stored; nothing was deleted.",
+      "errorTitle": "The call log could not be read.",
+      "filterAll": "All",
+      "filterFailed": "Failed only",
+      "filterLabel": "Show",
+      "limitNote": "Showing the {count} most recent calls.",
+      "noneFailed": "No failed calls.",
+      "prune": "Delete old records…",
+      "results": {
+        "canceled": "Canceled",
+        "failed": "Failed",
+        "interrupted": "Interrupted",
+        "running": "Running",
+        "succeeded": "Done"
+      },
+      "showMore": "Show more",
+      "title": "AI call log"
+    },
+    "debug": {
+      "captureBody": "The full prompts and responses stay in this local database. They can hold the whole text of your sources and take a lot of space.",
+      "captureConfirm": "Turn capture on",
+      "captureNeedsDiagnostics": "Turn on the operation diagnostics to use this.",
+      "captureTitle": "Keep complete prompts and responses?",
+      "captureWarning": "The logs may hold the whole text of your sources and take a lot of space. Turn this off after the diagnosis."
+    },
+    "errorKept": "The records are still stored; nothing was deleted.",
+    "errorTitle": "The diagnostics could not be read.",
+    "intro": "For investigating problems. The jobs’ technical names appear here.",
+    "jobTypes": {
+      "assetStorage": "Saving files",
+      "atomicNoteGeneration": "Note writing",
+      "atomicNoteMatching": "Connections between notes",
+      "catalogHeader": "Summaries for book and paper entries",
+      "chunking": "Splitting into passages",
+      "conversion": "Conversion",
+      "embedding": "Search index",
+      "ingestion": "Source import",
+      "knowledgeGraphGeneration": "Knowledge graph",
+      "localModelDownload": "Local model download",
+      "noteEmbedding": "Note search index",
+      "obsidianSync": "Obsidian sync",
+      "obsidianWiki": "Obsidian topic maps",
+      "other": "Background work",
+      "relationComposite": "Preparing books and papers for related sources",
+      "relationLabels": "Connection descriptions",
+      "relationLink": "Linking relations",
+      "relationPromote": "Relations between sources from notes",
+      "relationRetype": "Typing relations",
+      "sourceMatching": "Relations between sources",
+      "summarization": "Summary",
+      "topicAreas": "Topic areas",
+      "topicAudit": "Topic tree audit",
+      "topicBuild": "Topic tree build",
+      "topicGate": "Topic placement decision",
+      "topicLabelEmbed": "Topic labels",
+      "topicName": "Topic naming",
+      "topicPlace": "Topic placement",
+      "topicRebalance": "Topic tree rebalancing",
+      "topicSweep": "Topic tree check"
+    },
+    "prune": {
+      "confirm": "Delete records",
+      "countFailed": "The records could not be counted. Nothing was deleted.",
+      "counting": "Counting…",
+      "days": "days",
+      "deletedMany": "{count} records deleted.",
+      "deletedOne": "{count} record deleted.",
+      "description": "Anything deleted here cannot be brought back. The AI task audit and your content stay.",
+      "failed": "The records could not be deleted. Nothing was removed.",
+      "invalid": "Type a whole number of days or months, from 1 to 3650.",
+      "months": "months",
+      "nothing": "Nothing is older than that.",
+      "olderThan": "Older than",
+      "previewMany": "{count} records from before {date} will be deleted.",
+      "previewOne": "{count} record from before {date} will be deleted.",
+      "scope": "What to delete",
+      "scopeAll": "Calls, operation records and similarity runs",
+      "scopePayloads": "Only the full prompts and responses",
+      "title": "Delete old records?",
+      "unit": "Unit"
+    },
+    "similarity": {
+      "action": "Delete runs…",
+      "body": "The debug records go away. No connection changes.",
+      "confirm": "Delete runs",
+      "deletedMany": "{count} runs deleted.",
+      "deletedOne": "{count} run deleted.",
+      "failed": "The runs could not be deleted. Nothing was removed.",
+      "none": "There were no runs to delete.",
+      "title": "Delete the similarity debug runs?"
+    },
+    "taskHistory": {
+      "caption": "Finished jobs",
+      "clear": "Clear job history…",
+      "clearBody": "Takes finished, failed and canceled runs off the lists. Active jobs, pending items, the audit and spending stay.",
+      "clearConfirm": "Clear history",
+      "clearFailed": "The history could not be cleared. Nothing was removed.",
+      "clearTitle": "Clear the job history?",
+      "clearedMany": "{count} runs cleared.",
+      "clearedOne": "{count} run cleared.",
+      "columns": {
+        "duration": "Duration",
+        "job": "Job",
+        "result": "Result",
+        "when": "When"
+      },
+      "countMany": "{count} finished runs",
+      "countOne": "{count} finished run",
+      "emptyBody": "Each import or other job appears here when it finishes.",
+      "emptyTitle": "No finished jobs yet",
+      "errorKept": "The records are still stored; nothing was deleted.",
+      "errorTitle": "The job history could not be read.",
+      "outcomes": {
+        "canceled": "Canceled",
+        "failed": "Failed",
+        "graphIncomplete": "Done, without the graph",
+        "succeeded": "Done"
+      },
+      "title": "Job history",
+      "waiting": "Shows up when the read works again."
+    },
+    "title": "Diagnostics",
+    "when": {
+      "yesterday": "yesterday {time}"
     }
   }
 }

@@ -5359,7 +5359,7 @@
     },
     "advancedPrompts": {
       "help": "Les instructions que Memora envoie aux modèles, par catégorie. En modifier une crée une nouvelle révision ; la précédente est conservée.",
-      "label": "Prompts"
+      "label": "Instructions des modèles"
     },
     "advancedSimilarityRuns": {
       "help": "Comparaisons enregistrées pendant que les diagnostics étaient activés. Les effacer ne change aucun lien.",
@@ -5426,7 +5426,7 @@
       "label": "Ce Mac"
     },
     "atomicNoteMatchingSettingsMaxRerankOutputTokens": {
-      "help": "Le nombre maximal de jetons que l’IA peut écrire pour placer une note. Par défaut : 4 096.",
+      "help": "Le nombre maximal de jetons que l’IA peut écrire pour placer une note.",
       "label": "Limite de sortie par note"
     },
     "bookLookup": {
@@ -5434,19 +5434,19 @@
       "label": "Chercher les données des livres en ligne"
     },
     "canonicalMatchingSettingsConfirmationBatchSize": {
-      "help": "Combien d’identités sont envoyées à l’IA dans un appel de confirmation. Par défaut : 12.",
+      "help": "Combien d’identités sont envoyées à l’IA dans un appel de confirmation.",
       "label": "Identités par confirmation"
     },
     "canonicalMatchingSettingsConfirmationMaxCharacters": {
-      "help": "La taille de texte qu’un appel de confirmation peut atteindre. Une identité plus grande part seule. Par défaut : 12 000.",
+      "help": "La taille de texte qu’un appel de confirmation peut atteindre. Une identité plus grande part seule.",
       "label": "Taille de la confirmation en caractères"
     },
     "canonicalMatchingSettingsEntityCandidateLimit": {
-      "help": "Combien d’entités proches l’IA compare à chaque nouvelle entité. Par défaut : 3.",
+      "help": "Combien d’entités proches l’IA compare à chaque nouvelle entité.",
       "label": "Candidats par entité"
     },
     "canonicalMatchingSettingsRelationTypeCandidateLimit": {
-      "help": "Combien de types de lien proches l’IA compare à chaque nouveau type. Par défaut : 3.",
+      "help": "Combien de types de lien proches l’IA compare à chaque nouveau type.",
       "label": "Candidats par type de lien"
     },
     "contentLanguage": {
@@ -5462,7 +5462,7 @@
       "label": "Diagnostics des opérations"
     },
     "entityIdentitySimilarityThreshold": {
-      "help": "À quel point deux entités doivent se ressembler pour que l’IA vérifie si elles sont identiques. Plus haut, moins de candidats. Par défaut : 0,92.",
+      "help": "À quel point deux entités doivent se ressembler pour que l’IA vérifie si elles sont identiques. Plus haut, moins de candidats.",
       "label": "Similarité entre entités"
     },
     "graphWheelZoomSensitivity": {
@@ -5565,7 +5565,7 @@
       "label": "Jeton Hugging Face"
     },
     "managedRoot": {
-      "help": "Le dossier, dans le coffre, où Memora écrit ses fichiers. Par défaut : Memora.",
+      "help": "Le dossier, dans le coffre, où Memora écrit ses fichiers.",
       "label": "Dossier de Memora dans le coffre"
     },
     "metadataGoogleBooks": {
@@ -5625,7 +5625,7 @@
       "label": "Descriptions des liens"
     },
     "relationTypeSimilarityThreshold": {
-      "help": "À quel point deux types de lien doivent se ressembler pour que l’IA vérifie s’ils sont identiques. Plus haut, moins de candidats. Par défaut : 0,92.",
+      "help": "À quel point deux types de lien doivent se ressembler pour que l’IA vérifie s’ils sont identiques. Plus haut, moins de candidats.",
       "label": "Similarité entre types de lien"
     },
     "relationsDeciderMode": {
@@ -5637,11 +5637,11 @@
       "label": "Décider les liens avec OpenAI Decisions"
     },
     "sourceRelationSettingsEvidenceChunksPerSource": {
-      "help": "Combien d’extraits de chaque source l’IA lit en comparant une paire. Par défaut : 2.",
+      "help": "Combien d’extraits de chaque source l’IA lit en comparant une paire.",
       "label": "Extraits de preuve par source"
     },
     "sourceRelationSettingsEvidenceMaxCharacters": {
-      "help": "Le plus long morceau d’un extrait que l’IA lit. Par défaut : 800.",
+      "help": "Le plus long morceau d’un extrait que l’IA lit.",
       "label": "Caractères par extrait"
     },
     "sourceRelationSettingsIncludeWeakTypes": {
@@ -5649,31 +5649,31 @@
       "label": "Autoriser les liens faibles"
     },
     "sourceRelationSettingsMaxInputTokens": {
-      "help": "Le nombre maximal de jetons d’entrée qu’une source et ses chapitres peuvent utiliser par exécution. Un appel peut le dépasser ; les suivants s’arrêtent. Par défaut : 60 000.",
+      "help": "Le nombre maximal de jetons d’entrée qu’une source et ses chapitres peuvent utiliser par exécution. Un appel peut le dépasser ; les suivants s’arrêtent.",
       "label": "Budget d’entrée"
     },
     "sourceRelationSettingsMaxOutputTokens": {
-      "help": "Le nombre maximal de jetons que l’IA peut écrire en comparant deux sources. Par défaut : 4 096.",
+      "help": "Le nombre maximal de jetons que l’IA peut écrire en comparant deux sources.",
       "label": "Limite de sortie par paire de sources"
     },
     "sourceRelationSettingsMaxRelationsPerPair": {
-      "help": "Le nombre maximal de liens conservés entre deux sources. Par défaut : 4.",
+      "help": "Le nombre maximal de liens conservés entre deux sources.",
       "label": "Liens par paire de sources"
     },
     "sourceRelationSettingsMinConfidence": {
-      "help": "Les liens que les preuves soutiennent sous cette confiance sont écartés. Par défaut : 0,85.",
+      "help": "Les liens que les preuves soutiennent sous cette confiance sont écartés.",
       "label": "Confiance minimale"
     },
     "sourceRelationSettingsMinImportance": {
-      "help": "Les liens que l’IA note sous cette importance sont écartés. Par défaut : 0,75.",
+      "help": "Les liens que l’IA note sous cette importance sont écartés.",
       "label": "Importance minimale"
     },
     "sourceRelationSettingsSummaryMaxCharacters": {
-      "help": "Quelle part du résumé de chaque source entre dans une comparaison. Par défaut : 1 000.",
+      "help": "Quelle part du résumé de chaque source entre dans une comparaison.",
       "label": "Caractères de résumé par source"
     },
     "summaryMinimumWordCount": {
-      "help": "Évite de dépenser un appel d’IA pour des éléments trop petits. Mettez 0 pour désactiver. Par défaut : 40.",
+      "help": "Évite de dépenser un appel d’IA pour des éléments trop petits. Mettez 0 pour désactiver.",
       "label": "Minimum de mots pour un résumé"
     },
     "themeMode": {
@@ -5810,7 +5810,8 @@
       "context": "Le graphe n’est plus dessiné.",
       "layout": "Impossible d’organiser le graphe.",
       "unavailable": "Cette fenêtre ne peut pas dessiner le graphe.",
-      "unavailableBody": "Le tableau présente les mêmes connexions."
+      "unavailableBody": "Le tableau présente les mêmes connexions.",
+      "unavailableTree": "L’Arbre présente les thèmes et les notes de cette branche ; chaque note liste ses connexions."
     },
     "group": {
       "description": "{topic}. Notes dans le graphe : {notes}. Connexions avec d’autres thèmes : {count}."
@@ -6349,6 +6350,229 @@
         "hybrid": "La recherche et la comparaison tournent ici, sans frais ; l’écriture passe par votre fournisseur.",
         "local": "Tout tourne ici et rien ne sort de ce Mac."
       }
+    }
+  },
+  "settingsAdvanced": {
+    "decider": {
+      "auto": "Automatique",
+      "autoHelp": "Suit vos modèles : le classeur quand il y en a un validé, sinon le juge.",
+      "generative": "Juge seul",
+      "generativeHelp": "Le juge décide de tous les liens : plus lent, et il envoie le texte des notes à l’extérieur si le juge tourne dans le cloud.",
+      "ranker": "Classeur seul",
+      "rankerElse": "Classeur, sinon juge",
+      "rankerElseHelp": "Le classeur décide, et le juge intervient quand aucun classeur n’est validé.",
+      "rankerHelp": "Seul un classeur validé décide ; sans lui, la correspondance attend."
+    },
+    "groups": {
+      "diagnosticsIntro": "Pour étudier les problèmes. Les noms techniques des tâches apparaissent ici.",
+      "matchingIntro": "Chaque décision garde les valeurs avec lesquelles elle a été prise ; une nouvelle valeur ne vaut que pour les nouvelles décisions. Pour refaire les anciennes, utilisez la Boîte de réception.",
+      "processingModels": "Traitement et modèles"
+    },
+    "intro": "Rarement utile : les valeurs par défaut conviennent à la plupart des bibliothèques. Les valeurs de correspondance ont été mesurées ; ne les changez que si vous savez pourquoi.",
+    "layout": {
+      "failed": "Le changement n’a pas pu être préparé. Rien n’a été déplacé.",
+      "followsNotes": "Comme les notes ({language})",
+      "hint": "Choisir une autre langue ne déplace rien pour l’instant : cela prépare le changement, que vous vérifiez et appliquez dans Intégrations.",
+      "noVault": "Choisissez d’abord un coffre Obsidian ; d’ici là, il n’y a pas de dossiers à nommer.",
+      "openIntegrations": "Ouvrir Intégrations",
+      "prepared": "Le changement est prêt à être vérifié. Appliquez-le dans Intégrations, avec les éditeurs d’Obsidian fermés.",
+      "preparing": "Préparation du changement…"
+    },
+    "matching": {
+      "deleteBody": "Les valeurs de correspondance reviennent au jeu calibré. Les liens déjà trouvés ne changent pas.",
+      "deleteConfirm": "Supprimer le préréglage",
+      "deleteTitle": "Supprimer « {name} » ?",
+      "differenceItem": "{label} ({current} au lieu de {calibrated})",
+      "differsList": "Différence : {list}.",
+      "differsMany": "{count} valeurs diffèrent du jeu calibré.",
+      "differsNote": "Les liens trouvés avec ces valeurs n’ont pas été mesurés.",
+      "differsOne": "{count} valeur diffère du jeu calibré.",
+      "errorKept": "Vos valeurs enregistrées restent telles quelles.",
+      "errorTitle": "Les préréglages de correspondance n’ont pas pu être lus.",
+      "nameInvalid": "Donnez au préréglage un nom de 100 caractères au plus.",
+      "nameNew": "Nom du nouveau préréglage",
+      "nameRename": "Nouveau nom du préréglage",
+      "nameSave": "Enregistrer",
+      "off": "désactivé",
+      "on": "activé",
+      "presetCopyName": "{name} (copie)",
+      "presetCreate": "Créer un préréglage",
+      "presetCustomNamed": "Personnalisé : {name}",
+      "presetDelete": "Supprimer",
+      "presetDuplicate": "Dupliquer",
+      "presetLimit": "Vous pouvez garder jusqu’à 50 préréglages.",
+      "presetPrevious": "Réglages précédents",
+      "presetRecommended": "Équilibré (recommandé)",
+      "presetRename": "Renommer",
+      "restoreCalibrated": "Rétablir les valeurs calibrées",
+      "subgroups": {
+        "identity": {
+          "intro": "Du graphe de connaissances : comment l’IA réunit les types de relations proches et les entités identiques.",
+          "title": "Types de relations et identité des entités"
+        },
+        "notes": {
+          "intro": "Ce que l’IA peut écrire en jugeant les liens entre notes.",
+          "title": "Notes"
+        },
+        "sources": {
+          "intro": "Les relations relient des sources entières ; les liens, dans Connaissances, relient des notes.",
+          "title": "Relations entre sources"
+        }
+      }
+    },
+    "prompts": {
+      "body": "Ouvrez l’éditeur pour lire, modifier ou rétablir un prompt.",
+      "close": "Fermer les prompts",
+      "open": "Ouvrir les prompts"
+    },
+    "rootFailed": "Ce nom n’a pas pu être enregistré. Utilisez un nom de dossier dans le coffre, sans « .. » et sans « / » au début.",
+    "rootHint": "Un nom de dossier dans le coffre, pas un chemin.",
+    "saveFailed": "L’enregistrement a échoué. Rien n’a été modifié.",
+    "units": {
+      "characters": "caractères",
+      "tokens": "jetons",
+      "words": "mots"
+    }
+  },
+  "diagnostics": {
+    "callLog": {
+      "caption": "Les derniers appels d’IA",
+      "columns": {
+        "job": "Tâche",
+        "model": "Modèle",
+        "result": "Résultat",
+        "time": "Durée",
+        "tokens": "Jetons",
+        "when": "Quand"
+      },
+      "countMany": "{count} appels enregistrés",
+      "countOne": "{count} appel enregistré",
+      "emptyBody": "Le premier apparaîtra ici dès que Memora appellera un modèle.",
+      "emptyTitle": "Aucun appel d’IA enregistré pour l’instant",
+      "errorKept": "Les enregistrements sont toujours conservés ; rien n’a été supprimé.",
+      "errorTitle": "Le journal des appels n’a pas pu être lu.",
+      "filterAll": "Tous",
+      "filterFailed": "Échecs seulement",
+      "filterLabel": "Afficher",
+      "limitNote": "Affichage des {count} appels les plus récents.",
+      "noneFailed": "Aucun appel en échec.",
+      "prune": "Supprimer les anciens enregistrements…",
+      "results": {
+        "canceled": "Annulé",
+        "failed": "Échec",
+        "interrupted": "Interrompu",
+        "running": "En cours",
+        "succeeded": "Terminé"
+      },
+      "showMore": "Afficher plus",
+      "title": "Journal des appels d’IA"
+    },
+    "debug": {
+      "captureBody": "Les prompts et les réponses complets restent dans cette base de données locale. Ils peuvent contenir tout le texte de vos sources et prendre beaucoup de place.",
+      "captureConfirm": "Activer la capture",
+      "captureNeedsDiagnostics": "Activez les diagnostics des opérations pour l’utiliser.",
+      "captureTitle": "Garder les prompts et les réponses complets ?",
+      "captureWarning": "Les journaux peuvent contenir tout le texte de vos sources et prendre beaucoup de place. Désactivez-le après le diagnostic."
+    },
+    "errorKept": "Les enregistrements sont toujours conservés ; rien n’a été supprimé.",
+    "errorTitle": "Le diagnostic n’a pas pu être lu.",
+    "intro": "Pour étudier les problèmes. Les noms techniques des tâches apparaissent ici.",
+    "jobTypes": {
+      "assetStorage": "Enregistrement des fichiers",
+      "atomicNoteGeneration": "Rédaction des notes",
+      "atomicNoteMatching": "Liens entre notes",
+      "catalogHeader": "Résumés pour les fiches de livres et d’articles",
+      "chunking": "Découpage en passages",
+      "conversion": "Conversion",
+      "embedding": "Index de recherche",
+      "ingestion": "Import d’une source",
+      "knowledgeGraphGeneration": "Graphe de connaissances",
+      "localModelDownload": "Téléchargement d’un modèle local",
+      "noteEmbedding": "Index de recherche des notes",
+      "obsidianSync": "Synchronisation Obsidian",
+      "obsidianWiki": "Cartes de sujets dans Obsidian",
+      "other": "Travail en arrière-plan",
+      "relationComposite": "Préparation des livres et articles pour trouver des sources liées",
+      "relationLabels": "Descriptions des liens",
+      "relationLink": "Liaison des relations",
+      "relationPromote": "Relations entre sources à partir des notes",
+      "relationRetype": "Typage des relations",
+      "sourceMatching": "Relations entre sources",
+      "summarization": "Résumé",
+      "topicAreas": "Domaines des sujets",
+      "topicAudit": "Audit de l’arbre des sujets",
+      "topicBuild": "Construction de l’arbre des sujets",
+      "topicGate": "Décision de classement dans les sujets",
+      "topicLabelEmbed": "Étiquettes des sujets",
+      "topicName": "Nommage des sujets",
+      "topicPlace": "Classement dans les sujets",
+      "topicRebalance": "Rééquilibrage de l’arbre des sujets",
+      "topicSweep": "Vérification de l’arbre des sujets"
+    },
+    "prune": {
+      "confirm": "Supprimer les enregistrements",
+      "countFailed": "Les enregistrements n’ont pas pu être comptés. Rien n’a été supprimé.",
+      "counting": "Comptage…",
+      "days": "jours",
+      "deletedMany": "{count} enregistrements supprimés.",
+      "deletedOne": "{count} enregistrement supprimé.",
+      "description": "Ce qui est supprimé ici ne peut pas être récupéré. L’audit des tâches d’IA et votre contenu restent.",
+      "failed": "Les enregistrements n’ont pas pu être supprimés. Rien n’a été retiré.",
+      "invalid": "Saisissez un nombre entier de jours ou de mois, de 1 à 3650.",
+      "months": "mois",
+      "nothing": "Rien n’est plus ancien que cela.",
+      "olderThan": "Plus anciens que",
+      "previewMany": "{count} enregistrements antérieurs au {date} seront supprimés.",
+      "previewOne": "{count} enregistrement antérieur au {date} sera supprimé.",
+      "scope": "Quoi supprimer",
+      "scopeAll": "Appels, enregistrements d’opérations et exécutions de similarité",
+      "scopePayloads": "Seulement les prompts et les réponses complets",
+      "title": "Supprimer les anciens enregistrements ?",
+      "unit": "Unité"
+    },
+    "similarity": {
+      "action": "Supprimer les exécutions…",
+      "body": "Les enregistrements de débogage disparaissent. Aucun lien ne change.",
+      "confirm": "Supprimer les exécutions",
+      "deletedMany": "{count} exécutions supprimées.",
+      "deletedOne": "{count} exécution supprimée.",
+      "failed": "Les exécutions n’ont pas pu être supprimées. Rien n’a été retiré.",
+      "none": "Il n’y avait aucune exécution à supprimer.",
+      "title": "Supprimer les exécutions de débogage de similarité ?"
+    },
+    "taskHistory": {
+      "caption": "Tâches terminées",
+      "clear": "Effacer l’historique des tâches…",
+      "clearBody": "Retire des listes les exécutions terminées, en échec ou annulées. Les tâches actives, les éléments en attente, l’audit et les dépenses restent.",
+      "clearConfirm": "Effacer l’historique",
+      "clearFailed": "L’historique n’a pas pu être effacé. Rien n’a été retiré.",
+      "clearTitle": "Effacer l’historique des tâches ?",
+      "clearedMany": "{count} exécutions effacées.",
+      "clearedOne": "{count} exécution effacée.",
+      "columns": {
+        "duration": "Durée",
+        "job": "Tâche",
+        "result": "Résultat",
+        "when": "Quand"
+      },
+      "countMany": "{count} exécutions terminées",
+      "countOne": "{count} exécution terminée",
+      "emptyBody": "Chaque import ou autre travail apparaît ici quand il se termine.",
+      "emptyTitle": "Aucune tâche terminée pour l’instant",
+      "errorKept": "Les enregistrements sont toujours conservés ; rien n’a été supprimé.",
+      "errorTitle": "L’historique des tâches n’a pas pu être lu.",
+      "outcomes": {
+        "canceled": "Annulée",
+        "failed": "Échec",
+        "graphIncomplete": "Terminée, sans le graphe",
+        "succeeded": "Terminée"
+      },
+      "title": "Historique des tâches",
+      "waiting": "Apparaît quand la lecture revient."
+    },
+    "title": "Diagnostic",
+    "when": {
+      "yesterday": "hier {time}"
     }
   }
 }
