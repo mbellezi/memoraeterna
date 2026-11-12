@@ -2458,15 +2458,207 @@
     "removePreset": "Supprimer ce préréglage ?"
   },
   "sourcePage": {
+    "actions": {
+      "generateNotes": "Générer les notes",
+      "openInMap": "Ouvrir dans la Carte"
+    },
+    "connections": {
+      "notes": "Liens entre les notes de cette source",
+      "notesEmpty": "Aucun lien pour l’instant. Ils apparaissent ici quand les notes sont reliées.",
+      "sources": "Sources liées"
+    },
     "content": "Contenu",
     "current": "Actuel",
+    "details": {
+      "earlier": "Versions précédentes"
+    },
     "edit": "Modifier la source",
     "editContent": "Modifier le contenu",
+    "errors": {
+      "earlier": "Impossible d’ouvrir cette version.",
+      "kept": "Vos autres panneaux restent ouverts et rien n’a été modifié.",
+      "open": "Impossible d’ouvrir cette source.",
+      "progress": "Impossible de lire l’avancement pour le moment."
+    },
+    "fields": {
+      "abstract": "Résumé de l’auteur",
+      "channel": "Chaîne",
+      "chapterNumber": "Numéro de chapitre",
+      "creators": "Auteurs et contributeurs",
+      "description": "Description",
+      "doi": "DOI",
+      "durationSeconds": "Durée (secondes)",
+      "edition": "Édition",
+      "isbn10": "ISBN-10",
+      "isbn13": "ISBN-13",
+      "issn": "ISSN",
+      "issue": "Numéro",
+      "keywords": "Mots-clés",
+      "language": "Langue",
+      "pageCount": "Nombre de pages",
+      "platform": "Plateforme",
+      "publicationDate": "Date de publication",
+      "publisher": "Éditeur",
+      "sectionNumber": "Numéro de section",
+      "series": "Collection",
+      "siteName": "Nom du site",
+      "subjects": "Sujets",
+      "subtitle": "Sous-titre",
+      "tags": "Étiquettes",
+      "title": "Titre",
+      "url": "Adresse d’origine",
+      "venue": "Publication",
+      "volume": "Volume",
+      "year": "Année"
+    },
+    "gone": {
+      "action": "Ouvrir la Bibliothèque",
+      "body": "Elle a peut-être été supprimée. Ouvrez la Bibliothèque pour voir ce qu’elle contient.",
+      "title": "Cette source n’est plus dans votre bibliothèque."
+    },
+    "hint": {
+      "firstSource": "Chaque note apparaît ici avec son chemin dans l’arbre, et l’arbre naît à gauche. Ensuite, le Jardinier range l’arbre et les liens en arrière-plan, toujours avec Annuler.",
+      "key": "Espace",
+      "notes": "Les notes apparaissent ici dès qu’elles sont prêtes, déjà avec leur chemin dans l’arbre. Cliquez sur l’une pour l’ouvrir à côté ; {key} l’aperçoit sans l’ouvrir."
+    },
     "history": "Historique",
     "historyHint": "Le contenu précédent est en lecture seule. Jusqu’à 100 documents récents sont affichés ; les preuves originales sont conservées.",
+    "meta": {
+      "addedOn": "ajoutée le {date}",
+      "addedToday": "ajoutée aujourd’hui, {time}",
+      "addedYesterday": "ajoutée hier, {time}",
+      "etAl": "{name} et al.",
+      "pages": "{count} pages",
+      "pagesOne": "1 page",
+      "volume": "{venue}, vol. {volume}"
+    },
     "noChildren": "Aucun sous-élément. Ajoutez le premier pour commencer.",
+    "notes": {
+      "countLive": "{count} jusqu’ici · les plus récentes en haut",
+      "countLiveOne": "1 jusqu’ici · la plus récente en haut",
+      "emptyBody": "Quand les notes seront générées, elles apparaîtront ici, chacune avec son chemin dans l’arbre.",
+      "emptyHeadline": "Pas encore de notes pour cette source",
+      "fresh": "à l’instant",
+      "newestFirst": "les plus récentes en haut",
+      "open": "Ouvrir la note « {title} » à côté",
+      "page": "p. {page}",
+      "passage": "segment {index}",
+      "placing": "Recherche de l’emplacement dans l’arbre…",
+      "seeAll": "Voir les {count} notes",
+      "showMore": "Afficher {count} de plus",
+      "unplaced": "Sans emplacement"
+    },
     "overview": "Vue générale",
-    "stale": "Le contenu a changé. Traitez cette source pour actualiser le résumé."
+    "reader": {
+      "empty": "Cette source n’a pas encore de texte.",
+      "passages": "Segments ({count})"
+    },
+    "stale": "Le contenu a changé. Traitez cette source pour actualiser le résumé.",
+    "strip": {
+      "actionFailed": "Impossible de démarrer pour le moment. Rien n’a été modifié.",
+      "cost": {
+        "local": "modèle local, sans coût",
+        "perToken": "environ {amount}",
+        "perTokenEstimated": "environ {amount}, prix estimé",
+        "subscription": "abonnement, sans facturation à l’usage"
+      },
+      "doneIn": "Prête en {count} min",
+      "doneUnderMinute": "Prête en moins d’une minute",
+      "failedAt": "Impossible de terminer {stage}.",
+      "failedKept": "Ce qui était déjà prêt reste enregistré.",
+      "group": "Génération en direct",
+      "milestone": "Vous pouvez déjà {link} : les segments sont indexés.",
+      "milestoneLink": "interroger cette source",
+      "needsYou": {
+        "choose": "Choisir le modèle",
+        "kept": "Les segments sont déjà consultables.",
+        "noRoute": "Il manque un modèle pour écrire les notes.",
+        "other": "Cette source attend que vous continuiez."
+      },
+      "paused": "Mise en pause par vous.",
+      "pausedKept": "Ce qui était déjà prêt reste enregistré. Reprenez depuis Activité, en haut de la fenêtre.",
+      "remainingHours": "encore environ {count} h",
+      "remainingMinutes": "encore environ {count} min",
+      "ruler": {
+        "caption": "Notes par section du texte",
+        "done": "terminée",
+        "label": "Notes par section",
+        "pending": "en attente",
+        "reading": "en lecture"
+      },
+      "searchable": "Enregistrée et consultable, sans notes.",
+      "searchableKept": "Vous pouvez interroger cette source. Générez les notes quand vous voulez.",
+      "since": "depuis {time}",
+      "stages": {
+        "atomicNoteMatching": "les liens entre notes",
+        "atomicNotes": "les notes",
+        "chunking": "le découpage en segments",
+        "conversion": "la lecture du fichier",
+        "embedding": "l’indexation des segments",
+        "knowledgeGraph": "le graphe d’entités",
+        "sourceMatching": "les liens entre sources",
+        "structure": "la lecture de la structure",
+        "summarization": "le résumé"
+      },
+      "steps": {
+        "chunks": "Segments",
+        "notes": "Notes",
+        "placed": "Dans l’arbre",
+        "read": "Lue",
+        "relations": "Liens",
+        "summary": "Résumé"
+      },
+      "stopped": "La génération a été interrompue.",
+      "title": "Génération des connaissances de cette source",
+      "values": {
+        "afterNotes": "après les notes",
+        "notApplicable": "sans objet dans ce mode",
+        "notesDone": "{count} notes",
+        "notesDoneOne": "1 note",
+        "notesOfEstimate": "{count} sur ~{estimate}",
+        "notesSoFar": "{count} jusqu’ici",
+        "notesSoFarOne": "1 jusqu’ici",
+        "pages": "{count} pages",
+        "pagesOne": "1 page",
+        "placed": "{count} placées",
+        "placedOne": "1 placée",
+        "readDone": "lue",
+        "reading": "lecture",
+        "relationsDone": "{count} liens",
+        "relationsDoneOne": "1 lien",
+        "searchable": "{count} consultables",
+        "searchableOne": "1 consultable",
+        "searching": "recherche",
+        "summaryDone": "prêt",
+        "waiting": "en attente",
+        "writing": "écriture"
+      }
+    },
+    "summary": {
+      "later": "Le résumé vient après les notes.",
+      "none": "Pas encore de résumé.",
+      "title": "Résumé",
+      "writing": "Le résumé est en cours d’écriture."
+    },
+    "tabs": {
+      "connections": "Liens",
+      "details": "Détails",
+      "label": "Sections de la source",
+      "notes": "Notes"
+    },
+    "types": {
+      "AcademicPaper": "Article académique",
+      "Book": "Livre",
+      "BookChapter": "Chapitre de livre",
+      "DailyNote": "Note quotidienne",
+      "DocumentSection": "Section de document",
+      "GenericDocument": "Document générique",
+      "PeriodicalIssue": "Numéro de périodique",
+      "PersonalNote": "Note personnelle",
+      "StandaloneArticle": "Article autonome",
+      "Video": "Vidéo",
+      "WebArticle": "Article web"
+    }
   },
   "sourceRelations": {
     "openNote": "Ouvrir la note",

@@ -2453,15 +2453,207 @@
     "removePreset": "Remove this preset?"
   },
   "sourcePage": {
+    "actions": {
+      "generateNotes": "Generate notes",
+      "openInMap": "Open in Map"
+    },
+    "connections": {
+      "notes": "Connections between this source's notes",
+      "notesEmpty": "No connections yet. They appear here as the notes are linked.",
+      "sources": "Related sources"
+    },
     "content": "Content",
     "current": "Current",
+    "details": {
+      "earlier": "Earlier versions"
+    },
     "edit": "Edit source",
     "editContent": "Edit content",
+    "errors": {
+      "earlier": "That version could not be opened.",
+      "kept": "Your other panels stay open and nothing was changed.",
+      "open": "This source could not be opened.",
+      "progress": "The progress could not be read just now."
+    },
+    "fields": {
+      "abstract": "Abstract",
+      "channel": "Channel",
+      "chapterNumber": "Chapter number",
+      "creators": "Creators",
+      "description": "Description",
+      "doi": "DOI",
+      "durationSeconds": "Duration (seconds)",
+      "edition": "Edition",
+      "isbn10": "ISBN-10",
+      "isbn13": "ISBN-13",
+      "issn": "ISSN",
+      "issue": "Issue",
+      "keywords": "Keywords",
+      "language": "Language",
+      "pageCount": "Page count",
+      "platform": "Platform",
+      "publicationDate": "Publication date",
+      "publisher": "Publisher",
+      "sectionNumber": "Section number",
+      "series": "Series",
+      "siteName": "Site name",
+      "subjects": "Subjects",
+      "subtitle": "Subtitle",
+      "tags": "Tags",
+      "title": "Title",
+      "url": "Original URL",
+      "venue": "Venue",
+      "volume": "Volume",
+      "year": "Year"
+    },
+    "gone": {
+      "action": "Open the Library",
+      "body": "It may have been removed. Open the Library to see what is there.",
+      "title": "This source is no longer in your library."
+    },
+    "hint": {
+      "firstSource": "Each note appears here with its path in the tree, and the tree is born on the left. Then the Gardener tidies the tree and the connections in the background, always with Undo.",
+      "key": "Space",
+      "notes": "Notes appear here as soon as they are ready, already with their path in the tree. Click one to open it beside; {key} peeks without opening."
+    },
     "history": "History",
     "historyHint": "Earlier content is read-only. Up to 100 recent documents are listed; original evidence remains preserved.",
+    "meta": {
+      "addedOn": "added {date}",
+      "addedToday": "added today, {time}",
+      "addedYesterday": "added yesterday, {time}",
+      "etAl": "{name} et al.",
+      "pages": "{count} pages",
+      "pagesOne": "1 page",
+      "volume": "{venue}, vol. {volume}"
+    },
     "noChildren": "No subitems yet. Add the first one to start building this source.",
+    "notes": {
+      "countLive": "{count} so far · newest first",
+      "countLiveOne": "1 so far · newest first",
+      "emptyBody": "When notes are generated they appear here, each with its path in the tree.",
+      "emptyHeadline": "No notes from this source yet",
+      "fresh": "just now",
+      "newestFirst": "newest first",
+      "open": "Open the note “{title}” beside",
+      "page": "p. {page}",
+      "passage": "passage {index}",
+      "placing": "Looking for a place in the tree…",
+      "seeAll": "See all {count} notes",
+      "showMore": "Show {count} more",
+      "unplaced": "No place yet"
+    },
     "overview": "Overview",
-    "stale": "The content has changed. Process this source to update the summary."
+    "reader": {
+      "empty": "This source has no text yet.",
+      "passages": "Passages ({count})"
+    },
+    "stale": "The content has changed. Process this source to update the summary.",
+    "strip": {
+      "actionFailed": "It could not start just now. Nothing was changed.",
+      "cost": {
+        "local": "local model, no cost",
+        "perToken": "about {amount}",
+        "perTokenEstimated": "about {amount}, estimated price",
+        "subscription": "subscription, not metered"
+      },
+      "doneIn": "Ready in {count} min",
+      "doneUnderMinute": "Ready in under a minute",
+      "failedAt": "Could not finish {stage}.",
+      "failedKept": "What is already done stays saved.",
+      "group": "Live generation",
+      "milestone": "You can already {link}: the passages are indexed.",
+      "milestoneLink": "ask this source",
+      "needsYou": {
+        "choose": "Choose the model",
+        "kept": "The passages are already searchable.",
+        "noRoute": "A model is needed to write the notes.",
+        "other": "This source is waiting for you to continue."
+      },
+      "paused": "Paused by you.",
+      "pausedKept": "What is already done stays saved. Resume it from Activity, at the top of the window.",
+      "remainingHours": "about {count} h left",
+      "remainingMinutes": "about {count} min left",
+      "ruler": {
+        "caption": "Notes by section of the text",
+        "done": "done",
+        "label": "Notes by section",
+        "pending": "waiting",
+        "reading": "reading"
+      },
+      "searchable": "Stored and searchable, without notes.",
+      "searchableKept": "You can ask this source questions. Generate the notes whenever you like.",
+      "since": "since {time}",
+      "stages": {
+        "atomicNoteMatching": "the connections between notes",
+        "atomicNotes": "the notes",
+        "chunking": "the split into passages",
+        "conversion": "reading the file",
+        "embedding": "indexing the passages",
+        "knowledgeGraph": "the entity graph",
+        "sourceMatching": "the connections between sources",
+        "structure": "reading the structure",
+        "summarization": "the summary"
+      },
+      "steps": {
+        "chunks": "Passages",
+        "notes": "Notes",
+        "placed": "In the tree",
+        "read": "Read",
+        "relations": "Connections",
+        "summary": "Summary"
+      },
+      "stopped": "The generation was stopped.",
+      "title": "Generating knowledge from this source",
+      "values": {
+        "afterNotes": "after the notes",
+        "notApplicable": "not used in this mode",
+        "notesDone": "{count} notes",
+        "notesDoneOne": "1 note",
+        "notesOfEstimate": "{count} of ~{estimate}",
+        "notesSoFar": "{count} so far",
+        "notesSoFarOne": "1 so far",
+        "pages": "{count} pages",
+        "pagesOne": "1 page",
+        "placed": "{count} placed",
+        "placedOne": "1 placed",
+        "readDone": "read",
+        "reading": "reading",
+        "relationsDone": "{count} connections",
+        "relationsDoneOne": "1 connection",
+        "searchable": "{count} searchable",
+        "searchableOne": "1 searchable",
+        "searching": "searching",
+        "summaryDone": "ready",
+        "waiting": "waiting",
+        "writing": "writing"
+      }
+    },
+    "summary": {
+      "later": "The summary comes after the notes.",
+      "none": "No summary yet.",
+      "title": "Summary",
+      "writing": "The summary is being written."
+    },
+    "tabs": {
+      "connections": "Connections",
+      "details": "Details",
+      "label": "Sections of the source",
+      "notes": "Notes"
+    },
+    "types": {
+      "AcademicPaper": "Academic paper",
+      "Book": "Book",
+      "BookChapter": "Book chapter",
+      "DailyNote": "Daily note",
+      "DocumentSection": "Document section",
+      "GenericDocument": "Generic document",
+      "PeriodicalIssue": "Periodical issue",
+      "PersonalNote": "Personal note",
+      "StandaloneArticle": "Standalone article",
+      "Video": "Video",
+      "WebArticle": "Web article"
+    }
   },
   "sourceRelations": {
     "openNote": "Open note",
