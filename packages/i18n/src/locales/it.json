@@ -5503,6 +5503,19 @@
       "write": "Impossibile salvare. Non è cambiato nulla."
     },
     "models": {
+      "action": {
+        "download": "Scarica",
+        "import": "Importa file GGUF…",
+        "remove": "Rimuovi",
+        "resume": "Riprendi",
+        "test": "Prova",
+        "useRecommended": "Usa i valori consigliati"
+      },
+      "compat": {
+        "compatible": "Sta su questo Mac",
+        "insufficient_memory": "Memoria insufficiente",
+        "unsupported_platform": "Richiede macOS con Apple silicon"
+      },
       "empty": "Nessun modello corrisponde. Togli un filtro per vedere gli altri.",
       "errorKept": "Non è cambiato nulla: i modelli installati restano dove sono.",
       "errorTitle": "Impossibile leggere l’elenco dei modelli.",
@@ -5520,20 +5533,33 @@
       },
       "license": "Accetto la licenza:",
       "parameters": "Parametri",
+      "ranker": {
+        "fallback": "Senza un ranker validato, le note adatte a più argomenti aprono nuovi argomenti. Vengono ricollocate quando un ranker è pronto.",
+        "installing": "Questo ranker colloca le note adatte a più argomenti. Finché non è pronto, quelle note aprono nuovi argomenti e vengono ricollocate dopo.",
+        "pending": "Esegui la prova per validare questo ranker."
+      },
       "removeAsk": "Rimuovere {model} e i suoi file da questo Mac?",
       "removeBlocked": "In uso da {profiles}. Cambia prima il profilo.",
       "saveDefaults": "Salva i valori predefiniti",
+      "status": {
+        "downloading": "Download in corso",
+        "failed": "Non riuscito",
+        "not_downloaded": "Non scaricato",
+        "ready": "Installato",
+        "removing": "Rimozione",
+        "verifying": "Verifica"
+      },
       "summaryMany": "{count} installati · {size}",
       "summaryNone": "Nessuno installato",
       "summaryOne": "1 installato · {size}",
+      "testOk": "Il modello è stato eseguito su questo Mac.",
       "token": {
         "add": "Aggiungi token…",
         "label": "Token",
         "none": "Nessun token",
         "replace": "Sostituisci token…",
         "set": "Token salvato, mai mostrato"
-      },
-      "usedBy": "Usato da"
+      }
     },
     "preset": {
       "cloud": {
@@ -5565,31 +5591,30 @@
     "profiles": {
       "close": "Chiudi",
       "create": "Crea profilo",
-      "customize": "Personalizza per attività",
-      "default": "Predefinito",
+      "customize": "Personalizzato",
       "duplicate": "Duplica profilo",
       "edit": "Modifica",
       "empty": "Ancora nessun profilo. Un profilo collega un modello alle attività che serve.",
       "model": "Modello",
       "modelDefaults": "Valori del modello",
-      "name": "Nome profilo",
+      "name": "Nome del profilo",
       "new": "Nuovo profilo…",
       "remove": "Rimuovi profilo",
-      "removeAsk": "Rimuovere questo profilo e i relativi instradamenti? I modelli scaricati saranno conservati.",
-      "resetTask": "Usa valori del modello",
+      "removeAsk": "Rimuovere questo profilo e le rotte delle sue attività? I modelli scaricati restano.",
+      "resetTask": "Usa i valori del modello",
       "save": "Salva profilo",
-      "selectModel": "Seleziona un modello remoto o locale",
+      "selectModel": "Scegli un modello di provider o locale",
       "summaryMany": "{count} profili",
       "summaryNone": "Nessun profilo",
       "summaryOne": "1 profilo",
       "task": {
-        "atomic-note-generation": "Generazione note atomiche",
-        "embedding": "Embedding",
-        "knowledge-graph-generation": "Generazione grafo della conoscenza",
-        "reranking": "Reranking",
-        "structured-output": "Output strutturato",
-        "summarization": "Riepilogo",
-        "text-generation": "Generazione testo"
+        "atomic-note-generation": "Note atomiche",
+        "embedding": "Ricerca e somiglianza",
+        "knowledge-graph-generation": "Grafo della conoscenza",
+        "reranking": "Confronto (ranker)",
+        "structured-output": "Risposte strutturate",
+        "summarization": "Riassunti",
+        "text-generation": "Scrittura di testo"
       }
     },
     "providers": {
@@ -5647,11 +5672,6 @@
       "noModelsAvailable": "Nessun modello tra cui scegliere. Aggiungi un provider o installa un modello locale qui sotto.",
       "noRanker": "Nessun ranker installato. Le relazioni ne attendono uno, a meno che decida il giudice generativo.",
       "partial": "Mancano alcune rotte del giudice. Scegli un modello per impostarle tutte.",
-      "tech": {
-        "decide": "ranker",
-        "embed": "embeddings",
-        "judge": "giudice generativo"
-      },
       "where": {
         "local": "Su questo Mac",
         "remote": "Provider"

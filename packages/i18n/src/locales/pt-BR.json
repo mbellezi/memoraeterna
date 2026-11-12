@@ -5508,6 +5508,19 @@
       "write": "Não deu para salvar. Nada foi alterado."
     },
     "models": {
+      "action": {
+        "download": "Baixar",
+        "import": "Importar arquivo GGUF…",
+        "remove": "Remover",
+        "resume": "Retomar",
+        "test": "Testar",
+        "useRecommended": "Usar os valores recomendados"
+      },
+      "compat": {
+        "compatible": "Cabe neste Mac",
+        "insufficient_memory": "Memória insuficiente",
+        "unsupported_platform": "Exige macOS com Apple silicon"
+      },
       "empty": "Nenhum modelo combina. Tire um filtro para ver os outros.",
       "errorKept": "Nada foi alterado: os modelos instalados continuam onde estão.",
       "errorTitle": "Não deu para ler a lista de modelos.",
@@ -5525,20 +5538,33 @@
       },
       "license": "Aceito a licença:",
       "parameters": "Parâmetros",
+      "ranker": {
+        "fallback": "Sem um ranqueador validado, as notas que cabem em mais de um tópico iniciam novos tópicos. Elas são colocadas de novo quando houver um pronto.",
+        "installing": "Este ranqueador coloca as notas que cabem em mais de um tópico. Até ficar pronto, elas iniciam novos tópicos e são colocadas de novo depois.",
+        "pending": "Execute o teste para validar este ranqueador."
+      },
       "removeAsk": "Remover {model} e os arquivos dele deste Mac?",
       "removeBlocked": "Em uso por {profiles}. Mude o perfil antes.",
       "saveDefaults": "Salvar padrões",
+      "status": {
+        "downloading": "Baixando",
+        "failed": "Falhou",
+        "not_downloaded": "Não baixado",
+        "ready": "Instalado",
+        "removing": "Removendo",
+        "verifying": "Verificando"
+      },
       "summaryMany": "{count} instalados · {size}",
       "summaryNone": "Nenhum instalado",
       "summaryOne": "1 instalado · {size}",
+      "testOk": "O modelo rodou neste Mac.",
       "token": {
         "add": "Adicionar token…",
         "label": "Token",
         "none": "Nenhum token",
         "replace": "Trocar token…",
         "set": "Token salvo, nunca exibido"
-      },
-      "usedBy": "Usado por"
+      }
     },
     "preset": {
       "cloud": {
@@ -5570,8 +5596,7 @@
     "profiles": {
       "close": "Fechar",
       "create": "Criar perfil",
-      "customize": "Personalizar por tarefa",
-      "default": "Padrao",
+      "customize": "Personalizado",
       "duplicate": "Duplicar perfil",
       "edit": "Editar",
       "empty": "Ainda não há perfis. Um perfil liga um modelo aos trabalhos que ele atende.",
@@ -5580,21 +5605,21 @@
       "name": "Nome do perfil",
       "new": "Novo perfil…",
       "remove": "Remover perfil",
-      "removeAsk": "Remover este perfil e seus roteamentos de tarefas? Os modelos baixados serao preservados.",
-      "resetTask": "Usar padrões do modelo",
+      "removeAsk": "Remover este perfil e as rotas dos trabalhos dele? Os modelos baixados são mantidos.",
+      "resetTask": "Usar os padrões do modelo",
       "save": "Salvar perfil",
-      "selectModel": "Selecione um modelo remoto ou local",
+      "selectModel": "Escolha um modelo de provedor ou local",
       "summaryMany": "{count} perfis",
       "summaryNone": "Nenhum perfil",
       "summaryOne": "1 perfil",
       "task": {
-        "atomic-note-generation": "Geracao de notas atomicas",
-        "embedding": "Embedding",
-        "knowledge-graph-generation": "Geracao do grafo de conhecimento",
-        "reranking": "Reranking",
-        "structured-output": "Saida estruturada",
-        "summarization": "Resumo",
-        "text-generation": "Geracao de texto"
+        "atomic-note-generation": "Notas atômicas",
+        "embedding": "Busca e semelhança",
+        "knowledge-graph-generation": "Grafo de conhecimento",
+        "reranking": "Comparação (ranqueador)",
+        "structured-output": "Respostas estruturadas",
+        "summarization": "Resumos",
+        "text-generation": "Escrita de texto"
       }
     },
     "providers": {
@@ -5652,11 +5677,6 @@
       "noModelsAvailable": "Sem modelos para escolher. Adicione um provedor ou instale um modelo local abaixo.",
       "noRanker": "Nenhum ranqueador instalado. As conexões esperam por um, a menos que o juiz generativo decida.",
       "partial": "Faltam algumas rotas do juiz. Escolha um modelo para defini-las todas.",
-      "tech": {
-        "decide": "ranqueador",
-        "embed": "embeddings",
-        "judge": "juiz generativo"
-      },
       "where": {
         "local": "Neste Mac",
         "remote": "Provedor"

@@ -5505,6 +5505,19 @@
       "write": "Could not save. Nothing was changed."
     },
     "models": {
+      "action": {
+        "download": "Download",
+        "import": "Import GGUF file…",
+        "remove": "Remove",
+        "resume": "Resume",
+        "test": "Test",
+        "useRecommended": "Use the recommended values"
+      },
+      "compat": {
+        "compatible": "Fits this Mac",
+        "insufficient_memory": "Not enough memory",
+        "unsupported_platform": "Needs macOS on Apple silicon"
+      },
       "empty": "No model matches. Clear a filter to see the others.",
       "errorKept": "Nothing was changed: installed models stay where they are.",
       "errorTitle": "Could not read the model list.",
@@ -5522,20 +5535,33 @@
       },
       "license": "I accept the license:",
       "parameters": "Parameters",
+      "ranker": {
+        "fallback": "Without a validated ranker, notes that fit more than one topic start new topics. They are placed again once a ranker is ready.",
+        "installing": "This ranker places notes that fit more than one topic. Until it is ready, those notes start new topics and are placed again afterwards.",
+        "pending": "Run the test to validate this ranker."
+      },
       "removeAsk": "Remove {model} and its files from this Mac?",
       "removeBlocked": "In use by {profiles}. Change the profile first.",
       "saveDefaults": "Save defaults",
+      "status": {
+        "downloading": "Downloading",
+        "failed": "Failed",
+        "not_downloaded": "Not downloaded",
+        "ready": "Installed",
+        "removing": "Removing",
+        "verifying": "Verifying"
+      },
       "summaryMany": "{count} installed · {size}",
       "summaryNone": "None installed",
       "summaryOne": "1 installed · {size}",
+      "testOk": "The model ran on this Mac.",
       "token": {
         "add": "Add token…",
         "label": "Token",
         "none": "No token",
         "replace": "Replace token…",
         "set": "Token saved, never shown"
-      },
-      "usedBy": "Used by"
+      }
     },
     "preset": {
       "cloud": {
@@ -5567,8 +5593,7 @@
     "profiles": {
       "close": "Close",
       "create": "Create profile",
-      "customize": "Customize per task",
-      "default": "Default",
+      "customize": "Customized",
       "duplicate": "Duplicate profile",
       "edit": "Edit",
       "empty": "No profiles yet. A profile ties a model to the jobs it serves.",
@@ -5577,21 +5602,21 @@
       "name": "Profile name",
       "new": "New profile…",
       "remove": "Remove profile",
-      "removeAsk": "Remove this profile and its task routes? Downloaded models will be preserved.",
+      "removeAsk": "Remove this profile and its job routes? Downloaded models are kept.",
       "resetTask": "Use model defaults",
       "save": "Save profile",
-      "selectModel": "Select a remote or local model",
+      "selectModel": "Choose a provider or local model",
       "summaryMany": "{count} profiles",
       "summaryNone": "No profiles",
       "summaryOne": "1 profile",
       "task": {
-        "atomic-note-generation": "Atomic note generation",
-        "embedding": "Embedding",
-        "knowledge-graph-generation": "Knowledge graph generation",
-        "reranking": "Reranking",
-        "structured-output": "Structured output",
-        "summarization": "Summarization",
-        "text-generation": "Text generation"
+        "atomic-note-generation": "Atomic notes",
+        "embedding": "Search and similarity",
+        "knowledge-graph-generation": "Knowledge graph",
+        "reranking": "Comparison (ranker)",
+        "structured-output": "Structured answers",
+        "summarization": "Summaries",
+        "text-generation": "Text writing"
       }
     },
     "providers": {
@@ -5649,11 +5674,6 @@
       "noModelsAvailable": "No models to choose from. Add a provider or install a local model below.",
       "noRanker": "No ranker installed yet. Relations wait for one unless the generative judge decides.",
       "partial": "Some routes of the judge are missing. Choose a model to set them all.",
-      "tech": {
-        "decide": "ranker",
-        "embed": "embeddings",
-        "judge": "generative judge"
-      },
       "where": {
         "local": "On this Mac",
         "remote": "Provider"

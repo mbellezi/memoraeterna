@@ -5510,6 +5510,19 @@
       "write": "Impossible d’enregistrer. Rien n’a changé."
     },
     "models": {
+      "action": {
+        "download": "Télécharger",
+        "import": "Importer un fichier GGUF…",
+        "remove": "Retirer",
+        "resume": "Reprendre",
+        "test": "Tester",
+        "useRecommended": "Utiliser les valeurs recommandées"
+      },
+      "compat": {
+        "compatible": "Tient sur ce Mac",
+        "insufficient_memory": "Mémoire insuffisante",
+        "unsupported_platform": "Demande macOS avec puce Apple"
+      },
       "empty": "Aucun modèle ne correspond. Retirez un filtre pour voir les autres.",
       "errorKept": "Rien n’a changé : les modèles installés restent en place.",
       "errorTitle": "Impossible de lire la liste des modèles.",
@@ -5527,20 +5540,33 @@
       },
       "license": "J’accepte la licence :",
       "parameters": "Paramètres",
+      "ranker": {
+        "fallback": "Sans reclasseur validé, les notes qui conviennent à plusieurs sujets ouvrent de nouveaux sujets. Elles sont replacées dès qu’un reclasseur est prêt.",
+        "installing": "Ce reclasseur place les notes qui conviennent à plusieurs sujets. Tant qu’il n’est pas prêt, elles ouvrent de nouveaux sujets et sont replacées ensuite.",
+        "pending": "Lancez le test pour valider ce reclasseur."
+      },
       "removeAsk": "Retirer {model} et ses fichiers de ce Mac ?",
       "removeBlocked": "Utilisé par {profiles}. Changez d’abord le profil.",
       "saveDefaults": "Enregistrer les valeurs par défaut",
+      "status": {
+        "downloading": "Téléchargement",
+        "failed": "Échec",
+        "not_downloaded": "Non téléchargé",
+        "ready": "Installé",
+        "removing": "Suppression",
+        "verifying": "Vérification"
+      },
       "summaryMany": "{count} installés · {size}",
       "summaryNone": "Aucun installé",
       "summaryOne": "1 installé · {size}",
+      "testOk": "Le modèle a tourné sur ce Mac.",
       "token": {
         "add": "Ajouter un jeton…",
         "label": "Jeton",
         "none": "Aucun jeton",
         "replace": "Remplacer le jeton…",
         "set": "Jeton enregistré, jamais affiché"
-      },
-      "usedBy": "Utilisé par"
+      }
     },
     "preset": {
       "cloud": {
@@ -5572,31 +5598,30 @@
     "profiles": {
       "close": "Fermer",
       "create": "Créer le profil",
-      "customize": "Personnaliser par tâche",
-      "default": "Par defaut",
+      "customize": "Personnalisé",
       "duplicate": "Dupliquer le profil",
       "edit": "Modifier",
       "empty": "Pas encore de profils. Un profil relie un modèle aux tâches qu’il sert.",
-      "model": "Modele",
+      "model": "Modèle",
       "modelDefaults": "Valeurs du modèle",
       "name": "Nom du profil",
       "new": "Nouveau profil…",
       "remove": "Supprimer le profil",
-      "removeAsk": "Supprimer ce profil et ses routages de taches ? Les modeles telecharges seront conserves.",
+      "removeAsk": "Supprimer ce profil et les routes de ses tâches ? Les modèles téléchargés sont conservés.",
       "resetTask": "Utiliser les valeurs du modèle",
       "save": "Enregistrer le profil",
-      "selectModel": "Selectionner un modele distant ou local",
+      "selectModel": "Choisissez un modèle de fournisseur ou local",
       "summaryMany": "{count} profils",
       "summaryNone": "Aucun profil",
       "summaryOne": "1 profil",
       "task": {
-        "atomic-note-generation": "Generation de notes atomiques",
-        "embedding": "Embedding",
-        "knowledge-graph-generation": "Generation du graphe de connaissances",
-        "reranking": "Reranking",
-        "structured-output": "Sortie structuree",
-        "summarization": "Resume",
-        "text-generation": "Generation de texte"
+        "atomic-note-generation": "Notes atomiques",
+        "embedding": "Recherche et similarité",
+        "knowledge-graph-generation": "Graphe de connaissances",
+        "reranking": "Comparaison (reclasseur)",
+        "structured-output": "Réponses structurées",
+        "summarization": "Résumés",
+        "text-generation": "Rédaction de texte"
       }
     },
     "providers": {
@@ -5654,11 +5679,6 @@
       "noModelsAvailable": "Aucun modèle à choisir. Ajoutez un fournisseur ou installez un modèle local ci-dessous.",
       "noRanker": "Aucun reclasseur installé. Les liens attendent qu’il y en ait un, sauf si le juge génératif décide.",
       "partial": "Il manque des routes du juge. Choisissez un modèle pour les définir toutes.",
-      "tech": {
-        "decide": "reclasseur",
-        "embed": "embeddings",
-        "judge": "juge génératif"
-      },
       "where": {
         "local": "Sur ce Mac",
         "remote": "Fournisseur"

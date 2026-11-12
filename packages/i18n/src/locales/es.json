@@ -5512,6 +5512,19 @@
       "write": "No se pudo guardar. No se cambió nada."
     },
     "models": {
+      "action": {
+        "download": "Descargar",
+        "import": "Importar archivo GGUF…",
+        "remove": "Quitar",
+        "resume": "Reanudar",
+        "test": "Probar",
+        "useRecommended": "Usar los valores recomendados"
+      },
+      "compat": {
+        "compatible": "Cabe en este Mac",
+        "insufficient_memory": "Memoria insuficiente",
+        "unsupported_platform": "Requiere macOS con Apple silicon"
+      },
       "empty": "Ningún modelo coincide. Quita un filtro para ver los demás.",
       "errorKept": "No se cambió nada: los modelos instalados siguen donde están.",
       "errorTitle": "No se pudo leer la lista de modelos.",
@@ -5529,20 +5542,33 @@
       },
       "license": "Acepto la licencia:",
       "parameters": "Parámetros",
+      "ranker": {
+        "fallback": "Sin un reordenador validado, las notas que caben en más de un tema inician temas nuevos. Se vuelven a colocar cuando haya uno listo.",
+        "installing": "Este reordenador coloca las notas que caben en más de un tema. Hasta que esté listo, esas notas inician temas nuevos y se vuelven a colocar después.",
+        "pending": "Ejecuta la prueba para validar este reordenador."
+      },
       "removeAsk": "¿Quitar {model} y sus archivos de este Mac?",
       "removeBlocked": "En uso por {profiles}. Cambia antes el perfil.",
       "saveDefaults": "Guardar valores predeterminados",
+      "status": {
+        "downloading": "Descargando",
+        "failed": "Falló",
+        "not_downloaded": "No descargado",
+        "ready": "Instalado",
+        "removing": "Quitando",
+        "verifying": "Verificando"
+      },
       "summaryMany": "{count} instalados · {size}",
       "summaryNone": "Ninguno instalado",
       "summaryOne": "1 instalado · {size}",
+      "testOk": "El modelo se ejecutó en este Mac.",
       "token": {
         "add": "Añadir token…",
         "label": "Token",
         "none": "Sin token",
         "replace": "Cambiar token…",
         "set": "Token guardado, nunca se muestra"
-      },
-      "usedBy": "Usado por"
+      }
     },
     "preset": {
       "cloud": {
@@ -5574,8 +5600,7 @@
     "profiles": {
       "close": "Cerrar",
       "create": "Crear perfil",
-      "customize": "Personalizar por tarea",
-      "default": "Predeterminado",
+      "customize": "Personalizado",
       "duplicate": "Duplicar perfil",
       "edit": "Editar",
       "empty": "Aún no hay perfiles. Un perfil une un modelo con las tareas que atiende.",
@@ -5583,22 +5608,22 @@
       "modelDefaults": "Valores del modelo",
       "name": "Nombre del perfil",
       "new": "Nuevo perfil…",
-      "remove": "Eliminar perfil",
-      "removeAsk": "Eliminar este perfil y sus rutas de tareas? Se conservaran los modelos descargados.",
-      "resetTask": "Usar valores del modelo",
+      "remove": "Quitar perfil",
+      "removeAsk": "¿Quitar este perfil y las rutas de sus tareas? Los modelos descargados se conservan.",
+      "resetTask": "Usar los valores del modelo",
       "save": "Guardar perfil",
-      "selectModel": "Selecciona un modelo remoto o local",
+      "selectModel": "Elige un modelo de proveedor o local",
       "summaryMany": "{count} perfiles",
       "summaryNone": "Ningún perfil",
       "summaryOne": "1 perfil",
       "task": {
-        "atomic-note-generation": "Generacion de notas atomicas",
-        "embedding": "Embedding",
-        "knowledge-graph-generation": "Generacion del grafo de conocimiento",
-        "reranking": "Reranking",
-        "structured-output": "Salida estructurada",
-        "summarization": "Resumen",
-        "text-generation": "Generacion de texto"
+        "atomic-note-generation": "Notas atómicas",
+        "embedding": "Búsqueda y similitud",
+        "knowledge-graph-generation": "Grafo de conocimiento",
+        "reranking": "Comparación (reordenador)",
+        "structured-output": "Respuestas estructuradas",
+        "summarization": "Resúmenes",
+        "text-generation": "Escritura de texto"
       }
     },
     "providers": {
@@ -5656,11 +5681,6 @@
       "noModelsAvailable": "No hay modelos para elegir. Añade un proveedor o instala un modelo local abajo.",
       "noRanker": "No hay un reordenador instalado. Las conexiones esperan a uno, salvo que decida el juez generativo.",
       "partial": "Faltan algunas rutas del juez. Elige un modelo para definirlas todas.",
-      "tech": {
-        "decide": "reordenador",
-        "embed": "embeddings",
-        "judge": "juez generativo"
-      },
       "where": {
         "local": "En este Mac",
         "remote": "Proveedor"
