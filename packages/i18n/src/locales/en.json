@@ -5650,7 +5650,8 @@
     },
     "groups": {
       "diagnosticsIntro": "For investigating problems. The jobs’ technical names appear here.",
-      "matchingIntro": "Each decision keeps the values it was made with; a new value only applies to new decisions. To redo old ones, use the Inbox."
+      "matchingIntro": "Each decision keeps the values it was made with; a new value only applies to new decisions. To redo old ones, use the Inbox.",
+      "processingModels": "Processing and models"
     },
     "intro": "Rarely needed: the defaults suit most libraries. The matching values were measured; change them only if you know why.",
     "layout": {
@@ -5851,7 +5852,8 @@
         "graphIncomplete": "Done, without the graph",
         "succeeded": "Done"
       },
-      "title": "Job history"
+      "title": "Job history",
+      "waiting": "Shows up when the read works again."
     },
     "title": "Diagnostics",
     "when": {

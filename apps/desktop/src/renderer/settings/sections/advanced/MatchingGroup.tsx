@@ -243,6 +243,8 @@ function PresetRow({
       <RegistryRow
         entry={entry}
         defaultLabel={t("settingsAdvanced.matching.presetRecommended")}
+        // The calibration notice above already offers the way back to this same preset.
+        withoutReset={differencesOf(settings).length > 0}
         control={
           <SettingSelect
             id={presetSelectId}

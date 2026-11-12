@@ -2,7 +2,14 @@ import type { MessageKey, Translator } from "@app/i18n";
 
 import type { JobRecord } from "../../../shared/ipc";
 import { groupJobs, type JobCardModel } from "../../components/jobs-view-model";
-import { errorText, formatDuration, formatFull, formatWhen, type PageRead } from "./call-log-model";
+import {
+  errorText,
+  formatDuration,
+  formatFull,
+  formatWhen,
+  whenView,
+  type PageRead
+} from "./call-log-model";
 
 /**
  * What the job history shows (F5 T165): the finished runs of the jobs list, an import with its
@@ -15,6 +22,8 @@ export type RunOutcome = "succeeded" | "failed" | "canceled" | "graphIncomplete"
 export interface TaskRowView {
   id: string;
   when: string;
+  whenTime: string;
+  whenDay: string | null;
   whenFull: string;
   /** What ran ("Import a source", "Find connections"). */
   title: string;
@@ -91,6 +100,7 @@ export function taskRowsOf(jobs: readonly JobRecord[], t: Translator, now: Date)
       return {
         id: card.id,
         when: formatWhen(t, at, now),
+        ...whenView(t, at, now),
         whenFull: formatFull(t.locale, at),
         title: t(jobTypeKeyOf(card.mainJob.type)),
         detail: card.source?.title ?? null,

@@ -5107,7 +5107,7 @@
         "matching": "Correspondência",
         "obsidian": "Obsidian",
         "processing": "Processamento",
-        "prompts": "Prompts"
+        "prompts": "Instruções dos modelos"
       },
       "ai": {
         "decisions": "OpenAI Decisions (opcional)",
@@ -5653,7 +5653,8 @@
     },
     "groups": {
       "diagnosticsIntro": "Para investigar problemas. Aqui aparecem os nomes técnicos dos trabalhos.",
-      "matchingIntro": "Cada decisão guarda os valores com que foi tomada; um valor novo vale só para decisões novas. Para refazer as antigas, use a Caixa de entrada."
+      "matchingIntro": "Cada decisão guarda os valores com que foi tomada; um valor novo vale só para decisões novas. Para refazer as antigas, use a Caixa de entrada.",
+      "processingModels": "Processamento e modelos"
     },
     "intro": "Raramente necessário: os padrões servem para a maioria das bibliotecas. Os valores de correspondência foram medidos; mude só se souber por quê.",
     "layout": {
@@ -5854,7 +5855,8 @@
         "graphIncomplete": "Concluído, sem o grafo",
         "succeeded": "Concluído"
       },
-      "title": "Histórico de trabalhos"
+      "title": "Histórico de trabalhos",
+      "waiting": "Aparece quando a leitura voltar."
     },
     "title": "Diagnóstico",
     "when": {

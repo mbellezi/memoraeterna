@@ -15,6 +15,7 @@ import {
   type CallFilter,
   type CallResult
 } from "./call-log-model";
+import { WhenCell } from "./WhenCell";
 import { PruneDialog } from "./PruneDialog";
 import type { CallLogState } from "./use-call-log";
 
@@ -68,7 +69,7 @@ export function CallLogView({ t, state }: { t: Translator; state: CallLogState }
         {[0, 1, 2, 3, 4].map((row) => (
           <div
             key={row}
-            className="grid grid-cols-[6rem_7rem_10.5rem_3.75rem_3.75rem_minmax(0,1fr)] gap-3"
+            className="grid grid-cols-[6.25rem_7rem_10.5rem_3.75rem_3.75rem_minmax(0,1fr)] gap-3"
           >
             {["w-full", "w-full", "w-4/5", "w-full", "w-full", "w-full"].map((width, cell) => (
               <Skeleton key={cell} className={cn("h-3.5", width)} />
@@ -133,7 +134,7 @@ export function CallLogView({ t, state }: { t: Translator; state: CallLogState }
           <table className="w-full min-w-[38rem] table-fixed border-collapse">
             <caption className="sr-only">{t("diagnostics.callLog.caption")}</caption>
             <colgroup>
-              <col className="w-24" />
+              <col className="w-[6.25rem]" />
               <col className="w-28" />
               <col className="w-[10.5rem]" />
               <col className="w-[3.75rem]" />
@@ -172,12 +173,7 @@ export function CallLogView({ t, state }: { t: Translator; state: CallLogState }
                     <tr
                       className={row.error ? undefined : "border-b border-border last:border-b-0"}
                     >
-                      <td
-                        className={cn(cell, "whitespace-nowrap tabular-nums")}
-                        title={row.whenFull}
-                      >
-                        {row.when}
-                      </td>
+                      <WhenCell className={cell} row={row} />
                       <td className={cn(cell, nameCell, "font-mono text-xs")} title={row.job}>
                         {row.job}
                       </td>

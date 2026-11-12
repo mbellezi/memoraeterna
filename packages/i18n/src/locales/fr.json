@@ -5655,7 +5655,8 @@
     },
     "groups": {
       "diagnosticsIntro": "Pour étudier les problèmes. Les noms techniques des tâches apparaissent ici.",
-      "matchingIntro": "Chaque décision garde les valeurs avec lesquelles elle a été prise ; une nouvelle valeur ne vaut que pour les nouvelles décisions. Pour refaire les anciennes, utilisez la Boîte de réception."
+      "matchingIntro": "Chaque décision garde les valeurs avec lesquelles elle a été prise ; une nouvelle valeur ne vaut que pour les nouvelles décisions. Pour refaire les anciennes, utilisez la Boîte de réception.",
+      "processingModels": "Traitement et modèles"
     },
     "intro": "Rarement utile : les valeurs par défaut conviennent à la plupart des bibliothèques. Les valeurs de correspondance ont été mesurées ; ne les changez que si vous savez pourquoi.",
     "layout": {
@@ -5856,7 +5857,8 @@
         "graphIncomplete": "Terminée, sans le graphe",
         "succeeded": "Terminée"
       },
-      "title": "Historique des tâches"
+      "title": "Historique des tâches",
+      "waiting": "Apparaît quand la lecture revient."
     },
     "title": "Diagnostic",
     "when": {

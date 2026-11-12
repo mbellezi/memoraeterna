@@ -5657,7 +5657,8 @@
     },
     "groups": {
       "diagnosticsIntro": "Para investigar problemas. Aquí aparecen los nombres técnicos de las tareas.",
-      "matchingIntro": "Cada decisión guarda los valores con los que se tomó; un valor nuevo solo vale para decisiones nuevas. Para rehacer las antiguas, usa la Bandeja de entrada."
+      "matchingIntro": "Cada decisión guarda los valores con los que se tomó; un valor nuevo solo vale para decisiones nuevas. Para rehacer las antiguas, usa la Bandeja de entrada.",
+      "processingModels": "Procesamiento y modelos"
     },
     "intro": "Rara vez hace falta: los valores por defecto sirven para la mayoría de las bibliotecas. Los valores de correspondencia se midieron; cámbialos solo si sabes por qué.",
     "layout": {
@@ -5858,7 +5859,8 @@
         "graphIncomplete": "Terminada, sin el grafo",
         "succeeded": "Terminada"
       },
-      "title": "Historial de tareas"
+      "title": "Historial de tareas",
+      "waiting": "Aparece cuando la lectura vuelva."
     },
     "title": "Diagnóstico",
     "when": {

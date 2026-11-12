@@ -26,6 +26,31 @@ const groupIntro: Readonly<Record<string, MessageKey>> = {
   diagnostics: "settingsAdvanced.groups.diagnosticsIntro"
 };
 
+/**
+ * Groups that hold one row or two read as one group on the page (the registry keeps its own groups,
+ * which search names): the processing values, the local-model value, the decider and the model
+ * instructions all steer how the models work.
+ */
+const foldedInto: Readonly<Record<string, string>> = {
+  localModels: "processing",
+  connections: "processing",
+  prompts: "processing"
+};
+const foldedLabel: Readonly<Record<string, MessageKey>> = {
+  processing: "settingsAdvanced.groups.processingModels"
+};
+
+function displayGroupsOf(section: Parameters<typeof groupsOf>[0]) {
+  const shown: ReturnType<typeof groupsOf> = [];
+  for (const { group, entries } of groupsOf(section)) {
+    const target = foldedInto[group] ?? group;
+    const found = shown.find((candidate) => candidate.group === target);
+    if (found) found.entries.push(...entries);
+    else shown.push({ group: target, entries: [...entries] });
+  }
+  return shown;
+}
+
 /** The row of each setting that is not a matching value or a diagnostic. */
 function plainRow(entry: SettingEntryV2, saveApp: SaveApp): ReactNode {
   switch (entry.id) {
@@ -51,8 +76,8 @@ function plainRow(entry: SettingEntryV2, saveApp: SaveApp): ReactNode {
 
 /**
  * The body of Advanced (design record §7.6): one line on why it is rarely needed, then the registry's
- * groups in the registry's order: Matching, Processing, Local models, Connections, Map, Obsidian,
- * Prompts and Diagnostics. The rows are the registry's, so what the section shows and what Settings
+ * groups in the registry's order: Matching, Processing and models (the registry's Processing, Local
+ * models, Connections and Prompts), Map, Obsidian and Diagnostics. The rows are the registry's, so what the section shows and what Settings
  * search finds are the same list. It takes the app settings as a prop so a test can hand a fake.
  */
 export function AdvancedBody({ app }: { app: AppSettingsState }) {
@@ -68,7 +93,7 @@ export function AdvancedBody({ app }: { app: AppSettingsState }) {
       <p className="m-0 mt-3 max-w-[32rem] text-sm text-secondary-foreground [text-wrap:pretty]">
         {t("settingsAdvanced.intro")}
       </p>
-      {groupsOf(section).map(({ group, entries }, index) => {
+      {displayGroupsOf(section).map(({ group, entries }, index) => {
         const intro = groupIntro[group];
         return (
           <section key={group} aria-labelledby={`settings-group-${section}-${group}`}>
@@ -76,7 +101,7 @@ export function AdvancedBody({ app }: { app: AppSettingsState }) {
               id={`settings-group-${section}-${group}`}
               className={`m-0 text-sm font-semibold text-foreground ${index === 0 ? "mt-8" : "mt-10"}`}
             >
-              {groupLabelOf(t, section, group)}
+              {foldedLabel[group] ? t(foldedLabel[group]) : groupLabelOf(t, section, group)}
             </h3>
             {intro ? (
               <p className="m-0 mt-1 max-w-[27.5rem] text-sm text-secondary-foreground [text-wrap:pretty]">

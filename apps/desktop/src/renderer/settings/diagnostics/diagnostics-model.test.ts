@@ -12,7 +12,8 @@ import {
   formatDuration,
   formatWhen,
   nextCallLimit,
-  tokensOf
+  tokensOf,
+  whenParts
 } from "./call-log-model";
 import {
   canConfirmPrune,
@@ -95,6 +96,18 @@ describe("the call log", () => {
     expect(older).toContain("3");
     expect(older).toMatch(/10:42/u);
     expect(formatWhen(en, at(3, 10, 5, 2025), now)).toContain("2025");
+  });
+
+  it("splits a moment into its time and its day, in the person's language", () => {
+    const at = (day: number, hour = 10) => new Date(2026, 10, day, hour, 42);
+    const plain = (parts: { time: string; day: string | null }) => ({
+      ...parts,
+      time: parts.time.replace(/\s/gu, " ")
+    });
+    expect(plain(whenParts(en, at(12), now))).toEqual({ time: "10:42 AM", day: null });
+    expect(plain(whenParts(en, at(11, 14), now))).toEqual({ time: "02:42 PM", day: "yesterday" });
+    expect(whenParts(ptBR, at(11), now)).toEqual({ time: "10:42", day: "ontem" });
+    expect(whenParts(en, at(3), now).day).toContain("3");
   });
 
   it("reads the total of tokens, or the sum of input and output, or nothing", () => {

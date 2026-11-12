@@ -73,6 +73,25 @@ describe("the Diagnostics screen: Advanced as the app shows it, both pages open"
     expect(reads("jobs.list")).toBe(1);
   });
 
+  it("puts the time and the day of a row on two lines, so a When column only has to fit a time", async () => {
+    await mount("success");
+    const cells = [...dom.document.querySelectorAll("tbody td:first-child[title]")];
+    expect(cells.length).toBeGreaterThan(0);
+    for (const cell of cells) {
+      expect(cell.className).toContain("overflow-hidden");
+      const lines = [...cell.querySelectorAll('span[aria-hidden="true"]')];
+      expect(lines.length === 1 || lines.length === 2).toBe(true);
+      // The day word is never on the time's line.
+      expect(lines[0]?.textContent).toMatch(/^\d{1,2}:\d{2}( ?[AP]M)?$/u);
+    }
+    const days = cells.flatMap((cell) =>
+      [...cell.querySelectorAll('span[aria-hidden="true"]')]
+        .slice(1)
+        .map((span) => span.textContent)
+    );
+    expect(days).toContain("yesterday");
+  });
+
   it("shows the pages in the Settings content column, each under its own row", async () => {
     await mount("success");
     const log = dom.document.querySelector('[data-setting-id="advanced.callLog"]');
@@ -103,6 +122,12 @@ describe("the Diagnostics screen: Advanced as the app shows it, both pages open"
     expect(text()).toContain("The diagnostics could not be read.");
     expect(text()).toContain("nothing was deleted");
     expect(dom.document.querySelector("table")).toBeNull();
+    // The one failure sits in the first open page; the other says what it waits for: no open row is empty.
+    const log = dom.document.querySelector('[data-setting-id="advanced.callLog"]');
+    const history = dom.document.querySelector('[data-setting-id="advanced.taskHistory"]');
+    expect(log?.querySelector('[role="alert"]')).not.toBeNull();
+    expect(history?.querySelector('[role="alert"]')).toBeNull();
+    expect(history?.textContent).toContain("Shows up when the read works again.");
     expect(reads("monitoring.list")).toBe(1);
     expect(reads("jobs.list")).toBe(1);
     const retries = [...dom.document.querySelectorAll("button")].filter(

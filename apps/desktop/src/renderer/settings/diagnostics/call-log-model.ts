@@ -15,6 +15,9 @@ export interface CallRowView {
   id: string;
   /** The start, in the person's words: a time today, "yesterday" and a time, or a date. */
   when: string;
+  /** The same moment split for the table: the time, and the day under it (null for today). */
+  whenTime: string;
+  whenDay: string | null;
   /** The same instant in full, for the hover. */
   whenFull: string;
   /** The job's technical name (the page says it is technical). */
@@ -62,19 +65,48 @@ const sameDay = (left: Date, right: Date): boolean =>
   left.getMonth() === right.getMonth() &&
   left.getDate() === right.getDate();
 
-/** "10:42" today, "yesterday 10:42", else "12 Oct 10:42" (the month in the person's language). */
-export function formatWhen(t: Translator, at: Date, now: Date): string {
+/** The time on its own line and the day (or null for today) under it: a column stays as narrow as the widest time. */
+export function whenParts(
+  t: Translator,
+  at: Date,
+  now: Date
+): { time: string; day: string | null } {
   const time = new Intl.DateTimeFormat(t.locale, { hour: "2-digit", minute: "2-digit" }).format(at);
-  if (sameDay(at, now)) return time;
+  if (sameDay(at, now)) return { time, day: null };
   const yesterday = new Date(now);
   yesterday.setDate(now.getDate() - 1);
-  if (sameDay(at, yesterday)) return t("diagnostics.when.yesterday", { values: { time } });
+  if (sameDay(at, yesterday))
+    return {
+      time,
+      day: new Intl.RelativeTimeFormat(t.locale, { numeric: "auto" }).format(-1, "day")
+    };
   const day = new Intl.DateTimeFormat(t.locale, {
     day: "numeric",
     month: "short",
     ...(at.getFullYear() === now.getFullYear() ? {} : { year: "numeric" })
   }).format(at);
-  return `${day} ${time}`;
+  return { time, day };
+}
+
+/** "10:42" today, "yesterday 10:42", else "12 Oct 10:42" (the month in the person's language): the one-line reading. */
+export function formatWhen(t: Translator, at: Date, now: Date): string {
+  const { time, day } = whenParts(t, at, now);
+  if (day === null) return time;
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+  return sameDay(at, yesterday)
+    ? t("diagnostics.when.yesterday", { values: { time } })
+    : `${day} ${time}`;
+}
+
+/** The split reading of a moment, as the two row views carry it. */
+export function whenView(
+  t: Translator,
+  at: Date,
+  now: Date
+): { whenTime: string; whenDay: string | null } {
+  const { time, day } = whenParts(t, at, now);
+  return { whenTime: time, whenDay: day };
 }
 
 export const formatFull = (locale: string, at: Date): string =>
@@ -97,6 +129,7 @@ export function callRowsOf(page: MonitoringPage, t: Translator, now: Date): Call
     return {
       id: row.id,
       when: formatWhen(t, at, now),
+      ...whenView(t, at, now),
       whenFull: formatFull(t.locale, at),
       job: row.taskType ?? row.operation,
       model: row.modelId,

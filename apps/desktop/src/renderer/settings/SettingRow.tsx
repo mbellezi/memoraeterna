@@ -114,15 +114,11 @@ export function SettingRow({
             <span>{t("settingsShell.row.defaultVaries")}</span>
           ) : null}
           {onReset ? (
-            <>
-              {defaultLabel !== undefined || defaultVaries ? (
-                <span aria-hidden="true">·</span>
-              ) : null}
-              {reset === "working" ? (
-                <span role="status" className="text-secondary-foreground">
-                  {t("settingsShell.row.resetting")}
-                </span>
-              ) : asking ? (
+            asking && reset !== "working" ? (
+              <>
+                {defaultLabel !== undefined || defaultVaries ? (
+                  <span aria-hidden="true">·</span>
+                ) : null}
                 <span role="group" className="flex flex-wrap items-center gap-x-2 gap-y-1">
                   <span className="text-foreground">{t("settingsShell.row.removeAsk")}</span>
                   <Button
@@ -139,17 +135,29 @@ export function SettingRow({
                     {t("shell.actions.cancel")}
                   </Button>
                 </span>
-              ) : (
-                <InlineAction
-                  onClick={confirmReset ? () => setAsking(true) : onReset}
-                  aria-label={`${t("settingsShell.row.reset")}: ${label}`}
-                  size="xs"
-                >
-                  <RotateCcw aria-hidden="true" />
-                  {t("settingsShell.row.reset")}
-                </InlineAction>
-              )}
-            </>
+              </>
+            ) : (
+              // The separator and the action wrap together: a dot never hangs at the end of a line.
+              <span className="inline-flex items-baseline gap-x-1 whitespace-nowrap">
+                {defaultLabel !== undefined || defaultVaries ? (
+                  <span aria-hidden="true">·</span>
+                ) : null}
+                {reset === "working" ? (
+                  <span role="status" className="text-secondary-foreground">
+                    {t("settingsShell.row.resetting")}
+                  </span>
+                ) : (
+                  <InlineAction
+                    onClick={confirmReset ? () => setAsking(true) : onReset}
+                    aria-label={`${t("settingsShell.row.reset")}: ${label}`}
+                    size="xs"
+                  >
+                    <RotateCcw aria-hidden="true" />
+                    {t("settingsShell.row.reset")}
+                  </InlineAction>
+                )}
+              </span>
+            )
           ) : null}
         </p>
       ) : null}
@@ -187,9 +195,12 @@ export function RegistryRow({
   defaultLabel,
   note,
   stack,
-  className
+  className,
+  withoutReset = false
 }: {
   entry: SettingEntryV2;
+  /** Another action on the page already puts this setting back (the calibration notice does): the row does not repeat it. */
+  withoutReset?: boolean;
   control?: ReactNode;
   /** The default in words; absent, the row names it when it can say it without options. */
   defaultLabel?: ReactNode;
@@ -212,7 +223,7 @@ export function RegistryRow({
       defaultLabel={defaultWords}
       defaultVaries={defaultWords === undefined && description?.default === null}
       onReset={
-        entry.reset === "none"
+        entry.reset === "none" || withoutReset
           ? undefined
           : () => void settings.reset(entry.id, resetNeedsConfirm(entry))
       }

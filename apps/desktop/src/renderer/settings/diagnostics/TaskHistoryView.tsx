@@ -7,6 +7,7 @@ import { ErrorState } from "../../components/ui/error-state";
 import { SolidCheck, SolidTriangle } from "../../components/ui/solid-glyphs";
 import { LoadingState, Skeleton } from "../../components/ui/skeleton";
 import { cn } from "../../lib/cn";
+import { WhenCell } from "./WhenCell";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { taskRowsOf, type RunOutcome } from "./task-history-model";
 import type { TaskHistoryState } from "./use-call-log";
@@ -40,7 +41,7 @@ export function TaskHistoryView({ t, state }: { t: Translator; state: TaskHistor
       <LoadingState t={t} className="max-w-[45rem]">
         <div className="grid gap-3 pt-1">
           {[0, 1, 2, 3].map((row) => (
-            <div key={row} className="grid grid-cols-[6.5rem_minmax(0,1fr)_9rem_4.5rem] gap-3">
+            <div key={row} className="grid grid-cols-[6.25rem_minmax(0,1fr)_9rem_5.5rem] gap-3">
               <Skeleton className="h-3.5" />
               <Skeleton className="h-3.5 w-4/5" />
               <Skeleton className="h-3.5" />
@@ -97,10 +98,10 @@ export function TaskHistoryView({ t, state }: { t: Translator; state: TaskHistor
         <table className="w-full min-w-[34rem] table-fixed border-collapse">
           <caption className="sr-only">{t("diagnostics.taskHistory.caption")}</caption>
           <colgroup>
-            <col className="w-[6.5rem]" />
+            <col className="w-[6.25rem]" />
             <col />
             <col className="w-48" />
-            <col className="w-[4.5rem]" />
+            <col className="w-[5.5rem]" />
           </colgroup>
           <thead>
             <tr className="border-b border-border">
@@ -121,12 +122,7 @@ export function TaskHistoryView({ t, state }: { t: Translator; state: TaskHistor
           <tbody>
             {rows.map((row) => (
               <tr key={row.id} className="border-b border-border last:border-b-0">
-                <td
-                  className={cn(cellClass, "whitespace-nowrap tabular-nums")}
-                  title={row.whenFull}
-                >
-                  {row.when}
-                </td>
+                <WhenCell className={cellClass} row={row} />
                 <td className={cn(cellClass, "[overflow-wrap:anywhere]")}>
                   {row.title}
                   {row.detail ? (

@@ -5648,7 +5648,8 @@
     },
     "groups": {
       "diagnosticsIntro": "Per indagare sui problemi. Qui compaiono i nomi tecnici delle attività.",
-      "matchingIntro": "Ogni decisione conserva i valori con cui è stata presa; un valore nuovo vale solo per le decisioni nuove. Per rifare quelle vecchie, usa la Posta in arrivo."
+      "matchingIntro": "Ogni decisione conserva i valori con cui è stata presa; un valore nuovo vale solo per le decisioni nuove. Per rifare quelle vecchie, usa la Posta in arrivo.",
+      "processingModels": "Elaborazione e modelli"
     },
     "intro": "Raramente necessario: i valori predefiniti vanno bene per la maggior parte delle librerie. I valori di corrispondenza sono stati misurati; cambiali solo se sai perché.",
     "layout": {
@@ -5849,7 +5850,8 @@
         "graphIncomplete": "Conclusa, senza il grafo",
         "succeeded": "Conclusa"
       },
-      "title": "Cronologia delle attività"
+      "title": "Cronologia delle attività",
+      "waiting": "Compare quando la lettura torna."
     },
     "title": "Diagnostica",
     "when": {

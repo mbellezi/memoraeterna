@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { Translator } from "@app/i18n";
 
 import type { AppSettingsUpdate } from "../../../shared/ipc";
@@ -33,19 +33,20 @@ function useRetryOnRequest(requests: number, retry: () => void) {
 
 /**
  * A page that reads only while it is open: the hook lives in the body PageRow mounts. When both
- * pages failed (one cause: the diagnostics reads are unavailable) the group says so once above them
- * and each page keeps reading but draws nothing (`quiet`), so one retry runs both reads.
+ * pages failed (one cause: the diagnostics reads are unavailable) the first page's body says so once
+ * with the one retry and the other says what it waits for (`replacement`); both keep reading, so
+ * one retry runs both reads and no open row is left with nothing under it.
  */
 function CallLogPage({
   t,
   report,
   retryRequests,
-  quiet
+  replacement
 }: {
   t: Translator;
   report: Report;
   retryRequests: number;
-  quiet: boolean;
+  replacement: ReactNode | null;
 }) {
   const state = useCallLog(true);
   const shown = callLogState(state.read, state.filter);
@@ -54,18 +55,18 @@ function CallLogPage({
     return () => report("calls", null);
   }, [report, shown]);
   useRetryOnRequest(retryRequests, state.retry);
-  return quiet ? null : <CallLogView t={t} state={state} />;
+  return replacement ?? <CallLogView t={t} state={state} />;
 }
 function TaskHistoryPage({
   t,
   report,
   retryRequests,
-  quiet
+  replacement
 }: {
   t: Translator;
   report: Report;
   retryRequests: number;
-  quiet: boolean;
+  replacement: ReactNode | null;
 }) {
   const state = useTaskHistory(true);
   const shown = taskHistoryState(state.read, t, new Date());
@@ -74,7 +75,7 @@ function TaskHistoryPage({
     return () => report("tasks", null);
   }, [report, shown]);
   useRetryOnRequest(retryRequests, state.retry);
-  return quiet ? null : <TaskHistoryView t={t} state={state} />;
+  return replacement ?? <TaskHistoryView t={t} state={state} />;
 }
 
 type Step = "idle" | "asking" | "working";
@@ -285,23 +286,39 @@ export function DiagnosticsGroup({
         entries={{ mode: byId("debugMode"), capture: byId("debugFullCapture") }}
         saveApp={saveApp}
       />
-      {bothFailed ? (
-        <ErrorState
-          t={t}
-          className="my-4"
-          message={t("diagnostics.errorTitle")}
-          kept={t("diagnostics.errorKept")}
-          retryLabel={t("shell.actions.retry")}
-          onRetry={() => setRetryRequests((count) => count + 1)}
-        />
-      ) : null}
       {page(
         "advanced.callLog",
-        <CallLogPage t={t} report={report} retryRequests={retryRequests} quiet={bothFailed} />
+        <CallLogPage
+          t={t}
+          report={report}
+          retryRequests={retryRequests}
+          replacement={
+            bothFailed ? (
+              <ErrorState
+                t={t}
+                message={t("diagnostics.errorTitle")}
+                kept={t("diagnostics.errorKept")}
+                retryLabel={t("shell.actions.retry")}
+                onRetry={() => setRetryRequests((count) => count + 1)}
+              />
+            ) : null
+          }
+        />
       )}
       {page(
         "advanced.taskHistory",
-        <TaskHistoryPage t={t} report={report} retryRequests={retryRequests} quiet={bothFailed} />
+        <TaskHistoryPage
+          t={t}
+          report={report}
+          retryRequests={retryRequests}
+          replacement={
+            bothFailed ? (
+              <p className="m-0 text-sm text-muted-foreground">
+                {t("diagnostics.taskHistory.waiting")}
+              </p>
+            ) : null
+          }
+        />
       )}
       {similarity ? <SimilarityRunsRow entry={similarity} /> : null}
     </>
