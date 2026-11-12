@@ -60,7 +60,12 @@ export function PageRow({
           "focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent"
         )}
       >
-        <span className="min-w-0 text-base font-medium leading-5 text-foreground [overflow-wrap:anywhere] group-hover:underline group-hover:decoration-border-strong group-hover:underline-offset-[3px]">
+        <span
+          className={cn(
+            "min-w-0 text-base font-medium leading-5 text-foreground [overflow-wrap:anywhere]",
+            "group-hover:underline group-hover:decoration-border-strong group-hover:underline-offset-[3px]"
+          )}
+        >
           {label}
         </span>
         <ChevronDown

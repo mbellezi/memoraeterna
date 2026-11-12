@@ -169,16 +169,23 @@ export function DeciderRow({ entry }: { entry: SettingEntryV2 }) {
           width="14rem"
         />
       }
-      note={
-        <>
-          <span className="block [text-wrap:pretty]">{t(choice.help)}</span>
-          {failed ? (
-            <span role="status" className="mt-1 block">
-              {t("settingsAdvanced.saveFailed")}
-            </span>
-          ) : null}
-        </>
-      }
+      // The row's own help already explains Automatic, so it has nothing more to say.
+      {...(choice.value === "auto" && !failed
+        ? {}
+        : {
+            note: (
+              <>
+                {choice.value === "auto" ? null : (
+                  <span className="block [text-wrap:pretty]">{t(choice.help)}</span>
+                )}
+                {failed ? (
+                  <span role="status" className="mt-1 block">
+                    {t("settingsAdvanced.saveFailed")}
+                  </span>
+                ) : null}
+              </>
+            )
+          })}
     />
   );
 }

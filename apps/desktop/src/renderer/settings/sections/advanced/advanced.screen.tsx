@@ -44,6 +44,8 @@ const values: Record<string, { value: Json; default: Json | null }> = {
   "sourceRelationSettings.minConfidence": { value: 0.8, default: 0.85 },
   debugMode: { value: true, default: false },
   graphWheelZoomSensitivity: { value: 1.6, default: 1 },
+  summaryMinimumWordCount: { value: 40, default: 40 },
+  keepLocalEmbeddingModelsLoaded: { value: true, default: true },
   obsidianVaultPath: { value: true, default: null },
   "obsidian.layout.language": { value: "pt-BR", default: "pt-BR" },
   managedRoot: { value: "Memora", default: "Memora" },
