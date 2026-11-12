@@ -5,7 +5,7 @@
 // is a data attribute or a role the surface emits, never its copy.
 import { expect, type ElectronApplication, type Locator, type Page } from "@playwright/test";
 
-import { captureStep, stepFailures, type MemoraSession } from "./app.js";
+import { captureStep, followSystemTheme, stepFailures, type MemoraSession } from "./app.js";
 import { readGestures } from "./gestures.js";
 import { pressShortcut } from "./shortcuts.js";
 
@@ -120,19 +120,37 @@ export function topPanel(page: Page): Locator {
   return page.locator("[data-panel-top]");
 }
 
+export interface StepLogOptions {
+  /**
+   * The journey sets the app's theme itself (J7 proves the theme row and then picks "system"); the
+   * log leaves the theme alone.
+   */
+  themeSetByJourney?: boolean;
+  /** Seams for the unit test: the capture of a step and the switch to the system theme. */
+  capture?: typeof captureStep;
+  followTheme?: (session: MemoraSession) => Promise<void>;
+}
+
 /**
  * The steps of one journey: each is captured in light and dark and scanned for contrast (X12). The
  * failures are collected and asserted softly at the end, so a contrast defect does not hide what a
  * later functional step would have shown, and is still a red journey.
+ *
+ * Before its first capture the log makes the app follow the window's scheme (`followSystemTheme`),
+ * explicitly: the default theme is dark (Q39), whose root class no scheme switch moves, so without it
+ * every light scan would be drawn dark and fail the theme guard of `stepFailures` whatever the product
+ * does. The first step comes after the journey's first screen is up, when the app follows a change.
  */
 export class StepLog {
   private index = 0;
+  private themeFollowed = false;
   private readonly failures: string[] = [];
   private readonly notes: string[] = [];
 
   constructor(
     private readonly session: MemoraSession,
-    private readonly spec: string
+    private readonly spec: string,
+    private readonly options: StepLogOptions = {}
   ) {}
 
   async step(name: string): Promise<void> {
@@ -143,7 +161,12 @@ export class StepLog {
       .evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.moveTop())
       .catch(() => undefined);
     await this.session.page.bringToFront().catch(() => undefined);
-    const record = await captureStep(this.session, this.spec, this.index, name);
+    if (!this.themeFollowed && !this.options.themeSetByJourney) {
+      await (this.options.followTheme ?? followSystemTheme)(this.session);
+      this.themeFollowed = true;
+    }
+    const capture = this.options.capture ?? captureStep;
+    const record = await capture(this.session, this.spec, this.index, name);
     // Each failure of the step: a scan drawn in the other theme (a "light" scan of a page that stayed
     // dark proves nothing about light) and every contrast finding, per theme.
     this.failures.push(...stepFailures(record));

@@ -373,7 +373,8 @@ test("J7 Settings: search, the changed marker and restore, asks before deleting,
     await expect(surface(page, "shell").first()).toBeVisible({ timeout: 60_000 });
     db = await openProfileDb(userDataDir);
     await installGestureCounter(page);
-    const steps = new StepLog(session, "j7");
+    // J7 sets the theme itself: it proves the theme row first, then picks "system".
+    const steps = new StepLog(session, "j7", { themeSetByJourney: true });
 
     // The window speaks pt-BR (the harness's `--lang`), which the pt-BR parts rely on.
     expect((await invokeApp<{ language: string }>(page, "settings.getApp")).language).toBe("pt-BR");
