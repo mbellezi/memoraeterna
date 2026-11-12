@@ -59,6 +59,7 @@ import { useFirstRun } from "./components/onboarding/use-first-run";
 import { ToastViewport, useToasts } from "./components/ui/toast";
 import type { KnowledgeGraphViewState } from "./components/KnowledgeGraphDashboard";
 import { PanelStack, panelRegistry } from "./workspace/PanelStack";
+import { AddSourceContext } from "./workspace/workspace-bridge";
 import { Shell } from "./workspace/Shell";
 import { hasNavigator, hostedViewIds, legacyHostFor } from "./workspace/shell-model";
 import type { WorkspaceState } from "./workspace/state";
@@ -314,6 +315,7 @@ export function App({
   // The first source of the first run (D9, A6): Explore opens with that Source pushed, and the
   // outcome of the import is told as a toast.
   function openFirstSource(sourceItemId: string, status?: MessageKey) {
+    setLegacyView(null);
     dispatch({
       type: "firstSource",
       address: formatObjectAddress({ kind: "source", id: sourceItemId })
@@ -596,6 +598,9 @@ export function App({
     }
   });
 
+  // Home's first run offers the same Add as Cmd-N.
+  const addSource = useStableCallback(() => handleWorkspaceResult({ type: "newImport" }));
+
   // An Obsidian conflict of the Inbox is solved in Settings, under Connections.
   const openConnectionsSettings = useStableCallback(() => {
     selectSettingsScope("connections");
@@ -767,18 +772,20 @@ export function App({
         onOpenTopic={openTopic}
       >
         <LegacyViewsContext.Provider value={legacyViews}>
-          <PanelStack
-            t={t}
-            workspace={workspace}
-            dispatch={dispatch}
-            viewportWidth={viewportWidth}
-            // The context panel joins the layout with its card (T143); until then nothing docks.
-            chrome={{ navigator: showNavigator, context: false }}
-            shown={stackShown}
-            focusMode={focusMode}
-            onToggleFocusMode={toggleFocusMode}
-            registry={stackRegistry}
-          />
+          <AddSourceContext.Provider value={addSource}>
+            <PanelStack
+              t={t}
+              workspace={workspace}
+              dispatch={dispatch}
+              viewportWidth={viewportWidth}
+              // The context panel joins the layout with its card (T143); until then nothing docks.
+              chrome={{ navigator: showNavigator, context: false }}
+              shown={stackShown}
+              focusMode={focusMode}
+              onToggleFocusMode={toggleFocusMode}
+              registry={stackRegistry}
+            />
+          </AddSourceContext.Provider>
           {stackShown ? null : (
             <LegacyScreen
               view={activeView === "settings" ? "settings" : (legacyView ?? "settings")}

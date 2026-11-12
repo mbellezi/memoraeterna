@@ -1,4 +1,4 @@
-import type { ChangeSetRef } from "@app/domain";
+import { parseObjectAddress, type ChangeSetRef } from "@app/domain";
 import type { MessageKey } from "@app/i18n";
 
 import type { DesktopApi } from "../../../../shared/ipc";
@@ -9,9 +9,10 @@ import type { HomeData } from "./home-model";
  * Home's data outside React, so every rule is tested without a renderer: one read of the digest
  * (with the sources still generating, which the digest does not carry), kept current by the bus and
  * never by a timer, with a failure that stays visible and retryable (design record §5.12) and the
- * Desfazer of the Jardineiro's rows. `since` is fixed when the first read starts: Home opened is
- * recorded after the first read, and what arrived "since your last visit" must not vanish because
- * of it.
+ * Desfazer of the Jardineiro's rows. `since` is fixed for one visit: it is taken when the store starts
+ * reading, Home opened is recorded after the first read, and what arrived "since your last visit"
+ * must not vanish because of it. A visit ends at `stop`; the next `start` reads since the visit
+ * that was recorded, then records itself.
  */
 
 /** The part of `window.app` Home calls. */
@@ -53,6 +54,9 @@ export const progressReads = 3;
 /** The processing sources listed: enough to tell which arrivals are among them. */
 const processingLimit = 50;
 
+/** The id an object address names, parsed by the domain's grammar (an anchor is ignored). */
+const objectIdOf = (address: string): string | null => parseObjectAddress(address)?.id ?? null;
+
 export const undoKey = (ref: ChangeSetRef): string => `${ref.kind}:${ref.id}`;
 
 const blockerMessages = {
@@ -77,12 +81,12 @@ export class HomeStore {
     private readonly options: {
       api: () => HomeStoreApi;
       /**
-       * `lastHomeOpenAt`, asked once when the first read starts (Home first on screen) and kept for
-       * the store's life; null: never opened, the digest then looks back a week.
+       * `lastHomeOpenAt`, asked when the first read of a visit starts (Home on screen) and kept
+       * until `stop`; null: never opened, the digest then looks back a week.
        */
       since: () => string | null;
       now?: () => number;
-      /** Told once, after the first answer: Home was opened. */
+      /** Told once per visit, after its first answer: Home was opened. */
       onFirstRead?: () => void;
     }
   ) {}
@@ -121,9 +125,12 @@ export class HomeStore {
     });
   }
 
+  /** Ends the visit: the next `start` reads since the opening this visit recorded. */
   stop(): void {
     this.follower?.stop();
     this.follower = null;
+    this.since = undefined;
+    this.reported = false;
   }
 
   /** "Tentar de novo": the failure gives way to the loading state and the digest is read again. */
@@ -154,8 +161,9 @@ export class HomeStore {
   private async load(): Promise<HomeData> {
     const api = this.options.api();
     if (this.since === undefined) this.since = this.options.since();
+    const since = this.since;
     const [digest, generating] = await Promise.all([
-      api.home.digest({ since: this.since }),
+      api.home.digest({ since }),
       api.library
         .rows({ filter: { status: "processing" }, limit: processingLimit })
         .then((result) => ({ total: result.total, ids: result.rows.map((row) => row.id) }))
@@ -163,7 +171,7 @@ export class HomeStore {
         .catch(() => null)
     ]);
     const arrived = digest.new.sources.items
-      .map((item) => /([0-9a-f-]{36})$/iu.exec(item.object.address)?.[1] ?? null)
+      .map((item) => objectIdOf(item.object.address))
       .filter((id): id is string => id !== null && (generating?.ids.includes(id) ?? false))
       .slice(0, progressReads);
     const progress: Record<string, { done: number; estimate: number | null }> = {};
@@ -185,7 +193,7 @@ export class HomeStore {
       digest,
       generating,
       progress,
-      lastVisit: this.since,
+      lastVisit: since,
       readAt: (this.options.now ?? Date.now)()
     };
   }

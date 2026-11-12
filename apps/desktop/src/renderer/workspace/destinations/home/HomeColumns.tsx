@@ -37,7 +37,10 @@ export function ColumnHeader({
           <button
             type="button"
             onClick={link.onClick}
-            className="shrink-0 cursor-pointer rounded-sm border-0 bg-transparent p-0 text-sm font-medium text-accent hover:text-accent-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+            className={cn(
+              "shrink-0 cursor-pointer rounded-sm border-0 bg-transparent p-0 text-sm font-medium text-accent hover:text-accent-hover",
+              "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+            )}
           >
             {link.label}
           </button>
@@ -208,7 +211,11 @@ export function GardenerColumn({
                     type="button"
                     disabled={row?.status === "pending" || !onUndo}
                     onClick={onUndo ? () => onUndo(change) : undefined}
-                    className="cursor-pointer rounded-sm border-0 bg-transparent p-0 text-xs font-medium text-accent hover:text-accent-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-45"
+                    className={cn(
+                      "cursor-pointer rounded-sm border-0 bg-transparent p-0 text-xs font-medium text-accent hover:text-accent-hover",
+                      "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent",
+                      "disabled:cursor-not-allowed disabled:opacity-45"
+                    )}
                   >
                     {row?.status === "pending" ? (
                       t("activity.done.undoing")

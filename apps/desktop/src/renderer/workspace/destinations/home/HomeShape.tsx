@@ -2,7 +2,7 @@ import type { Translator } from "@app/i18n";
 
 import { SolidTriangle } from "../../../components/activity/solid-glyphs";
 import { cn } from "../../../lib/cn";
-import { shapeSegments, type ShapeSegment } from "./home-model";
+import { shapeSegments, tooBigTopics, type ShapeSegment } from "./home-model";
 import { countText, pluralKey } from "./home-text";
 import type { HomeShape } from "../../../../shared/ipc-home";
 
@@ -11,7 +11,8 @@ const nbsp = "\u00a0";
 /**
  * The plan's Shape lens on Home, as one strip (design record §7.1): the tree's size in a line, one
  * segment per root topic with its width following its notes, a solid triangle and a warning outline
- * on a topic that is too big, and the way to the Map. A segment too narrow for its label keeps its
+ * on a root that is too big, the count of topics too big anywhere in the tree, and the way to the
+ * Map. A segment too narrow for its label keeps its
  * name for the hover and the screen reader.
  */
 export function ShapeStrip({
@@ -26,7 +27,7 @@ export function ShapeStrip({
   onOpenRoot?: ((id: string) => void) | undefined;
 }) {
   const segments = shapeSegments(shape);
-  const tooBig = segments.filter((segment) => segment.tooBig).length;
+  const tooBig = tooBigTopics(shape);
   const summary = [
     t("home.shape.summary", {
       values: {
@@ -64,7 +65,10 @@ export function ShapeStrip({
             type="button"
             onClick={onOpenMap}
             disabled={!onOpenMap}
-            className="cursor-pointer rounded-sm border-0 bg-transparent p-0 text-sm font-medium text-accent hover:text-accent-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-default"
+            className={cn(
+              "cursor-pointer rounded-sm border-0 bg-transparent p-0 text-sm font-medium text-accent hover:text-accent-hover",
+              "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-default"
+            )}
           >
             {t("home.shape.seeInMap")}
           </button>

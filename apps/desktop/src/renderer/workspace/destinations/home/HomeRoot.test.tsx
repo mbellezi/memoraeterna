@@ -6,7 +6,7 @@ import { uuid } from "../../../components/inbox/inbox-fixtures";
 import { homeDigest } from "./home-fixtures";
 import type { HomeData } from "./home-model";
 import type { HomeSnapshot } from "./home-store";
-import { HomeView, homeState } from "./HomeRoot";
+import { HomeView, homeActions, homeState } from "./HomeRoot";
 
 const now = new Date(2026, 10, 11, 9, 0).getTime();
 const en = createTranslator("en");
@@ -191,6 +191,21 @@ describe("the parts of the day's page", () => {
     expect(words).toContain("Nutrição 96");
   });
 
+  it("warns about a topic too big deep in the tree although every root is healthy", () => {
+    const base = data();
+    const shape = {
+      ...base.digest.shape,
+      outOfBounds: 2,
+      roots: base.digest.shape.roots.map((root) => ({ ...root, health: "good" as const }))
+    };
+    const words = text(view(pt, ready({ ...base, digest: { ...base.digest, shape } })));
+    expect(words).toContain("2 tópicos grandes demais");
+    const calm = { ...shape, outOfBounds: 0 };
+    expect(
+      text(view(pt, ready({ ...base, digest: { ...base.digest, shape: calm } })))
+    ).not.toContain("grande");
+  });
+
   it("draws the four columns with one header pattern", () => {
     for (const title of [
       "Precisa de você",
@@ -291,6 +306,26 @@ describe("first run", () => {
     expect(html).toContain("border-dashed");
     expect(html.match(/border-accent bg-accent/gu)).toHaveLength(1);
     expect(words).not.toContain("Continuar de onde parou");
+  });
+});
+
+describe("the first run's Add", () => {
+  const store = { undo: vi.fn(), retry: vi.fn() };
+
+  it("is the app's own Add command, and opens nothing in Home's stack", () => {
+    const addSource = vi.fn();
+    const onOpen = vi.fn();
+    const actions = homeActions({ bridge: null, addSource, onOpen, store });
+    actions.addSource?.();
+    expect(addSource).toHaveBeenCalledTimes(1);
+    expect(onOpen).not.toHaveBeenCalled();
+  });
+
+  it("does nothing where the app gives no Add command, rather than opening a panel that is not there", () => {
+    const onOpen = vi.fn();
+    const actions = homeActions({ bridge: null, addSource: null, onOpen, store });
+    expect(actions.addSource).toBeUndefined();
+    expect(onOpen).not.toHaveBeenCalled();
   });
 });
 

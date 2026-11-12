@@ -229,6 +229,16 @@ export interface ShapeSegment {
   share: number;
 }
 
+/**
+ * How many topics are too big, anywhere in the tree: `outOfBounds` counts every live topic whose
+ * health is a violation, not only the roots the strip draws (a root that is too big is among them;
+ * the roots' own count is the floor should the two reads disagree for a moment).
+ */
+export function tooBigTopics(shape: HomeShape): number {
+  const roots = shape.roots.filter((root) => root.health === "violation").length;
+  return Math.max(shape.outOfBounds, roots);
+}
+
 export function shapeSegments(shape: HomeShape): ShapeSegment[] {
   const total = shape.roots.reduce((sum, root) => sum + root.notes, 0);
   return shape.roots.map((root) => {

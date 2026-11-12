@@ -17,7 +17,7 @@ import type { PanelLoadState } from "../../PanelFrame";
 import type { PanelProps } from "../../PanelStack";
 import { formatView } from "../../route";
 import { useViewportWidth } from "../../use-workspace";
-import { useWorkspaceBridge } from "../../workspace-bridge";
+import { useAddSource, useWorkspaceBridge, type WorkspaceBridge } from "../../workspace-bridge";
 import { formatObjectAddress } from "@app/domain";
 import {
   Briefing,
@@ -327,20 +327,25 @@ export function useHomeStore(active: boolean): HomeStore {
   return store;
 }
 
-/** The root of the Home destination, in the panel stack (`home.panel.tsx` registers it). */
-export function HomeRoot({ t, active, onState, onOpen }: PanelProps) {
-  const bridge = useWorkspaceBridge();
-  const store = useHomeStore(active);
-  const snapshot = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);
-  const width = useViewportWidth();
-  const state = homeState(snapshot);
-  useEffect(() => {
-    onState(state);
-  }, [state, onState]);
-
+/**
+ * What Home's controls do, from the workspace it is hosted in. The first run's Add is the app's own
+ * Add command (the one Cmd-N runs), never a view of Home's stack: the person lands where the app
+ * puts a new source, and the button and the shortcut cannot disagree.
+ */
+export function homeActions({
+  bridge,
+  addSource,
+  onOpen,
+  store
+}: {
+  bridge: WorkspaceBridge | null;
+  addSource: (() => void) | null;
+  onOpen: (address: string) => void;
+  store: Pick<HomeStore, "undo" | "retry">;
+}): HomeActions {
   const dispatch = bridge?.dispatch;
   const workspace = bridge?.workspace;
-  const actions: HomeActions = {
+  return {
     ...(dispatch
       ? { go: (address: string) => dispatch({ type: "open", address, from: -1, mode: "push" }) }
       : {}),
@@ -354,8 +359,23 @@ export function HomeRoot({ t, active, onState, onOpen }: PanelProps) {
       : {}),
     undo: (change) => void store.undo({ kind: change.kind, id: change.id }),
     retry: () => store.retry(),
-    addSource: () => onOpen(formatView({ view: "import" }))
+    ...(addSource ? { addSource } : {})
   };
+}
+
+/** The root of the Home destination, in the panel stack (`home.panel.tsx` registers it). */
+export function HomeRoot({ t, active, onState, onOpen }: PanelProps) {
+  const bridge = useWorkspaceBridge();
+  const addSource = useAddSource();
+  const store = useHomeStore(active);
+  const snapshot = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);
+  const width = useViewportWidth();
+  const state = homeState(snapshot);
+  useEffect(() => {
+    onState(state);
+  }, [state, onState]);
+
+  const actions = homeActions({ bridge, addSource, onOpen, store });
 
   // Enter resumes where the person left off, from Home itself.
   const trail = snapshot.read.status === "ready" ? resumeTrail(snapshot.read.data.digest) : [];

@@ -60,7 +60,7 @@ describe("Home's store", () => {
     store.stop();
   });
 
-  it("keeps the first `since` for its life, so what arrived does not vanish once Home is recorded as opened", async () => {
+  it("keeps `since` within one visit, so what arrived does not vanish once Home is recorded as opened", async () => {
     const { store, digest, since, bus } = setup();
     store.start();
     await flush();
@@ -69,6 +69,55 @@ describe("Home's store", () => {
     await flush();
     expect(since).toHaveBeenCalledTimes(1);
     expect(digest).toHaveBeenLastCalledWith({ since: "2026-11-10T22:40:00.000Z" });
+    store.stop();
+  });
+
+  it("reads each visit since the previous one and records each, when Home leaves and comes back", async () => {
+    const { store, digest, since, onFirstRead } = setup();
+    store.start();
+    await flush();
+    expect(digest).toHaveBeenLastCalledWith({ since: "2026-11-10T22:40:00.000Z" });
+    expect(onFirstRead).toHaveBeenCalledTimes(1);
+    store.stop();
+    // The first visit was recorded as opened at 09:00; the person is back at 15:00.
+    since.mockReturnValue("2026-11-11T09:00:00.000Z");
+    store.start();
+    await flush();
+    expect(digest).toHaveBeenLastCalledWith({ since: "2026-11-11T09:00:00.000Z" });
+    const read = store.getSnapshot().read;
+    if (read.status !== "ready") throw new Error("not ready");
+    expect(read.data.lastVisit).toBe("2026-11-11T09:00:00.000Z");
+    expect(onFirstRead).toHaveBeenCalledTimes(2);
+    store.stop();
+  });
+
+  it("finds the source of an arrival whose address carries an anchor", async () => {
+    const base = homeDigest(now);
+    const { store, sourceProgress } = setup({
+      digest: async () => ({
+        ...base,
+        new: {
+          ...base.new,
+          sources: {
+            ...base.new.sources,
+            items: base.new.sources.items.map((item, index) =>
+              index === 0
+                ? {
+                    ...item,
+                    object: {
+                      ...item.object,
+                      address: `memora://source/${uuid(101)}#section=${uuid(9)}`
+                    }
+                  }
+                : item
+            )
+          }
+        }
+      })
+    });
+    store.start();
+    await flush();
+    expect(sourceProgress).toHaveBeenCalledWith({ sourceId: uuid(101) });
     store.stop();
   });
 

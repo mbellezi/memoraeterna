@@ -20,6 +20,7 @@ import {
   resumeActions,
   resumeTrail,
   shapeSegments,
+  tooBigTopics,
   whenParts,
   type HomeData
 } from "./home-model";
@@ -261,6 +262,23 @@ describe("the Shape strip", () => {
     expect(segments.filter((segment) => segment.tooBig).map((segment) => segment.title)).toEqual([
       "Nutrição"
     ]);
+  });
+
+  it("counts the topics too big anywhere in the tree, not only the roots drawn", () => {
+    const base = homeDigest(now).shape;
+    // Every root healthy, one subtopic two levels down in violation.
+    const deep = {
+      ...base,
+      outOfBounds: 1,
+      roots: base.roots.map((root) => ({ ...root, health: "good" as const }))
+    };
+    expect(shapeSegments(deep).some((segment) => segment.tooBig)).toBe(false);
+    expect(tooBigTopics(deep)).toBe(1);
+    // One root and two deeper topics in violation: all three count.
+    expect(tooBigTopics({ ...base, outOfBounds: 3 })).toBe(3);
+    // The roots' own violations are the floor.
+    expect(tooBigTopics({ ...base, outOfBounds: 0 })).toBe(1);
+    expect(tooBigTopics({ ...deep, outOfBounds: 0 })).toBe(0);
   });
 
   it("splits evenly when no root has notes", () => {

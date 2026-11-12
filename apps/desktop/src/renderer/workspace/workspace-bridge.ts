@@ -20,3 +20,14 @@ export const WorkspaceBridgeContext = createContext<WorkspaceBridge | null>(null
 export function useWorkspaceBridge(): WorkspaceBridge | null {
   return useContext(WorkspaceBridgeContext);
 }
+
+/**
+ * The app's Add command (Cmd-N, the title bar's Add), for a surface that offers it as a button: Home's
+ * first run. It is the same command, so the button and the shortcut can never lead to different
+ * places. Null where no app hosts the caller.
+ */
+export const AddSourceContext = createContext<(() => void) | null>(null);
+
+export function useAddSource(): (() => void) | null {
+  return useContext(AddSourceContext);
+}
