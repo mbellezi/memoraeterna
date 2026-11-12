@@ -136,3 +136,95 @@ export function sampleBranch(
 /** A branch with notes and no connection among them: the graph has nothing to draw. */
 export const unconnectedBranch = (): RelationsBranchResult =>
   sampleBranch({ edges: [], superEdges: [], outside: [] });
+
+const largeTitles = [
+  "Fermentação espontânea começa com bactérias do ar",
+  "O sal controla quais micro-organismos crescem",
+  "Kimchi amadurece em geladeira por semanas",
+  "O pH cai durante os primeiros dias",
+  "Leveduras selvagens vivem na casca das frutas",
+  "Vinho precisa de açúcar para virar álcool",
+  "A cerveja separa a fermentação em duas etapas",
+  "Pão de fermentação natural guarda uma cultura viva",
+  "O iogurte usa duas bactérias que trabalham juntas",
+  "Pasteur mostrou que fermentar é obra de seres vivos",
+  "Temperatura alta acelera, mas estraga o sabor",
+  "Chucrute dispensa qualquer fermento comprado",
+  "Salmoura de 2% é suficiente para vegetais",
+  "O gás carbônico faz a massa crescer",
+  "Vinagre é a segunda fermentação do vinho",
+  "A mãe do vinagre é uma cultura de bactérias",
+  "Missô fermenta por meses com fungos",
+  "Tempeh depende de um fungo que une os grãos",
+  "Probióticos sobrevivem melhor em alimentos frios",
+  "O oxigênio decide entre vinagre e álcool",
+  "Fermentos industriais padronizam o resultado",
+  "Cultura iniciadora acelera o começo",
+  "Alimentos fermentados duram mais tempo",
+  "A acidez protege contra patógenos"
+] as const;
+
+/**
+ * A large branch as `relations.branch` answers it when the read hit its limits: 24 notes in four
+ * topic groups (enough for the zoomed-out view), 30 relations of every stance, five topics outside
+ * and `truncated`. Titles stand for the person's content.
+ */
+export function largeBranch(overrides: Partial<RelationsBranchResult> = {}): RelationsBranchResult {
+  const base = sampleBranch();
+  const homes = [
+    branchTopics.fermentation,
+    branchTopics.lactic,
+    branchTopics.alcoholic,
+    branchTopics.kefir
+  ];
+  const nodes = largeTitles.map((title, index) => ({
+    id: branchId(`large:${index}`),
+    title,
+    topicId: homes[index % homes.length]!,
+    degree: 1 + ((index * 5) % 6)
+  }));
+  const kinds = [
+    ["supports", "supports"],
+    ["extends", "extends"],
+    ["depends_on", "depends_on"],
+    ["contrasts", "contradicts"],
+    ["related", "related"],
+    ["example_of", "example_of"]
+  ] as const;
+  const edges = Array.from({ length: 30 }, (_, index) => {
+    const [type, stance] = kinds[index % kinds.length]!;
+    const from = nodes[index % nodes.length]!;
+    // A different partner for each relation, so no pair repeats (the filter below drops a self-link).
+    const to = nodes[(index * 3 + 5 + Math.floor(index / nodes.length) * 7) % nodes.length]!;
+    const [low, high] = from.id < to.id ? [from.id, to.id] : [to.id, from.id];
+    return {
+      id: branchId(`large-edge:${index}`),
+      a: low,
+      b: high,
+      type,
+      stance,
+      band: index % 7 === 3 ? ("suggest" as const) : ("apply" as const)
+    };
+  }).filter((entry) => entry.a !== entry.b);
+  const ordered = (a: string, b: string) => (a < b ? { a, b } : { a: b, b: a });
+  return {
+    ...base,
+    nodes,
+    edges,
+    outside: [
+      { topicId: branchTopics.history, title: "História da ciência", edgeCount: 7 },
+      { topicId: branchId("topic:nutrition"), title: "Nutrição e saúde intestinal", edgeCount: 5 },
+      { topicId: branchId("topic:preservation"), title: "Conservação de alimentos", edgeCount: 3 },
+      { topicId: branchId("topic:cooking"), title: "Técnicas de cozinha", edgeCount: 2 },
+      { topicId: branchId("topic:microbes"), title: "Microbiologia", edgeCount: 1 }
+    ],
+    superEdges: [
+      { ...ordered(branchTopics.alcoholic, branchTopics.lactic), weight: 6 },
+      { ...ordered(branchTopics.fermentation, branchTopics.lactic), weight: 4 },
+      { ...ordered(branchTopics.fermentation, branchTopics.alcoholic), weight: 3 },
+      { ...ordered(branchTopics.kefir, branchTopics.alcoholic), weight: 1 }
+    ],
+    truncated: true,
+    ...overrides
+  };
+}

@@ -60,6 +60,21 @@ export interface BranchSuperEdge {
   weight: number;
 }
 
+/** A topic outside the scope that the drawn notes connect to, and how many relations reach it. */
+export interface BranchOutside {
+  topicId: string;
+  title: string;
+  edgeCount: number;
+}
+
+/**
+ * How many outside topics and group-to-group lines one answer holds at most. The read model caps
+ * both lists (`relationBranchLimits.outsideMax` and `.superEdgeMax` in `relationBranchRepository.ts`,
+ * which `branch-limits.test.ts` keeps in step) without setting `truncated`: a list at its cap may
+ * have left some out.
+ */
+export const branchListCaps = { outside: 40, superEdges: 500 } as const;
+
 export interface BranchModel {
   scope: BranchScope;
   /** The name of the scope: the topic's, or the source's when the caller knows it. */
@@ -80,7 +95,14 @@ export interface BranchModel {
   /** One stored type per stance drawn, for the legend's glyph and word. */
   stanceTypes: Partial<Record<RelationBranchStance, string>>;
   hasSuggestions: boolean;
+  /** Notes or relations were left out by the read's limits. */
   truncated: boolean;
+  /** Topics outside the scope the drawn notes connect to, most connected first. */
+  outside: BranchOutside[];
+  /** The outside list is at its cap: more topics may connect than it names. */
+  outsideCapped: boolean;
+  /** The group-to-group lines are at their cap: the lightest may be left out. */
+  superEdgesCapped: boolean;
 }
 
 /** The interface's name for a topic: its title, or the words for an unnamed one. */
@@ -220,7 +242,16 @@ export function buildBranchModel(
     stances: drawnStances,
     stanceTypes,
     hasSuggestions: edges.some((edge) => edge.suggested),
-    truncated: answer.truncated
+    truncated: answer.truncated,
+    outside: answer.outside
+      .filter((entry) => entry.edgeCount > 0)
+      .map((entry) => ({
+        topicId: entry.topicId,
+        title: topicLabel(t, entry.title),
+        edgeCount: entry.edgeCount
+      })),
+    outsideCapped: answer.outside.length >= branchListCaps.outside,
+    superEdgesCapped: answer.superEdges.length >= branchListCaps.superEdges
   };
 }
 
