@@ -25,6 +25,7 @@ import { expect, test, type Locator, type Page } from "@playwright/test";
 import {
   captureStep,
   invokeApp,
+  journeysWriterConfigId,
   openClone,
   setContentSize,
   setTheme,
@@ -316,10 +317,23 @@ test("J3 read topic: a navigator topic, its member note beside it, back within t
 test("J3 path with 0 clicks (X2): each of the five kinds shows the path of objects.locate, by deep link and by Cmd-K", async () => {
   test.setTimeout(45 * 60_000);
   const run = journeysRun();
-  // The DEV fake remote refuses a data root inside `.claude/worktrees/` (agents prune those folders):
-  // MEMORA_JOURNEYS_NO_FAKE_REMOTE=1 runs without it (the Question is then stored, its answer fails).
+  // The Question is answered by the DEV fake remote, set up as J6 does: no cassette (the app refuses the
+  // two together) and BASE-J's Codex writer admitted. The fake remote refuses a data root inside
+  // `.claude/worktrees/` (agents prune those folders), so this test runs from a worktree outside it;
+  // MEMORA_JOURNEYS_NO_FAKE_REMOTE=1 runs without the fake (the Question is then stored, its answer
+  // fails, and the question kind is not verified).
   const fakeRemote = process.env.MEMORA_JOURNEYS_NO_FAKE_REMOTE?.trim() !== "1";
-  const session = await openClone(run, "j3-x2", { fakeRemote });
+  const session = await openClone(
+    run,
+    "j3-x2",
+    fakeRemote
+      ? {
+          cassette: false,
+          fakeRemote: true,
+          env: { MEMORA_JOURNEYS_ADMIT_WRITER: await journeysWriterConfigId(run.scratchDir) }
+        }
+      : {}
+  );
   const { page } = session;
   let db: ProfileDb | null = null;
   const report: Record<string, unknown>[] = [];

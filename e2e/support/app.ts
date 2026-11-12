@@ -196,6 +196,21 @@ export async function cassetteMisses(
 }
 
 /** The plan of the fake remote providers a journey may start (zero faults, fixed latency). */
+/**
+ * BASE-J's signed-in Codex writer (a stub credential) from the run's `base-j.json`: the one real
+ * configuration the DEV fake remote's "no real provider is reachable" check is told to admit
+ * (`MEMORA_JOURNEYS_ADMIT_WRITER`). A journey that uses the fake remote runs on a clone of BASE-J with
+ * `cassette: false`, `fakeRemote: true` and `env: { MEMORA_JOURNEYS_ADMIT_WRITER: <this> }`.
+ */
+export async function journeysWriterConfigId(scratchDir: string): Promise<string> {
+  const record = JSON.parse(await readFile(join(scratchDir, "base-j.json"), "utf8")) as {
+    writer?: { providerConfigId?: string };
+  };
+  const id = record.writer?.providerConfigId;
+  if (!id) throw new Error("base-j.json names no writer configuration");
+  return id;
+}
+
 export const fakeRemotePlan = join("e2e", "support", "fake-remote-plan.json");
 
 export async function launchMemora(options: LaunchOptions): Promise<MemoraSession> {

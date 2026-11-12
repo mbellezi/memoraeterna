@@ -15,12 +15,15 @@
 // `[data-stage="done"]` appears. Selectors are data attributes and roles (`data-surface`,
 // `data-palette-row`, `data-answer-paragraph`, `data-stage`, `data-citation`, `data-cited-passage`,
 // `data-nav-key`); the panel stack is read from the workspace state the app keeps.
-import { readFile } from "node:fs/promises";
-import { join } from "node:path";
-
 import { expect, test, type Page } from "@playwright/test";
 
-import { invokeApp, openClone, setContentSize, waitForDatabase } from "./support/app.js";
+import {
+  invokeApp,
+  journeysWriterConfigId,
+  openClone,
+  setContentSize,
+  waitForDatabase
+} from "./support/app.js";
 import { openProfileDb, type ProfileDb } from "./support/db.js";
 import { installGestureCounter } from "./support/gestures.js";
 import { journeysRun } from "./support/profile.js";
@@ -33,16 +36,6 @@ interface StreamRecord {
   counts: number[];
   done: boolean;
   doneCount: number | null;
-}
-
-/** BASE-J's Codex writer: the one real configuration the fake remote's check is told to admit. */
-async function writerConfigId(scratchDir: string): Promise<string> {
-  const record = JSON.parse(await readFile(join(scratchDir, "base-j.json"), "utf8")) as {
-    writer?: { providerConfigId?: string };
-  };
-  const id = record.writer?.providerConfigId;
-  if (!id) throw new Error("base-j.json names no writer configuration");
-  return id;
 }
 
 /** Installs the observer of the answer's paragraphs; it stops recording at `[data-stage="done"]`. */
@@ -77,7 +70,7 @@ const readStream = (page: Page) =>
 test("J6 ask and jump to citation: the answer streams, the Question is stored from the first delta, a citation opens its passage, the Library lists it", async () => {
   test.setTimeout(45 * 60_000);
   const run = journeysRun();
-  const writerId = await writerConfigId(run.scratchDir);
+  const writerId = await journeysWriterConfigId(run.scratchDir);
   const session = await openClone(run, "j6", {
     cassette: false,
     fakeRemote: true,

@@ -19,6 +19,7 @@ import {
   firstRunRankerEnv,
   firstRunRankerState,
   journeyEnvironment,
+  journeysWriterConfigId,
   secondSourceKey,
   settleTransitions,
   setTheme
@@ -210,6 +211,23 @@ describe("settleTransitions", () => {
       await settleTransitions();
       expect(ended).toBe(1);
     });
+  });
+});
+
+describe("journeysWriterConfigId", () => {
+  it("reads BASE-J's Codex writer from base-j.json, and refuses a record that names none", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "journeys-writer-"));
+    try {
+      await writeFile(
+        join(dir, "base-j.json"),
+        JSON.stringify({ writer: { providerConfigId: "7f6c0f3e-1111-4222-8333-444455556666" } })
+      );
+      expect(await journeysWriterConfigId(dir)).toBe("7f6c0f3e-1111-4222-8333-444455556666");
+      await writeFile(join(dir, "base-j.json"), JSON.stringify({ writer: {} }));
+      await expect(journeysWriterConfigId(dir)).rejects.toThrow(/names no writer configuration/u);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 });
 
