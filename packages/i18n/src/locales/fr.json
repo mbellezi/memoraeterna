@@ -5122,7 +5122,7 @@
       "readFromOne": "dans {count} source",
       "readNotCited": "Lus, non cités",
       "readNotCitedReason": "non utilisé dans la réponse",
-      "readNotCitedSibling": "Autre passage de la source {number}",
+      "readNotCitedSibling": "Autre passage de la même source que la citation {number}",
       "readPassagesMany": "{count} passages lus",
       "readPassagesOne": "{count} passage lu",
       "reading": "lecture…",

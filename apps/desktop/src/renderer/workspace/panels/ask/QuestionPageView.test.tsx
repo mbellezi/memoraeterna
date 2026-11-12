@@ -180,7 +180,7 @@ describe("citation chips, in the DOM", () => {
     // The second is another passage of a source the answer cites (3), and the Ask gave no reason:
     // the row says which passage it is and never that the source had nothing on the question.
     expect(rows[1]?.textContent).toContain("Kefir and kombucha at home");
-    expect(rows[1]?.textContent).toContain("Another passage of source 3");
+    expect(rows[1]?.textContent).toContain("Another passage of the source of citation 3");
     expect(rows[1]?.textContent).not.toContain("did not bear");
     expect(rows[1]?.textContent).not.toContain("nothing");
     await dom.act(() => (rows[0] as HTMLElement).click());
