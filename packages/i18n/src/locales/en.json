@@ -4254,6 +4254,101 @@
       "mostCited": "most cited"
     }
   },
+  "palette": {
+    "commands": {
+      "goExplore": "Go to Explore",
+      "goHome": "Go to Home",
+      "goInbox": "Go to the Inbox",
+      "goLibrary": "Go to the Library",
+      "goMap": "Go to the Map",
+      "goSettings": "Open Settings",
+      "theme": "Switch theme",
+      "toggleNavigator": "Show or hide the tree"
+    },
+    "foot": {
+      "all": "all results",
+      "beside": "open beside",
+      "choose": "choose",
+      "here": "open in this panel",
+      "label": "Keys",
+      "peek": "peek",
+      "resultsMany": "{count} results · {ms} ms",
+      "resultsOne": "{count} result · {ms} ms",
+      "shortAll": "all",
+      "shortBeside": "beside",
+      "shortHere": "this panel"
+    },
+    "groups": {
+      "best": "Best result",
+      "do": "Do",
+      "entity": "Entities",
+      "note": "Notes",
+      "pinned": "Pinned",
+      "question": "Questions",
+      "recent": "Recent",
+      "showMore": "show more ({count})",
+      "sourceEntity": "Sources and entities",
+      "topic": "Topics"
+    },
+    "label": "Search, open or ask",
+    "listLabel": "Results",
+    "meta": {
+      "itemsMany": "{count} items",
+      "itemsOne": "{count} item",
+      "notesMany": "{count} notes",
+      "notesOne": "{count} note",
+      "snippet": "passage:",
+      "sourcesMany": "{count} sources",
+      "sourcesOne": "{count} source"
+    },
+    "placeholder": "Search, open or ask…",
+    "prefixes": {
+      "actions": "actions",
+      "actionsLabel": "Actions only",
+      "ask": "ask",
+      "askLabel": "Ask the library",
+      "entities": "entities",
+      "entitiesLabel": "Entities only",
+      "label": "Prefixes:",
+      "none": "no prefix: everything",
+      "topics": "topics",
+      "topicsLabel": "Topics only"
+    },
+    "results": {
+      "compactLabel": "Results for “{query}”",
+      "countFirst": "The first {count} results",
+      "countMany": "{count} results",
+      "countOne": "{count} result",
+      "degradedAnn": "Searching by meaning is not available right now; showing word matches only.",
+      "degradedFts": "This search has no word to look for inside the texts; showing titles and names only.",
+      "emptyAsk": "Ask the library",
+      "emptyBody": "Try fewer words, or ask the library in your own words.",
+      "emptyHeadline": "Nothing found for “{query}”.",
+      "errorKept": "Nothing was changed.",
+      "errorMessage": "The search could not be done right now.",
+      "filterAll": "All",
+      "filterEntity": "Entities",
+      "filterNote": "Notes",
+      "filterQuestion": "Questions",
+      "filterSource": "Sources",
+      "filterTopic": "Topics",
+      "filtersLabel": "Show only",
+      "heading": "Results for “{query}”",
+      "passage": "passage",
+      "title": "Search results"
+    },
+    "rows": {
+      "ask": "Ask the library: “{question}”"
+    },
+    "states": {
+      "askHint": "Type your question. Enter opens an Ask panel that answers it.",
+      "error": "The search could not be done right now.",
+      "errorKept": "Nothing was changed, and the actions still work.",
+      "noCommand": "No action matches “{query}”.",
+      "noResult": "Nothing with “{query}”.",
+      "searching": "Searching"
+    }
+  },
   "preview": {
     "card": {
       "empty": "No summary yet. Open it to read it all.",

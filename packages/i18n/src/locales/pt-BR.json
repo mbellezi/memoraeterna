@@ -4257,6 +4257,101 @@
       "mostCited": "mais citada"
     }
   },
+  "palette": {
+    "commands": {
+      "goExplore": "Ir para Explorar",
+      "goHome": "Ir para Início",
+      "goInbox": "Ir para a Caixa de entrada",
+      "goLibrary": "Ir para a Biblioteca",
+      "goMap": "Ir para o Mapa",
+      "goSettings": "Abrir Ajustes",
+      "theme": "Alternar tema",
+      "toggleNavigator": "Mostrar ou ocultar a árvore"
+    },
+    "foot": {
+      "all": "todos os resultados",
+      "beside": "abrir ao lado",
+      "choose": "escolher",
+      "here": "abrir neste painel",
+      "label": "Atalhos",
+      "peek": "espiar",
+      "resultsMany": "{count} resultados · {ms} ms",
+      "resultsOne": "{count} resultado · {ms} ms",
+      "shortAll": "todos",
+      "shortBeside": "ao lado",
+      "shortHere": "neste painel"
+    },
+    "groups": {
+      "best": "Melhor resultado",
+      "do": "Fazer",
+      "entity": "Entidades",
+      "note": "Notas",
+      "pinned": "Fixados",
+      "question": "Perguntas",
+      "recent": "Recentes",
+      "showMore": "mostrar mais ({count})",
+      "sourceEntity": "Fontes e entidades",
+      "topic": "Tópicos"
+    },
+    "label": "Buscar, abrir ou perguntar",
+    "listLabel": "Resultados",
+    "meta": {
+      "itemsMany": "{count} itens",
+      "itemsOne": "{count} item",
+      "notesMany": "{count} notas",
+      "notesOne": "{count} nota",
+      "snippet": "trecho:",
+      "sourcesMany": "{count} fontes",
+      "sourcesOne": "{count} fonte"
+    },
+    "placeholder": "Buscar, abrir ou perguntar…",
+    "prefixes": {
+      "actions": "ações",
+      "actionsLabel": "Só ações",
+      "ask": "perguntar",
+      "askLabel": "Perguntar à biblioteca",
+      "entities": "entidades",
+      "entitiesLabel": "Só entidades",
+      "label": "Prefixos:",
+      "none": "sem prefixo: tudo",
+      "topics": "tópicos",
+      "topicsLabel": "Só tópicos"
+    },
+    "results": {
+      "compactLabel": "Resultados para “{query}”",
+      "countFirst": "Os primeiros {count} resultados",
+      "countMany": "{count} resultados",
+      "countOne": "{count} resultado",
+      "degradedAnn": "A busca por sentido não está disponível agora; mostrando só as palavras que combinam.",
+      "degradedFts": "Esta busca não tem palavras para procurar dentro dos textos; mostrando só títulos e nomes.",
+      "emptyAsk": "Perguntar à biblioteca",
+      "emptyBody": "Tente menos palavras, ou pergunte à biblioteca com as suas próprias palavras.",
+      "emptyHeadline": "Nada encontrado para “{query}”.",
+      "errorKept": "Nada foi alterado.",
+      "errorMessage": "Não foi possível buscar agora.",
+      "filterAll": "Tudo",
+      "filterEntity": "Entidades",
+      "filterNote": "Notas",
+      "filterQuestion": "Perguntas",
+      "filterSource": "Fontes",
+      "filterTopic": "Tópicos",
+      "filtersLabel": "Mostrar só",
+      "heading": "Resultados para “{query}”",
+      "passage": "trecho",
+      "title": "Resultados da busca"
+    },
+    "rows": {
+      "ask": "Perguntar à biblioteca: “{question}”"
+    },
+    "states": {
+      "askHint": "Escreva a sua pergunta. Enter abre um painel de Pergunta que a responde.",
+      "error": "Não foi possível buscar agora.",
+      "errorKept": "Nada foi alterado, e as ações continuam funcionando.",
+      "noCommand": "Nenhuma ação combina com “{query}”.",
+      "noResult": "Nada com “{query}”.",
+      "searching": "Buscando"
+    }
+  },
   "preview": {
     "card": {
       "empty": "Ainda sem resumo. Abra para ler tudo.",

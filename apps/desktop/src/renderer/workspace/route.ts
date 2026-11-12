@@ -1,9 +1,11 @@
 import {
   formatObjectAddress,
   inboxKinds,
+  objectKinds,
   parseObjectAddress,
   type InboxKind,
-  type ObjectAddress
+  type ObjectAddress,
+  type ObjectKind
 } from "@app/domain";
 
 /**
@@ -16,7 +18,7 @@ import {
  *   memora://inbox[?kind=<InboxKind>]
  *   memora://map/relations|shape[?scope=<object address>]
  *   memora://settings[/<section>[#<setting>]]
- *   memora://search?q=…
+ *   memora://search?q=…[&kinds=<kind>,<kind>]
  *   memora://ask[?q=…][&scope=<object address>]
  *   memora://import[?source=<uuid>]
  *
@@ -67,7 +69,7 @@ export type ViewAddress =
   | { view: "inbox"; kind?: InboxKind }
   | { view: "map"; lens: MapLens; scope?: ObjectAddress }
   | { view: "settings"; section?: SettingsSectionId; setting?: string }
-  | { view: "search"; query: string }
+  | { view: "search"; query: string; kinds?: ObjectKind[] }
   | { view: "ask"; question?: string; scope?: AskScope }
   | { view: "import"; sourceId?: string };
 export type ViewName = ViewAddress["view"];
@@ -117,6 +119,15 @@ function readScope(value: string | undefined): ObjectAddress | null {
   if (value === undefined) return null;
   const address = parseObjectAddress(value);
   return address && !address.anchor ? address : null;
+}
+
+/** `kinds=topic,note`: each kind once, in any order; they come back in the domain's order. */
+function readKinds(value: string | undefined): ObjectKind[] | null {
+  if (value === undefined) return null;
+  const parts = value.split(",");
+  if (new Set(parts).size !== parts.length) return null;
+  if (!parts.every((part) => oneOf(objectKinds, part))) return null;
+  return objectKinds.filter((kind) => parts.includes(kind));
 }
 
 function readLibrary(fields: Map<string, string>): ViewAddress | null {
@@ -198,9 +209,12 @@ function readView(
         : null;
     }
     case "search": {
-      const fields = readQuery(query, ["q"]);
+      const fields = readQuery(query, ["q", "kinds"]);
       const q = fields?.get("q");
-      return isText(q) ? { view: "search", query: q } : null;
+      if (!fields || !isText(q)) return null;
+      if (!fields.has("kinds")) return { view: "search", query: q };
+      const kinds = readKinds(fields.get("kinds"));
+      return kinds ? { view: "search", query: q, kinds } : null;
     }
     case "ask": {
       const fields = readQuery(query, ["q", "scope"]);
@@ -293,7 +307,15 @@ function writeView(view: ViewAddress): string {
       return view.setting ? `${base}#${view.setting}` : base;
     }
     case "search":
-      return `${prefix}search${writeQuery([["q", view.query]])}`;
+      return `${prefix}search${writeQuery([
+        ["q", view.query],
+        [
+          "kinds",
+          view.kinds && view.kinds.length > 0
+            ? objectKinds.filter((kind) => view.kinds?.includes(kind)).join(",")
+            : undefined
+        ]
+      ])}`;
     case "ask":
       return `${prefix}ask${writeQuery([
         ["q", view.question],

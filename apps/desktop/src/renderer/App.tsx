@@ -61,6 +61,8 @@ import type { KnowledgeGraphViewState } from "./components/KnowledgeGraphDashboa
 import { PanelStack, panelRegistry } from "./workspace/PanelStack";
 import { AddSourceContext } from "./workspace/workspace-bridge";
 import { QuickLookHost } from "./workspace/QuickLook";
+import { PaletteHost } from "./workspace/palette/PaletteHost";
+import { palette } from "./workspace/palette/palette-store";
 import { toggleQuickLook } from "./workspace/QuickLookModel";
 import { Shell } from "./workspace/Shell";
 import { hasNavigator, hostedViewIds, legacyHostFor } from "./workspace/shell-model";
@@ -574,13 +576,14 @@ export function App({
   });
   const openInbox = useStableCallback(() => goToView("inbox"));
 
-  // What a shortcut of the workspace does. Until the palette (T145), Adicionar's picker (T150) and
-  // the panel stack (T136) land, Cmd-K and Cmd-N open the old Search and Add content views, and the
-  // commands of a stack that is not there yet do nothing.
+  // What a shortcut of the workspace does. Until the Add picker (T150) and the panel stack (T136)
+  // land, Cmd-N opens the old Add content view, and the commands of a stack that is not there yet
+  // do nothing.
   const handleWorkspaceResult = useStableCallback((result: KeymapResult) => {
     switch (result.type) {
       case "openPalette":
-        return goToView("search");
+        // Cmd-K (T145): a second press closes it.
+        return palette.toggle();
       case "newImport":
         return goToView("import");
       case "toggleFocusMode":
@@ -798,6 +801,21 @@ export function App({
         </LegacyViewsContext.Provider>
       </Shell>
       <QuickLookHost t={t} />
+      <PaletteHost
+        t={t}
+        workspace={workspace}
+        dispatch={(actions) => {
+          // An opened object is shown on the stack, so an old screen over it gives way.
+          setLegacyView(null);
+          for (const action of actions) dispatch(action);
+        }}
+        actions={{
+          go: goToPlace,
+          addSource: () => handleWorkspaceResult({ type: "newImport" }),
+          toggleTheme: toggleThemeMode,
+          toggleFocusMode
+        }}
+      />
       <ToastViewport
         toasts={toasts}
         dismissLabel={t("shell.toasts.dismiss")}
