@@ -36,7 +36,7 @@ const changedIds = new Set(
 
 function describeEntries(): SettingDescription[] {
   return settingsRegistryV2
-    .filter((entry) => entry.store.kind !== "none")
+    .filter((entry) => entry.reset !== "none")
     .map((entry) => {
       const known = values[entry.id];
       const value: Json = known?.value ?? (entry.control === "switch" ? false : null);

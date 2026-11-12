@@ -44,7 +44,7 @@ export function SettingSelect<V extends string>({
         className={cn(
           "h-[34px] w-full min-w-44 max-w-full appearance-none truncate rounded-lg border border-border-strong bg-surface",
           "py-0 pl-3 pr-9 text-sm text-foreground outline-none transition-colors hover:bg-soft",
-          "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent",
+          "focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-offset-2 focus-visible:outline-accent",
           "disabled:cursor-not-allowed disabled:opacity-45"
         )}
       >

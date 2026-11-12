@@ -55,7 +55,8 @@ export function ToggleGroupItem({
       className={cn(
         "inline-flex h-7 items-center gap-2 whitespace-nowrap rounded-md border-0 bg-transparent px-3 text-sm",
         "text-secondary-foreground outline-none transition-colors hover:text-foreground",
-        "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent",
+        // `outline-none` sets the outline style to none for good (Tailwind 4 reads it back in `outline-2`), so the ring names its own style.
+        "focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-offset-2 focus-visible:outline-accent",
         "disabled:cursor-not-allowed disabled:text-muted-foreground [&>svg]:size-3.5 [&>svg]:shrink-0",
         "data-[state=on]:bg-surface data-[state=on]:font-semibold data-[state=on]:text-foreground",
         "data-[state=on]:shadow-[0_0_0_1px_var(--border-strong)]",

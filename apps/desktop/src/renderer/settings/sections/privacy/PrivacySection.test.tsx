@@ -182,7 +182,7 @@ describe("Privacy, drawn from the registry", () => {
       ["OpenAI Decisions", "Desligado", "Nada"],
       [
         "Dados de livros e artigos",
-        "Na internet · Open Library, Google Books e Crossref",
+        "Na internet · Open\u00a0Library, Google\u00a0Books e Crossref",
         "ISBN, DOI, título e autores"
       ]
     ]);
@@ -200,7 +200,7 @@ describe("Privacy, drawn from the registry", () => {
       })
     });
     const last = h.row("privacy.summary")!.querySelector("tbody tr:last-child")!.textContent!;
-    expect(last).toContain("On the internet · Open Library and Crossref");
+    expect(last).toContain("On the internet · Open\u00a0Library and Crossref");
     expect(last).not.toContain("Google Books");
   });
 
@@ -370,7 +370,7 @@ describe("Privacy, drawn from the registry", () => {
     it("says it cannot be undone and points at the backup, asks first, and cancel changes nothing", async () => {
       h = await mountSection({ section: "privacy", answers: base() });
       expect(h.row("privacy.reset")!.textContent).toContain(
-        "This cannot be undone. Make a backup first."
+        "This cannot be undone. Make a backup first"
       );
       await h.click(h.button("Reset everything…"));
       expect(h.text()).toContain("Reset everything?");

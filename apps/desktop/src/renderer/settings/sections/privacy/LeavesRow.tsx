@@ -39,11 +39,26 @@ const jobName = (t: Translator, job: LeaveJob): string => {
 const whatLeaves = (t: Translator, job: LeaveJob): string =>
   t(`settingsPrivacy.leaves.what.${job}`);
 
+/**
+ * Where a job runs: the place in one word and, under it in a quieter line, the service (the model
+ * provider, or the book services) when it runs off this Mac. The service's name can be long, so it
+ * has its own line instead of pushing the table wider than the window.
+ */
 function whereCell(t: Translator, where: Where): ReactNode {
-  const word = (glyph: ReactNode, text: string) => (
+  const word = (glyph: ReactNode, text: string, detail?: string) => (
     <span className="inline-flex items-start gap-1.5">
       <span className="mt-0.5 flex shrink-0 text-muted-foreground [&>svg]:size-3.5">{glyph}</span>
-      <span className="min-w-0">{text}</span>
+      <span>
+        {text}
+        {detail ? (
+          <>
+            <span className="sr-only"> · </span>
+            <span className="block text-xs text-secondary-foreground [text-wrap:pretty]">
+              {detail}
+            </span>
+          </>
+        ) : null}
+      </span>
     </span>
   );
   switch (where.kind) {
@@ -55,24 +70,20 @@ function whereCell(t: Translator, where: Where): ReactNode {
     case "cloud":
       return word(
         <Cloud aria-hidden="true" />,
-        where.name
-          ? t("settingsPrivacy.leaves.cloudVia", { values: { name: where.name } })
-          : t("settingsPrivacy.leaves.cloud")
+        t("settingsPrivacy.leaves.cloud"),
+        where.name ?? undefined
       );
     case "internet":
       return word(
         <Globe aria-hidden="true" />,
-        t("settingsPrivacy.leaves.internet", {
-          values: {
-            name: t(
-              where.source === "auto"
-                ? "settingsPrivacy.leaves.lookupAuto"
-                : where.source === "google"
-                  ? "settingsPrivacy.leaves.lookupGoogle"
-                  : "settingsPrivacy.leaves.lookupOpenLibrary"
-            )
-          }
-        })
+        t("settingsPrivacy.leaves.internet"),
+        t(
+          where.source === "auto"
+            ? "settingsPrivacy.leaves.lookupAuto"
+            : where.source === "google"
+              ? "settingsPrivacy.leaves.lookupGoogle"
+              : "settingsPrivacy.leaves.lookupOpenLibrary"
+        )
       );
     case "off":
       return word(<CircleDashed aria-hidden="true" />, t("settingsPrivacy.leaves.off"));
@@ -156,8 +167,8 @@ export function LeavesRow({ entry }: { entry: SettingEntryV2 }) {
         <table className="w-full table-fixed border-collapse text-left text-sm">
           <caption className="sr-only">{t("settingsPrivacy.leaves.tableLabel")}</caption>
           <colgroup>
-            <col className="w-[29%]" />
-            <col className="w-[34%]" />
+            <col className="w-[28%]" />
+            <col className="w-[38%]" />
             <col />
           </colgroup>
           <thead>

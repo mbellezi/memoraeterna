@@ -1,3 +1,4 @@
+import { describeFixture } from "../general/section-screen";
 import { mountSection, type Answers, type Harness } from "../general/test-kit";
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -248,11 +249,12 @@ describe("Library, drawn from the registry", () => {
   });
 
   describe("the saved import plans", () => {
-    const withPlans = () =>
+    const withPlans = (over: Answers = {}) =>
       base({
         "settings.getApp": {
           processingPresets: [plan("a", "Short articles"), plan("b", "Large books")]
-        }
+        },
+        ...over
       });
 
     it("lists each plan with its step count, and says what to do when there are none", async () => {
@@ -310,6 +312,31 @@ describe("Library, drawn from the registry", () => {
       await h.click(h.button("Cancel", h.row("processingPresets")!));
       expect(h.count("settings.updateApp")).toBe(0);
       expect(h.row("processingPresets")!.textContent).not.toContain("Delete “");
+    });
+
+    it("is the person's own work: no marker, no default, no restore, and Restore all never touches it", async () => {
+      h = await mountSection({
+        section: "library",
+        answers: withPlans({
+          "settings.describe": describeFixture({
+            uploadCopies: { value: true, default: false, changed: true }
+          }),
+          "settings.reset": (input: { id: string }) =>
+            Promise.resolve({ id: input.id, value: null })
+        })
+      });
+      const row = h.row("processingPresets")!;
+      expect(row.hasAttribute("data-changed")).toBe(false);
+      expect(row.textContent).not.toContain("Changed");
+      expect(row.textContent).not.toContain("Default:");
+      expect(row.textContent).not.toContain("Restore default");
+      expect(h.text()).toContain("1 setting changed");
+      await h.click(h.button("Restore all"));
+      await h.click(h.button("Restore"));
+      await h.settle();
+      expect(updates(h, "settings.reset")).toEqual([{ id: "uploadCopies" }]);
+      expect(h.count("settings.updateApp")).toBe(0);
+      expect(h.row("processingPresets")!.textContent).toContain("Short articles");
     });
 
     it("says in place that the plans could not be read, with a retry", async () => {

@@ -9,12 +9,15 @@ import { useSettings } from "../../settings-context";
 import { labelOf } from "../../settings-model";
 import { requestSettingsTarget } from "../../settings-target";
 import {
+  contentLanguageOptions,
   isLanguageCode,
   isThemeMode,
   languageName,
+  languageNameFor,
   languageOptions,
   themeModes
 } from "./general-model";
+import { BarsGroup, BarsRow } from "../../SectionBars";
 import { RegistrySection, type EntryRow } from "./registry-section";
 import { SettingSelect, useSavedChoice } from "./setting-controls";
 
@@ -62,8 +65,12 @@ function LanguageRow({ entry, afterChange }: { entry: SettingEntryV2; afterChang
   const description = describe(entry.id);
   const value = isLanguageCode(choice.value) ? choice.value : "en";
   const fallback = description?.default;
+  // The app's language is named by its own name; the notes' language reads in the window's language.
+  const notes = entry.id === "contentLanguage";
   const defaultLabel = isLanguageCode(fallback)
-    ? t("settingsGeneral.language.defaultOs", { values: { language: languageName(fallback) } })
+    ? t("settingsGeneral.language.defaultOs", {
+        values: { language: notes ? languageNameFor(fallback, t.locale) : languageName(fallback) }
+      })
     : undefined;
   return (
     <RegistryRow
@@ -79,7 +86,7 @@ function LanguageRow({ entry, afterChange }: { entry: SettingEntryV2; afterChang
         <SettingSelect
           label={labelOf(t, entry)}
           value={value}
-          options={languageOptions()}
+          options={notes ? contentLanguageOptions(t.locale) : languageOptions()}
           onChange={choice.save}
         />
       }
@@ -100,7 +107,6 @@ function ConnectionsNote() {
       >
         {where}
       </InlineAction>
-      .
     </span>
   );
 }
@@ -120,4 +126,17 @@ export function GeneralSection() {
   return <RegistrySection rows={rows} />;
 }
 
-export const section = { id: "general", Section: GeneralSection } as const;
+/** What General looks like while it loads: the theme's segmented control, then two selects. */
+function GeneralBars() {
+  return (
+    <>
+      <BarsGroup first width="w-24" />
+      <BarsRow label="w-16" help="w-64" control="w-60" />
+      <BarsGroup width="w-20" />
+      <BarsRow label="w-36" help="w-80" control="w-44" />
+      <BarsRow label="w-32" help="w-72" control="w-44" />
+    </>
+  );
+}
+
+export const section = { id: "general", Section: GeneralSection, Skeleton: GeneralBars } as const;

@@ -4843,7 +4843,7 @@
   "settingsGeneral": {
     "language": {
       "connectionsNote": "Le descrizioni dei collegamenti già scritte si possono rifare in",
-      "defaultOs": "come macOS: {language}"
+      "defaultOs": "come macOS, {language}"
     },
     "saveFailed": "Impossibile salvare. Non è cambiato nulla.",
     "theme": {
@@ -4862,7 +4862,6 @@
       "verified": "Un ripristino di prova è riuscito."
     },
     "plans": {
-      "defaultNone": "nessun piano salvato",
       "deleteAction": "Elimina",
       "deleteAsk": "Eliminare «{name}»?",
       "deleteConfirm": "Elimina piano",
@@ -4922,19 +4921,18 @@
       "booksGoogle": "Google Books",
       "changeInAi": "Cambia in IA",
       "cloud": "Nel cloud",
-      "cloudVia": "Nel cloud · {name}",
       "columns": {
         "job": "Lavoro",
-        "what": "Cosa esce, e solo quando il lavoro lo richiede",
+        "what": "Cosa esce",
         "where": "Dove gira"
       },
       "credentials": "Credenziali conservate su questo Mac (solo i nomi; i valori non compaiono mai): {names}.",
       "decisions": "OpenAI Decisions",
-      "internet": "Su internet · {name}",
+      "internet": "Su internet",
       "local": "Su questo Mac",
-      "lookupAuto": "Open Library, Google Books e Crossref",
-      "lookupGoogle": "Google Books e Crossref",
-      "lookupOpenLibrary": "Open Library e Crossref",
+      "lookupAuto": "Open Library, Google Books e Crossref",
+      "lookupGoogle": "Google Books e Crossref",
+      "lookupOpenLibrary": "Open Library e Crossref",
       "noCredentials": "Nessuna credenziale è conservata su questo Mac.",
       "noModel": "Nessun modello scelto",
       "nothing": "Niente",
@@ -5231,7 +5229,7 @@
       "label": "Fonti che diventano pagine"
     },
     "privacyCallLog": {
-      "help": "Le ultime chiamate a un modello, locale o nel cloud. Sola lettura; il registro completo è in Avanzate.",
+      "help": "Cosa conserva questo Mac delle chiamate fatte a un modello, locale o nel cloud.",
       "label": "Chiamate IA recenti"
     },
     "privacyClearQuestions": {

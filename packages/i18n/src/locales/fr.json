@@ -4850,7 +4850,7 @@
   "settingsGeneral": {
     "language": {
       "connectionsNote": "Les descriptions de liens déjà écrites peuvent être refaites dans",
-      "defaultOs": "comme macOS : {language}"
+      "defaultOs": "comme macOS, {language}"
     },
     "saveFailed": "Impossible d’enregistrer. Rien n’a changé.",
     "theme": {
@@ -4869,7 +4869,6 @@
       "verified": "Une restauration de test a réussi."
     },
     "plans": {
-      "defaultNone": "aucun plan enregistré",
       "deleteAction": "Supprimer",
       "deleteAsk": "Supprimer « {name} » ?",
       "deleteConfirm": "Supprimer le plan",
@@ -4929,19 +4928,18 @@
       "booksGoogle": "Google Books",
       "changeInAi": "Changer dans IA",
       "cloud": "Dans le cloud",
-      "cloudVia": "Dans le cloud · {name}",
       "columns": {
         "job": "Tâche",
-        "what": "Ce qui sort, et seulement quand la tâche l’exige",
+        "what": "Ce qui sort",
         "where": "Où elle s’exécute"
       },
       "credentials": "Identifiants conservés sur ce Mac (seulement les noms ; les valeurs n’apparaissent jamais) : {names}.",
       "decisions": "OpenAI Decisions",
-      "internet": "Sur Internet · {name}",
+      "internet": "Sur Internet",
       "local": "Sur ce Mac",
-      "lookupAuto": "Open Library, Google Books et Crossref",
-      "lookupGoogle": "Google Books et Crossref",
-      "lookupOpenLibrary": "Open Library et Crossref",
+      "lookupAuto": "Open Library, Google Books et Crossref",
+      "lookupGoogle": "Google Books et Crossref",
+      "lookupOpenLibrary": "Open Library et Crossref",
       "noCredentials": "Aucun identifiant n’est conservé sur ce Mac.",
       "noModel": "Aucun modèle choisi",
       "nothing": "Rien",
@@ -5238,7 +5236,7 @@
       "label": "Sources qui deviennent des pages"
     },
     "privacyCallLog": {
-      "help": "Les derniers appels à un modèle, local ou dans le cloud. En lecture seule ; le journal complet est dans Avancé.",
+      "help": "Ce que ce Mac garde des appels faits à un modèle, local ou dans le cloud.",
       "label": "Appels d’IA récents"
     },
     "privacyClearQuestions": {

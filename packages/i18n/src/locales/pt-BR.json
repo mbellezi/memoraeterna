@@ -4848,7 +4848,7 @@
   "settingsGeneral": {
     "language": {
       "connectionsNote": "As descrições das conexões já escritas podem ser refeitas em",
-      "defaultOs": "igual ao macOS: {language}"
+      "defaultOs": "igual ao do macOS, {language}"
     },
     "saveFailed": "Não foi possível salvar. Nada foi alterado.",
     "theme": {
@@ -4867,7 +4867,6 @@
       "verified": "A restauração de teste foi aprovada."
     },
     "plans": {
-      "defaultNone": "nenhum plano salvo",
       "deleteAction": "Apagar",
       "deleteAsk": "Apagar “{name}”?",
       "deleteConfirm": "Apagar plano",
@@ -4927,19 +4926,18 @@
       "booksGoogle": "Google Books",
       "changeInAi": "Mudar em IA",
       "cloud": "Na nuvem",
-      "cloudVia": "Na nuvem · {name}",
       "columns": {
         "job": "Trabalho",
-        "what": "O que sai, e só quando o trabalho pede",
+        "what": "O que sai",
         "where": "Onde roda"
       },
       "credentials": "Credenciais guardadas neste Mac (só os nomes; os valores nunca aparecem): {names}.",
       "decisions": "OpenAI Decisions",
-      "internet": "Na internet · {name}",
+      "internet": "Na internet",
       "local": "Neste Mac",
-      "lookupAuto": "Open Library, Google Books e Crossref",
-      "lookupGoogle": "Google Books e Crossref",
-      "lookupOpenLibrary": "Open Library e Crossref",
+      "lookupAuto": "Open Library, Google Books e Crossref",
+      "lookupGoogle": "Google Books e Crossref",
+      "lookupOpenLibrary": "Open Library e Crossref",
       "noCredentials": "Nenhuma credencial está guardada neste Mac.",
       "noModel": "Nenhum modelo escolhido",
       "nothing": "Nada",
@@ -4974,11 +4972,11 @@
       "readFailed": "Não foi possível contar as perguntas guardadas."
     },
     "reset": {
-      "action": "Resetar tudo…",
+      "action": "Apagar tudo e recomeçar…",
       "backupLink": "Faça um backup antes",
-      "confirm": "Resetar tudo",
+      "confirm": "Apagar tudo e recomeçar",
       "dialogBody": "Apaga a biblioteca, os índices de busca, os grafos, as perguntas, os históricos, as conexões, as preferências e os arquivos guardados. Ficam perfis, provedores, rotas e modelos instalados; backups e seus arquivos pessoais não são tocados.",
-      "dialogTitle": "Resetar tudo?",
+      "dialogTitle": "Apagar tudo e recomeçar?",
       "dialogWarn": "Não dá para desfazer.",
       "failed": "Não foi possível concluir o reset. Verifique as permissões dos arquivos e tente de novo.",
       "noUndo": "Não dá para desfazer.",
@@ -5152,7 +5150,7 @@
         "history": "Histórico e perguntas",
         "leaving": "O que sai deste Mac",
         "logs": "Registros",
-        "reset": "Resetar"
+        "reset": "Recomeçar do zero"
       }
     },
     "integrationsGateway": {
@@ -5236,7 +5234,7 @@
       "label": "Fontes que viram páginas"
     },
     "privacyCallLog": {
-      "help": "As últimas chamadas a um modelo, local ou na nuvem. Só leitura; o registro completo fica em Avançado.",
+      "help": "O que este Mac guarda sobre as chamadas feitas a modelos, locais ou na nuvem.",
       "label": "Chamadas de IA recentes"
     },
     "privacyClearQuestions": {
@@ -5249,7 +5247,7 @@
     },
     "privacyReset": {
       "help": "Apaga biblioteca, índices de busca, grafos, perguntas, históricos, conexões, preferências e arquivos guardados. Ficam perfis, provedores, rotas e modelos instalados; backups e seus arquivos pessoais não são tocados.",
-      "label": "Resetar tudo"
+      "label": "Apagar tudo e recomeçar"
     },
     "privacySummary": {
       "help": "O que é enviado para fora deste Mac, e para quem, com a sua configuração atual.",
@@ -5436,7 +5434,7 @@
     },
     "search": {
       "clear": "Limpar a busca",
-      "emptyBack": "e voltar a {section}.",
+      "emptyBack": "e voltar para {section}.",
       "emptyBody": "Tente outra palavra, um sinônimo ou o nome em inglês. Por exemplo:",
       "emptyClear": "Limpar a busca",
       "emptyTitle": "Nada com “{query}” nos ajustes.",

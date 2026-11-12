@@ -7,6 +7,7 @@ import {
   useRef,
   useState,
   useSyncExternalStore,
+  type ComponentType,
   type KeyboardEvent
 } from "react";
 import { ChevronDown } from "lucide-react";
@@ -313,7 +314,7 @@ export function SettingsSurface({
                 {t(sectionMeta[section].name)}
               </h2>
               {read.status === "loading" ? (
-                <SettingsSkeleton t={t} />
+                <SettingsSkeleton t={t} Bars={sections[section]?.Skeleton} />
               ) : read.status === "error" ? (
                 <ErrorState
                   t={t}
@@ -344,7 +345,7 @@ export function SettingsSurface({
 }
 
 /** The bars of a section while its values are read: the title's line, a group and some rows. */
-function SettingsSkeleton({ t }: { t: Translator }) {
+function SettingsSkeleton({ t, Bars }: { t: Translator; Bars?: ComponentType | undefined }) {
   const row = (key: string, label: string, help: string, control: string) => (
     <div
       key={key}
@@ -359,13 +360,19 @@ function SettingsSkeleton({ t }: { t: Translator }) {
     <LoadingState t={t} className="mt-4 max-w-[45rem]">
       <div>
         <Skeleton className="mt-1 h-3 w-44" />
-        <Skeleton className="mt-8 h-3 w-24" />
-        {row("a", "w-44", "w-80", "w-44")}
-        {row("b", "w-32", "w-72", "w-44")}
-        {row("c", "w-44", "w-60", "w-44")}
-        <Skeleton className="mt-10 h-3 w-28" />
-        {row("d", "w-40", "w-64", "w-28")}
-        {row("e", "w-36", "w-72", "w-28")}
+        {Bars ? (
+          <Bars />
+        ) : (
+          <>
+            <Skeleton className="mt-8 h-3 w-24" />
+            {row("a", "w-44", "w-80", "w-44")}
+            {row("b", "w-32", "w-72", "w-44")}
+            {row("c", "w-44", "w-60", "w-44")}
+            <Skeleton className="mt-10 h-3 w-28" />
+            {row("d", "w-40", "w-64", "w-28")}
+            {row("e", "w-36", "w-72", "w-28")}
+          </>
+        )}
       </div>
     </LoadingState>
   );

@@ -16,7 +16,7 @@ export function describeFixture(
 ): { entries: SettingDescription[] } {
   return {
     entries: settingsRegistryV2
-      .filter((entry) => entry.store.kind !== "none")
+      .filter((entry) => entry.reset !== "none")
       .map((entry) => {
         const known = values[entry.id];
         const value: Json = known?.value ?? (entry.control === "switch" ? false : null);

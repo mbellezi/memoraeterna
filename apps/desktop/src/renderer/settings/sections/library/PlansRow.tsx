@@ -17,7 +17,9 @@ type Plan = NonNullable<AppSettings["processingPresets"]>[number];
 const planNameMax = 100;
 
 /**
- * The saved import plans: made while importing, renamed or deleted here. Each plan shows its name and
+ * The saved import plans: made while importing, renamed or deleted here. They are the person's own
+ * work, so the row has no "changed" marker, no default and no "restore" (the registry resets
+ * nothing here, and "Restore all" leaves them out): a plan goes only by its own "Delete", which asks. Each plan shows its name and
  * how many steps it runs; "Rename" turns the name into a field in the same place and "Delete" asks in
  * the line, naming the plan and saying the sources already imported keep what was made. The list is
  * one read of the app's preferences and follows `settings.changed`; a write answers with the new
@@ -76,7 +78,6 @@ export function PlansRow({ entry }: { entry: SettingEntryV2 }) {
     <RegistryRow
       entry={entry}
       stack
-      defaultLabel={t("settingsLibrary.plans.defaultNone")}
       note={
         failed ? (
           <span role="status" className="block text-foreground">

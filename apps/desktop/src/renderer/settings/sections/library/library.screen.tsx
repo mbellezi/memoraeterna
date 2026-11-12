@@ -21,8 +21,7 @@ export const fixtures: ScreenModule["fixtures"] = {
   success: {
     "settings.describe": describeFixture({
       // The copy is on: the row carries the marker, "Default: Off" and the way back.
-      uploadCopies: { value: true, default: false, changed: true },
-      processingPresets: { value: true, default: null, changed: true }
+      uploadCopies: { value: true, default: false, changed: true }
     }),
     "library.rows": { rows: [], total: 214 },
     "settings.get": {

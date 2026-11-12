@@ -4845,7 +4845,7 @@
   "settingsGeneral": {
     "language": {
       "connectionsNote": "Connection descriptions already written can be redone in",
-      "defaultOs": "same as macOS: {language}"
+      "defaultOs": "same as macOS, {language}"
     },
     "saveFailed": "This could not be saved. Nothing was changed.",
     "theme": {
@@ -4864,7 +4864,6 @@
       "verified": "A test restore passed."
     },
     "plans": {
-      "defaultNone": "no saved plans",
       "deleteAction": "Delete",
       "deleteAsk": "Delete “{name}”?",
       "deleteConfirm": "Delete plan",
@@ -4924,19 +4923,18 @@
       "booksGoogle": "Google Books",
       "changeInAi": "Change in AI",
       "cloud": "In the cloud",
-      "cloudVia": "In the cloud · {name}",
       "columns": {
         "job": "Job",
-        "what": "What leaves, only when the job asks",
+        "what": "What leaves",
         "where": "Where it runs"
       },
       "credentials": "Credentials kept on this Mac (names only; the values never appear): {names}.",
       "decisions": "OpenAI Decisions",
-      "internet": "On the internet · {name}",
+      "internet": "On the internet",
       "local": "On this Mac",
-      "lookupAuto": "Open Library, Google Books and Crossref",
-      "lookupGoogle": "Google Books and Crossref",
-      "lookupOpenLibrary": "Open Library and Crossref",
+      "lookupAuto": "Open Library, Google Books and Crossref",
+      "lookupGoogle": "Google Books and Crossref",
+      "lookupOpenLibrary": "Open Library and Crossref",
       "noCredentials": "No credentials are kept on this Mac.",
       "noModel": "No model chosen",
       "nothing": "Nothing",
@@ -5233,7 +5231,7 @@
       "label": "Sources that become pages"
     },
     "privacyCallLog": {
-      "help": "The latest calls to a model, local or in the cloud. Read only; the full log is under Advanced.",
+      "help": "What this Mac keeps about the calls made to models, local or in the cloud.",
       "label": "Recent AI calls"
     },
     "privacyClearQuestions": {

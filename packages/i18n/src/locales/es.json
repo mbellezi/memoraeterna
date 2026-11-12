@@ -4852,7 +4852,7 @@
   "settingsGeneral": {
     "language": {
       "connectionsNote": "Las descripciones de conexiones ya escritas se pueden rehacer en",
-      "defaultOs": "igual que macOS: {language}"
+      "defaultOs": "igual que macOS, {language}"
     },
     "saveFailed": "No se pudo guardar. No se cambió nada.",
     "theme": {
@@ -4871,7 +4871,6 @@
       "verified": "Una restauración de prueba salió bien."
     },
     "plans": {
-      "defaultNone": "ningún plan guardado",
       "deleteAction": "Eliminar",
       "deleteAsk": "¿Eliminar «{name}»?",
       "deleteConfirm": "Eliminar plan",
@@ -4931,19 +4930,18 @@
       "booksGoogle": "Google Books",
       "changeInAi": "Cambiar en IA",
       "cloud": "En la nube",
-      "cloudVia": "En la nube · {name}",
       "columns": {
         "job": "Trabajo",
-        "what": "Qué sale, y solo cuando el trabajo lo pide",
+        "what": "Qué sale",
         "where": "Dónde se ejecuta"
       },
       "credentials": "Credenciales guardadas en este Mac (solo los nombres; los valores nunca aparecen): {names}.",
       "decisions": "OpenAI Decisions",
-      "internet": "En internet · {name}",
+      "internet": "En internet",
       "local": "En este Mac",
-      "lookupAuto": "Open Library, Google Books y Crossref",
-      "lookupGoogle": "Google Books y Crossref",
-      "lookupOpenLibrary": "Open Library y Crossref",
+      "lookupAuto": "Open Library, Google Books y Crossref",
+      "lookupGoogle": "Google Books y Crossref",
+      "lookupOpenLibrary": "Open Library y Crossref",
       "noCredentials": "No hay credenciales guardadas en este Mac.",
       "noModel": "Ningún modelo elegido",
       "nothing": "Nada",
@@ -5240,7 +5238,7 @@
       "label": "Fuentes que se vuelven páginas"
     },
     "privacyCallLog": {
-      "help": "Las últimas llamadas a un modelo, local o en la nube. Solo lectura; el registro completo está en Avanzado.",
+      "help": "Lo que este Mac guarda sobre las llamadas hechas a modelos, locales o en la nube.",
       "label": "Llamadas de IA recientes"
     },
     "privacyClearQuestions": {

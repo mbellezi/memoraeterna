@@ -3,7 +3,12 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { settingsRegistryV2 } from "../../../../shared/settings-registry";
 import { describeFixture } from "./section-screen";
-import { languageName, languageOptions } from "./general-model";
+import {
+  contentLanguageOptions,
+  languageName,
+  languageNameFor,
+  languageOptions
+} from "./general-model";
 
 let h: Harness | null = null;
 afterEach(async () => {
@@ -124,11 +129,28 @@ describe("General, drawn from the registry", () => {
       }
     });
     const notes = h.row("contentLanguage")!;
-    expect(notes.textContent).toContain("Padrão:igual ao macOS: Português (Brasil)");
+    expect(notes.textContent).toContain("Padrão:igual ao do macOS, Português (Brasil)");
     expect(notes.textContent).toContain("Conhecimento › Conexões");
     // The app language is at its default: no marker, no pointer.
     expect(h.row("language")!.hasAttribute("data-changed")).toBe(false);
     expect(h.row("language")!.textContent).not.toContain("Conhecimento");
+  });
+
+  it("names the notes' language for the window's language, with its own name in brackets, and the app's language by its own name only", async () => {
+    expect(languageNameFor("en", "pt-BR")).toBe("Inglês (English)");
+    expect(languageNameFor("pt-BR", "pt-BR")).toBe("Português (Brasil)");
+    expect(languageNameFor("en", "en")).toBe("English");
+    expect(languageNameFor("es", "en")).toBe("Spanish (Español)");
+    expect(contentLanguageOptions("pt-BR").find((option) => option.value === "en")?.label).toBe(
+      "Inglês (English)"
+    );
+    expect(languageOptions().find((option) => option.value === "en")?.label).toBe("English");
+    h = await mountSection({ section: "general", locale: "pt-BR" });
+    const options = (id: string) =>
+      [...h!.row(id)!.querySelectorAll("option")].map((option) => option.textContent);
+    expect(options("contentLanguage")).toContain("Inglês (English)");
+    expect(options("language")).toContain("English");
+    expect(options("language")).not.toContain("Inglês (English)");
   });
 
   it("reads again nothing of its own: the values come from settings.describe alone", async () => {

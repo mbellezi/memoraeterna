@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { Info } from "lucide-react";
 import type { Translator } from "@app/i18n";
 
 import type { SettingEntryV2 } from "../../../../shared/settings-registry";
@@ -126,7 +125,11 @@ export function ClearQuestionsRow({ entry }: { entry: SettingEntryV2 }) {
       }
       control={
         <>
-          <Button disabled={known !== null && known.count === 0} onClick={() => setOpen(true)}>
+          <Button
+            variant="danger-outline"
+            disabled={known !== null && known.count === 0}
+            onClick={() => setOpen(true)}
+          >
             {t("settingsPrivacy.questions.action")}
           </Button>
           <ConfirmDialog
@@ -190,23 +193,21 @@ export function CallLogRow({ entry }: { entry: SettingEntryV2 }) {
     <RegistryRow
       entry={entry}
       stack
-      control={
-        <div className="flex w-full max-w-[34rem] items-start gap-3 rounded-lg bg-info-soft p-3 text-sm text-foreground">
-          <Info aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-info" />
-          <p className="m-0 min-w-0 [text-wrap:pretty]">
-            {sentence ? <>{sentence} </> : null}
-            <span className={fullCapture ? "font-semibold" : undefined}>
-              {fullCapture ? t("settingsPrivacy.callLog.full") : t("settingsPrivacy.callLog.light")}
-            </span>{" "}
-            <InlineAction
-              onClick={() =>
-                requestSettingsTarget({ section: "advanced", setting: "advanced.callLog" })
-              }
-            >
-              {t("settingsPrivacy.callLog.open")}
-            </InlineAction>
-          </p>
-        </div>
+      note={
+        <span className="block max-w-[27.5rem] [text-wrap:pretty]">
+          {sentence ? <>{sentence} </> : null}
+          <span className={fullCapture ? "font-medium text-foreground" : undefined}>
+            {fullCapture ? t("settingsPrivacy.callLog.full") : t("settingsPrivacy.callLog.light")}
+          </span>{" "}
+          <InlineAction
+            size="xs"
+            onClick={() =>
+              requestSettingsTarget({ section: "advanced", setting: "advanced.callLog" })
+            }
+          >
+            {t("settingsPrivacy.callLog.open")}
+          </InlineAction>
+        </span>
       }
     />
   );
@@ -264,20 +265,22 @@ export function ResetRow({
               {t("settingsPrivacy.reset.noUndo")}{" "}
               <InlineAction
                 size="xs"
+                className="ml-1"
                 onClick={() =>
                   requestSettingsTarget({ section: "library", setting: "library.backup" })
                 }
               >
                 {t("settingsPrivacy.reset.backupLink")}
               </InlineAction>
-              .
             </span>
           </span>
         )
       }
       control={
         <>
-          <Button onClick={() => setOpen(true)}>{t("settingsPrivacy.reset.action")}</Button>
+          <Button variant="danger-outline" onClick={() => setOpen(true)}>
+            {t("settingsPrivacy.reset.action")}
+          </Button>
           <ConfirmDialog
             t={t}
             open={open}
