@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 
 import { Search } from "lucide-react";
 import type { MessageKey, Translator } from "@app/i18n";
 
-import { RunningRing, SolidCheck, SolidTriangle } from "../../../components/activity/solid-glyphs";
+import { RunningRing, SolidCheck, SolidTriangle } from "../../../components/ui/solid-glyphs";
 import { Button } from "../../../components/ui/button";
 import { Skeleton } from "../../../components/ui/skeleton";
 import { cn } from "../../../lib/cn";
