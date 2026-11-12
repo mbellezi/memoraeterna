@@ -208,22 +208,18 @@ function QuickLookBlock() {
           portal={false}
           className="static! mx-auto max-w-full! translate-x-0!"
         >
-          <SheetHeader className="flex-wrap">
+          <SheetHeader className="flex-wrap gap-x-4 gap-y-1">
             <span>Peeking</span>
             <span>
-              <span aria-hidden="true">· </span>
               <Kbd>Space</Kbd> closes
             </span>
             <span>
-              <span aria-hidden="true">· </span>
               <Kbd>↵</Kbd> opens beside
             </span>
             <span>
-              <span aria-hidden="true">· </span>
               <Kbd>↑↓</Kbd> peek the next
             </span>
             <span>
-              <span aria-hidden="true">· </span>
               <Kbd>⌥↵</Kbd> open in this panel
             </span>
           </SheetHeader>

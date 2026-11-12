@@ -421,9 +421,9 @@ describe("primitives sheet", () => {
     <PrimitivesSheet t={t} load={() => new Promise(() => undefined)} />
   );
 
-  it("never leaves a separator dot alone at the end of a wrapped line", () => {
-    expect(html).not.toContain('<span aria-hidden="true">\u00b7</span>');
-    expect(html).toContain('<span aria-hidden="true">\u00b7 </span>');
+  it("separates the quick-look hints by a gap, so no wrapped line starts or ends with a dot", () => {
+    expect(html).not.toContain('<span aria-hidden="true">\u00b7');
+    expect(html).toMatch(/class="[^"]*\bgap-x-4\b[^"]*"><span>Peeking<\/span><span>/u);
   });
 
   it("the quick-look body opens with the kind line and ends with the counts line", () => {
