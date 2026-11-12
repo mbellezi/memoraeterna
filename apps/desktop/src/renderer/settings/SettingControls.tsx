@@ -9,8 +9,9 @@ import { cn } from "../lib/cn";
 /**
  * The controls the Knowledge and Integrations sections share (F5 T164, design record §7.6 and the
  * Settings v2 mockup): a switch that says its word, a native select, radio cards, a number field, a
- * status line with its glyph, a group heading and the disclosure of a "page" row. Tokens only; every
- * control is named by its row's label (`aria-labelledby`) so a screen reader hears the setting.
+ * status line with its glyph, a read problem with its retry and a group heading. Tokens only; every
+ * control is named by its row's label (`aria-labelledby`) so a screen reader hears the setting. The
+ * disclosure of a "page" row is `PageRow.tsx`, not here.
  */
 
 /** The heading of a group of rows, the same one `GenericSection` draws. */

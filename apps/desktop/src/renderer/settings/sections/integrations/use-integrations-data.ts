@@ -14,11 +14,14 @@ import {
   followWikiStatus
 } from "../../../components/obsidian-followers";
 import { readOnEvents, settingsTouch, watchObsidianSync } from "../../../lib/status-followers";
+import { useSettings } from "../../settings-context";
 
 /**
  * What Settings › Integrations reads (F5 T164, D16): each status is read once and again after the
  * bus event that says it moved (`settings.changed`, `obsidian.sync`, `obsidian.projection`), never on
- * a timer. A read that fails is kept as `failed`, so the row can say so and offer to try again.
+ * a timer. A read that fails is kept as `failed`, so the row can say so and offer to try again. Settings
+ * stays mounted while another place is shown: a hidden Settings listens to nothing, and each hook
+ * reads once more when Settings is shown again (the `active` of the Settings context).
  */
 
 export type Loaded<T> =
@@ -33,7 +36,9 @@ export function useStorage(): {
 } {
   const [storage, setStorage] = useState<Loaded<StorageSettings>>({ status: "loading" });
   const [round, setRound] = useState(0);
+  const { active } = useSettings();
   useEffect(() => {
+    if (!active) return undefined;
     const follower = readOnEvents({
       api: () => window.app,
       sources: [{ type: "settings.changed", when: settingsTouch("storage", "obsidian") }],
@@ -43,7 +48,7 @@ export function useStorage(): {
         setStorage((current) => (current.status === "ready" ? current : { status: "failed" }))
     });
     return () => follower.stop();
-  }, [round]);
+  }, [active, round]);
   return {
     storage,
     apply: (value) => setStorage({ status: "ready", value }),
@@ -58,14 +63,18 @@ export function useStorage(): {
 export function useSyncStatus(): { sync: Loaded<ObsidianSyncStatus>; retry: () => void } {
   const [sync, setSync] = useState<Loaded<ObsidianSyncStatus>>({ status: "loading" });
   const [round, setRound] = useState(0);
+  const { active } = useSettings();
   useEffect(
     () =>
-      watchObsidianSync(
-        () => window.app,
-        (value) => setSync({ status: "ready", value }),
-        () => setSync((current) => (current.status === "ready" ? current : { status: "failed" }))
-      ),
-    [round]
+      active
+        ? watchObsidianSync(
+            () => window.app,
+            (value) => setSync({ status: "ready", value }),
+            () =>
+              setSync((current) => (current.status === "ready" ? current : { status: "failed" }))
+          )
+        : undefined,
+    [active, round]
   );
   return {
     sync,
@@ -90,14 +99,18 @@ export interface WikiHandle {
 export function useWikiStatus(): WikiHandle {
   const [wiki, setWiki] = useState<Loaded<WikiStatus>>({ status: "loading" });
   const [round, setRound] = useState(0);
+  const { active } = useSettings();
   useEffect(
     () =>
-      followWikiStatus(
-        () => window.app,
-        (value) => setWiki({ status: "ready", value }),
-        () => setWiki((current) => (current.status === "ready" ? current : { status: "failed" }))
-      ),
-    [round]
+      active
+        ? followWikiStatus(
+            () => window.app,
+            (value) => setWiki({ status: "ready", value }),
+            () =>
+              setWiki((current) => (current.status === "ready" ? current : { status: "failed" }))
+          )
+        : undefined,
+    [active, round]
   );
   const set = useCallback((value: WikiStatus) => setWiki({ status: "ready", value }), []);
   return {
@@ -130,17 +143,20 @@ export function useEditorialConflicts(): EditorialHandle {
   const [rows, setRows] = useState<EditorialRows | null>(null);
   const [failed, setFailed] = useState(false);
   const [round, setRound] = useState(0);
+  const { active } = useSettings();
   useEffect(
     () =>
-      followEditorialConflicts(
-        () => window.app,
-        (value) => {
-          setRows(value);
-          setFailed(false);
-        },
-        () => setFailed(true)
-      ),
-    [round]
+      active
+        ? followEditorialConflicts(
+            () => window.app,
+            (value) => {
+              setRows(value);
+              setFailed(false);
+            },
+            () => setFailed(true)
+          )
+        : undefined,
+    [active, round]
   );
   return {
     rows,
@@ -171,18 +187,21 @@ export function useLayoutStatus(): LayoutHandle {
   const [binding, setBinding] = useState({ configured: false, active: false });
   const [failed, setFailed] = useState(false);
   const [round, setRound] = useState(0);
+  const { active } = useSettings();
   useEffect(
     () =>
-      followLayout(() => window.app, {
-        onBinding: setBinding,
-        onStatus: (value) => {
-          setStatus(value);
-          setFailed(false);
-        },
-        onRebound: setConfig,
-        onError: () => setFailed(true)
-      }),
-    [round]
+      active
+        ? followLayout(() => window.app, {
+            onBinding: setBinding,
+            onStatus: (value) => {
+              setStatus(value);
+              setFailed(false);
+            },
+            onRebound: setConfig,
+            onError: () => setFailed(true)
+          })
+        : undefined,
+    [active, round]
   );
   return {
     status,
@@ -204,11 +223,13 @@ export interface GatewayHandle {
   reload: () => void;
 }
 
-/** The local gateway and the apps paired with it. They have no event: read on open and after a write. */
+/** The local gateway and the apps paired with it. They have no event: read on open, on return and after a write. */
 export function useGateway(): GatewayHandle {
   const [gateway, setGateway] = useState<GatewayHandle["gateway"]>({ status: "loading" });
   const [round, setRound] = useState(0);
+  const { active } = useSettings();
   useEffect(() => {
+    if (!active) return undefined;
     let live = true;
     Promise.all([window.app.integrations.getGatewayStatus(), window.app.integrations.listClients()])
       .then(([status, clients]) => {
@@ -221,6 +242,6 @@ export function useGateway(): GatewayHandle {
     return () => {
       live = false;
     };
-  }, [round]);
+  }, [active, round]);
   return { gateway, reload: () => setRound((value) => value + 1) };
 }

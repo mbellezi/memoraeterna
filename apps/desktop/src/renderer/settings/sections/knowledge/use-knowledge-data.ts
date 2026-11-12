@@ -10,12 +10,15 @@ import {
   type KnowledgeControlsState
 } from "../../../components/settings/knowledge-controls-state";
 import { readOnEvents } from "../../../lib/status-followers";
+import { useSettings } from "../../settings-context";
 
 /**
  * What Settings › Knowledge reads and writes (F5 T164): the six controls (read once, again after a
  * change from elsewhere such as a reset, saved in the order they were made), the month's spend, the
  * Gardener's status, the relation descriptions' job and the language of the notes. Everything
- * arrives by `window.app` and the bus; there is no timer.
+ * arrives by `window.app` and the bus; there is no timer. Settings stays mounted while another place is
+ * shown: a hidden Settings listens to nothing, and each hook reads once more when it is shown again
+ * (the `active` of the Settings context).
  */
 
 export interface KnowledgeControlsHandle {
@@ -34,9 +37,10 @@ export function useKnowledgeControls(): KnowledgeControlsHandle {
     latest.current = state;
   }, [state]);
 
+  const { active } = useSettings();
   const loading = state.phase === "loading";
   useEffect(() => {
-    if (!loading) return undefined;
+    if (!loading || !active) return undefined;
     let live = true;
     void readKnowledgeControls(() => window.app.knowledgeControls.get()).then((action) => {
       if (live) dispatch(action);
@@ -44,11 +48,35 @@ export function useKnowledgeControls(): KnowledgeControlsHandle {
     return () => {
       live = false;
     };
-  }, [loading]);
+  }, [loading, active]);
+
+  // Shown again after another place: the controls are read once more. What is on screen stays when
+  // that read fails, and a change of ours still being saved is not read over.
+  const returning = useRef(false);
+  useEffect(() => {
+    if (!active) {
+      returning.current = true;
+      return undefined;
+    }
+    if (!returning.current) return undefined;
+    returning.current = false;
+    if (latest.current.phase === "loading") return undefined; // the read above is the fresh one
+    let live = true;
+    void readKnowledgeControls(() => window.app.knowledgeControls.get()).then((action) => {
+      if (!live) return;
+      const current = latest.current;
+      if (current.phase === "ready" && (action.type !== "loaded" || current.saving > 0)) return;
+      dispatch(action);
+    });
+    return () => {
+      live = false;
+    };
+  }, [active]);
 
   // A change that did not come from here (a reset, another window) is read again, unless one of
   // ours is still being saved: its answer will say where things stand.
   useEffect(() => {
+    if (!active) return undefined;
     let live = true;
     const stop = window.app.onAppEvent("settings.changed", (event) => {
       if (!event.stores.includes("knowledge.controls")) return;
@@ -62,7 +90,7 @@ export function useKnowledgeControls(): KnowledgeControlsHandle {
       live = false;
       stop();
     };
-  }, []);
+  }, [active]);
 
   return {
     state,
@@ -74,44 +102,53 @@ export function useKnowledgeControls(): KnowledgeControlsHandle {
 /** The month's remote spend against the cap; null while unknown (it is a help, not a control). */
 export function useSpend(): BudgetSnapshot["money"] | null {
   const [money, setMoney] = useState<BudgetSnapshot["money"] | null>(null);
+  const { active } = useSettings();
   useEffect(() => {
+    if (!active) return undefined;
     let live = true;
+    let newer = false;
     window.app.budget
       .snapshot()
       .then((snapshot) => {
-        if (live) setMoney(snapshot.money);
+        if (live && !newer) setMoney(snapshot.money);
       })
       .catch(() => undefined);
     const stop = window.app.onAppEvent("budget.changed", (event) => {
+      newer = true;
       if (live) setMoney(event.budget.money);
     });
     return () => {
       live = false;
       stop();
     };
-  }, []);
+  }, [active]);
   return money;
 }
 
 /** The Gardener's status now and as it changes; null until known or when it cannot be read. */
 export function useGardenerStatus(): GardenerStatusSnapshot | null {
   const [status, setStatus] = useState<GardenerStatusSnapshot | null>(null);
+  const { active } = useSettings();
   useEffect(() => {
+    if (!active) return undefined;
     let live = true;
+    let newer = false;
     window.app.gardener
       .status()
       .then((snapshot) => {
-        if (live) setStatus((current) => current ?? snapshot);
+        // An event that arrived while the read was out is newer than what was read.
+        if (live && !newer) setStatus(snapshot);
       })
       .catch(() => undefined);
     const stop = window.app.onAppEvent("gardener.status", (event) => {
+      newer = true;
       if (live) setStatus(event.status);
     });
     return () => {
       live = false;
       stop();
     };
-  }, []);
+  }, [active]);
   return status;
 }
 
@@ -136,7 +173,9 @@ export function useRelationLabels(): RelationLabelsHandle {
   const [actionFailed, setActionFailed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [round, setRound] = useState(0);
+  const { active } = useSettings();
   useEffect(() => {
+    if (!active) return undefined;
     const follower = readOnEvents({
       api: () => window.app,
       sources: [{ type: "job.progress" }],
@@ -152,7 +191,7 @@ export function useRelationLabels(): RelationLabelsHandle {
       }
     });
     return () => follower.stop();
-  }, [round]);
+  }, [active, round]);
   const act = useCallback(async (work: () => Promise<unknown>) => {
     setBusy(true);
     setActionFailed(false);
