@@ -11,11 +11,30 @@ import type { AiClassRoutes, AiProviderConfig } from "../../../../shared/ipc";
 export type LeaveJob =
   "embed" | "decide" | "writeFast" | "writeQuality" | "answer" | "judge" | "decisions" | "books";
 
+export type LookupService = "openLibrary" | "googleBooks" | "crossref";
+
+/**
+ * Who receives a metadata lookup, by the setting. Books go to the provider chosen (both, one after
+ * the other, in "auto"); articles, papers and sections go to Crossref whatever the choice, as long
+ * as the lookup is on (main's MetadataEnrichmentService).
+ */
+export const lookupServices = (source: "auto" | "openLibrary" | "google"): LookupService[] =>
+  source === "openLibrary"
+    ? ["openLibrary", "crossref"]
+    : source === "google"
+      ? ["googleBooks", "crossref"]
+      : ["openLibrary", "googleBooks", "crossref"];
+
 /** Where a job runs: on this Mac, in the cloud (by the profile or provider named), on the internet, or not at all. */
 export type Where =
   | { kind: "local" }
   | { kind: "cloud"; name: string | null }
-  | { kind: "internet"; source: "auto" | "openLibrary" | "google" }
+  | {
+      kind: "internet";
+      source: "auto" | "openLibrary" | "google";
+      /** Every service the lookup can contact with this setting: articles always go to Crossref. */
+      services: readonly LookupService[];
+    }
   | { kind: "off" }
   | { kind: "noModel" };
 
@@ -85,7 +104,10 @@ export function leaveRows(input: LeavesInput): LeaveRow[] {
   const books = bookSource(input.bookLookup);
   rows.push({
     job: "books",
-    where: books === null ? { kind: "off" } : { kind: "internet", source: books },
+    where:
+      books === null
+        ? { kind: "off" }
+        : { kind: "internet", source: books, services: lookupServices(books) },
     leaves: books !== null
   });
   return rows;
@@ -93,8 +115,8 @@ export function leaveRows(input: LeavesInput): LeaveRow[] {
 
 /**
  * The names of the credentials kept on this Mac, in a stable order, never a value: each provider
- * with a stored secret by its display name, then the OpenAI Decisions key and the Google Books key
- * by the names the caller gives them.
+ * with a stored secret by its display name, then the OpenAI Decisions key, the Google Books key and the
+ * model repository token by the names the caller gives them.
  */
 export function credentialNames(input: {
   providers: readonly Pick<AiProviderConfig, "displayName" | "secretConfigured">[];
@@ -102,11 +124,14 @@ export function credentialNames(input: {
   decisionsName: string;
   googleBooksKeyStored: boolean;
   googleBooksName: string;
+  repositoryTokenStored: boolean;
+  repositoryTokenName: string;
 }): string[] {
   return [
     ...input.providers.filter((provider) => provider.secretConfigured).map((p) => p.displayName),
     ...(input.decisionsKeyStored ? [input.decisionsName] : []),
-    ...(input.googleBooksKeyStored ? [input.googleBooksName] : [])
+    ...(input.googleBooksKeyStored ? [input.googleBooksName] : []),
+    ...(input.repositoryTokenStored ? [input.repositoryTokenName] : [])
   ];
 }
 

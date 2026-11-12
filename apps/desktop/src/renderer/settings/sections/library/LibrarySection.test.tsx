@@ -331,6 +331,22 @@ describe("Library, drawn from the registry", () => {
     });
   });
 
+  it("counts the sources again only when a source changed, not for a note, a relation or a topic", async () => {
+    h = await mountSection({ section: "library", answers: base() });
+    const reads = h.count("library.rows");
+    const ref = (kind: string) => ({
+      refs: [{ kind, id: "0b2a4a7e-5f6e-4c8b-9a3b-1c2d3e4f5a61", change: "updated" }]
+    });
+    await h.emit("object.changed", ref("note"));
+    await h.emit("object.changed", ref("topic"));
+    await h.emit("object.changed", { kinds: ["relation", "note"], overflow: true });
+    expect(h.count("library.rows")).toBe(reads);
+    await h.emit("object.changed", ref("source"));
+    expect(h.count("library.rows")).toBe(reads + 1);
+    await h.emit("object.changed", { kinds: ["note", "source"], overflow: true });
+    expect(h.count("library.rows")).toBe(reads + 2);
+  });
+
   it("reads nothing while Settings is hidden and reads again when it is shown", async () => {
     h = await mountSection({ section: "library", answers: base() });
     expect(h.count("library.rows")).toBe(1);

@@ -4871,9 +4871,9 @@
       "verified": "Una restauración de prueba salió bien."
     },
     "plans": {
+      "defaultNone": "ningún plan guardado",
       "deleteAction": "Eliminar",
       "deleteAsk": "¿Eliminar «{name}»?",
-      "defaultNone": "ningún plan guardado",
       "deleteConfirm": "Eliminar plan",
       "deleteKept": "Las fuentes ya importadas se quedan como están.",
       "empty": "Aún no hay planes de importación guardados. Guarda uno al importar.",
@@ -4927,10 +4927,8 @@
       "failed": "No se pudieron borrar los Recientes. No se cambió nada."
     },
     "leaves": {
-      "books": "Datos de libros",
-      "booksAuto": "Open Library y Google Books",
+      "books": "Datos de libros y artículos",
       "booksGoogle": "Google Books",
-      "booksOpenLibrary": "Open Library",
       "changeInAi": "Cambiar en IA",
       "cloud": "En la nube",
       "cloudVia": "En la nube · {name}",
@@ -4943,6 +4941,9 @@
       "decisions": "OpenAI Decisions",
       "internet": "En internet · {name}",
       "local": "En este Mac",
+      "lookupAuto": "Open Library, Google Books y Crossref",
+      "lookupGoogle": "Google Books y Crossref",
+      "lookupOpenLibrary": "Open Library y Crossref",
       "noCredentials": "No hay credenciales guardadas en este Mac.",
       "noModel": "Ningún modelo elegido",
       "nothing": "Nada",
@@ -4985,7 +4986,6 @@
       "dialogWarn": "No se puede deshacer.",
       "failed": "No se pudo terminar el restablecimiento. Revisa los permisos de los archivos y vuelve a intentarlo.",
       "noUndo": "No se puede deshacer.",
-      "reload": "Recargar Memora",
       "running": "Restableciendo…",
       "warnings": "El restablecimiento terminó, pero algunos archivos guardados no se pudieron quitar."
     },

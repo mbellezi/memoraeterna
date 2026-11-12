@@ -4864,9 +4864,9 @@
       "verified": "A test restore passed."
     },
     "plans": {
+      "defaultNone": "no saved plans",
       "deleteAction": "Delete",
       "deleteAsk": "Delete “{name}”?",
-      "defaultNone": "no saved plans",
       "deleteConfirm": "Delete plan",
       "deleteKept": "Sources already imported keep what was made.",
       "empty": "No saved import plans yet. Save one while importing.",
@@ -4920,10 +4920,8 @@
       "failed": "Recents could not be cleared. Nothing was changed."
     },
     "leaves": {
-      "books": "Book details",
-      "booksAuto": "Open Library and Google Books",
+      "books": "Book and article details",
       "booksGoogle": "Google Books",
-      "booksOpenLibrary": "Open Library",
       "changeInAi": "Change in AI",
       "cloud": "In the cloud",
       "cloudVia": "In the cloud · {name}",
@@ -4936,6 +4934,9 @@
       "decisions": "OpenAI Decisions",
       "internet": "On the internet · {name}",
       "local": "On this Mac",
+      "lookupAuto": "Open Library, Google Books and Crossref",
+      "lookupGoogle": "Google Books and Crossref",
+      "lookupOpenLibrary": "Open Library and Crossref",
       "noCredentials": "No credentials are kept on this Mac.",
       "noModel": "No model chosen",
       "nothing": "Nothing",
@@ -4978,7 +4979,6 @@
       "dialogWarn": "This cannot be undone.",
       "failed": "The reset could not be finished. Check the file permissions and try again.",
       "noUndo": "This cannot be undone.",
-      "reload": "Reload Memora",
       "running": "Resetting…",
       "warnings": "The reset is done, but some stored files could not be removed."
     },

@@ -66,10 +66,10 @@ function whereCell(t: Translator, where: Where): ReactNode {
           values: {
             name: t(
               where.source === "auto"
-                ? "settingsPrivacy.leaves.booksAuto"
+                ? "settingsPrivacy.leaves.lookupAuto"
                 : where.source === "google"
-                  ? "settingsPrivacy.leaves.booksGoogle"
-                  : "settingsPrivacy.leaves.booksOpenLibrary"
+                  ? "settingsPrivacy.leaves.lookupGoogle"
+                  : "settingsPrivacy.leaves.lookupOpenLibrary"
             )
           }
         })
@@ -99,6 +99,7 @@ interface LeavesRead {
 export function LeavesRow({ entry }: { entry: SettingEntryV2 }) {
   const { t, describe } = useSettings();
   const bookLookup = describe("bookLookup")?.value;
+  const repositoryTokenStored = describe("local-models.repository-token-ref")?.value === true;
   const { state, retry } = useSectionRead<LeavesRead>(async () => {
     const [routes, decisions, providers, googleBooks] = await Promise.all([
       window.app.ai.classRoutes(),
@@ -122,7 +123,9 @@ export function LeavesRow({ entry }: { entry: SettingEntryV2 }) {
           decisionsKeyStored: state.value.decisions.keyStored,
           decisionsName: t("settingsPrivacy.leaves.decisions"),
           googleBooksKeyStored: state.value.googleBooksKeyStored,
-          googleBooksName: t("settingsPrivacy.leaves.booksGoogle")
+          googleBooksName: t("settingsPrivacy.leaves.booksGoogle"),
+          repositoryTokenStored,
+          repositoryTokenName: t("settingsRegistry.localModelsRepositoryTokenRef.label")
         })
       : [];
 

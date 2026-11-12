@@ -4867,9 +4867,9 @@
       "verified": "A restauração de teste foi aprovada."
     },
     "plans": {
+      "defaultNone": "nenhum plano salvo",
       "deleteAction": "Apagar",
       "deleteAsk": "Apagar “{name}”?",
-      "defaultNone": "nenhum plano salvo",
       "deleteConfirm": "Apagar plano",
       "deleteKept": "As fontes já importadas ficam como estão.",
       "empty": "Nenhum plano de importação salvo ainda. Salve um ao importar.",
@@ -4923,10 +4923,8 @@
       "failed": "Não foi possível limpar os Recentes. Nada foi alterado."
     },
     "leaves": {
-      "books": "Dados de livros",
-      "booksAuto": "Open Library e Google Books",
+      "books": "Dados de livros e artigos",
       "booksGoogle": "Google Books",
-      "booksOpenLibrary": "Open Library",
       "changeInAi": "Mudar em IA",
       "cloud": "Na nuvem",
       "cloudVia": "Na nuvem · {name}",
@@ -4939,6 +4937,9 @@
       "decisions": "OpenAI Decisions",
       "internet": "Na internet · {name}",
       "local": "Neste Mac",
+      "lookupAuto": "Open Library, Google Books e Crossref",
+      "lookupGoogle": "Google Books e Crossref",
+      "lookupOpenLibrary": "Open Library e Crossref",
       "noCredentials": "Nenhuma credencial está guardada neste Mac.",
       "noModel": "Nenhum modelo escolhido",
       "nothing": "Nada",
@@ -4981,7 +4982,6 @@
       "dialogWarn": "Não dá para desfazer.",
       "failed": "Não foi possível concluir o reset. Verifique as permissões dos arquivos e tente de novo.",
       "noUndo": "Não dá para desfazer.",
-      "reload": "Recarregar o Memora",
       "running": "Resetando…",
       "warnings": "O reset terminou, mas alguns arquivos guardados não puderam ser removidos."
     },

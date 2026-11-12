@@ -2,7 +2,6 @@ import { useState } from "react";
 import { Info } from "lucide-react";
 import type { Translator } from "@app/i18n";
 
-import type { AppEventOf } from "../../../../shared/app-events";
 import type { SettingEntryV2 } from "../../../../shared/settings-registry";
 import { Button } from "../../../components/ui/button";
 import { SolidTriangle } from "../../../components/ui/solid-glyphs";
@@ -10,7 +9,7 @@ import { InlineAction } from "../../InlineAction";
 import { RegistryRow } from "../../SettingRow";
 import { useSettings } from "../../settings-context";
 import { requestSettingsTarget } from "../../settings-target";
-import { useSectionRead } from "../general/use-section-read";
+import { objectKindChanged, useSectionRead } from "../general/use-section-read";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { questionCount } from "./privacy-model";
 
@@ -77,10 +76,7 @@ export function ClearRecentsRow({ entry }: { entry: SettingEntryV2 }) {
   );
 }
 
-const questionsChanged = (event: AppEventOf<"object.changed">): boolean =>
-  "overflow" in event
-    ? event.kinds.includes("question")
-    : event.refs.some((ref) => ref.kind === "question");
+const questionsChanged = objectKindChanged("question");
 
 /**
  * Delete questions: how many are saved (up to the first page, then "more than"), a button that asks
@@ -216,11 +212,32 @@ export function CallLogRow({ entry }: { entry: SettingEntryV2 }) {
   );
 }
 
+/** What a reset that left files behind tells the renderer it reloads into: it lives for the window. */
+export const resetLeftoversKey = "memora.settings.resetLeftovers";
+
+function readLeftovers(): boolean {
+  try {
+    return window.sessionStorage.getItem(resetLeftoversKey) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function writeLeftovers(left: boolean): void {
+  try {
+    if (left) window.sessionStorage.setItem(resetLeftoversKey, "1");
+    else window.sessionStorage.removeItem(resetLeftoversKey);
+  } catch {
+    // The warning is a courtesy; the reset itself is done.
+  }
+}
+
 /**
  * Reset everything: the one thing here that cannot be taken back. The row says so and points at the
  * backup first; the button opens a dialog that lists what goes and what stays, with the red button
- * last. When it is done the app reloads to start from the empty library; if some stored files could
- * not be removed the row says so and offers the reload itself.
+ * last. When it is done the app always reloads, so no panel keeps showing what no longer exists. If
+ * some stored files could not be removed the warning is kept for the window across the reload and
+ * this row says so when Privacy is shown again.
  */
 export function ResetRow({
   entry,
@@ -231,17 +248,14 @@ export function ResetRow({
 }) {
   const { t } = useSettings();
   const [open, setOpen] = useState(false);
-  const [leftovers, setLeftovers] = useState(false);
+  const [leftovers] = useState(readLeftovers);
   return (
     <RegistryRow
       entry={entry}
       note={
         leftovers ? (
-          <span role="status" className="flex flex-wrap items-baseline gap-x-2 text-foreground">
-            <span>{t("settingsPrivacy.reset.warnings")}</span>
-            <InlineAction size="xs" onClick={reload}>
-              {t("settingsPrivacy.reset.reload")}
-            </InlineAction>
+          <span role="status" className="text-foreground">
+            {t("settingsPrivacy.reset.warnings")}
           </span>
         ) : (
           <span className="flex items-start gap-1.5">
@@ -276,8 +290,8 @@ export function ResetRow({
             onConfirm={async () => {
               try {
                 const result = await window.app.settings.resetLibrary();
-                if (result.failedFiles > 0) setLeftovers(true);
-                else reload();
+                writeLeftovers(result.failedFiles > 0);
+                reload();
                 return null;
               } catch {
                 return t("settingsPrivacy.reset.failed");

@@ -4862,9 +4862,9 @@
       "verified": "Un ripristino di prova è riuscito."
     },
     "plans": {
+      "defaultNone": "nessun piano salvato",
       "deleteAction": "Elimina",
       "deleteAsk": "Eliminare «{name}»?",
-      "defaultNone": "nessun piano salvato",
       "deleteConfirm": "Elimina piano",
       "deleteKept": "Le fonti già importate restano come sono.",
       "empty": "Nessun piano di importazione salvato. Salvane uno durante l’importazione.",
@@ -4918,10 +4918,8 @@
       "failed": "Impossibile cancellare i Recenti. Non è cambiato nulla."
     },
     "leaves": {
-      "books": "Dati dei libri",
-      "booksAuto": "Open Library e Google Books",
+      "books": "Dati di libri e articoli",
       "booksGoogle": "Google Books",
-      "booksOpenLibrary": "Open Library",
       "changeInAi": "Cambia in IA",
       "cloud": "Nel cloud",
       "cloudVia": "Nel cloud · {name}",
@@ -4934,6 +4932,9 @@
       "decisions": "OpenAI Decisions",
       "internet": "Su internet · {name}",
       "local": "Su questo Mac",
+      "lookupAuto": "Open Library, Google Books e Crossref",
+      "lookupGoogle": "Google Books e Crossref",
+      "lookupOpenLibrary": "Open Library e Crossref",
       "noCredentials": "Nessuna credenziale è conservata su questo Mac.",
       "noModel": "Nessun modello scelto",
       "nothing": "Niente",
@@ -4976,7 +4977,6 @@
       "dialogWarn": "Non si può annullare.",
       "failed": "Non è stato possibile completare il ripristino. Controlla i permessi dei file e riprova.",
       "noUndo": "Non si può annullare.",
-      "reload": "Ricarica Memora",
       "running": "Ripristino…",
       "warnings": "Il ripristino è terminato, ma alcuni file conservati non si sono potuti rimuovere."
     },

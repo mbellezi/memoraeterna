@@ -1,11 +1,24 @@
 import { mountSection, type Answers, type Harness } from "../general/test-kit";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { settingsRegistryV2 } from "../../../../shared/settings-registry";
 import { describeFixture } from "../general/section-screen";
 import { credentialNames, leaveRows, questionCount, type LeavesInput } from "./privacy-model";
 
 let h: Harness | null = null;
+// The test DOM has no sessionStorage; a map stands in for the window's.
+const session = new Map<string, string>();
+beforeEach(() => {
+  session.clear();
+  Object.defineProperty(globalThis.window, "sessionStorage", {
+    configurable: true,
+    value: {
+      getItem: (key: string) => session.get(key) ?? null,
+      setItem: (key: string, value: string) => void session.set(key, value),
+      removeItem: (key: string) => void session.delete(key)
+    }
+  });
+});
 afterEach(async () => {
   await h?.dispose();
   h = null;
@@ -80,6 +93,17 @@ describe("what leaves this Mac, by job", () => {
     expect(rows[2]?.where).toEqual({ kind: "cloud", name: "ChatGPT subscription" });
   });
 
+  it("names every service a metadata lookup contacts: articles always go to Crossref", () => {
+    const services = (bookLookup: string) => {
+      const books = leaveRows(input({ bookLookup })).at(-1)!;
+      return books.where.kind === "internet" ? books.where.services : null;
+    };
+    expect(services("auto")).toEqual(["openLibrary", "googleBooks", "crossref"]);
+    expect(services("open-library")).toEqual(["openLibrary", "crossref"]);
+    expect(services("google-books")).toEqual(["googleBooks", "crossref"]);
+    expect(services("off")).toBeNull();
+  });
+
   it("names a job with no model, turns OpenAI Decisions on when it is, and takes the book lookup as it is set", () => {
     const noModel = {
       classes: [route("embed", false, null)],
@@ -117,9 +141,11 @@ describe("what leaves this Mac, by job", () => {
         decisionsKeyStored: true,
         decisionsName: "D",
         googleBooksKeyStored: true,
-        googleBooksName: "G"
+        googleBooksName: "G",
+        repositoryTokenStored: true,
+        repositoryTokenName: "H"
       })
-    ).toEqual(["A", "D", "G"]);
+    ).toEqual(["A", "D", "G", "H"]);
     expect(questionCount({ items: [1, 2] })).toEqual({ count: 2, more: false });
     expect(questionCount({ items: new Array(50).fill(0), next: "x" })).toEqual({
       count: 50,
@@ -155,13 +181,45 @@ describe("Privacy, drawn from the registry", () => {
       ["Juiz generativo", "Na nuvem · ChatGPT subscription", "Notas e trechos comparados"],
       ["OpenAI Decisions", "Desligado", "Nada"],
       [
-        "Dados de livros",
-        "Na internet · Open Library e Google Books",
+        "Dados de livros e artigos",
+        "Na internet · Open Library, Google Books e Crossref",
         "ISBN, DOI, título e autores"
       ]
     ]);
     expect(table.querySelector("caption")?.textContent).toBe("O que sai deste Mac, por trabalho");
     expect(h.row("privacy.summary")!.textContent).toContain("ChatGPT subscription.");
+  });
+
+  it("says Crossref receives article lookups whichever book service is chosen", async () => {
+    h = await mountSection({
+      section: "privacy",
+      answers: base({
+        "settings.describe": describeFixture({
+          bookLookup: { value: "open-library", default: "auto", changed: true }
+        })
+      })
+    });
+    const last = h.row("privacy.summary")!.querySelector("tbody tr:last-child")!.textContent!;
+    expect(last).toContain("On the internet · Open Library and Crossref");
+    expect(last).not.toContain("Google Books");
+  });
+
+  it("lists a stored model repository token among the credentials, and says none only when none is", async () => {
+    h = await mountSection({
+      section: "privacy",
+      answers: base({
+        "ai.listProviders": [],
+        "settings.describe": describeFixture({
+          "local-models.repository-token-ref": { value: true, default: null, changed: true }
+        })
+      })
+    });
+    const summary = h.row("privacy.summary")!.textContent!;
+    expect(summary).toContain("Hugging Face token");
+    expect(summary).not.toContain("No credentials are kept");
+    await h.dispose();
+    h = await mountSection({ section: "privacy", answers: base({ "ai.listProviders": [] }) });
+    expect(h.row("privacy.summary")!.textContent).toContain("No credentials are kept on this Mac.");
   });
 
   it("follows the book lookup of settings.describe, and an AI change reads the routes again", async () => {
@@ -344,7 +402,7 @@ describe("Privacy, drawn from the registry", () => {
       expect(reload).toHaveBeenCalledTimes(1);
     });
 
-    it("says some files stayed and offers the reload itself, without reloading", async () => {
+    it("reloads when some files stayed too, and says so when Privacy is shown after the reload", async () => {
       const reload = vi.fn();
       h = await mountSection({
         section: "privacy",
@@ -362,12 +420,13 @@ describe("Privacy, drawn from the registry", () => {
       await h.click(h.button("Reset everything…"));
       await h.click(h.button("Reset everything"));
       await h.settle();
-      expect(reload).not.toHaveBeenCalled();
+      expect(reload).toHaveBeenCalledTimes(1);
+      await h.dispose();
+      h = await mountSection({ section: "privacy", answers: base() });
       expect(h.row("privacy.reset")!.textContent).toContain(
         "some stored files could not be removed"
       );
-      await h.click(h.button("Reload Memora"));
-      expect(reload).toHaveBeenCalledTimes(1);
+      expect(h.button("Reload Memora")).toBeUndefined();
     });
 
     it("keeps the dialog and says what failed when the reset fails", async () => {

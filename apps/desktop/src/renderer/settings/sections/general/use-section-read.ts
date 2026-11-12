@@ -1,8 +1,21 @@
 import { useEffect, useState } from "react";
 
+import type { AppEventOf, ObjectChangedRef } from "../../../../shared/app-events";
 import { useStableCallback } from "../../../lib/stable-callback";
 import { readOnEvents, type ReadSource } from "../../../lib/status-followers";
 import { useSettings } from "../../settings-context";
+
+/**
+ * An `object.changed` that names one of these kinds (or, for a batch too big to list, says it
+ * touched them): the filter of a part that counts only that kind and has nothing to read for the
+ * note, relation and topic changes of an import running beside it.
+ */
+export const objectKindChanged =
+  (...kinds: ObjectChangedRef["kind"][]) =>
+  (event: AppEventOf<"object.changed">): boolean =>
+    "overflow" in event
+      ? event.kinds.some((kind) => kinds.includes(kind))
+      : event.refs.some((ref) => kinds.includes(ref.kind));
 
 export type SectionRead<V> =
   { status: "loading" } | { status: "error" } | { status: "ready"; value: V };

@@ -4869,9 +4869,9 @@
       "verified": "Une restauration de test a réussi."
     },
     "plans": {
+      "defaultNone": "aucun plan enregistré",
       "deleteAction": "Supprimer",
       "deleteAsk": "Supprimer « {name} » ?",
-      "defaultNone": "aucun plan enregistré",
       "deleteConfirm": "Supprimer le plan",
       "deleteKept": "Les sources déjà importées gardent ce qui a été fait.",
       "empty": "Aucun plan d’import enregistré pour l’instant. Enregistrez-en un pendant un import.",
@@ -4925,10 +4925,8 @@
       "failed": "Impossible d’effacer les Récents. Rien n’a changé."
     },
     "leaves": {
-      "books": "Données de livres",
-      "booksAuto": "Open Library et Google Books",
+      "books": "Données des livres et des articles",
       "booksGoogle": "Google Books",
-      "booksOpenLibrary": "Open Library",
       "changeInAi": "Changer dans IA",
       "cloud": "Dans le cloud",
       "cloudVia": "Dans le cloud · {name}",
@@ -4941,6 +4939,9 @@
       "decisions": "OpenAI Decisions",
       "internet": "Sur Internet · {name}",
       "local": "Sur ce Mac",
+      "lookupAuto": "Open Library, Google Books et Crossref",
+      "lookupGoogle": "Google Books et Crossref",
+      "lookupOpenLibrary": "Open Library et Crossref",
       "noCredentials": "Aucun identifiant n’est conservé sur ce Mac.",
       "noModel": "Aucun modèle choisi",
       "nothing": "Rien",
@@ -4983,7 +4984,6 @@
       "dialogWarn": "Cette action est irréversible.",
       "failed": "La réinitialisation n’a pas pu se terminer. Vérifiez les autorisations des fichiers et réessayez.",
       "noUndo": "Cette action est irréversible.",
-      "reload": "Recharger Memora",
       "running": "Réinitialisation…",
       "warnings": "La réinitialisation est terminée, mais certains fichiers conservés n’ont pas pu être supprimés."
     },

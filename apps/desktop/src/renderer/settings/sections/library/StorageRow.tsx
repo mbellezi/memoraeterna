@@ -4,20 +4,20 @@ import { Database, FolderClosed } from "lucide-react";
 import type { SettingEntryV2 } from "../../../../shared/settings-registry";
 import { RegistryRow } from "../../SettingRow";
 import { useSettings } from "../../settings-context";
-import { useSectionRead } from "../general/use-section-read";
+import { objectKindChanged, useSectionRead } from "../general/use-section-read";
 
 /**
  * Where the data is kept: the local database (with how many sources it holds) and the stored files,
  * then the plain fact that their place is fixed and what to do for a copy of your own. Main gives the
  * renderer no path to the data folder, so the place is said in words, not drawn. The count is one
- * cheap read of the Library; while it is read, or when it fails, the line simply has no count: nothing
- * here is worth an error.
+ * cheap read of the Library, read again only when a source is added or removed; while it is read,
+ * or when it fails, the line simply has no count: nothing here is worth an error.
  */
 export function StorageRow({ entry }: { entry: SettingEntryV2 }) {
   const { t } = useSettings();
   const { state } = useSectionRead(
     () => window.app.library.rows({ limit: 1 }),
-    [{ type: "object.changed" }]
+    [{ type: "object.changed", when: objectKindChanged("source") }]
   );
   const total = state.status === "ready" ? state.value.total : null;
   const item = (icon: ReactNode, name: string, note: string | null) => (
