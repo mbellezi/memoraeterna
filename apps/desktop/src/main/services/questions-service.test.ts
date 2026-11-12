@@ -828,6 +828,39 @@ describe("Ask persistence reads (F5 T129)", () => {
     await service.idle();
   });
 
+  it("keeps a Question running when its Ask ends while the read is in flight, for one Question and for a list", async () => {
+    const h = harness();
+    const { consultation, release } = held();
+    const service = make(h, consultation);
+    const { questionId } = await service.ask({ text: "Ends during the read" });
+    // The store answers with the row as it was when the read began, and only later returns it.
+    let open: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => (open = resolve));
+    const { get, list } = h.store;
+    h.store.get = async (id) => {
+      const record = await get(id);
+      await gate;
+      return record ? ({ ...record } as never) : null;
+    };
+    h.store.list = async (input) => {
+      const page = await list(input);
+      const items = page.items.map((item) => ({ ...item }));
+      await gate;
+      return { ...page, items } as never;
+    };
+    const one = service.get({ id: questionId });
+    const many = service.list({});
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    release();
+    await service.idle();
+    open();
+    expect((await one)?.status).toBe("running");
+    expect((await many).items[0]?.status).toBe("running");
+    // Read again after the Ask ended: the stored row is final and says so.
+    h.store.get = get;
+    expect((await service.get({ id: questionId }))?.status).not.toBe("running");
+  });
+
   it("lists as the store pages: items as strings, an optional next, and a refused cursor by key", async () => {
     const h = harness({ nextCursor: "next-page" });
     const first = storedQuestion();

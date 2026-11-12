@@ -14,7 +14,7 @@ import { navigatorIsEmpty } from "../../NavigatorHost";
 import type { PanelProps } from "../../PanelStack";
 import type { NavigatorTree } from "../../shell-stores";
 import { useNavigatorTree } from "../../use-shell-data";
-import { useExploreActions } from "./explore-actions";
+import { useAddSource } from "../../workspace-bridge";
 
 /**
  * Explore's root surface (design record 7.2, 8 rule 7): what the stack shows when no panel is open.
@@ -80,7 +80,7 @@ function Keys({ t }: { t: Translator }) {
 }
 
 function Nothing({ t }: { t: Translator }) {
-  const { onAddSource } = useExploreActions();
+  const onAddSource = useAddSource();
   return (
     <div className="grid max-w-(--measure) gap-5">
       <h2 className="m-0 font-reading text-2xl font-semibold text-foreground [text-wrap:balance]">

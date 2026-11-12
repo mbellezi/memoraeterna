@@ -511,6 +511,26 @@ describe.skipIf(!sidecarInstalled)("search.omni on a real PostgreSQL database", 
     expect(quick.items.some(({ address }) => address.includes("#passage="))).toBe(false);
   });
 
+  it("reports an arm family as missing only for kinds that have one", async () => {
+    // A request for topics or entities has no vector arm to miss, even in full mode without a vector.
+    const topics = await search({ query: "kefir", mode: "full", kinds: ["topic"] });
+    expect(topics.vectors).toBe(false);
+    expect(topics.fullText).toBe(true);
+    expect(topics.degraded).toEqual([]);
+    const entities = await search({ query: "kefir", mode: "full", kinds: ["entity"] });
+    expect(entities.fullText).toBe(false);
+    expect(entities.degraded).toEqual([]);
+    // Notes have both families: without a vector the vectors are missing, and a query with no
+    // word still reports the full text it could not run.
+    const notes = await search({ query: "kefir", mode: "full", kinds: ["note"] });
+    expect(notes.degraded).toEqual(["ann"]);
+    const noWord = await search({ query: "?!", mode: "full", kinds: ["note"] });
+    expect(noWord.degraded).toEqual(["ann", "fts"]);
+    // With a vector and a word, nothing is missing.
+    const whole = await search({ query: "kefir", mode: "full", embedding });
+    expect(whole.degraded).toEqual([]);
+  });
+
   it("answers a query with no word from the trigram arms alone, and quotes or backslashes safely", async () => {
     const symbols = await search({ query: "?!" });
     expect(symbols.fullText).toBe(false);

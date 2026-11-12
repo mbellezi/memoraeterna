@@ -54,10 +54,12 @@ import { useDeepLinks } from "./workspace/destinations/explore/deep-link";
 import { usePins } from "./workspace/pin-object";
 import { viewHistoryBounds } from "../shared/view-history";
 import * as exploreRoot from "./workspace/destinations/explore/ExploreRoot";
-import { ExploreActionsContext } from "./workspace/destinations/explore/explore-actions";
 import { ExploreNavigator, hoistAction } from "./workspace/destinations/explore/ExploreNavigator";
 import { ContextDockContext } from "./workspace/context-dock";
 import { PanelStack, panelRegistry } from "./workspace/PanelStack";
+import { AddSourceContext } from "./workspace/workspace-bridge";
+import { QuickLookHost } from "./workspace/QuickLook";
+import { toggleQuickLook } from "./workspace/QuickLookModel";
 import { Shell } from "./workspace/Shell";
 import { hasNavigator, hostedViewIds, legacyHostFor } from "./workspace/shell-model";
 import type { WorkspaceState } from "./workspace/state";
@@ -292,6 +294,18 @@ export function App({
   // After an interactive import the new source opens in the Library with the outcome as a toast.
   function openImportedSource(sourceItemId: string, status?: MessageKey) {
     openLibrarySource({ sourceItemId, origin: "import" });
+    if (status)
+      pushToast(t(status), status === "import.status.duplicateHandled" ? "info" : "success");
+  }
+
+  // The first source of the first run (D9, A6): Explore opens with that Source pushed, and the
+  // outcome of the import is told as a toast.
+  function openFirstSource(sourceItemId: string, status?: MessageKey) {
+    setLegacyView(null);
+    dispatch({
+      type: "firstSource",
+      address: formatObjectAddress({ kind: "source", id: sourceItemId })
+    });
     if (status)
       pushToast(t(status), status === "import.status.duplicateHandled" ? "info" : "success");
   }
@@ -546,6 +560,8 @@ export function App({
       case "toggleFocusMode":
         return toggleFocusMode();
       case "quickLook":
+        // Cmd-Y, from anywhere: the sheet peeks at the row the keyboard is on (Space does it too).
+        return toggleQuickLook();
       case "cycleRegion":
       case "contextTab":
         return;
@@ -560,8 +576,8 @@ export function App({
     }
   });
 
-  // Explore's "Add your first source" does what Cmd-N does.
-  const addFirstSource = useStableCallback(() => handleWorkspaceResult({ type: "newImport" }));
+  // Home's first run and Explore's empty root offer the same Add as Cmd-N.
+  const addSource = useStableCallback(() => handleWorkspaceResult({ type: "newImport" }));
 
   // An Obsidian conflict of the Inbox is solved in Settings, under Connections.
   const openConnectionsSettings = useStableCallback(() => {
@@ -609,7 +625,7 @@ export function App({
       lastPersistedAppSettings.current = saved;
       setAppSettings(saved);
     },
-    onOpenSource: openImportedSource
+    onFirstSource: openFirstSource
   });
 
   if (databaseStatus.state !== "ready" || !hasLoadedAppData) {
@@ -741,7 +757,7 @@ export function App({
         }
       >
         <LegacyViewsContext.Provider value={legacyViews}>
-          <ExploreActionsContext.Provider value={{ onAddSource: addFirstSource }}>
+          <AddSourceContext.Provider value={addSource}>
             {/* The context panel joins the layout with its card (T143); until then nothing docks,
                 and a note's body lists its relations in full. */}
             <ContextDockContext.Provider value={false}>
@@ -758,7 +774,7 @@ export function App({
                 pin={pin}
               />
             </ContextDockContext.Provider>
-          </ExploreActionsContext.Provider>
+          </AddSourceContext.Provider>
           {stackShown ? null : (
             <LegacyScreen
               view={activeView === "settings" ? "settings" : (legacyView ?? "settings")}
@@ -766,6 +782,7 @@ export function App({
           )}
         </LegacyViewsContext.Provider>
       </Shell>
+      <QuickLookHost t={t} />
       <ToastViewport
         toasts={toasts}
         dismissLabel={t("shell.toasts.dismiss")}

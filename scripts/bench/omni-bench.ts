@@ -7,13 +7,20 @@ import { parseArgs } from "node:util";
 
 import pg from "pg";
 
-import { createPgPool, currentNoteSql, omniSearchStatement, runMigrations } from "@app/db";
+import {
+  createPgPool,
+  currentNoteSql,
+  liveTopicSql,
+  omniSearchStatement,
+  runMigrations
+} from "@app/db";
 
 import { SearchOmniService } from "../../apps/desktop/src/main/services/search-omni-service.js";
 import { omniArms } from "../../packages/db/src/objectSearchArms.js";
 import { startProfileServer, type ProfileServer } from "../lib/profile-server.js";
 import {
   analyzePlan,
+  armsInStatement,
   expectedQuickP95Ms,
   latencyReport,
   seqScanRowLimit,
@@ -100,8 +107,7 @@ const log = (message: string) => console.error(`[bench:omni] ${message}`);
 const titleSql: Record<OmniQueryKind, string> = {
   source: "select id::text as id, title from source_items where title is not null",
   topic: `select t.id::text as id, t.title from topics t
-    where t.title is not null and t.retired_at is null
-      and coalesce((select tt.status = 'active' from topic_trees tt where tt.id = t.tree_id), false)`,
+    where t.title is not null and ${liveTopicSql("t")}`,
   note: `select n.id::text as id, n.title from atomic_notes n
     where n.title is not null and ${currentNoteSql("n")}`,
   entity: "select id::text as id, canonical_name as title from entities",
@@ -146,8 +152,12 @@ let pool: pg.Pool | null = null;
 let exitCode = 0;
 try {
   // A clone cut from a profile has no `seed-complete.json` (only a seeding run writes one); the
-  // checks below (head, titles) stand in for it.
-  server = await startProfileServer(values.profile, { repoRoot, allowIncomplete: true });
+  // checks below (head, titles) stand in for it. A SEED30K clone is a seeded cluster and keeps its
+  // marker, so a half-seeded one is refused.
+  server = await startProfileServer(values.profile, {
+    repoRoot,
+    allowIncomplete: !/seed30k/iu.test(basename(values.profile))
+  });
   const profileName = basename(server.profileDir);
   log(`server started on scratch profile ${profileName}`);
 
@@ -223,7 +233,9 @@ try {
   for (const { query } of querySet) {
     const statement = omniSearchStatement({ query, mode: "quick", limit: 20 });
     const { Plan } = await plan(statement.text, statement.values, false);
-    analyses.push({ query, analysis: analyzePlan(Plan, rowCounts, quickArms) });
+    // Only the arms this statement holds: a query with no word has no full-text arm to index.
+    const held = armsInStatement(quickArms, statement.arms);
+    analyses.push({ query, analysis: analyzePlan(Plan, rowCounts, held) });
   }
   const explain = summarizeExplain(analyses);
   const analyzed = [];
@@ -234,7 +246,7 @@ try {
       statement.values,
       true
     );
-    const analysis = analyzePlan(Plan, rowCounts, quickArms);
+    const analysis = analyzePlan(Plan, rowCounts, armsInStatement(quickArms, statement.arms));
     analyzed.push({ ...slow, executionMs, seqScans: analysis.seqScans, indexes: analysis.indexes });
   }
   for (const arm of explain.arms)

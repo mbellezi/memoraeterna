@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
-import { FileText, FolderPlus, Link2, Search } from "lucide-react";
+import { FileText, FolderPlus, Link2, PanelRight, Search } from "lucide-react";
 import type { Translator } from "@app/i18n";
 import { Button } from "./button";
 import {
@@ -99,6 +99,12 @@ function ControlsBlock() {
         <Tooltip label="Search the library" shortcut="⌘K" side="top">
           <Button variant="ghost" aria-label="Search the library">
             <Search aria-hidden="true" />
+          </Button>
+        </Tooltip>
+        {/* Held open, so a capture shows the tooltip itself: label, shortcut, side. */}
+        <Tooltip label="Open beside" shortcut="⌥↵" side="right" open portal={false}>
+          <Button variant="ghost" aria-label="Open beside">
+            <PanelRight aria-hidden="true" />
           </Button>
         </Tooltip>
       </div>
@@ -202,30 +208,28 @@ function QuickLookBlock() {
           portal={false}
           className="static! mx-auto max-w-full! translate-x-0!"
         >
-          <SheetHeader className="flex-wrap">
+          <SheetHeader className="flex-wrap gap-x-4 gap-y-1">
             <span>Peeking</span>
-            <span aria-hidden="true">·</span>
             <span>
               <Kbd>Space</Kbd> closes
             </span>
-            <span aria-hidden="true">·</span>
             <span>
               <Kbd>↵</Kbd> opens beside
             </span>
-            <span aria-hidden="true">·</span>
             <span>
               <Kbd>↑↓</Kbd> peek the next
             </span>
-            <span aria-hidden="true">·</span>
             <span>
               <Kbd>⌥↵</Kbd> open in this panel
             </span>
           </SheetHeader>
           <SheetBody>
+            <p className="m-0 text-xs text-muted-foreground">Note · 3 min</p>
             <p className="m-0 font-reading text-xl font-semibold">Lactic fermentation</p>
             <p className="m-0 font-reading text-reading text-secondary-foreground">
               Bacteria turn sugars into acid, which keeps the food for months.
             </p>
+            <p className="m-0 text-xs text-muted-foreground">2 connections · 1 source</p>
           </SheetBody>
           <SheetFooter>
             <span>
@@ -252,7 +256,7 @@ function StatesBlock({
     <Block title="States: loading, empty, error, success">
       {state.status === "loading" ? (
         <LoadingState t={t}>
-          <SkeletonRows rows={5} />
+          <SkeletonRows rows={5} className="h-40" />
         </LoadingState>
       ) : state.status === "error" ? (
         <ErrorState

@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import type { Translator } from "@app/i18n";
 
-import { SolidTriangle } from "../components/activity/solid-glyphs";
+import { SolidTriangle } from "../components/ui/solid-glyphs";
 import { ObjectKindGlyph } from "../components/glyphs";
 import { Button } from "../components/ui/button";
 import { EmptyState } from "../components/ui/empty-state";

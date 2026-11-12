@@ -300,7 +300,7 @@
   },
   "apps/desktop/src/renderer/components/SourceRelationsList.tsx": {
     "react-hooks/set-state-in-effect": {
-      "count": 2
+      "count": 1
     }
   },
   "apps/desktop/src/renderer/components/StructureReview.tsx": {

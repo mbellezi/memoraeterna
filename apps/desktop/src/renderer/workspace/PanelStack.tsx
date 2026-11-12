@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type ComponentType,
@@ -33,6 +34,7 @@ import {
 } from "./state";
 import { layoutConfig } from "./layout-config";
 import { panelStackStyles } from "./panel-stack-styles";
+import { WorkspaceBridgeContext } from "./workspace-bridge";
 
 /**
  * The panel stack host (design record §3, §5.4, §5.5, §8; D8 as amended by A1). Each destination
@@ -136,9 +138,12 @@ export function matchPanel(
   return registry.find((module) => module.match(address)) ?? null;
 }
 
-/** Every `panels/*.panel.tsx`, found at build time. */
+/**
+ * Every `panels/*.panel.tsx` and every destination's root module (`destinations/<name>/*.panel.tsx`),
+ * found at build time.
+ */
 export const panelRegistry: readonly PanelModule[] = registerPanels(
-  import.meta.glob("./panels/*.panel.tsx", { eager: true })
+  import.meta.glob(["./panels/*.panel.tsx", "./destinations/*/*.panel.tsx"], { eager: true })
 );
 
 // ---------------------------------------------------------------------------
@@ -238,6 +243,39 @@ export function addressKind(address: PanelAddress): ObjectKind | null {
   return parsed && objectKinds.includes(parsed.kind) ? parsed.kind : null;
 }
 
+/**
+ * The words of a spine: the kind word and, once the object's title is read, `kind · title`. A read
+ * that failed keeps the kind word and adds a quiet dash, so a sighted person sees a title is
+ * missing; the spine's label already says "title unavailable" in words.
+ */
+export function SpineText({
+  kindWord,
+  title,
+  unavailable
+}: {
+  kindWord: string;
+  title: string;
+  unavailable: boolean;
+}) {
+  if (title !== "")
+    return (
+      <>
+        <span className="panel-stack__spine-kind">{kindWord} · </span>
+        {title}
+      </>
+    );
+  return unavailable ? (
+    <>
+      {kindWord}
+      <span aria-hidden="true" className="panel-stack__spine-kind">
+        {" · —"}
+      </span>
+    </>
+  ) : (
+    <>{kindWord}</>
+  );
+}
+
 /** The titles the spines show, and how their read went. */
 interface Summaries {
   summaries: ReadonlyMap<string, ObjectSummary>;
@@ -324,6 +362,7 @@ export function PanelStack({
 }: PanelStackProps) {
   const place = workspace.destination;
   const current: DestinationId | null = place === "settings" ? null : place;
+  const bridge = useMemo(() => ({ workspace, dispatch }), [workspace, dispatch]);
   const [states, setStates] = useState<ReadonlyMap<string, PanelLoadState>>(new Map());
   // What each panel says of its place. Its "Escolher lugar" is kept aside (one map for the host's
   // life), so a new callback from a panel draws nothing again.
@@ -504,14 +543,11 @@ export function PanelStack({
           className="panel-stack__spine-text"
           data-pending={pending === "loading" ? "" : undefined}
         >
-          {isRoot || title === "" ? (
-            kindWord
-          ) : (
-            <>
-              <span className="panel-stack__spine-kind">{kindWord} · </span>
-              {title}
-            </>
-          )}
+          <SpineText
+            kindWord={kindWord}
+            title={isRoot ? "" : title}
+            unavailable={pending === "error"}
+          />
         </span>
         {pending === "loading" ? <Skeleton className="h-16 w-3 flex-none" /> : null}
       </button>
@@ -742,38 +778,40 @@ export function PanelStack({
   const rightOfRoot = rootDrawn ? before.slice(view.merged.length > 0 ? 1 : 0) : [];
 
   return (
-    <div
-      data-surface="panel-stack"
-      data-state={stackState}
-      aria-label={t("panelFrame.stackLabel")}
-      role="group"
-      hidden={!shown}
-      className="h-full min-h-0 min-w-0"
-    >
-      <style href="memora-panel-stack" precedence="default">
-        {panelStackStyles}
-      </style>
-      <div className="panel-stack" data-focus-mode={focusMode ? "" : undefined}>
-        {leftOfRoot}
-        {rootItems}
-        {rightOfRoot}
-        {destinationIds.map((destination) => {
-          const stack = workspace.stacks[destination];
-          const active = shown && destination === current;
-          // A hidden destination keeps the panels it draws mounted, so it comes back as it was.
-          const layoutItems =
-            destination === current ? view.items : stackView(stack, viewportWidth, chrome).items;
-          return stack.panels.map((panel, index) =>
-            panelItem(
-              { destination, stack, active },
-              panel,
-              index,
-              layoutItems.find((entry) => entry.panel === index) ?? null
-            )
-          );
-        })}
-        {after}
+    <WorkspaceBridgeContext.Provider value={bridge}>
+      <div
+        data-surface="panel-stack"
+        data-state={stackState}
+        aria-label={t("panelFrame.stackLabel")}
+        role="group"
+        hidden={!shown}
+        className="h-full min-h-0 min-w-0"
+      >
+        <style href="memora-panel-stack" precedence="default">
+          {panelStackStyles}
+        </style>
+        <div className="panel-stack" data-focus-mode={focusMode ? "" : undefined}>
+          {leftOfRoot}
+          {rootItems}
+          {rightOfRoot}
+          {destinationIds.map((destination) => {
+            const stack = workspace.stacks[destination];
+            const active = shown && destination === current;
+            // A hidden destination keeps the panels it draws mounted, so it comes back as it was.
+            const layoutItems =
+              destination === current ? view.items : stackView(stack, viewportWidth, chrome).items;
+            return stack.panels.map((panel, index) =>
+              panelItem(
+                { destination, stack, active },
+                panel,
+                index,
+                layoutItems.find((entry) => entry.panel === index) ?? null
+              )
+            );
+          })}
+          {after}
+        </div>
       </div>
-    </div>
+    </WorkspaceBridgeContext.Provider>
   );
 }

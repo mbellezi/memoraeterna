@@ -43,7 +43,8 @@ export function SourceRelationsList({
   t,
   compact = false,
   onOpenNote,
-  onReadyChange
+  onReadyChange,
+  refreshToken = 0
 }: {
   sourceItemId: string;
   targetSourceItemId?: string | null;
@@ -52,6 +53,8 @@ export function SourceRelationsList({
   compact?: boolean;
   onOpenNote?: ((sourceItemId: string, noteId: string) => void) | undefined;
   onReadyChange?: (ready: boolean) => void;
+  /** A new value reads the list again, in place: what is shown stays until the answer arrives. */
+  refreshToken?: number;
 }) {
   const [relations, setRelations] = useState<SourceRelationView[]>([]);
   const [loading, setLoading] = useState(true),
@@ -88,10 +91,15 @@ export function SourceRelationsList({
     setRelations([]);
     dispatchOpen({ type: "reset" });
   }, [sourceItemId, targetSourceItemId]);
+  const refreshed = useRef(refreshToken);
   useEffect(() => {
     let active = true;
-    setLoading(true);
-    setFailed(false);
+    const refreshing = refreshed.current !== refreshToken;
+    refreshed.current = refreshToken;
+    if (!refreshing) {
+      setLoading(true);
+      setFailed(false);
+    }
     window.app.knowledge
       .listSourceRelations({
         sourceItemId,
@@ -105,10 +113,12 @@ export function SourceRelationsList({
           setRelations(result.relations);
           setHasMore(result.hasMore);
           setTotal(result.total);
+          setFailed(false);
         }
       })
       .catch(() => {
-        if (active) setFailed(true);
+        // A failed re-read keeps the list that is shown.
+        if (active && !refreshing) setFailed(true);
       })
       .finally(() => {
         if (active) setLoading(false);
@@ -116,7 +126,7 @@ export function SourceRelationsList({
     return () => {
       active = false;
     };
-  }, [sourceItemId, targetSourceItemId, offset, retry, compact, relationId]);
+  }, [sourceItemId, targetSourceItemId, offset, retry, compact, relationId, refreshToken]);
 
   useEffect(() => {
     const dwell = opened.dwell;

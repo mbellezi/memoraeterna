@@ -75,17 +75,28 @@ describe("what an item says", () => {
     expect(itemBody(en, item("duplicate", { variant: "both" }))).toContain("same title and");
   });
 
-  it("words a suggestion by both notes and how sure the decider was, with no number when unknown", () => {
+  it("words a suggestion by both notes, its relation and how sure the decider was, with no number when unknown", () => {
+    // The confidence is in the headline, so two rows of the list never read alike.
+    expect(itemTitle(en, item("suggestion"))).toBe(
+      "Suggested connection · medium confidence (64%)"
+    );
     const body = itemBody(en, item("suggestion"));
     expect(body).toContain("“Daylight sets the body clock”");
     expect(body).toContain("“Morning light shifts sleep timing”");
-    expect(body).toContain("medium confidence (64%)");
-    const unknown = itemBody(
-      en,
-      item("suggestion", { params: { relationType: "supports", probability: null } })
+    // The relation is named once, in the sentence, between the two notes.
+    expect(body).toMatch(/“Daylight sets the body clock” supports “Morning light/u);
+    expect(itemBody(createTranslator("pt-BR"), item("suggestion"))).toContain(
+      "“Daylight sets the body clock” apoia “Morning light"
     );
-    expect(unknown).toContain("unknown confidence");
+    const unknownItem = item("suggestion", {
+      params: { relationType: "supports", probability: null }
+    });
+    const unknown = itemTitle(en, unknownItem);
+    expect(unknown).toBe("Suggested connection · unknown confidence");
     expect(unknown).not.toMatch(/\d/u);
+    expect(itemTitle(createTranslator("pt-BR"), unknownItem)).toBe(
+      "Conexão sugerida · confiança desconhecida"
+    );
     // The word and the number follow the band and the language.
     expect(confidenceText(en, 0.85)).toBe("high confidence (85%)");
     expect(confidenceText(en, 0.5)).toBe("low confidence (50%)");
@@ -100,7 +111,7 @@ describe("what an item says", () => {
     expect(confidenceText(en, 0.9999)).toBe("high confidence (99%)");
     // A probability that is not a number reads as unknown, never as zero.
     expect(
-      itemBody(en, item("suggestion", { params: { relationType: "supports", probability: "x" } }))
+      itemTitle(en, item("suggestion", { params: { relationType: "supports", probability: "x" } }))
     ).toContain("unknown confidence");
   });
 

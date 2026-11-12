@@ -4,7 +4,7 @@ import type { MessageKey, Translator } from "@app/i18n";
 
 import { cn } from "../lib/cn";
 import type { LegacyViewId } from "../../shared/app-menu";
-import { SolidTriangle } from "../components/activity/solid-glyphs";
+import { SolidTriangle } from "../components/ui/solid-glyphs";
 import { Tooltip } from "../components/ui/tooltip";
 import type { DestinationId, WorkspacePlace } from "./destinations";
 import { LegacyMenu } from "./LegacyMenu";

@@ -6,7 +6,7 @@ import { layoutCustomProperties } from "../../shell-model";
 import { defaultWorkspace, reduce, type WorkspaceAction, type WorkspaceState } from "../../state";
 import type { ScreenModule } from "../../surfaces";
 import { useViewportWidth } from "../../use-workspace";
-import { ExploreActionsContext } from "./explore-actions";
+import { AddSourceContext } from "../../workspace-bridge";
 import { ExploreNavigator } from "./ExploreNavigator";
 import { Component } from "./ExploreRoot";
 
@@ -111,7 +111,7 @@ function Explore() {
       })
   );
   return (
-    <ExploreActionsContext.Provider value={{ onAddSource: noop }}>
+    <AddSourceContext.Provider value={noop}>
       <div
         className="flex h-full bg-background"
         style={layoutCustomProperties(width) as CSSProperties}
@@ -136,7 +136,7 @@ function Explore() {
           />
         </div>
       </div>
-    </ExploreActionsContext.Provider>
+    </AddSourceContext.Provider>
   );
 }
 
