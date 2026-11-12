@@ -275,10 +275,15 @@ export function PathRibbonView({
           <span className="min-w-0 flex-1 basis-0 text-muted-foreground">
             {t("panelFrame.ribbon.mostCitedNone")}
           </span>
+        ) : place === "tentativeQuestion" ? (
+          // A Question being answered has no citations yet: its place comes with them (S4).
+          <span className="min-w-0 flex-1 basis-0 text-secondary-foreground">
+            {t("panelFrame.ribbon.tentativeQuestionNone")}
+          </span>
         ) : (
           <span>{t("panelFrame.ribbon.unsorted")}</span>
         )}
-        {onChoosePlace && place !== "mostCited" ? (
+        {onChoosePlace && place !== "mostCited" && place !== "tentativeQuestion" ? (
           <>
             <span aria-hidden="true" className="text-muted-foreground">
               ·

@@ -3834,6 +3834,7 @@
       "retry": "Intentar de nuevo",
       "tentative": "Lugar probable:",
       "tentativeQuestion": "por las citas, cuando termine la respuesta",
+      "tentativeQuestionNone": "Lugar: sale de las citas cuando la respuesta termine",
       "tentativeSource": "definido cuando terminen las notas",
       "topLevel": "En el primer nivel del árbol",
       "unsorted": "Sin lugar",
@@ -3956,6 +3957,127 @@
       "heading": "Temas",
       "more": "y {count} más",
       "mostCited": "más citada"
+    }
+  },
+  "askPanel": {
+    "answer": {
+      "label": "Respuesta",
+      "saved": "Guardada en Preguntas. Cada cita lleva al fragmento exacto.",
+      "savedPlace": "Guardada en Preguntas. Su lugar en el árbol sale de las citas cuando la respuesta termine. Cada cita lleva al fragmento exacto."
+    },
+    "band": {
+      "again": "Repetir",
+      "answering": "Escribiendo la respuesta",
+      "answeringSourcesMany": "{count} fuentes citadas hasta ahora",
+      "answeringSourcesOne": "{count} fuente citada hasta ahora",
+      "canceled": "Detenida por ti",
+      "continue": "Continuar",
+      "doneOn": "Respondida el {date}",
+      "retrieving": "Leyendo la biblioteca",
+      "retrievingHint": "buscando los fragmentos que responden",
+      "sourcesMany": "{count} fuentes",
+      "sourcesOne": "{count} fuente",
+      "stale": "Puede estar desactualizada: una fuente citada cambió después de la respuesta.",
+      "stop": "Detener",
+      "waiting": "Esperando la respuesta de la IA en la nube",
+      "waitingHint": "la respuesta continúa desde aquí"
+    },
+    "chip": {
+      "labelPlain": "Cita {number}"
+    },
+    "compact": {
+      "error": "No se pudo abrir."
+    },
+    "empty": {
+      "add": "Añadir una fuente",
+      "body": "Reformula la pregunta o añade una fuente que trate el tema.",
+      "headline": "No encontré nada en tu biblioteca sobre esto.",
+      "rephrase": "Reformular"
+    },
+    "error": {
+      "kept": "Tu biblioteca sigue como estaba.",
+      "message": "No se pudo abrir esta pregunta."
+    },
+    "failed": {
+      "again": "No se pudo repetir la pregunta.",
+      "kept": "Lo escrito antes de detenerse se guarda abajo.",
+      "keptNothing": "Tu pregunta está guardada; puedes repetirla.",
+      "message": "La ruta de IA no respondió.",
+      "stop": "No se pudo detener la respuesta."
+    },
+    "followUp": {
+      "label": "Pregunta de seguimiento",
+      "placeholder": "Seguir preguntando, en el mismo ámbito…",
+      "send": "Preguntar"
+    },
+    "kind": "Preguntar",
+    "launcher": {
+      "draftLabel": "Tu pregunta",
+      "empty": {
+        "body": "Pregunta sobre lo que guardaste. Cada pregunta queda en Biblioteca › Preguntas, con su respuesta.",
+        "headline": "Aún no has preguntado nada."
+      },
+      "error": {
+        "kept": "Tus palabras siguen en el campo.",
+        "message": "No se pudo enviar la pregunta."
+      },
+      "heading": "Pregunta a tu biblioteca",
+      "hintAsk": "pregunta",
+      "hintNewline": "nueva línea",
+      "lead": "La respuesta cita los fragmentos exactos en los que se apoya. Se guarda en Preguntas y nunca cambia tus notas.",
+      "long": "Usa 1.000 caracteres como máximo.",
+      "placeholder": "¿Qué quieres saber?",
+      "recent": {
+        "heading": "Preguntas recientes",
+        "label": "Abrir una pregunta reciente"
+      },
+      "scope": {
+        "label": "Ámbito",
+        "library": "toda la biblioteca",
+        "source": "fuente: {title}",
+        "topic": "tema: {title}",
+        "unsupported": "Solo se puede preguntar sobre toda la biblioteca, un tema o una fuente.",
+        "unsupportedKept": "No se preguntó nada."
+      },
+      "short": "Escribe al menos 3 caracteres.",
+      "starting": "Enviando la pregunta…",
+      "submit": "Preguntar"
+    },
+    "meta": {
+      "asked": "Preguntada el {date}",
+      "cloud": "IA en la nube",
+      "local": "IA local",
+      "scopeLibrary": "ámbito: toda la biblioteca",
+      "scopeSource": "ámbito: fuente {title}",
+      "scopeSources": "ámbito: {count} fuentes",
+      "scopeTopic": "ámbito: tema {title}"
+    },
+    "missing": {
+      "body": "Puede que se haya borrado. Tus notas y fuentes siguen como estaban.",
+      "headline": "Esta pregunta ya no está en la biblioteca."
+    },
+    "sources": {
+      "changed": "cambió después de la respuesta",
+      "heading": "Evidencia de esta respuesta",
+      "hint": "Los números son los de las citas.",
+      "label": "Fragmentos citados por esta respuesta",
+      "open": "Abrir el fragmento al lado",
+      "readFailed": "No se pudo leer el fragmento.",
+      "reading": "leyendo…",
+      "removed": "fragmento eliminado",
+      "seeSource": "ver la fuente"
+    },
+    "tray": {
+      "empty": "Pasa el ratón o el foco por una cita para leer aquí su fragmento.",
+      "heading": "Cita {number}",
+      "label": "Fragmento de la cita",
+      "open": "abrir el fragmento al lado"
+    },
+    "versions": {
+      "label": "Versiones de la respuesta",
+      "next": "Versión siguiente",
+      "of": "Versión {version} de {total}",
+      "previous": "Versión anterior"
     }
   }
 }

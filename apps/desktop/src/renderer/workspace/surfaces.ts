@@ -139,6 +139,13 @@ export const surfaces: readonly SurfaceEntry[] = [
   panel("topic", true),
   panel("entity", true),
   panel("question", true),
+  // The Question page while its Ask writes the answer (the stage, the paragraphs as they arrive).
+  entry(
+    "question-live",
+    "panel",
+    "workspace/panels/ask/QuestionPageView.tsx",
+    "workspace/panels/question-live.screen.tsx"
+  ),
   panel("ask"),
   panel("search"),
   panel("import"),
