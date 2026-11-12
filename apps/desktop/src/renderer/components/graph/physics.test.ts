@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createGraphPhysics } from "./physics";
+import { createGraphPhysics, largeGroupSize, layoutCommunities } from "./physics";
 import {
   defaultGraphForceSettings,
   graphLayoutCommandSchema,
@@ -160,5 +160,84 @@ describe("knowledge graph physics", () => {
         sequence: 1
       }).success
     ).toBe(false);
+  });
+});
+
+describe("topic groups in the layout (Map › Grafo, D19)", () => {
+  /** Two topics: a large one made of two dense clusters joined by one line, and a small one. */
+  function groupedFixture() {
+    const nodes = [
+      ...Array.from({ length: 30 }, (_, index) => ({
+        id: `big-${index}`,
+        x: 0,
+        y: 0,
+        group: "big"
+      })),
+      ...Array.from({ length: 6 }, (_, index) => ({
+        id: `small-${index}`,
+        x: 0,
+        y: 0,
+        group: "small"
+      }))
+    ];
+    const edges: GraphLayoutEdge[] = [];
+    for (const offset of [0, 15])
+      for (let i = 0; i < 15; i += 1)
+        for (let j = i + 1; j < 15; j += 3)
+          edges.push({ source: `big-${offset + i}`, target: `big-${offset + j}`, weight: 1 });
+    edges.push({ source: "big-0", target: "big-15", weight: 1 });
+    for (let i = 0; i < 5; i += 1)
+      edges.push({ source: `small-${i}`, target: `small-${i + 1}`, weight: 1 });
+    edges.push({ source: "big-3", target: "small-0", weight: 1 });
+    return { nodes, edges };
+  }
+
+  it("keeps each topic one community, and splits only a large topic by Louvain inside it", () => {
+    const { nodes, edges } = groupedFixture();
+    const communities = layoutCommunities(nodes, edges);
+    const of = (prefix: string) =>
+      new Set([...communities.entries()].filter(([id]) => id.startsWith(prefix)).map(([, c]) => c));
+    expect(of("small-")).toEqual(new Set(["small"]));
+    const big = of("big-");
+    expect(big.size).toBeGreaterThanOrEqual(2);
+    for (const community of big) expect(community.startsWith("big:")).toBe(true);
+    // The two dense halves of the large topic land in different communities.
+    expect(communities.get("big-1")).not.toBe(communities.get("big-20"));
+    // Deterministic.
+    expect([...layoutCommunities(nodes, edges)]).toEqual([...communities]);
+    expect(largeGroupSize).toBeGreaterThan(6);
+  });
+
+  it("holds a topic's notes together, an unconnected one included, closer than to another topic", () => {
+    const { nodes, edges } = groupedFixture();
+    const lonely = { id: "small-lonely", x: 0, y: 0, group: "small" };
+    const physics = createGraphPhysics([...nodes, lonely], edges, defaultGraphForceSettings, false);
+    settle(physics);
+    const centre = (prefix: string) => {
+      const members = physics.nodes.filter((node) => node.id.startsWith(prefix));
+      return {
+        x: members.reduce((sum, node) => sum + node.x, 0) / members.length,
+        y: members.reduce((sum, node) => sum + node.y, 0) / members.length
+      };
+    };
+    const small = centre("small-");
+    const big = centre("big-");
+    const node = physics.nodes.find((entry) => entry.id === "small-lonely")!;
+    expect(Math.hypot(node.x - small.x, node.y - small.y)).toBeLessThan(
+      Math.hypot(node.x - big.x, node.y - big.y)
+    );
+    expect(physics.positions().every(Number.isFinite)).toBe(true);
+  });
+
+  it("accepts a group in the worker's init command", () => {
+    expect(
+      graphLayoutCommandSchema.safeParse({
+        type: "init",
+        nodes: [{ id: "a", x: 0, y: 0, group: "topic" }],
+        edges: [],
+        settings: defaultGraphForceSettings,
+        restored: false
+      }).success
+    ).toBe(true);
   });
 });

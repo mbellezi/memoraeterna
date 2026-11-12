@@ -18,7 +18,12 @@ export const defaultGraphForceSettings: GraphForceSettings = {
 const layoutNodeSchema = z.object({
   id: z.string(),
   x: z.number().finite(),
-  y: z.number().finite()
+  y: z.number().finite(),
+  /**
+   * The node's topic group (Map › Grafo): the layout keeps a group together and runs Louvain
+   * inside a large one. Without groups, Louvain runs on the whole graph.
+   */
+  group: z.string().optional()
 });
 const layoutEdgeSchema = z.object({
   source: z.string(),
