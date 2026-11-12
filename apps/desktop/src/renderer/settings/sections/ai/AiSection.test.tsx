@@ -101,6 +101,14 @@ const click = (element: Element) =>
 const buttons = (within: ParentNode = dom.document) => [...within.querySelectorAll("button")];
 const byText = (text: string, within: ParentNode = dom.document) =>
   buttons(within).find((button) => button.textContent?.trim() === text);
+/** A page row's button, found by its accessible name (its label comes first), and its group's name. */
+const pageButton = (id: string, label: string) => {
+  const group = row(id)!.closest('[role="group"]') ?? row(id)!.querySelector('[role="group"]');
+  expect(group?.getAttribute("aria-label"), `${id} group name`).toBe(label);
+  const button = buttons(row(id)!).find((candidate) => candidate.textContent?.startsWith(label));
+  expect(button, `${id} button named ${label}`).toBeDefined();
+  return button!;
+};
 const byLabel = (label: string, within: ParentNode = dom.document) =>
   buttons(within).find((button) => button.getAttribute("aria-label")?.startsWith(label));
 const handlers = (element: Element) =>
@@ -653,10 +661,9 @@ describe("local models and profiles", () => {
     await mount(ai({ "localModels.download": {} }));
     const models = row("ai.models")!;
     expect(models.textContent).toContain("2 installed · 1.7 GB");
-    await click(models.querySelector("button")!);
-    const page = dom.document.getElementById(
-      models.querySelector("button")!.getAttribute("aria-controls")!
-    );
+    const opener = pageButton("ai.models", "Models on this Mac");
+    await click(opener);
+    const page = dom.document.getElementById(opener.getAttribute("aria-controls")!);
     expect(page).not.toBeNull();
     expect(page?.textContent).toContain("Qwen3-4B-Instruct");
     await click(byLabel("Download: Qwen3-4B-Instruct", page!)!);
@@ -686,7 +693,7 @@ describe("local models and profiles", () => {
 
   it("cannot remove a model a profile uses, and asks before it removes another", async () => {
     await mount(ai({ "localModels.remove": {} }));
-    await click(row("ai.models")!.querySelector("button")!);
+    await click(pageButton("ai.models", "Models on this Mac"));
     const used = byLabel("Remove: Qwen3-Embedding-0.6B")!;
     expect(used.hasAttribute("disabled")).toBe(true);
     expect(dom.document.body.textContent).toContain("In use by Qwen3-Embedding-0.6B");
@@ -702,7 +709,7 @@ describe("local models and profiles", () => {
 
   it("lists the profiles with their models and edits one in place", async () => {
     await mount();
-    await click(row("ai.profiles")!.querySelector("button")!);
+    await click(pageButton("ai.profiles", "Profiles and parameters"));
     expect(row("ai.profiles")?.textContent).toContain("gpt-6-luna");
     await click(byLabel("Edit: gpt-6-luna")!);
     expect(dom.document.body.textContent).toContain("Save profile");
