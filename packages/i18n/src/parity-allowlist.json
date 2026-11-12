@@ -126,6 +126,8 @@
     "entityPage.meta.sourcesMany",
     "entityPage.meta.sourcesOne",
     "entityPage.sources.heading",
+    "explore.note.suggestionsMany",
+    "explore.note.suggestionsOne",
     "home.counts.notesOne",
     "home.counts.notesOther",
     "home.counts.sourcesOne",

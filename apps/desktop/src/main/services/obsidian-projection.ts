@@ -1,8 +1,18 @@
 import { posix } from "node:path";
 
-import { isDirectedNoteRelationType } from "@app/domain";
+import {
+  formatObjectAddress,
+  isDirectedNoteRelationType,
+  objectKinds,
+  type ObjectKind
+} from "@app/domain";
 import { translate, type MessageKey } from "@app/i18n";
-import { parseObsidianMarkdown, type ObsidianManagedFrontmatter } from "@app/integration-contracts";
+import {
+  parseObsidianMarkdown,
+  safeWikiLabel,
+  wikiLink,
+  type ObsidianManagedFrontmatter
+} from "@app/integration-contracts";
 
 const relationsStartMarker = "<!-- memora:relations:start -->";
 const relationsEndMarker = "<!-- memora:relations:end -->";
@@ -16,6 +26,58 @@ const relationTypeMessageKeys: Readonly<Record<string, MessageKey>> = {
   mentions: "knowledge.relations.types.mentions",
   related: "knowledge.relations.types.related"
 };
+
+const isObjectKind = (value: string): value is ObjectKind =>
+  (objectKinds as readonly string[]).includes(value);
+
+/**
+ * The address a link from the vault to an object carries: the canonical `memora://<kind>/<id>`
+ * (`@app/domain` writes it, and `normalizeMemoraLink` reads it back together with the legacy
+ * `memora://open/source/<id>[?relation=<id>]` forms older vaults hold, D10). A source relation is
+ * the relation anchor of its source. An ID that is not a UUID has no address: null.
+ */
+export function projectionObjectAddress(
+  kind: ObjectKind,
+  id: string,
+  anchor?: { relation: string }
+): string | null {
+  try {
+    return formatObjectAddress({ kind, id, ...(anchor ? { anchor } : {}) });
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The "open in the app" line that ends a projected source-relation page: the canonical address of
+ * the relation's source with the relation anchor (never the legacy `memora://open/source` form).
+ * An ID that is not a UUID has no address, and the line is the label alone.
+ */
+export function projectionRelationOpenLine(
+  label: string,
+  sourceItemId: string,
+  relationId: string
+): string {
+  const address = projectionObjectAddress("source", sourceItemId, { relation: relationId });
+  return address ? `[${safeWikiLabel(label)}](${address})` : safeWikiLabel(label);
+}
+
+/**
+ * A link from a projected page: a wikilink to the page's file when it has one, else a Markdown
+ * link that opens the object in the app by its canonical address. `kind` is an object kind, or
+ * `wiki` for the vault's own index pages, which have no object (a missing one keeps the retired
+ * wiki's link, and the app answers it with a notice).
+ */
+export function projectionLink(
+  path: string | undefined,
+  title: string,
+  id: string,
+  kind = "source"
+): string {
+  if (path || !isObjectKind(kind)) return wikiLink(path, title, id, kind);
+  const address = projectionObjectAddress(kind, id);
+  return address ? `[${safeWikiLabel(title)}](${address})` : wikiLink(path, title, id, kind);
+}
 
 /**
  * Whether a relation only links the note to another (decision 31b): its type is directed and the
@@ -130,7 +192,7 @@ export function appendObsidianRelations(
         )
         .map((entry) =>
           entry.appSourceId
-            ? `- [${escapeWikilink(entry.title)}](memora://open/source/${entry.appSourceId})`
+            ? `- [${escapeWikilink(entry.title)}](${projectionObjectAddress("source", entry.appSourceId) ?? ""})`
             : `- [[${escapeWikilink(entry.target)}|${escapeWikilink(entry.title)}]]`
         );
       return `### ${heading}\n\n${links.join("\n")}`;

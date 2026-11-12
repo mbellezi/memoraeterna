@@ -1,6 +1,6 @@
 import { renderToString } from "react-dom/server";
 import { afterEach, describe, expect, expectTypeOf, it, vi } from "vitest";
-import { createTranslator, messages, supportedLanguageCodes } from "@app/i18n";
+import { createTranslator, supportedLanguageCodes } from "@app/i18n";
 import { App } from "./App";
 import { SettingsScopeMenu, type SettingsScope } from "./components/SettingsView";
 import { useDocumentLanguage } from "./lib/document-language";
@@ -262,10 +262,10 @@ describe("entry points of the removed wiki", () => {
     }
   });
 
-  it("shows the Wiki shell with the empty state, not the old workspace, for the Wiki destination", () => {
+  it("mounts Explore's own root, not the old Wiki screen, for the Explore destination", () => {
     const html = shell("en");
-    expect(html).toContain('aria-labelledby="wiki-placeholder-title"');
-    expect(html).toContain(messages.en.topics.placeholder.openLibrary);
+    expect(html).toContain('data-surface="destination-explore"');
+    expect(html).not.toContain('aria-labelledby="wiki-placeholder-title"');
     // The old workspace's page tree and creation controls are not mounted.
     expect(html).not.toContain("New page");
     expect(html).not.toContain("No AI required");

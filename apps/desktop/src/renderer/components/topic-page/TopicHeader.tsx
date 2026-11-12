@@ -67,6 +67,8 @@ export interface TopicHeaderProps {
   headingRef?: RefObject<HTMLHeadingElement | null> | undefined;
   actions: TopicPageActions;
   ops?: HeaderOps | undefined;
+  /** The panel's path ribbon above the page draws the ancestors: the page draws none of its own. */
+  ribbon?: boolean;
   onUndo: () => void;
 }
 
@@ -79,6 +81,7 @@ export function TopicHeader({
   headingRef,
   actions,
   ops,
+  ribbon = false,
   onUndo
 }: TopicHeaderProps) {
   const { topic } = page;
@@ -96,7 +99,7 @@ export function TopicHeader({
           {t("topics.page.redirected")}
         </p>
       ) : null}
-      {crumbs.length > 1 ? (
+      {crumbs.length > 1 && !ribbon ? (
         <nav aria-label={t("topics.page.pathLabel")} className="min-w-0">
           <ol className="flex flex-wrap items-center gap-x-1 gap-y-0.5 text-sm">
             {crumbs.map((crumb) => (

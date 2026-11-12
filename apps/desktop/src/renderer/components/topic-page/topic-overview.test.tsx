@@ -6,6 +6,7 @@ import { createTranslator, supportedLanguageCodes } from "@app/i18n";
 import { TopicOverviewSection, type TopicOverviewSectionProps } from "./TopicOverviewSlot";
 import { TopicOverviewController, type TopicOverviewApi } from "./topic-overview-controller";
 import {
+  citationAddress,
   citedSourceCount,
   overviewAnswered,
   overviewErrorKey,
@@ -88,7 +89,7 @@ function render(view: TopicOverviewSectionProps["view"], t = en): string {
         t={t}
         view={view}
         now={now}
-        actions={{ openTopic: noop, openNote: noop, openSource: noop }}
+        actions={{ openTopic: noop, openNote: noop, openSource: noop, openAddress: noop }}
         onWrite={noop}
         onUpdate={noop}
         onCancel={noop}
@@ -288,6 +289,26 @@ describe("the overview's words", () => {
           `${language} ${key}`
         ).not.toContain("[[missing");
     }
+  });
+});
+
+describe("where a citation opens (D15)", () => {
+  it("carries the anchors of the stored passage: the chunk as passage, the span as span", () => {
+    const [first, second, third] = ready().citations;
+    expect(citationAddress(first!)).toBe(
+      `memora://source/${id(200)}#passage=${id(501)}&span=${id(502)}`
+    );
+    // A passage with no span names only its chunk.
+    expect(citationAddress(second!)).toBe(`memora://source/${id(200)}#passage=${id(511)}`);
+    // A chunk that was replaced leaves the source alone, still openable.
+    expect(citationAddress(third!)).toBe(`memora://source/${id(210)}`);
+  });
+
+  it("falls back to the note when the source is gone, and to nothing when neither is known", () => {
+    const [first] = ready().citations;
+    const noSource = { ...first!, sourceId: undefined };
+    expect(citationAddress(noSource)).toBe(`memora://note/${id(503)}`);
+    expect(citationAddress({ ...noSource, noteId: undefined })).toBeNull();
   });
 });
 

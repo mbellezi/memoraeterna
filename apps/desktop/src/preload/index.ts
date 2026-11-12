@@ -9,7 +9,7 @@ import {
   obsidianResolveInputSchema,
   obsidianEditReceiptSchema
 } from "@app/integration-contracts";
-import { obsidianDeepLinkSchema } from "../shared/obsidian-deep-link.js";
+import { deepLinkSchema } from "../shared/obsidian-deep-link.js";
 import { appMenuCommandSchema } from "../shared/app-menu.js";
 import { createAppEventDispatcher } from "../shared/app-events.js";
 import { OnboardingFinishInputSchema, OnboardingStateSchema } from "@app/domain";
@@ -611,20 +611,20 @@ const api: DesktopApi = {
       return libraryResetResultSchema.parse(await ipcRenderer.invoke(ipcChannels.libraryReset));
     }
   },
-  obsidian: {
+  deepLink: {
     onOpen(listener) {
       const handler = (_event: unknown, payload: unknown) => {
-        const target = obsidianDeepLinkSchema.safeParse(payload);
+        const target = deepLinkSchema.safeParse(payload);
         if (target.success) listener(target.data);
       };
-      ipcRenderer.on(ipcChannels.obsidianDeepLink, handler);
-      return () => ipcRenderer.removeListener(ipcChannels.obsidianDeepLink, handler);
+      ipcRenderer.on(ipcChannels.deepLinkOpen, handler);
+      return () => ipcRenderer.removeListener(ipcChannels.deepLinkOpen, handler);
     },
     async pendingOpen() {
-      return obsidianDeepLinkSchema
-        .nullable()
-        .parse(await ipcRenderer.invoke(ipcChannels.obsidianDeepLinkPending));
-    },
+      return deepLinkSchema.nullable().parse(await ipcRenderer.invoke(ipcChannels.deepLinkPending));
+    }
+  },
+  obsidian: {
     async editorialConflicts() {
       return obsidianEditorialConflictsSchema.parse(
         await ipcRenderer.invoke(ipcChannels.obsidianEditorialConflicts)
