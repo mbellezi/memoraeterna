@@ -664,13 +664,17 @@ describe("theme preference", () => {
     expect((await service.getApp()).themeMode).toBe("dark");
   });
 
-  it("gives dark to a stored profile that has no theme choice yet", async () => {
+  it("replaces a stored profile that has no theme choice (it does not parse) with the defaults, dark", async () => {
+    // themeMode is required by the schema, so such a file is unparseable and is
+    // replaced as a whole, as before the dark default; real writers always store it.
     const path = await settingsDirectory("memora-theme-unset-");
     await writeFile(
       join(path, "app-settings.json"),
       JSON.stringify({ language: "en", updatedAt: new Date().toISOString() })
     );
     expect((await new SettingsService(path).getApp()).themeMode).toBe("dark");
+    const rewritten = JSON.parse(await readFile(join(path, "app-settings.json"), "utf8"));
+    expect(rewritten.themeMode).toBe("dark");
   });
 
   it.each(["system", "dark", "light"] as const)(
