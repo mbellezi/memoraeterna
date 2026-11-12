@@ -144,10 +144,8 @@ export function useSavedChoice<V extends Json>(
     []
   );
   // The saved value moved after the save ended (it caught up, or something else changed it): the
-  // choice is no longer needed, and the saved value is the truth again.
-  useEffect(() => {
-    if (pending !== null && state === "idle" && stored !== pending.from) setPending(null);
-  }, [pending, state, stored]);
+  // choice is no longer needed and the saved value is the truth again. State adjusted while rendering.
+  if (pending !== null && state === "idle" && stored !== pending.from) setPending(null);
 
   const save = (value: V) => {
     setPending({ value, from: stored });

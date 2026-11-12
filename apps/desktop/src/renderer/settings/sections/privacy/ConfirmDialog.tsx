@@ -39,7 +39,7 @@ export function ConfirmDialog({
   const [working, setWorking] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
 
-  const confirm = async () => {
+  const proceed = async () => {
     setWorking(true);
     setFailure(null);
     const result = await onConfirm();
@@ -68,7 +68,7 @@ export function ConfirmDialog({
           <Button variant="secondary" disabled={working} onClick={() => onOpenChange(false)}>
             {t("shell.actions.cancel")}
           </Button>
-          <Button variant="danger" disabled={working} onClick={() => void confirm()}>
+          <Button variant="danger" disabled={working} onClick={() => void proceed()}>
             {working ? workingLabel : confirmLabel}
           </Button>
         </div>

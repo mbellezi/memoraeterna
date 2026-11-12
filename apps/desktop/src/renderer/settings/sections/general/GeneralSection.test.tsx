@@ -100,7 +100,9 @@ describe("General, drawn from the registry", () => {
     await h.dom.act(
       () =>
         void (
-          Object.entries(select).find(([name]) => name.startsWith("__reactProps$"))![1] as {
+          Object.entries(select).find(([name]) =>
+            name.startsWith("__reactProps$")
+          )![1] as unknown as {
             onChange: (event: unknown) => void;
           }
         ).onChange({ target: { value: "es" } })

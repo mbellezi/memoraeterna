@@ -120,7 +120,8 @@ describe("Library, drawn from the registry", () => {
       h = await mountSection({
         section: "library",
         answers: base({
-          "settings.update": (update: unknown) => Promise.resolve(storage(update as object))
+          "settings.update": (update: unknown) =>
+            Promise.resolve(storage(update as Record<string, unknown>))
         })
       });
       await h.click(h.row("uploadCopies")!.querySelector('[role="switch"]'));
