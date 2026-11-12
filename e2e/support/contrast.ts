@@ -427,9 +427,14 @@ export function collectInPage(limit: number): ContrastSample[] {
   };
   // Inactive controls are exempt (WCAG 1.4.3 and 1.4.11): a disabled control or fieldset, anything
   // inside an element marked inactive (`aria-disabled`, Radix's `data-disabled`) or inert, and the
-  // label of a disabled control.
+  // label of a disabled control. cmdk writes `data-disabled="false"` on every enabled item, so
+  // that value does not mark anything inactive.
   const exempt = (element: Element) => {
-    if (element.closest(':disabled, [aria-disabled="true"], [data-disabled], [inert]') !== null)
+    if (
+      element.closest(
+        ':disabled, [aria-disabled="true"], [data-disabled]:not([data-disabled="false"]), [inert]'
+      ) !== null
+    )
       return true;
     const control = (element.closest("label") as HTMLLabelElement | null)?.control;
     return control instanceof HTMLElement && control.matches(":disabled");

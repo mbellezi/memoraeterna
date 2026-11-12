@@ -56,6 +56,7 @@ const fixture = `<!doctype html><html><head><meta charset="utf-8"><style>
   <div aria-disabled="true"><span style="color:#2a3544">Inactive group</span></div>
   <div data-disabled=""><svg aria-label="Inactive icon" viewBox="0 0 16 16" width="16" height="16" fill="none"
     stroke="#2a3544"><rect x="3" y="2.5" width="10" height="11"/></svg></div>
+  <div cmdk-item="" role="option" aria-disabled="false" data-disabled="false"><span style="color:#2a3544">Enabled palette row</span></div>
   <label for="off" style="color:#2a3544">Label of a disabled field</label><input id="off" disabled style="width:40px">
   <fieldset disabled style="border:0;padding:0"><span style="color:#2a3544">In a disabled fieldset</span></fieldset>
 </section>
@@ -153,6 +154,11 @@ describe.skipIf(!electronAvailable)("the contrast scan on a real page", () => {
 
     it("still judges the same colour on an enabled control", () => {
       expect(failed("Enabled low")).toBeDefined();
+    });
+
+    it('judges an enabled cmdk row: cmdk writes data-disabled="false" on it', () => {
+      expect(seen("Enabled palette row")).toBe(true);
+      expect(failed("Enabled palette row")).toBeDefined();
     });
   });
 
