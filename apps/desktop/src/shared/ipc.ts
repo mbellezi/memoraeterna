@@ -34,11 +34,12 @@ import {
 } from "@app/integration-contracts";
 export { obsidianEditorialConflictsSchema, obsidianResolveInputSchema };
 import type { OnboardingFinishInput, OnboardingState } from "@app/domain";
-import type { ObsidianDeepLink } from "./obsidian-deep-link.js";
+import type { DeepLink } from "./obsidian-deep-link.js";
 import type { AppMenuCommand } from "./app-menu.js";
 import type { AppEventHandler, AppEventType } from "./app-events.js";
 import { objectsIpcChannels, type ObjectsApi } from "./ipc-objects.js";
 import { questionsChannels, type QuestionsApi } from "./ipc-questions.js";
+import { dropChannels, type PrepareDroppedFiles } from "./ipc-drop.js";
 import { entitiesChannels, type EntitiesApi } from "./ipc-entities.js";
 import { homeChannels, type HomeApi } from "./ipc-home.js";
 import { libraryChannels, type LibraryApi } from "./ipc-library.js";
@@ -233,8 +234,8 @@ export const ipcChannels = {
   settingsGet: "app:settings:get",
   settingsUpdate: "app:settings:update",
   settingsSelectObsidianVault: "app:settings:select-obsidian-vault",
-  obsidianDeepLink: "app:obsidian:open",
-  obsidianDeepLinkPending: "app:obsidian:open:pending",
+  deepLinkOpen: "app:deep-link:open",
+  deepLinkPending: "app:deep-link:open:pending",
   obsidianEditorialConflicts: "app:obsidian:editorial:conflicts",
   obsidianEditorialComparison: "app:obsidian:editorial:comparison",
   obsidianEditorialResolve: "app:obsidian:editorial:resolve",
@@ -265,6 +266,7 @@ export const ipcChannels = {
   ingestionFindDuplicate: "app:ingestion:find-duplicate",
   ingestionCreateContainerSource: "app:ingestion:create-container-source",
   ingestionImportFile: "app:ingestion:import-file",
+  ingestionPrepareDropped: dropChannels.prepare,
   ingestionLookupSources: "app:ingestion:lookup-sources",
   ingestionStructureGet: "app:ingestion:structure:get",
   ingestionStructureSave: "app:ingestion:structure:save",
@@ -2102,9 +2104,12 @@ export interface DesktopApi {
     selectObsidianVault: () => Promise<StorageSettings | null>;
     resetLibrary: () => Promise<LibraryResetResult>;
   };
+  /** The `memora://` links that open an object (D10): pushed as they arrive, and the one that started the app. */
+  deepLink: {
+    onOpen: (listener: (target: DeepLink) => void) => () => void;
+    pendingOpen: () => Promise<DeepLink | null>;
+  };
   obsidian: {
-    onOpen: (listener: (target: ObsidianDeepLink) => void) => () => void;
-    pendingOpen: () => Promise<ObsidianDeepLink | null>;
     editorialConflicts: () => Promise<z.infer<typeof obsidianEditorialConflictsSchema>>;
     editorialComparison: (id: string) => Promise<ObsidianEditReceipt>;
     resolveEditorial: (
@@ -2159,6 +2164,8 @@ export interface DesktopApi {
     findDuplicate: (input: DuplicateCheckInput) => Promise<DuplicateCandidate | null>;
     createContainerSource: (input: ContainerSourceInput) => Promise<IngestionResult>;
     importFile: (input: FileImportInput) => Promise<IngestionResult | null>;
+    /** Files dropped on the window, by token: the renderer hands over `File`s and never sees a path (T150). */
+    prepareDroppedFiles: PrepareDroppedFiles;
     lookupSources: (query: string, sourceTypes?: SourceItemType[]) => Promise<SourceSuggestion[]>;
     getStructure: (structureId: string) => Promise<DocumentStructureView | null>;
     saveStructure: (input: StructureSaveInput) => Promise<DocumentStructureView>;

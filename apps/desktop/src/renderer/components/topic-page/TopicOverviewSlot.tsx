@@ -8,7 +8,7 @@ import { Button } from "../ui/button";
 import { TopicOverviewController } from "./topic-overview-controller";
 import {
   citationLabel,
-  citationTarget,
+  citationAddress,
   overviewHint,
   overviewMessage,
   overviewView,
@@ -327,11 +327,9 @@ function CitationMarker({
 }) {
   const [open, setOpen] = useState(false);
   const cardId = useId();
-  const target = citationTarget(citation);
+  const address = citationAddress(citation);
   const openPassage = () => {
-    if (!target) return;
-    if (target.kind === "note") actions.openNote(target.id);
-    else actions.openSource(target.id);
+    if (address) actions.openAddress(address);
   };
   const onBlur = (event: FocusEvent<HTMLSpanElement>) => {
     if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setOpen(false);
@@ -379,7 +377,7 @@ function CitationMarker({
               {t("topics.overview.citation.unavailable")}
             </span>
           )}
-          {target ? (
+          {address ? (
             <span>
               <Button type="button" variant="link" onClick={openPassage}>
                 {t("topics.overview.citation.open")}

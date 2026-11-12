@@ -2,6 +2,8 @@ import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactN
 import { ChevronsDownUp, FolderPlus, LoaderCircle, MessageCircle, RefreshCw } from "lucide-react";
 import { formatObjectAddress } from "@app/domain";
 import type { MessageKey, Translator } from "@app/i18n";
+import { ChevronLeft } from "lucide-react";
+import { WrappedLabel } from "../../workspace/destinations/explore/FittedLabel";
 import { Button } from "../ui/button";
 import { FloatingMenu, type MenuAnchor } from "./ops/FloatingMenu";
 import {
@@ -65,7 +67,7 @@ export interface TopicNavigatorViewProps {
   selectedTopicId: string | null;
   /** A note or source the owner asked for could not be opened. */
   openFailed: boolean;
-  onAsk: () => void;
+  onAsk?: (() => void) | undefined;
   onCollapseAll: () => void;
   onToggle: (row: NavRow) => void;
   onActivate: (row: NavRow) => void;
@@ -75,6 +77,10 @@ export interface TopicNavigatorViewProps {
   onConfirmReembed: () => void;
   onCancelReembed: () => void;
   ops?: NavigatorOps | undefined;
+  /** The tree shows only this branch ("Show only this branch"); the whole tree comes back with `onExit`. */
+  hoist?: { id: string; onExit: () => void } | undefined;
+  /** Compact windows (960-1179 px): a row's count shows on hover, focus and the open row only. */
+  quietCounts?: boolean | undefined;
 }
 
 function Section({
@@ -127,29 +133,40 @@ export function TopicNavigatorView({
   onAskReembed,
   onConfirmReembed,
   onCancelReembed,
-  ops
+  ops,
+  hoist,
+  quietCounts = false
 }: TopicNavigatorViewProps) {
   const { branches, expanded, places } = snapshot;
-  const topics = useMemo(() => topicRows(branches, expanded), [branches, expanded]);
-  const unsorted = useMemo(() => unsortedRows(branches, expanded), [branches, expanded]);
+  const hoistId = hoist?.id ?? null;
+  const topics = useMemo(
+    () => topicRows(branches, expanded, hoistId),
+    [branches, expanded, hoistId]
+  );
+  const unsorted = useMemo(
+    () => (hoistId === null ? unsortedRows(branches, expanded) : []),
+    [branches, expanded, hoistId]
+  );
   const pinned = useMemo(() => placeRows(places.pinned, "pinned"), [places.pinned]);
   const recents = useMemo(() => placeRows(places.recents, "recents"), [places.recents]);
   const lines = useMemo(() => statusLines(snapshot.status), [snapshot.status]);
-  const root = branches.get(rootBranchKey);
-  const state = rootState(root);
+  const root = branches.get(hoistId === null ? rootBranchKey : hoistId);
+  const state = hoistId === null ? rootState(root) : root?.data ? "tree" : rootState(root);
   const total = root?.data?.parent.items;
   const format = (value: number) => new Intl.NumberFormat(t.locale).format(value);
-  const place = { t, selectedTopicId, onToggle, onActivate, ops: ops?.rows };
+  const place = { t, selectedTopicId, onToggle, onActivate, ops: ops?.rows, quietCounts };
   return (
     <div className="flex min-h-full flex-col px-1 pb-4">
       <header className="flex h-9 items-center gap-1 pl-2">
         <h2 className="min-w-0 flex-1 truncate text-base font-semibold text-foreground">
           {t("topics.navigator.title")}
         </h2>
-        <Button variant="ghost" aria-haspopup="dialog" className="min-h-8 px-2" onClick={onAsk}>
-          <MessageCircle aria-hidden="true" />
-          {t("consultation.ask")}
-        </Button>
+        {onAsk ? (
+          <Button variant="ghost" aria-haspopup="dialog" className="min-h-8 px-2" onClick={onAsk}>
+            <MessageCircle aria-hidden="true" />
+            {t("consultation.ask")}
+          </Button>
+        ) : null}
         <Button
           variant="ghost"
           className="size-8 min-h-0 px-0"
@@ -200,9 +217,30 @@ export function TopicNavigatorView({
           <TopicNavTree {...place} rows={recents} labelledBy={ids.recents} />
         </Section>
       ) : null}
+      {hoist ? (
+        <nav
+          aria-label={t("explore.navigator.branchLabel")}
+          className="sticky top-0 z-[1] -mx-1 mt-2 flex items-center gap-1 bg-background px-1 pb-1"
+        >
+          <Button
+            variant="ghost"
+            className="min-h-7 max-w-full gap-1 px-2 text-xs"
+            onClick={hoist.onExit}
+          >
+            <ChevronLeft aria-hidden="true" className="size-3.5" />
+            {t("explore.navigator.wholeTree")}
+          </Button>
+          <span
+            title={root?.data?.parent.title ?? t("topics.navigator.unnamed")}
+            className="flex min-w-0 flex-1 text-xs font-semibold text-foreground"
+          >
+            <WrappedLabel text={root?.data?.parent.title ?? t("topics.navigator.unnamed")} />
+          </span>
+        </nav>
+      ) : null}
       <Section
         id={ids.topics}
-        title={t("topics.navigator.topics")}
+        title={hoist ? t("explore.navigator.branch") : t("topics.navigator.topics")}
         count={total === undefined ? undefined : format(total)}
         action={
           ops?.onCreateTop ? (
@@ -280,7 +318,13 @@ export interface TopicNavigatorProps {
   onOpenTopic: (id: string) => void;
   /** Opens a source in the Library; with a note ID, on that note. */
   onOpenSource: (sourceItemId: string, atomicNoteId?: string) => void;
-  onAsk: () => void;
+  /** Ask from the navigator's header; absent (Explore), the button is not drawn: Ask is Cmd-K. */
+  onAsk?: (() => void) | undefined;
+  /** The tree starts at this topic ("Show only this branch"), and `onExitHoist` shows it all again. */
+  hoistId?: string | null | undefined;
+  onExitHoist?: (() => void) | undefined;
+  /** Compact windows: a row's count shows on hover, focus and the open row only. */
+  quietCounts?: boolean | undefined;
 }
 
 /** The reads and actions of the navigator, bound to the preload API when they run. */
@@ -310,7 +354,10 @@ export function TopicNavigator({
   selectedTopicId,
   onOpenTopic,
   onOpenSource,
-  onAsk
+  onAsk,
+  hoistId = null,
+  onExitHoist,
+  quietCounts = false
 }: TopicNavigatorProps) {
   const [store] = useState(() => new TopicNavigatorStore(desktopApi()));
   const snapshot = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);
@@ -338,6 +385,11 @@ export function TopicNavigator({
   useEffect(() => {
     return followNavigatorEvents(() => window.app, store);
   }, [store]);
+
+  // A hoisted branch is read like an open one: its rows are the top level.
+  useEffect(() => {
+    if (active && hoistId) store.expand(hoistId);
+  }, [store, active, hoistId]);
 
   // An open topic (a link, a pin, a recent entry) is made visible in the tree.
   useEffect(() => {
@@ -499,6 +551,8 @@ export function TopicNavigator({
                 })
       }}
       onAsk={onAsk}
+      quietCounts={quietCounts}
+      hoist={hoistId ? { id: hoistId, onExit: () => onExitHoist?.() } : undefined}
       onCollapseAll={() => store.collapseAll()}
       onToggle={(row) => toggleRow(row, deps)}
       onActivate={(row) => activateRow(row, deps)}

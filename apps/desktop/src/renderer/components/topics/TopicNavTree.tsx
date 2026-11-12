@@ -1,18 +1,17 @@
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import type { Translator } from "@app/i18n";
 import { TopicNavRow } from "./TopicNavRow";
 import { actionRowOf, type NavRowOps } from "./ops/nav-ops";
 import { useRowWindow } from "./row-window";
 import {
-  navRowHeight,
+  navOverscan,
   navigationAction,
+  openPathKeys,
   rovingKey,
+  rowTops,
   windowIndexes,
   type NavRow
 } from "./topic-navigation";
-
-/** Rows rendered beyond the ones in view, so a fast scroll does not show blanks. */
-const overscan = 10;
 
 export interface NavTreeProps {
   t: Translator;
@@ -23,6 +22,8 @@ export interface NavTreeProps {
   windowed?: boolean;
   /** The topic that is open. */
   selectedTopicId: string | null;
+  /** Compact windows: a row's count shows on hover, focus and the open row only. */
+  quietCounts?: boolean;
   /** A row to scroll into view once it exists; the token tells repeated requests apart. */
   scrollTo?: { key: string; token: number } | null;
   /** Opening or closing a branch (the chevron and the arrow keys). */
@@ -49,6 +50,7 @@ export function TopicNavTree({
   labelledBy,
   windowed = false,
   selectedTopicId,
+  quietCounts = false,
   scrollTo = null,
   onToggle,
   onActivate,
@@ -63,11 +65,26 @@ export function TopicNavTree({
     return (value: number) => numbers.format(value);
   }, [t.locale]);
 
+  // The open row and its ancestors show their whole name on up to two lines, so they can be taller
+  // than the others; the list places every row by what the rows above it drew.
+  const wrapKeys = useMemo(() => openPathKeys(rows, selectedTopicId), [rows, selectedTopicId]);
+  const [drawnLines, setDrawnLines] = useState<ReadonlyMap<string, number>>(new Map());
+  const onLines = useCallback((key: string, lines: number) => {
+    setDrawnLines((current) => {
+      if ((current.get(key) ?? 1) === lines) return current;
+      return new Map(current).set(key, lines);
+    });
+  }, []);
+  const placed = useMemo(
+    () => rowTops(rows, (row) => (wrapKeys.has(row.key) ? (drawnLines.get(row.key) ?? 1) : 1)),
+    [rows, wrapKeys, drawnLines]
+  );
+
   const indexOfStop = stop === null ? -1 : rows.findIndex((row) => row.key === stop);
   const indexes = useMemo(
     () =>
       windowed
-        ? windowIndexes(rows.length, viewport, overscan, [indexOfStop])
+        ? windowIndexes(rows.length, viewport, navOverscan, [indexOfStop])
         : rows.map((_, index) => index),
     [windowed, rows, viewport, indexOfStop]
   );
@@ -89,8 +106,8 @@ export function TopicNavTree({
     const index = rows.findIndex((row) => row.key === scrollTo.key);
     if (index < 0) return;
     scrolled.current = scrollTo.token;
-    rowWindow.scrollToRow(index);
-  }, [windowed, scrollTo, rows, rowWindow]);
+    rowWindow.scrollToRow(index, placed.tops[index]);
+  }, [windowed, scrollTo, rows, rowWindow, placed]);
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>, row: NavRow) => {
     if (event.metaKey || event.ctrlKey || event.altKey) return;
@@ -126,7 +143,7 @@ export function TopicNavTree({
       role="tree"
       aria-labelledby={labelledBy}
       className={windowed ? "relative min-w-0" : "min-w-0"}
-      style={windowed ? { height: rows.length * navRowHeight } : undefined}
+      style={windowed ? { height: placed.height } : undefined}
     >
       {indexes.map((index) => {
         const row = rows[index]!;
@@ -138,9 +155,12 @@ export function TopicNavTree({
             format={format}
             tabStop={row.key === stop}
             selected={isSelected(row, selectedTopicId)}
+            wrap={wrapKeys.has(row.key)}
+            onLines={onLines}
+            quietCounts={quietCounts}
             style={
               windowed
-                ? { position: "absolute", insetInline: 0, top: index * navRowHeight }
+                ? { position: "absolute", insetInline: 0, top: placed.tops[index] ?? 0 }
                 : undefined
             }
             ops={ops}

@@ -175,7 +175,7 @@ describe("wiki workspace shell", () => {
     expect(onNavigate).toHaveBeenCalledWith({ type: "topic", topicId: otherTopicId });
     navigator.onOpenSource("source-id", "note-id");
     expect(onOpenSource).toHaveBeenCalledWith("source-id", "note-id");
-    navigator.onAsk();
+    navigator.onAsk?.();
     expect(onAsk).toHaveBeenCalledTimes(1);
 
     view("en", { topicId: null });

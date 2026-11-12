@@ -5309,5 +5309,129 @@
       "of": "Versión {version} de {total}",
       "previous": "Versión anterior"
     }
+  },
+  "explore": {
+    "navigator": {
+      "branch": "Rama",
+      "branchLabel": "Mostrando solo una rama del árbol",
+      "wholeTree": "Árbol completo"
+    },
+    "note": {
+      "alsoInInbox": "también en la Bandeja de entrada",
+      "error": "No se pudo abrir esta nota.",
+      "errorKept": "El resto de Explorar sigue abierto y tus notas no han cambiado.",
+      "gardenerSuggestion": "sugerencia del Jardinero · decide cuando quieras",
+      "goneBody": "Puede que se haya unido a otra nota o que se haya eliminado. Nada más ha cambiado.",
+      "goneHeadline": "Esta nota ya no está en tu biblioteca.",
+      "moreRelations": "{count} más",
+      "suggestionsMany": "{count} sugerencias",
+      "suggestionsOne": "{count} sugerencia",
+      "summaryHint": "Cada conexión, con su evidencia, está en el panel de contexto."
+    },
+    "root": {
+      "addFirst": "Añadir la primera fuente",
+      "areasLead": "Elige un área para abrirla al lado. Lo que abras se queda aquí, un panel junto al otro.",
+      "areasTitle": "Tus áreas",
+      "emptyBody": "Todo lo que abras aparece aquí, un panel junto al otro. Los más antiguos se pliegan en tiras a la izquierda, con el tipo y el título a la vista; un clic los reabre. Así el camino hasta aquí nunca se pierde.",
+      "emptyHeadline": "Nada abierto todavía",
+      "error": "No se pudieron cargar tus áreas.",
+      "errorKept": "Tus fuentes y notas siguen como estaban.",
+      "keyClose": "cierra el panel en foco",
+      "keyOpen": "abre al lado",
+      "keyPeek": "echa un vistazo sin abrir",
+      "keySpace": "Espacio",
+      "keysLabel": "Teclas",
+      "unsorted": "Esperando un lugar: {count}"
+    },
+    "topic": {
+      "error": "No se pudo abrir este tema.",
+      "errorKept": "El resto de Explorar sigue abierto y tus notas no han cambiado.",
+      "goneBody": "Puede que se haya unido a otro tema o que se haya eliminado. Nada más ha cambiado.",
+      "goneHeadline": "Este tema ya no está en el árbol.",
+      "noDirectNotes": "Aún sin notas propias. Las notas están en los subtemas."
+    }
+  },
+  "addFlow": {
+    "busy": {
+      "button": "Leyendo…",
+      "reading": "Leyendo {name}…",
+      "readingFile": "Leyendo el archivo…",
+      "waiting": "{count} en espera"
+    },
+    "drop": {
+      "after": "Al soltar, vas a la primera fuente en Explorar y ves llegar las notas.",
+      "label": "Suelta archivos para añadirlos",
+      "modeError": "No se pudo ver el modo de importación, así que los archivos entran como Buscable y organizado.",
+      "modeLabel": "Modo",
+      "modeNote": "{hint}. Cámbialo en el menú de Añadir.",
+      "noFiles": "Suelta un archivo para añadirlo",
+      "titleMany": "Suelta para añadir {count} archivos",
+      "titleOne": "Suelta para añadir 1 archivo"
+    },
+    "failure": {
+      "close": "Cerrar",
+      "empty": "{name} está vacío.",
+      "generic": "No se pudo añadir el archivo.",
+      "kept": "No se guardó nada y todo lo demás sigue como estaba.",
+      "keptSome": "Los archivos que se pudieron leer se añadieron y todo lo demás sigue como estaba.",
+      "more": "Tampoco se añadieron: {count}.",
+      "noText": "{name} no tiene texto que Memora pueda leer.",
+      "noTextNoName": "Ese archivo no tiene texto que Memora pueda leer.",
+      "notAFile": "{name} no es un archivo.",
+      "symlink": "{name} es un acceso directo. Suelta el archivo original.",
+      "tooLarge": "{name} es demasiado grande para importar.",
+      "tooLargeNoName": "Ese archivo es demasiado grande para importar.",
+      "unreadable": "No se pudo leer {name}.",
+      "unsupported": "Memora aún no lee archivos como {name}.",
+      "unsupportedNoName": "Memora aún no lee ese tipo de archivo."
+    },
+    "importPanel": {
+      "errors": {
+        "kept": "No se cambió nada.",
+        "open": "No se pudo abrir esta fuente para editarla."
+      },
+      "gone": {
+        "action": "Abrir la Biblioteca",
+        "body": "Puede que se haya quitado de la Biblioteca. Nada más cambió.",
+        "title": "Esta fuente ya no existe."
+      },
+      "leave": {
+        "description": "Has cambiado esta importación y no la has guardado. Sigue para terminarla o descarta lo que has escrito y continúa.",
+        "discard": "Descartar y salir",
+        "keep": "Seguir aquí",
+        "title": "¿Salir sin guardar?"
+      },
+      "title": "Importación avanzada"
+    },
+    "menu": {
+      "file": "Elegir archivo…",
+      "fileHint": "PDF, EPUB, Word, Markdown y texto",
+      "foot": "Vale para las próximas importaciones; cada fuente puede cambiar después. Soltar archivos en cualquier lugar de la ventana también funciona.",
+      "label": "Formas de añadir",
+      "link": "Pegar enlace",
+      "linkHint": "una página web o un vídeo",
+      "modeHeading": "Al importar",
+      "more": "Más opciones de importación…",
+      "note": "Escribir una nota",
+      "noteHint": "va a Sin lugar hasta que tenga un tema"
+    },
+    "modes": {
+      "error": "No se pudo ver si hay un modelo listo para escribir.",
+      "errorKept": "Elegir un archivo sigue funcionando e importa como Buscable y organizado.",
+      "searchable": {
+        "hint": "fragmentos para buscar y un lugar en el árbol, sin notas",
+        "name": "Buscable y organizado"
+      },
+      "secondBrain": {
+        "hint": "notas cortas, un lugar en el árbol y conexiones",
+        "hintNeedsModel": "notas cortas, un lugar en el árbol y conexiones · necesita un modelo listo para escribir",
+        "hintRecommended": "notas cortas, un lugar en el árbol y conexiones · recomendado: hay un modelo listo para escribir",
+        "name": "Segundo cerebro"
+      },
+      "storeOnly": {
+        "hint": "el archivo queda en la Biblioteca, sin IA",
+        "name": "Solo guardar"
+      }
+    }
   }
 }

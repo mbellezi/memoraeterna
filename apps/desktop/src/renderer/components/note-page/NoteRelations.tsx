@@ -8,10 +8,16 @@ import {
   type RefObject
 } from "react";
 import { Check, ChevronDown, ChevronRight, RefreshCw, Sparkles } from "lucide-react";
-import type { NotePageEvidence, NotePageRelation, NotePageRelations } from "@app/domain";
+import {
+  routesToInbox,
+  type NotePageEvidence,
+  type NotePageRelation,
+  type NotePageRelations
+} from "@app/domain";
 import type { MessageKey, Translator } from "@app/i18n";
 
 import { cn } from "../../lib/cn";
+import { relationTypeView } from "../../lib/relation-stance";
 import { EgoGraph } from "../graph/EgoGraph";
 import { ObjectKindGlyph } from "../glyphs";
 import { RelationStanceLabel } from "../RelationStanceLabel";
@@ -248,6 +254,15 @@ function RelationRow({
                 {t(stateKey)}
               </span>
             ) : null}
+            {relation.state === "suggested" ? (
+              <span>
+                {t(
+                  routesToInbox({ stance: relation.type, probability: relation.probability })
+                    ? "explore.note.alsoInInbox"
+                    : "explore.note.gardenerSuggestion"
+                )}
+              </span>
+            ) : null}
             {bandKey ? (
               <span>
                 {interpolateNodes(t("notePage.card.confidence"), {
@@ -338,6 +353,53 @@ function RelationList({
   );
 }
 
+/**
+ * The stance summary of the note's relations (design record 5.6, 6.3): one chip per stance with its
+ * count, and how many are suggestions, while the context panel beside the page lists each one. It
+ * counts the rows read so far and says when there are more.
+ */
+function RelationSummary({ t, relations }: { t: Translator; relations: NotePageRelations }) {
+  const counts = new Map<string, { type: string; order: number; count: number }>();
+  let suggestions = 0;
+  for (const relation of relations.items) {
+    const view = relationTypeView(relation.type);
+    const entry = counts.get(view.stance) ?? { type: relation.type, order: view.order, count: 0 };
+    entry.count += 1;
+    counts.set(view.stance, entry);
+    if (relation.state === "suggested") suggestions += 1;
+  }
+  const more = relations.total - relations.items.length;
+  const chip =
+    "inline-flex h-7 items-center gap-2 rounded-full border border-border bg-surface px-2.5 text-xs";
+  return (
+    <div className="flex flex-col gap-2">
+      <ul className="m-0 flex list-none flex-wrap gap-2 p-0">
+        {[...counts.values()]
+          .sort((a, b) => a.order - b.order)
+          .map((entry) => (
+            <li key={entry.type} className={chip}>
+              <RelationStanceLabel type={entry.type} t={t} />
+              <span className="font-semibold tabular-nums text-foreground">{entry.count}</span>
+            </li>
+          ))}
+        {suggestions > 0 ? (
+          <li className={cn(chip, "border-dashed border-border-strong text-secondary-foreground")}>
+            {t(suggestions === 1 ? "explore.note.suggestionsOne" : "explore.note.suggestionsMany", {
+              values: { count: suggestions }
+            })}
+          </li>
+        ) : null}
+        {more > 0 ? (
+          <li className={cn(chip, "text-secondary-foreground")}>
+            {t("explore.note.moreRelations", { values: { count: more } })}
+          </li>
+        ) : null}
+      </ul>
+      <p className="m-0 text-xs text-muted-foreground">{t("explore.note.summaryHint")}</p>
+    </div>
+  );
+}
+
 /** "Show N more" under a list that has more rows than it holds, and a retry when they failed. */
 function ShowMore({
   t,
@@ -394,6 +456,7 @@ export function NoteRelations({
   withdrawnOpen,
   focusRequest,
   graph,
+  view: listView = "full",
   onCardEvent,
   onOpenNote,
   onRetryExplanation,
@@ -417,6 +480,8 @@ export function NoteRelations({
   focusRequest: RelationFocus | null;
   /** The relation graph's inputs; absent, the section is the list alone. */
   graph?: RelationsGraph | undefined;
+  /** The full list, or the stance summary while the context panel lists the relations. */
+  view?: "full" | "summary";
   onCardEvent: (event: CardEvent) => void;
   onOpenNote: (noteId: string) => void;
   onRetryExplanation: (relationId: string) => void;
@@ -442,7 +507,8 @@ export function NoteRelations({
   const earlierHeading = useRef<HTMLHeadingElement>(null);
   const empty = relations.total === 0 && withdrawn.total === 0 && earlierVersions.total === 0;
   // The Graph tab draws the shown relations: with none there is nothing to choose between.
-  const tabs = graph !== undefined && relations.total > 0;
+  const summary = listView === "summary" && relations.total > 0;
+  const tabs = graph !== undefined && relations.total > 0 && !summary;
   const drawing = drawsGraph({ tabs, state: { view, graphUnavailable } });
   const list: ListProps = {
     t,
@@ -495,7 +561,7 @@ export function NoteRelations({
         {relations.total > 0 ? (
           <span className="text-sm text-muted-foreground tabular-nums">{relations.total}</span>
         ) : null}
-        {relations.items.length > 0 && !drawing ? (
+        {relations.items.length > 0 && !drawing && !summary ? (
           <span className="text-xs text-muted-foreground">{t("notePage.relations.hint")}</span>
         ) : null}
       </div>
@@ -523,7 +589,9 @@ export function NoteRelations({
           : {})}
         className="flex flex-col gap-2"
       >
-        {drawing && graph ? (
+        {summary ? (
+          <RelationSummary t={t} relations={relations} />
+        ) : drawing && graph ? (
           <EgoGraph
             key={thisId}
             t={t}

@@ -132,6 +132,7 @@
   ],
   "fr": [
     "activity.sections.budget",
+    "addFlow.drop.modeLabel",
     "app.menu.services",
     "app.menu.zoom",
     "app.title",
@@ -161,6 +162,8 @@
     "entityPage.meta.sourcesMany",
     "entityPage.meta.sourcesOne",
     "entityPage.sources.heading",
+    "explore.note.suggestionsMany",
+    "explore.note.suggestionsOne",
     "home.counts.notesOne",
     "home.counts.notesOther",
     "home.counts.sourcesOne",

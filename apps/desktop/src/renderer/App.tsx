@@ -13,14 +13,8 @@ import {
   type AppViewId,
   type LegacyViewId
 } from "../shared/app-menu";
-import type { WikiNoticeKind } from "./components/topics/WikiPlaceholder";
-import {
-  currentWikiTopic,
-  showInWiki,
-  startWikiTopicHistory,
-  wikiNavigationStep
-} from "./components/topics/wiki-topic-history";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { formatObjectAddress } from "@app/domain";
 import { Database, RefreshCw } from "lucide-react";
 import {
   createTranslator,
@@ -28,7 +22,6 @@ import {
   type LanguageCode,
   type MessageKey
 } from "@app/i18n";
-import { formatObjectAddress } from "@app/domain";
 import type {
   AppSettings,
   AppSettingsUpdate,
@@ -45,7 +38,6 @@ import {
 } from "../shared/ipc";
 import { cn } from "./lib/cn";
 import { waitForDatabaseReady } from "./lib/database-boot";
-import { createObsidianLinkOpener, type ObsidianLinkActions } from "./lib/obsidian-link";
 import { libraryTargetForNavigation, type PassageAnchor } from "./lib/object-navigation";
 import { useStableCallback } from "./lib/stable-callback";
 import { useDocumentLanguage } from "./lib/document-language";
@@ -58,7 +50,17 @@ import type { ActivityNavigation } from "./components/activity/activity-model";
 import { useFirstRun } from "./components/onboarding/use-first-run";
 import { ToastViewport, useToasts } from "./components/ui/toast";
 import type { KnowledgeGraphViewState } from "./components/KnowledgeGraphDashboard";
+import { useDeepLinks } from "./workspace/destinations/explore/deep-link";
+import { usePins } from "./workspace/pin-object";
+import { viewHistoryBounds } from "../shared/view-history";
+import * as exploreRoot from "./workspace/destinations/explore/ExploreRoot";
+import { ExploreActionsContext } from "./workspace/destinations/explore/explore-actions";
+import { ExploreNavigator, hoistAction } from "./workspace/destinations/explore/ExploreNavigator";
+import { ContextDockContext } from "./workspace/context-dock";
+import { contextMode } from "./workspace/layout-config";
 import { PanelStack, panelRegistry } from "./workspace/PanelStack";
+import { useAddFlow } from "./workspace/add/use-add-flow";
+import { showImportPanelActions, showSourceActions } from "./workspace/add/add-navigation";
 import { AddSourceContext } from "./workspace/workspace-bridge";
 import { QuickLookHost } from "./workspace/QuickLook";
 import { PaletteHost } from "./workspace/palette/PaletteHost";
@@ -106,8 +108,11 @@ const placeOfView: Record<
   knowledgeGraph: "map"
 };
 
-/** The stack's panels: the files of `workspace/panels/`, then the old views' roots (D6). */
-const stackRegistry = [...panelRegistry, legacyPanel];
+/**
+ * The stack's panels: the files of `workspace/panels/`, Explore's root (T141), then the old views'
+ * roots (D6): a destination whose own root exists takes it before the old view it replaces.
+ */
+const stackRegistry = [...panelRegistry, exploreRoot, legacyPanel];
 
 const databaseStartupTimeoutMs = 60_000;
 
@@ -155,19 +160,8 @@ export function App({
   initialSystemInfo = null,
   firstRun = true
 }: AppProps) {
-  // Changes each time a link asks for a page of the removed wiki or for a topic that is gone.
-  const [wikiNotice, setWikiNotice] = useState<{ token: number; kind: WikiNoticeKind } | null>(
-    null
-  );
-  // What the Wiki shows (a topic, or where to start), as the history its Back and Forward follow.
-  const [wikiHistory, setWikiHistory] = useState(startWikiTopicHistory);
   // Where Settings and the old screens were scrolled, kept while the stack covers them.
   const [screenScroll] = useState(createScreenScroll);
-  // What Back and Forward step from: they arrive outside render, after the last commit.
-  const wikiHistoryRef = useRef(wikiHistory);
-  useEffect(() => {
-    wikiHistoryRef.current = wikiHistory;
-  }, [wikiHistory]);
   // F5 T135, T136: the shell's place and the panel stacks (D8); the old views a place hosts follow
   // it (D6). The workspace hook saves the state and routes Cmd-W and Cmd-[ / Cmd-] to the stack.
   const { workspace, dispatch, focusMode, toggleFocusMode } = useWorkspace();
@@ -274,46 +268,40 @@ export function App({
       setActiveView("library");
     }
   );
-  // A topic opens in the Wiki, which keeps showing it while the Library or another view is in front.
+  // A topic opens beside the focused panel of Explore (D8): from the Library, from a link or from
+  // the old views' own links. It never replaces a screen.
   const openTopic = useStableCallback((topicId: string) => {
-    setWikiHistory((current) => showInWiki(current, topicId));
-    setActiveView("wiki");
-  });
-  // A link from Obsidian: the Wiki shows its notice where it starts, so an open topic gives way to it.
-  const showWikiNotice = useStableCallback((kind: WikiNoticeKind) => {
-    setWikiNotice((current) => ({ token: (current?.token ?? 0) + 1, kind }));
-    setWikiHistory((current) => showInWiki(current, null));
-    setActiveView("wiki");
-  });
-  // What each kind of link does here; a topic that was merged opens its successor and says so.
-  const obsidianLinkActions = useStableCallback((): ObsidianLinkActions => ({
-    removedWikiPage: () => showWikiNotice("removedPage"),
-    source: (target) => {
-      libraryTargetToken.current += 1;
-      setLibraryTarget({ ...target, token: libraryTargetToken.current });
-      setActiveView("library");
-    },
-    topic: (topicId, redirected) => {
-      openTopic(topicId);
-      if (redirected) pushToast(t("topics.page.redirected"), "info");
-    },
-    topicNotFound: () => showWikiNotice("topicNotFound")
-  }));
-  const [openObsidianLink] = useState(() =>
-    createObsidianLinkOpener({ topics: () => window.app.topics, actions: obsidianLinkActions })
-  );
-  useEffect(() => {
-    const off = window.app.obsidian.onOpen((link) => void openObsidianLink(link));
-    void window.app.obsidian.pendingOpen().then((target) => {
-      if (target) void openObsidianLink(target);
+    setLegacyView(null);
+    dispatch({ type: "go", destination: "explore" });
+    dispatch({
+      type: "open",
+      address: formatObjectAddress({ kind: "topic", id: topicId }),
+      from: workspace.stacks.explore.focus,
+      mode: "push"
     });
-    return off;
-  }, [openObsidianLink]);
-  // Closing the Topic page (its button or Cmd-W) shows where to start; Back opens the topic again.
-  const closeWikiTopic = useStableCallback(() =>
-    setWikiHistory((current) => showInWiki(current, null))
+  });
+  // A link from Obsidian or the system opens its object as a panel (D10); a page of the retired
+  // wiki says so in a notice.
+  useDeepLinks(
+    workspace,
+    dispatch,
+    () => pushToast(t("topics.placeholder.notice"), "info"),
+    // The object opens in the stack, which an old screen would cover: the link shows the stack.
+    () => setLegacyView(null)
   );
-  // Where a click on the Topic page leads: another topic, or a source or note in the Library.
+  // The pin of the top panel's object (the frame's pin and Cmd-D), wherever the person is.
+  const pin = usePins(
+    workspace,
+    legacyView === null && workspace.destination !== "settings",
+    (failure) =>
+      pushToast(
+        failure === "limit"
+          ? t("viewHistory.pinLimit", { values: { count: viewHistoryBounds.pinMax } })
+          : t("viewHistory.changeFailed"),
+        "error"
+      )
+  );
+  // The old Wiki's own links: a topic opens beside, a source or note in the Library.
   const openWikiObject = useStableCallback((navigation: OpenableNavigation) => {
     if (navigation.type === "topic") openTopic(navigation.topicId);
     else {
@@ -345,17 +333,7 @@ export function App({
   useEffect(
     () =>
       subscribeWindowNavigation((direction) => {
-        // The Wiki on screen steps through the topics it showed; the Library through its own history.
-        const wikiStep = wikiNavigationStep(
-          activeViewRef.current === "wiki",
-          wikiHistoryRef.current,
-          direction
-        );
-        if (wikiStep) {
-          wikiHistoryRef.current = wikiStep;
-          setWikiHistory(wikiStep);
-          return true;
-        }
+        // The Library steps through its own history; the stacks step through theirs (use-workspace).
         if (activeViewRef.current !== "library") return false;
         if (direction === "back") window.history.back();
         else window.history.forward();
@@ -588,16 +566,28 @@ export function App({
   });
   const openInbox = useStableCallback(() => goToView("inbox"));
 
-  // What a shortcut of the workspace does. Until the Add picker (T150) and the panel stack (T136)
-  // land, Cmd-N opens the old Add content view, and the commands of a stack that is not there yet
-  // do nothing.
+  // Adicionar (D32): the picker, the window's drop and the menu share one flow. The new Source is pushed
+  // onto Explore's stack at once, with no toast; the import panel opens beside the focused panel.
+  const addFlow = useAddFlow({
+    openSource: (sourceItemId) => {
+      setLegacyView(null);
+      for (const action of showSourceActions(sourceItemId)) dispatch(action);
+    },
+    openImportPanel: () => {
+      setLegacyView(null);
+      for (const action of showImportPanelActions(workspace.stacks.explore.focus)) dispatch(action);
+    }
+  });
+
+  // What a shortcut of the workspace does; the commands of a stack that is not there yet do nothing.
   const handleWorkspaceResult = useStableCallback((result: KeymapResult) => {
     switch (result.type) {
       case "openPalette":
         // Cmd-K (T145): a second press closes it.
         return palette.toggle();
       case "newImport":
-        return goToView("import");
+        // Cmd-N and Adicionar: the file picker, then the new Source on Explore's stack (D32, A7).
+        return void addFlow.pickFile();
       case "toggleFocusMode":
         return toggleFocusMode();
       case "quickLook":
@@ -624,7 +614,7 @@ export function App({
     }
   });
 
-  // Home's first run offers the same Add as Cmd-N.
+  // Home's first run and Explore's "Add your first source" offer the same Add as Cmd-N.
   const addSource = useStableCallback(() => handleWorkspaceResult({ type: "newImport" }));
 
   // An Obsidian conflict of the Inbox is solved in Settings, under Connections.
@@ -640,8 +630,11 @@ export function App({
       toggleNavigation: () => handleWorkspaceResult({ type: "toggleNavigator" }),
       toggleTheme: toggleThemeMode,
       workspace: handleWorkspaceResult,
-      // Hoisting needs the topic in the top panel (T141).
-      hoistTopic: () => undefined
+      // "Show only this branch" hoists the tree to the topic in Explore's top panel.
+      hoistTopic: () => {
+        const action = hoistAction(workspace);
+        if (action) dispatch(action);
+      }
     })
   );
 
@@ -737,9 +730,8 @@ export function App({
   const stackShown = legacyView === null && workspace.destination !== "settings";
   const navigatorOn =
     workspace.destination !== "settings" && workspace.navigator[workspace.destination];
-  // The old Wiki hosts its own navigator (the host appears with Explore's root, T141); focus mode
-  // hides the navigator (design record §8 rule 9).
-  const navigatorHidden = activeView === "wiki" || focusMode;
+  // Focus mode hides the navigator (design record 8 rule 9).
+  const navigatorHidden = focusMode;
   const showNavigator =
     stackShown && hasNavigator(workspace.destination) && navigatorOn && !navigatorHidden;
   const legacyViews: LegacyViewsValue = {
@@ -753,10 +745,10 @@ export function App({
     openLibrarySource,
     clearLibraryTarget: () => setLibraryTarget(null),
     openTopic,
-    wikiNotice,
-    wikiTopicId: currentWikiTopic(wikiHistory),
+    wikiNotice: null,
+    wikiTopicId: null,
     openWikiObject,
-    closeWikiTopic,
+    closeWikiTopic: () => undefined,
     openAskSource,
     openConnectionsSettings,
     graphWheelZoomSensitivity: appSettings.graphWheelZoomSensitivity,
@@ -791,27 +783,39 @@ export function App({
         onGo={goToPlace}
         onOpenLegacy={setActiveView}
         onOpenPalette={() => handleWorkspaceResult({ type: "openPalette" })}
-        onAdd={() => handleWorkspaceResult({ type: "newImport" })}
-        onAddMore={() => handleWorkspaceResult({ type: "newImport" })}
+        addFlow={addFlow}
         onNavigateActivity={openFromActivity}
         onOpenInbox={openInbox}
         onOpenTopic={openTopic}
+        navigator={
+          workspace.destination === "explore" ? (
+            <ExploreNavigator t={t} workspace={workspace} dispatch={dispatch} />
+          ) : undefined
+        }
         context={contextHost.element}
       >
         <LegacyViewsContext.Provider value={legacyViews}>
           <AddSourceContext.Provider value={addSource}>
-            <PanelStack
-              t={t}
-              workspace={workspace}
-              dispatch={dispatch}
-              viewportWidth={viewportWidth}
-              chrome={{ navigator: showNavigator, context: contextHost.present }}
-              shown={stackShown}
-              focusMode={focusMode}
-              onToggleFocusMode={toggleFocusMode}
-              onAdd={() => handleWorkspaceResult({ type: "newImport" })}
-              registry={stackRegistry}
-            />
+            <ExploreActionsContext.Provider value={{ onAddSource: addSource }}>
+              {/* A note's body lists its relations in full unless the context panel is docked beside it. */}
+              <ContextDockContext.Provider
+                value={contextHost.present && contextMode(viewportWidth) === "docked"}
+              >
+                <PanelStack
+                  t={t}
+                  workspace={workspace}
+                  dispatch={dispatch}
+                  viewportWidth={viewportWidth}
+                  chrome={{ navigator: showNavigator, context: contextHost.present }}
+                  shown={stackShown}
+                  focusMode={focusMode}
+                  onToggleFocusMode={toggleFocusMode}
+                  onAdd={() => handleWorkspaceResult({ type: "newImport" })}
+                  registry={stackRegistry}
+                  pin={pin}
+                />
+              </ContextDockContext.Provider>
+            </ExploreActionsContext.Provider>
           </AddSourceContext.Provider>
           {stackShown ? null : (
             <LegacyScreen
