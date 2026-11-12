@@ -4420,6 +4420,39 @@
     "untitled": "Sin título"
   },
   "contextPanel": {
+    "ask": {
+      "description": {
+        "entity": "La respuesta usa toda la biblioteca y cita cada pasaje. El nombre ya está en el campo.",
+        "library": "La respuesta usa toda la biblioteca y cita cada pasaje.",
+        "note": "Es el tema en el que está esta nota. La respuesta usa solo lo que hay en él y cita cada pasaje.",
+        "noteUnplaced": "Esta nota aún no está en un tema, así que la pregunta vale para toda la biblioteca.",
+        "pending": "La pregunta necesita el tema en el que está esta nota.",
+        "source": "La respuesta usa solo los pasajes de esta fuente y cita cada uno.",
+        "topic": "La respuesta usa solo lo que hay en este tema y cita cada pasaje."
+      },
+      "earlier": {
+        "heading": "Preguntas anteriores",
+        "label": "Abrir una pregunta anterior"
+      },
+      "empty": "Aún no se ha preguntado nada sobre esto. Cada pregunta queda en Biblioteca › Preguntas, con su respuesta.",
+      "errors": {
+        "earlier": "No se pudieron cargar las preguntas anteriores.",
+        "earlierKept": "Aún puedes preguntar.",
+        "scope": "No se pudo ver dónde está esta nota, así que la pregunta aún no tiene alcance."
+      },
+      "indexedOne": "Ya puedes preguntar: el pasaje está indexado.",
+      "indexedOther": "Ya puedes preguntar: los {count} pasajes están indexados.",
+      "indexing": "Los pasajes aún se están indexando. Una respuesta ahora puede no encontrar nada que citar.",
+      "notesArriving": "Las notas aún están llegando.",
+      "title": {
+        "entity": "Preguntar sobre esta entidad",
+        "library": "Preguntar a la biblioteca",
+        "note": "Preguntar sobre {topic}",
+        "pending": "Preguntar sobre esta nota",
+        "source": "Preguntar a esta fuente",
+        "topic": "Preguntar a este tema"
+      }
+    },
     "connections": {
       "actions": {
         "failed": "No se pudo guardar tu elección. Inténtalo de nuevo.",
@@ -4486,6 +4519,8 @@
       "suggestionsLabel": "Conexiones sugeridas"
     },
     "count": {
+      "changesOne": "{count} cambio",
+      "changesOther": "{count} cambios",
       "connectionsOne": "{count} conexión",
       "connectionsOther": "{count} conexiones",
       "mentionsOne": "{count} mención",
@@ -4505,6 +4540,7 @@
       "connections": "No se pudieron cargar las conexiones.",
       "evidence": "No se pudo cargar la evidencia.",
       "graph": "No se pudo cargar el grafo.",
+      "history": "No se pudo cargar el historial.",
       "kept": {
         "entity": "La entidad sigue abierta.",
         "note": "La nota sigue abierta.",
@@ -4594,10 +4630,35 @@
           "title": "Grafo"
         }
       },
+      "history": {
+        "description": "Todo lo que cambió en este objeto, con Deshacer.",
+        "title": "Historial"
+      },
       "mentions": {
         "description": "Dónde se cita este objeto sin una conexión.",
         "title": "Menciones"
       }
+    },
+    "history": {
+      "by": {
+        "gardener": "Jardinero",
+        "you": "Tú"
+      },
+      "empty": {
+        "entity": "Una entidad no tiene historial propio. Lo que cambia en sus notas aparece en el Historial de cada nota.",
+        "note": "Aún no ha cambiado nada en esta nota. Cuando el Jardinero la coloque en un tema o la enlace con otra, cada cambio aparece aquí, con Deshacer.",
+        "question": "Una pregunta no tiene historial propio. Vuelve a preguntar para escribir una nueva versión de la respuesta.",
+        "source": "Aún no ha cambiado nada por esta fuente. Dónde se colocan y enlazan sus notas aparece aquí, con Deshacer.",
+        "topic": "Aún no ha cambiado nada en este tema. Los cambios de nombre, los movimientos y los resúmenes nuevos aparecen aquí, con Deshacer."
+      },
+      "label": "Cambios en este objeto",
+      "latest": "Los {count} más recientes.",
+      "state": {
+        "dismissed": "Descartado",
+        "undone": "Deshecho",
+        "waiting": "Espera tu decisión en la Bandeja de entrada"
+      },
+      "undoLabel": "Deshacer: {title}"
     },
     "loadingMore": "Cargando más…",
     "locate": {

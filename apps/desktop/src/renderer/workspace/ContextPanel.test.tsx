@@ -58,9 +58,9 @@ function connections(
 }
 
 describe("tab registration", () => {
-  it("finds the four tabs of T143 by file", () => {
+  it("finds the six tabs by file (T143's four, then T173's History and Ask)", () => {
     expect(contextTabRegistry.map((entry) => entry.tab).sort()).toEqual(
-      ["connections", "evidence", "graph", "mentions"].sort()
+      ["ask", "connections", "evidence", "graph", "history", "mentions"].sort()
     );
   });
 
