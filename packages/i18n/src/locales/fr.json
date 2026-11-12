@@ -4406,9 +4406,7 @@
     },
     "titleBar": {
       "add": "Ajouter",
-      "addFile": "Choisir un fichier…",
       "addMore": "Autres façons d’ajouter",
-      "addMoreOptions": "Plus d’options d’importation…",
       "addSource": "Ajouter une source",
       "omniLabel": "Chercher, ouvrir ou demander",
       "omniPlaceholder": "Chercher, ouvrir ou demander…",
@@ -4714,8 +4712,7 @@
       "keyOpen": "ouvre à côté",
       "keyPeek": "aperçu sans ouvrir",
       "keySpace": "Espace",
-      "keysLabel": "Touches",
-      "unsorted": "En attente d’une place : {count}"
+      "keysLabel": "Touches"
     },
     "topic": {
       "error": "Impossible d’ouvrir ce sujet.",

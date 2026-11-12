@@ -4406,9 +4406,7 @@
     },
     "titleBar": {
       "add": "Adicionar",
-      "addFile": "Escolher arquivo…",
       "addMore": "Mais formas de adicionar",
-      "addMoreOptions": "Mais opções de importação…",
       "addSource": "Adicionar fonte",
       "omniLabel": "Buscar, abrir ou perguntar",
       "omniPlaceholder": "Buscar, abrir ou perguntar…",
@@ -4714,8 +4712,7 @@
       "keyOpen": "abre ao lado",
       "keyPeek": "espia sem abrir",
       "keySpace": "Espaço",
-      "keysLabel": "Teclas",
-      "unsorted": "Esperando um lugar: {count}"
+      "keysLabel": "Teclas"
     },
     "topic": {
       "error": "Não foi possível abrir este tópico.",
