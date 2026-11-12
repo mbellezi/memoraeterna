@@ -289,6 +289,25 @@ export async function setTheme(session: Pick<MemoraSession, "electronApp" | "pag
   await session.page.evaluate(
     () => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)))
   );
+  // The colour transitions that switch started end, or a scan reads a colour half way between themes.
+  await session.page.evaluate(settleTransitions);
+  await session.page.evaluate(
+    () => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)))
+  );
+}
+
+/**
+ * Resolves when every CSS transition of the page has ended or been cancelled. Only transitions: an
+ * infinite animation (a spinner, a skeleton's pulse) never finishes and must not be waited for. It runs
+ * in the page, so it names nothing outside itself.
+ */
+export function settleTransitions(): Promise<unknown> {
+  const transitions = document
+    .getAnimations()
+    .filter(
+      (animation) => typeof CSSTransition !== "undefined" && animation instanceof CSSTransition
+    );
+  return Promise.all(transitions.map((animation) => animation.finished.catch(() => null)));
 }
 
 /** Sets the window's content size (the minimum width is 960 px). */

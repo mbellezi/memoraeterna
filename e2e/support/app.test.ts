@@ -20,6 +20,7 @@ import {
   firstRunRankerState,
   journeyEnvironment,
   secondSourceKey,
+  settleTransitions,
   setTheme
 } from "./app.js";
 import { repositoryRoot } from "./profile.js";
@@ -157,7 +158,8 @@ describe("setTheme", () => {
         emulateMedia: async (options: { colorScheme: string }) =>
           calls.push(`emulate ${options.colorScheme}`),
         waitForFunction: async (_check: unknown, dark: boolean) => calls.push(`wait dark=${dark}`),
-        evaluate: async () => calls.push("frames")
+        evaluate: async (run: unknown) =>
+          calls.push(run === settleTransitions ? "settle" : "frames")
       }
     };
     return { calls, session };
@@ -166,10 +168,48 @@ describe("setTheme", () => {
   it("emulates the colour scheme on the page, because the native theme alone does not reach a window shown inactive", async () => {
     const { calls, session } = fakeSession();
     await setTheme(session as never, "dark");
-    expect(calls).toEqual(["native dark", "emulate dark", "wait dark=true", "frames"]);
+    expect(calls).toEqual([
+      "native dark",
+      "emulate dark",
+      "wait dark=true",
+      "frames",
+      "settle",
+      "frames"
+    ]);
     calls.length = 0;
     await setTheme(session as never, "light");
     expect(calls.slice(0, 3)).toEqual(["native light", "emulate light", "wait dark=false"]);
+  });
+});
+
+describe("settleTransitions", () => {
+  class FakeTransition {
+    constructor(readonly finished: Promise<unknown>) {}
+  }
+  const withDocument = async (animations: unknown[], check: () => Promise<void>) => {
+    const globals = globalThis as Record<string, unknown>;
+    const before = { document: globals.document, CSSTransition: globals.CSSTransition };
+    globals.document = { getAnimations: () => animations };
+    globals.CSSTransition = FakeTransition;
+    try {
+      await check();
+    } finally {
+      globals.document = before.document;
+      globals.CSSTransition = before.CSSTransition;
+    }
+  };
+
+  it("waits for the transitions, survives a cancelled one, and never waits for an infinite animation", async () => {
+    let ended = 0;
+    const slow = new FakeTransition(
+      new Promise((done) => setTimeout(() => done((ended += 1)), 20))
+    );
+    const cancelled = new FakeTransition(Promise.reject(new Error("AbortError")));
+    const infinite = { finished: new Promise(() => undefined) };
+    await withDocument([slow, cancelled, infinite], async () => {
+      await settleTransitions();
+      expect(ended).toBe(1);
+    });
   });
 });
 
