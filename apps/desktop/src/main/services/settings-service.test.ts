@@ -664,17 +664,66 @@ describe("theme preference", () => {
     expect((await service.getApp()).themeMode).toBe("dark");
   });
 
-  it("replaces a stored profile that has no theme choice (it does not parse) with the defaults, dark", async () => {
-    // themeMode is required by the schema, so such a file is unparseable and is
-    // replaced as a whole, as before the dark default; real writers always store it.
+  const without = (stored: Record<string, unknown>, ...keys: string[]) =>
+    Object.fromEntries(Object.entries(stored).filter(([key]) => !keys.includes(key)));
+  const storedApp = (extra: Record<string, unknown>) => ({
+    ...defaultAppSettings,
+    language: "pt-BR",
+    updatedAt: "2026-01-02T03:04:05.000Z",
+    navigationCollapsed: true,
+    debugMode: true,
+    summaryMinimumWordCount: 77,
+    ...extra
+  });
+
+  it("reads a stored profile that has no theme choice as the default theme and keeps every other value", async () => {
     const path = await settingsDirectory("memora-theme-unset-");
+    const stored = without(storedApp({}), "themeMode");
+    await writeFile(join(path, "app-settings.json"), JSON.stringify(stored));
+    const read = await new SettingsService(path).getApp();
+    expect(read).toMatchObject({
+      themeMode: "dark",
+      language: "pt-BR",
+      updatedAt: "2026-01-02T03:04:05.000Z",
+      navigationCollapsed: true,
+      debugMode: true,
+      summaryMinimumWordCount: 77
+    });
+  });
+
+  it("fills two missing fields with their defaults and keeps what the file holds", async () => {
+    const path = await settingsDirectory("memora-theme-two-missing-");
+    const stored = without(storedApp({ debugFullCapture: true }), "themeMode", "language");
+    await writeFile(join(path, "app-settings.json"), JSON.stringify(stored));
+    const read = await new SettingsService(path, { desktopLocale: "es" }).getApp();
+    expect(read).toMatchObject({
+      themeMode: "dark",
+      language: "es",
+      contentLanguage: "en",
+      updatedAt: "2026-01-02T03:04:05.000Z",
+      navigationCollapsed: true,
+      debugMode: true,
+      debugFullCapture: true,
+      summaryMinimumWordCount: 77
+    });
+  });
+
+  it("fills a missing timestamp and still replaces a file that holds an invalid value, as before", async () => {
+    const path = await settingsDirectory("memora-theme-invalid-");
+    const stored = without(storedApp({}), "updatedAt");
+    await writeFile(join(path, "app-settings.json"), JSON.stringify(stored));
+    const read = await new SettingsService(path).getApp();
+    expect(read).toMatchObject({ language: "pt-BR", navigationCollapsed: true });
+    expect(Number.isNaN(Date.parse(read.updatedAt))).toBe(false);
+
     await writeFile(
       join(path, "app-settings.json"),
-      JSON.stringify({ language: "en", updatedAt: new Date().toISOString() })
+      JSON.stringify(storedApp({ themeMode: "auto" }))
     );
-    expect((await new SettingsService(path).getApp()).themeMode).toBe("dark");
+    const replaced = await new SettingsService(path).getApp();
+    expect(replaced).toMatchObject({ themeMode: "dark", navigationCollapsed: false });
     const rewritten = JSON.parse(await readFile(join(path, "app-settings.json"), "utf8"));
-    expect(rewritten.themeMode).toBe("dark");
+    expect(rewritten).toMatchObject({ themeMode: "dark", navigationCollapsed: false });
   });
 
   it.each(["system", "dark", "light"] as const)(

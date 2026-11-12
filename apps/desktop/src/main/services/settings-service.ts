@@ -139,8 +139,25 @@ function withoutRetiredPresetId(value: unknown): unknown {
   return activeMatchingPresetId === retiredRecommendedMatchingPresetId ? rest : value;
 }
 
-export function parseSavedAppSettings(value: unknown): AppSettings {
-  const saved = appSettingsSchema.parse(withoutRetiredPresetId(migrateMatchingSettingsV2(value)));
+/**
+ * A stored document that lacks a key the schema has no default for (the language, the theme, the
+ * timestamp) takes that key's default; every stored value stays. A key that is present keeps what it
+ * holds, valid or not: an invalid value still fails the parse, as it always did.
+ */
+function withMissingKeysDefaulted(value: unknown, locale: string | null | undefined): unknown {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return value;
+  const stored = value as Record<string, unknown>;
+  const missing: Record<string, unknown> = {};
+  if (!("language" in stored)) missing.language = normalizeLanguageCode(locale);
+  if (!("themeMode" in stored)) missing.themeMode = defaultAppSettings.themeMode;
+  if (!("updatedAt" in stored)) missing.updatedAt = new Date().toISOString();
+  return Object.keys(missing).length === 0 ? value : { ...stored, ...missing };
+}
+
+export function parseSavedAppSettings(value: unknown, locale?: string | null): AppSettings {
+  const saved = appSettingsSchema.parse(
+    withoutRetiredPresetId(migrateMatchingSettingsV2(withMissingKeysDefaulted(value, locale)))
+  );
   let configuration = MatchingConfigurationSchema.parse(saved);
   const active = saved.matchingPresets.find((preset) => preset.id === saved.activeMatchingPresetId);
   if (active) {
@@ -214,7 +231,10 @@ function validateStorageSettings(settings: StorageSettingsUpdate): void {
   }
 }
 
-function createFileSettingsRepository(userDataPath: string): SettingsRepository {
+function createFileSettingsRepository(
+  userDataPath: string,
+  locale?: string | null
+): SettingsRepository {
   const settingsPath = join(userDataPath, "storage-settings.json");
   const appSettingsPath = join(userDataPath, "app-settings.json");
   const importDirectoryPath = join(userDataPath, "import-dialog.json");
@@ -234,7 +254,7 @@ function createFileSettingsRepository(userDataPath: string): SettingsRepository 
     async getAppSettings() {
       try {
         const raw = await readFile(appSettingsPath, "utf8");
-        return parseSavedAppSettings(JSON.parse(raw));
+        return parseSavedAppSettings(JSON.parse(raw), locale);
       } catch {
         return null;
       }
@@ -274,7 +294,8 @@ function createFileSettingsRepository(userDataPath: string): SettingsRepository 
 
 function createDbSettingsRepository(
   pool: Queryable,
-  dispose?: () => Promise<void>
+  dispose?: () => Promise<void>,
+  locale?: string | null
 ): SettingsRepository {
   const appRepository = createSettingsRepository(pool);
   const storageRepository = createStorageSettingsRepository(pool);
@@ -286,7 +307,7 @@ function createDbSettingsRepository(
     },
     async getAppSettings() {
       const value = await appRepository.get(appSettingsKey);
-      return value ? parseSavedAppSettings(value) : null;
+      return value ? parseSavedAppSettings(value, locale) : null;
     },
     async migrateAppSettings() {
       const stored = await appRepository.get(appSettingsKey);
@@ -339,14 +360,16 @@ function createDbSettingsRepository(
   };
 }
 
-async function createEnvDbSettingsRepository(): Promise<SettingsRepository | null> {
+async function createEnvDbSettingsRepository(
+  locale?: string | null
+): Promise<SettingsRepository | null> {
   const connectionString = process.env.MEMORA_DATABASE_URL;
   if (!connectionString) {
     return null;
   }
 
   const pool = createPgPool({ connectionString, max: 2 });
-  return createDbSettingsRepository(pool, () => closePgPool(pool));
+  return createDbSettingsRepository(pool, () => closePgPool(pool), locale);
 }
 
 export class SettingsService {
@@ -521,7 +544,7 @@ export class SettingsService {
 
     const databasePool = this.options.getDatabasePool?.();
     if (databasePool) {
-      this.repository = createDbSettingsRepository(databasePool);
+      this.repository = createDbSettingsRepository(databasePool, undefined, this.defaultLocale);
       return this.repository;
     }
 
@@ -530,7 +553,8 @@ export class SettingsService {
     }
 
     this.repository =
-      (await createEnvDbSettingsRepository()) ?? createFileSettingsRepository(this.userDataPath);
+      (await createEnvDbSettingsRepository(this.defaultLocale)) ??
+      createFileSettingsRepository(this.userDataPath, this.defaultLocale);
     return this.repository;
   }
 }
