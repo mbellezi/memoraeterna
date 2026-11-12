@@ -9,6 +9,7 @@ import {
   itemBody,
   itemHint,
   itemSubject,
+  confidenceText,
   itemTitle,
   kindLabels,
   objectName,
@@ -30,6 +31,9 @@ function everyItem(): InboxItem[] {
   items.push(item("backlog", { variant: "other", params: {} }));
   items.push(item("backlog", { params: { reason: "settings_changed", notes: 3, pairs: 2 } }));
   items.push(item("budget", { variant: "money_100" }));
+  items.push(item("suggestion", { params: { relationType: "supports", probability: null } }));
+  items.push(item("suggestion", { params: { relationType: "supports", probability: 0.9 } }));
+  items.push(item("suggestion", { params: { relationType: "supports", probability: 0.2 } }));
   return items;
 }
 
@@ -69,6 +73,35 @@ describe("what an item says", () => {
     expect(itemBody(en, item("contradiction"))).toContain("“Naps help”");
     expect(itemBody(en, item("duplicate", { variant: "title" }))).toContain("same title");
     expect(itemBody(en, item("duplicate", { variant: "both" }))).toContain("same title and");
+  });
+
+  it("words a suggestion by both notes and how sure the decider was, with no number when unknown", () => {
+    const body = itemBody(en, item("suggestion"));
+    expect(body).toContain("“Daylight sets the body clock”");
+    expect(body).toContain("“Morning light shifts sleep timing”");
+    expect(body).toContain("medium confidence (64%)");
+    const unknown = itemBody(
+      en,
+      item("suggestion", { params: { relationType: "supports", probability: null } })
+    );
+    expect(unknown).toContain("unknown confidence");
+    expect(unknown).not.toMatch(/\d/u);
+    // The word and the number follow the band and the language.
+    expect(confidenceText(en, 0.85)).toBe("high confidence (85%)");
+    expect(confidenceText(en, 0.5)).toBe("low confidence (50%)");
+    expect(confidenceText(createTranslator("pt-BR"), 0.64)).toBe("confiança média (64%)");
+    expect(confidenceText(createTranslator("pt-BR"), null)).toBe("confiança desconhecida");
+    // The number never rounds across a band's edge: the word and the number always agree.
+    expect(confidenceText(en, 0.849)).toBe("medium confidence (84%)");
+    expect(confidenceText(en, 0.596)).toBe("low confidence (59%)");
+    expect(confidenceText(en, 0.6)).toBe("medium confidence (60%)");
+    expect(confidenceText(en, 0.57)).toBe("low confidence (57%)");
+    expect(confidenceText(createTranslator("pt-BR"), 0.849)).toBe("confiança média (84%)");
+    expect(confidenceText(en, 0.9999)).toBe("high confidence (99%)");
+    // A probability that is not a number reads as unknown, never as zero.
+    expect(
+      itemBody(en, item("suggestion", { params: { relationType: "supports", probability: "x" } }))
+    ).toContain("unknown confidence");
   });
 
   it("words a quarantined task by its task and why it failed", () => {
@@ -192,6 +225,8 @@ describe("verbs and time", () => {
       ["review", "dismiss", "Dismiss"],
       ["contradiction", "apply", "Keep"],
       ["contradiction", "dismiss", "Remove"],
+      ["suggestion", "apply", "Keep"],
+      ["suggestion", "dismiss", "Remove"],
       ["withdrawn", "apply", "Keep"],
       ["withdrawn", "dismiss", "Remove"],
       ["quarantined", "retry", "Retry"],

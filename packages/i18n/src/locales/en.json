@@ -176,10 +176,17 @@
         "any": "Any risk"
       }
     },
+    "confidence": {
+      "high": "high confidence ({percent})",
+      "medium": "medium confidence ({percent})",
+      "low": "low confidence ({percent})",
+      "unknown": "unknown confidence"
+    },
     "kinds": {
       "review": "To review",
       "quarantined": "Failed tasks",
       "contradiction": "Contradictions",
+      "suggestion": "Suggested connections",
       "withdrawn": "Withdrawn connections",
       "duplicate": "Duplicates",
       "obsidianConflict": "Obsidian conflicts",
@@ -232,6 +239,11 @@
         "body": "A suggested connection says “{first}” and “{second}” hold opposing positions. Keep it to record the contradiction, or remove it.",
         "divergenceTitle": "New evidence disagrees with a topic overview",
         "divergenceBody": "The overview of “{topic}” was extended, and some new evidence disagrees with what it says. The disagreement is kept beside the text, never merged into it. Keep it there, or dismiss this. Points of disagreement: {count}."
+      },
+      "suggestion": {
+        "title": "A suggested connection needs your confirmation",
+        "body": "A connection was suggested between “{first}” and “{second}”: {confidence}. Keep it to make it your decision, or remove it.",
+        "hint": "Nothing is deleted: only the connection changes. If you remove it, it is not suggested again."
       },
       "withdrawn": {
         "title": "A connection was withdrawn",

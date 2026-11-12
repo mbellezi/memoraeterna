@@ -17,6 +17,7 @@ import {
   createSourceItemRepository,
   createTopicOverviewRepository,
   createTopicTreeRepository,
+  pageSql,
   resolvePostgresSidecarPaths,
   runMigrations,
   type PgPool,
@@ -25,6 +26,7 @@ import {
 import {
   InboxListSchema,
   inboxKinds,
+  relationRoutingCases,
   type BudgetSnapshot,
   type InboxItem,
   type InboxKind
@@ -42,6 +44,13 @@ import { InboxService, type InboxServiceOptions } from "./inbox-service.js";
 const workspace = resolve(import.meta.dirname, "../../../../../..");
 const sidecar = resolvePostgresSidecarPaths({ cwd: workspace, env: process.env });
 const sidecarInstalled = existsSync(join(sidecar.binDir, "postgres"));
+
+/** The part of an EXPLAIN (FORMAT JSON) node the volume test reads. */
+interface PlanNode {
+  "Relation Name"?: string;
+  "Actual Loops"?: number;
+  Plans?: PlanNode[];
+}
 
 const snapshot = (
   state: "open" | "paused" | "exhausted",
@@ -237,6 +246,26 @@ describe.skipIf(!sidecarInstalled)("the Inbox on a real PostgreSQL database", ()
     return { id: written.relation.id, notes };
   };
 
+  /** A suggested relation of a stored type and probability (null: the decider wrote none). */
+  const seedSuggestion = async (type: string, probability: number | null) => {
+    const notes = [await seedNote("Gamma"), await seedNote("Delta")].sort((a, b) =>
+      a.id < b.id ? -1 : 1
+    );
+    const run = await createRelationMatchRunRepository(pool!).start({ kind: "match" });
+    const written = await createAtomicNoteRelationRepository(pool!).upsert({
+      loAtomicNoteId: notes[0]!.id,
+      hiAtomicNoteId: notes[1]!.id,
+      direction: type === "contradicts" ? "symmetric" : "lo_to_hi",
+      relationType: type,
+      band: "suggest",
+      probability,
+      finalScore: probability ?? 0.5,
+      explanation: "knowledge.relations.explanations.reranked",
+      runId: run.id
+    });
+    return { id: written.relation.id, notes };
+  };
+
   /** A subject that failed twice on one input: its job, and the outcome that quarantined it. */
   const seedQuarantine = async (subjectKey: string, minutesAgo = 10) => {
     const db = pool!;
@@ -379,11 +408,190 @@ describe.skipIf(!sidecarInstalled)("the Inbox on a real PostgreSQL database", ()
     const counts = await inbox.counts();
     expect(counts.total).toBe(list.items.length);
     expect(counts.byKind).toMatchObject(Object.fromEntries(inboxKinds.map((kind) => [kind, 1])));
+    // The pass's suggested relation (0.6, below "high") is its own item (D33).
+    expect(byKind.get("suggestion")).toMatchObject({
+      id: pass.relationId,
+      risk: "medium",
+      variant: "relation",
+      params: { relationType: "supports", probability: 0.6 },
+      actions: ["apply", "dismiss"]
+    });
+    expect(
+      byKind
+        .get("suggestion")!
+        .objects.map((object) => object.title)
+        .sort()
+    ).toEqual(["Feedback", "Retrieval"]);
     expect(counts.byRisk).toEqual({
       high: list.items.filter((item) => item.risk === "high").length,
       medium: list.items.filter((item) => item.risk === "medium").length,
       low: list.items.filter((item) => item.risk === "low").length
     });
+  });
+
+  it("routes a suggested relation by the one rule of routesToInbox, and counts what it lists (D33)", async () => {
+    const expectedIds: string[] = [];
+    const contradictionIds: string[] = [];
+    const notListed: string[] = [];
+    for (const row of relationRoutingCases) {
+      const seeded = await seedSuggestion(row.stance, row.probability);
+      if (!row.routes) notListed.push(seeded.id);
+      else if (row.stance === "contradicts") contradictionIds.push(seeded.id);
+      else expectedIds.push(seeded.id);
+    }
+    const list = await inbox.list({});
+    const listed = (kind: InboxKind) =>
+      list.items.filter((item) => item.kind === kind).map((item) => item.id);
+    expect(listed("suggestion").sort()).toEqual([...expectedIds].sort());
+    // A suggested contradicts is listed once, under its own kind, at any confidence.
+    expect(listed("contradiction").sort()).toEqual([...contradictionIds].sort());
+    for (const id of notListed) expect(list.items.map((item) => item.id)).not.toContain(id);
+    const counts = await inbox.counts();
+    expect(counts.byKind.suggestion).toBe(expectedIds.length);
+    expect(counts.byKind.contradiction).toBe(contradictionIds.length);
+    expect(counts.total).toBe(expectedIds.length + contradictionIds.length);
+    // The kind filter reads the arm alone.
+    const only = await inbox.list({ kinds: ["suggestion"] });
+    expect(only.items.map((item) => item.id).sort()).toEqual([...expectedIds].sort());
+  });
+
+  it("words a suggestion with the probability stored, and null when the decider wrote none", async () => {
+    const medium = await seedSuggestion("supports", 0.64);
+    const unknown = await seedSuggestion("extends", null);
+    const items = (await inbox.list({ kinds: ["suggestion"] })).items;
+    expect(items.find((item) => item.id === medium.id)?.params).toEqual({
+      relationType: "supports",
+      probability: 0.64
+    });
+    expect(items.find((item) => item.id === unknown.id)?.params).toEqual({
+      relationType: "extends",
+      probability: null
+    });
+  });
+
+  it("lists no suggestion that was withdrawn, rejected or accepted", async () => {
+    const withdrawn = await seedRelation("supports", true);
+    const rejected = await seedSuggestion("supports", 0.64);
+    const accepted = await seedSuggestion("supports", 0.64);
+    await pool!.query("update atomic_note_relations set status = 'rejected' where id = $1", [
+      rejected.id
+    ]);
+    await pool!.query("update atomic_note_relations set status = 'accepted' where id = $1", [
+      accepted.id
+    ]);
+    const list = await inbox.list({ kinds: ["suggestion"] });
+    expect(list.items).toEqual([]);
+    expect((await inbox.counts()).byKind.suggestion).toBe(0);
+    // The withdrawn one is the withdrawn kind's, never a suggestion.
+    expect(idsOf((await inbox.list({ kinds: ["withdrawn"] })).items)).toEqual([
+      `withdrawn:${withdrawn.id}`
+    ]);
+  });
+
+  it("keeps or removes a suggestion through the review writer, and it leaves the Inbox", async () => {
+    const keep = await seedSuggestion("supports", 0.64);
+    const remove = await seedSuggestion("supports", null);
+    expect(await inbox.act({ kind: "suggestion", id: keep.id, action: "apply" })).toEqual({
+      status: "done",
+      undoable: false
+    });
+    expect(await inbox.act({ kind: "suggestion", id: remove.id, action: "dismiss" })).toEqual({
+      status: "done",
+      undoable: false
+    });
+    expect((await inbox.list({})).items).toEqual([]);
+    const status = async (id: string) =>
+      (
+        await pool!.query<{ status: string; vetoed: boolean }>(
+          "select status::text as status, vetoed_at is not null as vetoed from atomic_note_relations where id = $1",
+          [id]
+        )
+      ).rows[0]!;
+    // Kept is a human verdict; removed is the rejected status, never the withdrawn state.
+    expect(await status(keep.id)).toEqual({ status: "accepted", vetoed: false });
+    expect(await status(remove.id)).toEqual({ status: "rejected", vetoed: false });
+    expect(await inbox.act({ kind: "suggestion", id: keep.id, action: "dismiss" })).toEqual({
+      status: "stale"
+    });
+    expect(await inbox.act({ kind: "suggestion", id: randomUUID(), action: "apply" })).toEqual({
+      status: "gone"
+    });
+    await expect(
+      inbox.act({ kind: "suggestion", id: "not-a-uuid", action: "apply" })
+    ).rejects.toThrow("inbox.errors.invalidItem");
+  });
+
+  /** Sets when a relation last changed, which is its age in the list. */
+  const ageRelation = (id: string, minutesAgo: number) =>
+    pool!.query(
+      "update atomic_note_relations set updated_at = now() - make_interval(mins => $2::int) where id = $1",
+      [id, minutesAgo]
+    );
+
+  it("lists and counts no suggestion between notes that are no longer current, and a page still fills from the later ones (D9, D33)", async () => {
+    const archived = await seedSuggestion("supports", 0.64);
+    const superseded = await seedSuggestion("extends", 0.5);
+    const current = await seedSuggestion("supports", 0.7);
+    const later = await seedSuggestion("supports", null);
+    await ageRelation(archived.id, 40);
+    await ageRelation(superseded.id, 30);
+    await ageRelation(current.id, 20);
+    await ageRelation(later.id, 10);
+    await pool!.query("update atomic_notes set status = 'archived' where id = $1", [
+      archived.notes[0]!.id
+    ]);
+    await pool!.query(
+      `update documents set metadata = jsonb_build_object('supersededByDocumentId', $2::text)
+        where id = (select c.document_id from atomic_notes n join chunks c on c.id = n.evidence_chunk_id
+                     where n.id = $1)`,
+      [superseded.notes[1]!.id, randomUUID()]
+    );
+    // The two oldest are not current; the page of one still reads the next that is.
+    const first = await inbox.list({ kinds: ["suggestion"], limit: 1 });
+    expect(first.items.map((item) => item.id)).toEqual([current.id]);
+    const second = await inbox.list({
+      kinds: ["suggestion"],
+      limit: 1,
+      cursor: first.nextCursor ?? undefined
+    });
+    expect(second.items.map((item) => item.id)).toEqual([later.id]);
+    expect(second.nextCursor).toBeNull();
+    expect((await inbox.counts()).byKind.suggestion).toBe(2);
+  });
+
+  it("pages the suggestions by age without repeating or skipping one", async () => {
+    const ids: string[] = [];
+    for (let n = 0; n < 5; n += 1) {
+      const seeded = await seedSuggestion("supports", 0.6 + n / 100);
+      await ageRelation(seeded.id, 50 - n * 10);
+      ids.push(seeded.id);
+    }
+    const seen: string[] = [];
+    let cursor: string | undefined;
+    do {
+      const page = await inbox.list({ kinds: ["suggestion"], limit: 2, cursor });
+      seen.push(...page.items.map((item) => item.id));
+      cursor = page.nextCursor ?? undefined;
+    } while (cursor);
+    expect(seen).toEqual(ids);
+  });
+
+  it("reads the endpoint check for one page of suggestions, not for every one (D33's volume bound)", async () => {
+    for (let n = 0; n < 24; n += 1) await seedSuggestion("supports", 0.6);
+    const limit = 5;
+    const plan = await pool!.query<{ "QUERY PLAN": Array<{ Plan: PlanNode }> }>(
+      `explain (analyze, format json) ${pageSql}`,
+      [null, null, null, null, null, limit + 1]
+    );
+    // Each relation's two notes are looked up once per relation the page reads: at most the page
+    // and a row more, never the 24 the table holds.
+    const lookups = (node: PlanNode): number =>
+      (node["Relation Name"] === "atomic_notes" ? Number(node["Actual Loops"] ?? 0) : 0) +
+      (node.Plans ?? []).reduce((sum, child) => sum + lookups(child), 0);
+    expect(lookups(plan.rows[0]!["QUERY PLAN"][0]!.Plan)).toBeLessThanOrEqual(2 * (limit + 1));
+    const page = await inbox.list({ kinds: ["suggestion"], limit });
+    expect(page.items).toHaveLength(limit);
+    expect(page.nextCursor).not.toBeNull();
   });
 
   it("pages by risk and age with a cursor that never repeats or skips an item, vault conflicts included", async () => {
@@ -451,8 +659,11 @@ describe.skipIf(!sidecarInstalled)("the Inbox on a real PostgreSQL database", ()
       status: "done",
       undoable: false
     });
-    // Both left the Inbox, and the dismissed pass is reverted: its relation is gone.
-    expect((await inbox.list({})).items).toEqual([]);
+    // Both left the review list, and the dismissed pass is reverted: its relation is gone. Keeping
+    // a pass sets only the run's verdict; its relation is still a suggestion at 0.6 (no human
+    // verdict on the relation itself), which D33 keeps in the Inbox as its own item. Whether a
+    // kept pass should close its relations' items is an open question (see the card report).
+    expect(idsOf((await inbox.list({})).items)).toEqual([`suggestion:${kept.relationId}`]);
     expect(
       (await pool!.query("select 1 from atomic_note_relations where id = $1", [dropped.relationId]))
         .rowCount

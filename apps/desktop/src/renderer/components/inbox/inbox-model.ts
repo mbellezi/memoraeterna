@@ -1,4 +1,5 @@
 import {
+  confidenceBand,
   inboxKinds,
   type ChangeSetRisk,
   type InboxItem,
@@ -21,6 +22,7 @@ export const kindLabels = {
   review: "inbox.kinds.review",
   quarantined: "inbox.kinds.quarantined",
   contradiction: "inbox.kinds.contradiction",
+  suggestion: "inbox.kinds.suggestion",
   withdrawn: "inbox.kinds.withdrawn",
   duplicate: "inbox.kinds.duplicate",
   obsidian_conflict: "inbox.kinds.obsidianConflict",
@@ -40,6 +42,8 @@ export const kindOrder: readonly InboxKind[] = inboxKinds;
 export const verbLabels = {
   review: { apply: "inbox.verbs.apply", dismiss: "inbox.verbs.dismiss" },
   contradiction: { apply: "inbox.verbs.keep", dismiss: "inbox.verbs.remove" },
+  // A suggestion offers keep and remove and no plain dismiss: its `dismiss` is the removal (D34).
+  suggestion: { apply: "inbox.verbs.keep", dismiss: "inbox.verbs.remove" },
   withdrawn: { apply: "inbox.verbs.keep", dismiss: "inbox.verbs.remove" },
   quarantined: { retry: "inbox.verbs.retry", dismiss: "inbox.verbs.dismiss" },
   duplicate: { dismiss: "inbox.verbs.notDuplicate" },
@@ -86,6 +90,36 @@ function namesOf(t: Translator, item: InboxItem): { first: string; second: strin
     first: item.objects[0] ? objectName(t, item.objects[0]) : t("inbox.detail.unnamed"),
     second: item.objects[1] ? objectName(t, item.objects[1]) : t("inbox.detail.unnamed")
   };
+}
+
+/** A suggestion's stored probability; null when the decider that wrote it had none (D33, Q37). */
+export const probabilityOf = (item: InboxItem): number | null => {
+  const value = item.params.probability;
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+};
+
+const confidenceKeys = {
+  high: "inbox.confidence.high",
+  medium: "inbox.confidence.medium",
+  low: "inbox.confidence.low",
+  unknown: "inbox.confidence.unknown"
+} as const satisfies Record<ReturnType<typeof confidenceBand>, MessageKey>;
+
+/**
+ * How sure the decider was, as a word with its number ("confidence medium (64%)"); with no
+ * probability only the word "unknown", never a number made up for it.
+ */
+export function confidenceText(t: Translator, probability: number | null): string {
+  const band = confidenceBand(probability);
+  if (band === "unknown" || probability === null) return t(confidenceKeys.unknown);
+  // Rounded down (the epsilon absorbs 0.57 * 100 = 56.99...), so the number never crosses the
+  // edge of the band the word names: 0.849 is "medium (84%)", never "medium (85%)".
+  const whole = Math.min(100, Math.max(0, Math.floor(probability * 100 + 1e-6)));
+  const percent = new Intl.NumberFormat(t.locale, {
+    style: "percent",
+    maximumFractionDigits: 0
+  }).format(whole / 100);
+  return t(confidenceKeys[band], { values: { percent } });
 }
 
 const text = (value: unknown): string => (typeof value === "string" ? value : "");
@@ -150,6 +184,8 @@ export function itemTitle(t: Translator, item: InboxItem): string {
           ? "inbox.items.contradiction.divergenceTitle"
           : "inbox.items.contradiction.title"
       );
+    case "suggestion":
+      return t("inbox.items.suggestion.title");
     case "withdrawn":
       return t("inbox.items.withdrawn.title");
     case "duplicate":
@@ -200,6 +236,10 @@ export function itemBody(t: Translator, item: InboxItem): string {
           }
         });
       return t("inbox.items.contradiction.body", { values: { first, second } });
+    case "suggestion":
+      return t("inbox.items.suggestion.body", {
+        values: { first, second, confidence: confidenceText(t, probabilityOf(item)) }
+      });
     case "withdrawn":
       return t(
         item.variant === "explainer"
@@ -252,6 +292,8 @@ export function itemBody(t: Translator, item: InboxItem): string {
 /** A further line some kinds carry (what a dismissal does, where a conflict is solved). */
 export function itemHint(t: Translator, item: InboxItem): string | null {
   switch (item.kind) {
+    case "suggestion":
+      return t("inbox.items.suggestion.hint");
     case "duplicate":
       return t("inbox.items.duplicate.hint");
     case "obsidian_conflict":
