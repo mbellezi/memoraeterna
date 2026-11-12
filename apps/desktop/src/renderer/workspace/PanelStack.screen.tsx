@@ -1,7 +1,12 @@
 import { useEffect, useReducer, useState, type CSSProperties } from "react";
 
 import { destinationRoots } from "./destinations";
-import { fixtureAddresses, panelFixtures, standInPanels } from "./panel-screen-fixtures";
+import {
+  fixtureAddresses,
+  panelErrorFixtures,
+  panelFixtures,
+  standInPanels
+} from "./panel-screen-fixtures";
 import { PanelStack, type PanelModule, type PanelProps } from "./PanelStack";
 import { defaultWorkspace, reduce, type WorkspaceAction, type WorkspaceState } from "./state";
 import { layoutCustomProperties } from "./shell-model";
@@ -15,7 +20,8 @@ const t = screenTranslator();
 
 export const fixtures: ScreenModule["fixtures"] = {
   success: panelFixtures(false),
-  empty: panelFixtures(true)
+  empty: panelFixtures(true),
+  error: panelErrorFixtures()
 };
 
 /** Explore's root stands in for the Explore root of T141: the stack's far-left item. */

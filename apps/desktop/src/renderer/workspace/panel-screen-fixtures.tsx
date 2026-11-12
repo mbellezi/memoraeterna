@@ -9,6 +9,7 @@ import { LoadingState, Skeleton, SkeletonLines } from "../components/ui/skeleton
 import { cn } from "../lib/cn";
 import { useObject } from "../lib/object-events";
 import type { PanelModule, PanelProps } from "./PanelStack";
+import { standInCopy } from "./panel-screen-copy";
 import { screenTranslator } from "./screen-locale";
 
 /**
@@ -17,6 +18,9 @@ import { screenTranslator } from "./screen-locale";
  * through `objects.get` and reports its state the way the real panels (T140, T141, T146, T147)
  * do. Only the screen modules import this file.
  */
+
+const stubT = screenTranslator();
+const copy = standInCopy(stubT.locale);
 
 const uuid = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
 const address = (kind: ObjectRef["kind"], n: number) => `memora://${kind}/${uuid(n)}`;
@@ -50,12 +54,12 @@ interface Page {
 const pages: Record<string, Page> = {
   [fixtureAddresses.source]: {
     title: "Food microbiology, ch. 3",
-    meta: "Book · 214 pages · 18 notes",
+    meta: copy.meta.source,
     body: ["Lactic acid bacteria turn sugar into lactic acid and so preserve food."]
   },
   [fixtureAddresses.topic]: {
     title: "Lactic fermentation",
-    meta: "18 notes · 2 sources",
+    meta: copy.meta.topic,
     body: [
       "Bacteria that turn sugar into lactic acid, and with that preserve food. The base of yoghurt, sauerkraut and kefir."
     ],
@@ -70,17 +74,17 @@ const pages: Record<string, Page> = {
   },
   [fixtureAddresses.note]: {
     title: "Lactic acid bacteria tolerate an acid medium",
-    meta: "Written by the local AI on 3 Nov · 1 source",
+    meta: copy.meta.note,
     body: ["They keep growing where most spoilage bacteria stop."]
   },
   [fixtureAddresses.question]: {
     title: "Why do fermented foods keep longer outside the fridge?",
-    meta: "Asked on 4 Nov · 6 citations",
+    meta: copy.meta.question,
     body: ["Because the fermentation itself builds the barrier that protects the food."]
   },
   [fixtureAddresses.topNote]: {
     title: "Lactic acid inhibits pathogens by lowering the pH",
-    meta: "Written by the local AI on 3 Nov · reviewed by you on 5 Nov · 2 sources",
+    meta: copy.meta.topNote,
     body: [
       "When lactic acid bacteria consume the sugars of a food, the lactic acid they produce brings the pH " +
         "down to about 4. At that acidity most of the bacteria that spoil food or cause disease cannot multiply.",
@@ -90,7 +94,7 @@ const pages: Record<string, Page> = {
   },
   [fixtureAddresses.extra]: {
     title: "Temperature controls the final acidity",
-    meta: "Written by the local AI on 3 Nov · 1 source",
+    meta: copy.meta.extra,
     body: ["A cooler ferment ends less acid and more aromatic."]
   }
 };
@@ -147,6 +151,31 @@ export function panelFixtures(empty: boolean) {
   };
 }
 
+/**
+ * The error set: only the focused (right-most) panel's object cannot be read, so the stack shows one
+ * failure with one retry while the previous panel and the spines load. Every other call answers as
+ * in the success set.
+ */
+export function panelErrorFixtures() {
+  const ok = panelFixtures(false);
+  const failing = (value: string) => value === fixtureAddresses.topNote;
+  const refuse = (value: string) => {
+    if (failing(value)) throw new Error("fake window.app: the focused object fails");
+  };
+  return {
+    "objects.get": (input: { address: string }) => {
+      refuse(input.address);
+      return ok["objects.get"](input);
+    },
+    "objects.resolveMany": (input: { addresses: string[] }) =>
+      ok["objects.resolveMany"]({ addresses: input.addresses.filter((value) => !failing(value)) }),
+    "objects.locate": (input: { address: string }) => {
+      refuse(input.address);
+      return ok["objects.locate"](input);
+    }
+  };
+}
+
 /** A stand-in object page: it reads its object, reports its state and draws each state. */
 export function StandInPage({
   address: value,
@@ -183,8 +212,8 @@ export function StandInPage({
       <ErrorState
         t={stubT}
         className="max-w-(--measure)"
-        message={`This ${kind} could not be opened.`}
-        kept={`Nothing was changed. The ${kind} is still in your library.`}
+        message={copy.error[kind].message}
+        kept={copy.error[kind].kept}
         onRetry={() => undefined}
       />
     );
@@ -204,12 +233,12 @@ export function StandInPage({
         {title}
         <EmptyState
           className="max-w-(--measure)"
-          headline={emptyCopy[kind]?.headline ?? emptyCopy.source.headline}
+          headline={copy.empty[kind].headline}
           {...(kind === "source"
-            ? { action: <Button variant="secondary">Generate notes</Button> }
+            ? { action: <Button variant="secondary">{copy.generate}</Button> }
             : {})}
         >
-          {emptyCopy[kind]?.body ?? emptyCopy.source.body}
+          {copy.empty[kind].body}
         </EmptyState>
       </div>
     );
@@ -258,30 +287,6 @@ export function StandInPage({
     </article>
   );
 }
-
-const stubT = screenTranslator();
-
-/** What each stand-in page says when its object has nothing in it yet. */
-const emptyCopy: Partial<Record<ObjectRef["kind"], { headline: string; body: string }>> & {
-  source: { headline: string; body: string };
-} = {
-  source: {
-    headline: "Nothing is written here yet.",
-    body: "The notes of this source appear here as they are written. You can already ask it a question."
-  },
-  topic: {
-    headline: "Nothing is placed here yet.",
-    body: "Notes and sources land here when the tree places them."
-  },
-  note: {
-    headline: "This note has no text yet.",
-    body: "Its text appears here when it is written."
-  },
-  question: {
-    headline: "This question has no answer yet.",
-    body: "The answer appears here as it is written, with its citations."
-  }
-};
 
 /** The stand-in panel kinds, one per object kind, as `panels/*.panel.tsx` would export them. */
 export const standInPanels: readonly PanelModule[] = (
