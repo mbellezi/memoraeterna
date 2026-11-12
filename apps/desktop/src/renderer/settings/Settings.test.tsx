@@ -240,7 +240,7 @@ describe("the surface, in the DOM", () => {
 
   it("draws the loading bars of the section it opens: its rows, and no control it does not have", async () => {
     describeAnswer = () => new Promise(() => undefined);
-    await mount();
+    await mount({ sections: {} });
     await dom.act(() => void vi.advanceTimersByTime(200));
     const bars = () => dom.document.querySelector("[aria-busy]")?.innerHTML ?? "";
     // General has 2 groups and 3 rows; no control-sized block while the section has no body of its own.
@@ -270,7 +270,8 @@ describe("the surface, in the DOM", () => {
           ...(known[entry.id] ? { value: known[entry.id]![0], default: known[entry.id]![1] } : {})
         }))
       });
-    await mount();
+    // The rows are the generic ones (a section with its own controls names its values in them).
+    await mount({ sections: {} });
     const toggle = dom.document.querySelector("[aria-controls]") as HTMLElement;
     expect(toggle.textContent).toBe("1 setting changed in this section");
     expect(toggle.getAttribute("aria-expanded")).toBe("false");

@@ -226,13 +226,15 @@ async function described(reset: SettingsReset, id: string) {
 }
 
 describe("settings.describe", () => {
-  it("describes every entry that stores something, and none that stores nothing", async () => {
+  it("describes every entry that stores something and can be restored, and none else", async () => {
     const { reset } = await setup();
     const result = await reset.describe();
     expect(SettingsDescribeResultSchema.safeParse(result).success).toBe(true);
-    const stored = settingsRegistryV2.filter((entry) => entry.store.kind !== "none");
+    const stored = settingsRegistryV2.filter((entry) => entry.reset !== "none");
     expect(result.entries.map((entry) => entry.id)).toEqual(stored.map((entry) => entry.id));
     expect(settingsRegistryV2.some((entry) => entry.store.kind === "none")).toBe(true);
+    // Saved import plans are the person's work: stored, but never "changed" and never restored.
+    expect(result.entries.map((entry) => entry.id)).not.toContain("processingPresets");
   });
 
   it("finds every stored entry unchanged on a library nobody touched", async () => {
@@ -443,13 +445,13 @@ describe("settings.reset", () => {
   it("has an adapter for every reset id the registry uses", async () => {
     const { reset } = await setup();
     const used = new Set(
-      settingsRegistryV2.filter((entry) => entry.store.kind !== "none").map((entry) => entry.reset)
+      settingsRegistryV2.filter((entry) => entry.reset !== "none").map((entry) => entry.reset)
     );
     expect(used.has("none")).toBe(false);
     for (const id of resetAdapterIds.filter((candidate) => candidate !== "none"))
       expect(used.has(id), id).toBe(true);
     // Every stored entry resets without error when it holds its default (a no-op) ...
-    for (const entry of settingsRegistryV2.filter((candidate) => candidate.store.kind !== "none")) {
+    for (const entry of settingsRegistryV2.filter((candidate) => candidate.reset !== "none")) {
       await expect(reset.reset({ id: entry.id }), entry.id).resolves.toMatchObject({
         id: entry.id
       });
@@ -460,6 +462,10 @@ describe("settings.reset", () => {
     const { reset } = await setup();
     await expect(reset.reset({ id: "nope" })).rejects.toThrow("errors.common.notFound");
     await expect(reset.reset({ id: "ai.models" })).rejects.toThrow(
+      "errors.common.validationFailed"
+    );
+    // The saved import plans are never put back: the person deletes a plan, one by one, with an ask.
+    await expect(reset.reset({ id: "processingPresets", confirmed: true })).rejects.toThrow(
       "errors.common.validationFailed"
     );
   });
@@ -491,31 +497,6 @@ describe("settings.reset", () => {
     ]);
     // The settings service already announced it: the reset does not announce a second time.
     expect(published).toEqual([]);
-  });
-
-  it("app-preference: an unset list goes back to empty", async () => {
-    const { reset, settings } = await setup();
-    await settings.updateApp({
-      processingPresets: [
-        { id: "00000000-0000-4000-8000-0000000000a1", name: "Mine", requestedStages: [] }
-      ]
-    });
-    expect(await described(reset, "processingPresets")).toMatchObject({
-      value: true,
-      changed: true
-    });
-    // Saved import plans are the person's own work: emptied only with their yes.
-    expect(await reset.reset({ id: "processingPresets" })).toEqual({
-      id: "processingPresets",
-      value: true,
-      pending: true
-    });
-    expect((await settings.getApp()).processingPresets).toHaveLength(1);
-    expect(await reset.reset({ id: "processingPresets", confirmed: true })).toEqual({
-      id: "processingPresets",
-      value: null
-    });
-    expect((await settings.getApp()).processingPresets).toEqual([]);
   });
 
   it("matching-value: restores one value of a group and keeps its neighbours", async () => {

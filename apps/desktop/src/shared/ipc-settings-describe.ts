@@ -57,8 +57,9 @@ export const SettingsDescribeResultSchema = z
 export type SettingsDescribeResult = z.infer<typeof SettingsDescribeResultSchema>;
 
 /**
- * `confirmed` is the person's yes to a reset that throws away something they built (their saved
- * import plans); without it that reset writes nothing and answers `pending`.
+ * `confirmed` is the person's yes to a reset that throws away something they built; without it that
+ * reset writes nothing and answers `pending`. (Saved import plans are not reset at all: the person
+ * deletes a plan from Settings, one by one.)
  */
 export const SettingsResetInputSchema = z
   .object({ id: z.string().min(1).max(200), confirmed: z.boolean().optional() })
@@ -68,8 +69,7 @@ export type SettingsResetInput = z.infer<typeof SettingsResetInputSchema>;
 /**
  * The value after the reset. `pending` is true when the setting moves only after a step the person
  * confirms: the Obsidian layout is a journaled migration of the vault's folders (the reset prepares
- * it and the value stays until it is applied); saved import plans are emptied only with `confirmed`;
- * a provider's key goes with its configuration on the Providers page, one confirmed step each.
+ * it and the value stays until it is applied); a provider's key goes with its configuration on the Providers page, one confirmed step each.
  */
 export const SettingsResetResultSchema = z
   .object({

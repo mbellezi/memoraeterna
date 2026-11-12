@@ -13,6 +13,11 @@ import { settingsSectionIds, type SettingsSectionId } from "./settings-model";
 export interface SettingsSectionModule {
   id: SettingsSectionId;
   Section: ComponentType;
+  /**
+   * The bars shown while the saved values are read, in the shape of this section (built from
+   * `SectionBars`). Absent: the surface's generic rows.
+   */
+  Skeleton?: ComponentType;
 }
 
 export type SectionRegistry = Readonly<Partial<Record<SettingsSectionId, SettingsSectionModule>>>;

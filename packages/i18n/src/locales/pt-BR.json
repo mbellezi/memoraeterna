@@ -5208,6 +5208,146 @@
       "updated": "última atualização: {date}"
     }
   },
+  "settingsGeneral": {
+    "language": {
+      "connectionsNote": "As descrições das conexões já escritas podem ser refeitas em",
+      "defaultOs": "igual ao do macOS, {language}"
+    },
+    "saveFailed": "Não foi possível salvar. Nada foi alterado.",
+    "theme": {
+      "dark": "Escuro",
+      "light": "Claro",
+      "system": "Sistema"
+    }
+  },
+  "settingsLibrary": {
+    "backup": {
+      "action": "Fazer backup agora",
+      "done": "Backup concluído.",
+      "failed": "Não foi possível fazer o backup.",
+      "running": "Fazendo o backup…",
+      "savedIn": "Salvo em {path}",
+      "verified": "A restauração de teste foi aprovada."
+    },
+    "plans": {
+      "deleteAction": "Apagar",
+      "deleteAsk": "Apagar “{name}”?",
+      "deleteConfirm": "Apagar plano",
+      "deleteKept": "As fontes já importadas ficam como estão.",
+      "empty": "Nenhum plano de importação salvo ainda. Salve um ao importar.",
+      "loadFailed": "Não foi possível ler os planos de importação salvos.",
+      "loadKept": "Nada foi alterado.",
+      "renameAction": "Renomear",
+      "renameLabel": "Nome do plano",
+      "saveFailed": "Não foi possível salvar. Nada foi alterado."
+    },
+    "storage": {
+      "database": "Banco local",
+      "files": "Arquivos guardados",
+      "filesNote": "os originais que você enviou",
+      "sourcesMany": "{count} fontes",
+      "sourcesOne": "{count} fonte",
+      "where": "Os dois ficam na pasta de dados do Memora neste Mac, e o lugar deles é fixo. Para ter os originais numa pasta sua, ligue a cópia logo abaixo; para levar tudo a outro disco, use o Backup."
+    },
+    "uploads": {
+      "change": "Trocar pasta",
+      "choose": "Escolher uma pasta",
+      "needsFolder": "Escolha a pasta primeiro: as cópias precisam de um lugar.",
+      "noFolder": "Nenhuma pasta escolhida ainda",
+      "off": "Desligado",
+      "on": "Ligado",
+      "pathHint": "Cole o caminho completo de uma pasta deste Mac.",
+      "pathLabel": "Caminho da pasta",
+      "pathRejected": "Um caminho completo começa com “/” e indica uma pasta que existe.",
+      "readFailed": "Não foi possível ler a pasta das cópias.",
+      "saveFailed": "Não foi possível salvar. Nada foi alterado.",
+      "willReceive": "Esta pasta passa a receber as cópias quando você ligar."
+    }
+  },
+  "settingsPrivacy": {
+    "callLog": {
+      "full": "A captura completa está ligada: ele guarda prompts e respostas inteiros.",
+      "light": "Guarda tempos, modelos e tokens; prompts e respostas inteiros só com a captura completa.",
+      "none": "O registro de chamadas de IA está vazio.",
+      "open": "Ver e apagar em Avançado",
+      "readFailed": "Não foi possível ler o registro de chamadas.",
+      "summaryMany": "O registro de chamadas de IA guarda {count} chamadas neste Mac.",
+      "summaryOne": "O registro de chamadas de IA guarda {count} chamada neste Mac."
+    },
+    "history": {
+      "action": "Limpar…",
+      "confirm": "Limpar os Recentes",
+      "dialogBody": "Apaga a lista de itens abertos há pouco neste Mac. Os itens fixados ficam.",
+      "dialogTitle": "Limpar os Recentes?",
+      "doneMany": "{count} itens saíram dos Recentes.",
+      "doneNone": "Os Recentes já estavam vazios.",
+      "doneOne": "{count} item saiu dos Recentes.",
+      "failed": "Não foi possível limpar os Recentes. Nada foi alterado."
+    },
+    "leaves": {
+      "books": "Dados de livros e artigos",
+      "booksGoogle": "Google Books",
+      "changeInAi": "Mudar em IA",
+      "cloud": "Na nuvem",
+      "columns": {
+        "job": "Trabalho",
+        "what": "O que sai",
+        "where": "Onde roda"
+      },
+      "credentials": "Credenciais guardadas neste Mac (só os nomes; os valores nunca aparecem): {names}.",
+      "decisions": "OpenAI Decisions",
+      "internet": "Na internet",
+      "local": "Neste Mac",
+      "lookupAuto": "Open Library, Google Books e Crossref",
+      "lookupGoogle": "Google Books e Crossref",
+      "lookupOpenLibrary": "Open Library e Crossref",
+      "noCredentials": "Nenhuma credencial está guardada neste Mac.",
+      "noModel": "Nenhum modelo escolhido",
+      "nothing": "Nada",
+      "off": "Desligado",
+      "readFailed": "Não foi possível ler o que sai deste Mac.",
+      "readKept": "Nada foi alterado.",
+      "tableLabel": "O que sai deste Mac, por trabalho",
+      "what": {
+        "answer": "Sua pergunta e as notas citadas",
+        "books": "ISBN, DOI, título e autores",
+        "decide": "Títulos e ideias das notas comparadas",
+        "decisions": "Título, ideia e começo do texto das notas comparadas",
+        "embed": "Trechos das suas fontes e notas",
+        "judge": "Notas e trechos comparados",
+        "writeFast": "Trechos das fontes e resumos",
+        "writeQuality": "Trechos das fontes"
+      }
+    },
+    "questions": {
+      "action": "Apagar perguntas…",
+      "confirm": "Apagar perguntas",
+      "countMany": "{count} perguntas guardadas",
+      "countMore": "Mais de {count} perguntas guardadas",
+      "countNone": "Nenhuma pergunta guardada.",
+      "countOne": "{count} pergunta guardada",
+      "dialogBody": "Apaga todas as perguntas guardadas e as respostas delas. Suas fontes e notas ficam. Não dá para desfazer.",
+      "dialogTitle": "Apagar todas as perguntas?",
+      "doneMany": "{count} perguntas apagadas.",
+      "doneNone": "Não havia perguntas para apagar.",
+      "doneOne": "{count} pergunta apagada.",
+      "failed": "Não foi possível apagar as perguntas. Nada foi alterado.",
+      "readFailed": "Não foi possível contar as perguntas guardadas."
+    },
+    "reset": {
+      "action": "Apagar tudo e recomeçar…",
+      "backupLink": "Faça um backup antes",
+      "confirm": "Apagar tudo e recomeçar",
+      "dialogBody": "Apaga a biblioteca, os índices de busca, os grafos, as perguntas, os históricos, as conexões, as preferências e os arquivos guardados. Ficam perfis, provedores, rotas e modelos instalados; backups e seus arquivos pessoais não são tocados.",
+      "dialogTitle": "Apagar tudo e recomeçar?",
+      "dialogWarn": "Não dá para desfazer.",
+      "failed": "Não foi possível concluir o reset. Verifique as permissões dos arquivos e tente de novo.",
+      "noUndo": "Não dá para desfazer.",
+      "running": "Resetando…",
+      "warnings": "O reset terminou, mas alguns arquivos guardados não puderam ser removidos."
+    },
+    "working": "Trabalhando…"
+  },
   "settingsRegistry": {
     "activeMatchingPresetId": {
       "help": "A Equilibrada é o conjunto calibrado e fica só para leitura. Para editar, crie ou duplique uma predefinição.",
@@ -5373,7 +5513,7 @@
         "history": "Histórico e perguntas",
         "leaving": "O que sai deste Mac",
         "logs": "Registros",
-        "reset": "Resetar"
+        "reset": "Recomeçar do zero"
       }
     },
     "integrationsGateway": {
@@ -5457,7 +5597,7 @@
       "label": "Fontes que viram páginas"
     },
     "privacyCallLog": {
-      "help": "As últimas chamadas a um modelo, local ou na nuvem. Só leitura; o registro completo fica em Avançado.",
+      "help": "O que este Mac guarda sobre as chamadas feitas a modelos, locais ou na nuvem.",
       "label": "Chamadas de IA recentes"
     },
     "privacyClearQuestions": {
@@ -5470,7 +5610,7 @@
     },
     "privacyReset": {
       "help": "Apaga biblioteca, índices de busca, grafos, perguntas, históricos, conexões, preferências e arquivos guardados. Ficam perfis, provedores, rotas e modelos instalados; backups e seus arquivos pessoais não são tocados.",
-      "label": "Resetar tudo"
+      "label": "Apagar tudo e recomeçar"
     },
     "privacySummary": {
       "help": "O que é enviado para fora deste Mac, e para quem, com a sua configuração atual.",
@@ -5764,7 +5904,7 @@
     },
     "search": {
       "clear": "Limpar a busca",
-      "emptyBack": "e voltar a {section}.",
+      "emptyBack": "e voltar para {section}.",
       "emptyBody": "Tente outra palavra, um sinônimo ou o nome em inglês. Por exemplo:",
       "emptyClear": "Limpar a busca",
       "emptyTitle": "Nada com “{query}” nos ajustes.",
