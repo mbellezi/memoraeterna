@@ -44,6 +44,7 @@ import { homeChannels, type HomeApi } from "./ipc-home.js";
 import { libraryChannels, type LibraryApi } from "./ipc-library.js";
 import { relationsBranchChannels, type RelationsBranchApi } from "./ipc-relations-branch.js";
 import { searchIpcChannels, type SearchApi } from "./ipc-search.js";
+import { settingsDescribeChannels, type SettingsDescribeApi } from "./ipc-settings-describe.js";
 import { topicsHistoryChannels, type TopicsHistoryApi } from "./ipc-topics-history.js";
 import type {
   ViewHistoryEntry,
@@ -182,6 +183,8 @@ export const ipcChannels = {
   entitiesPage: entitiesChannels.page,
   relationsBranch: relationsBranchChannels.branch,
   topicsHistory: topicsHistoryChannels.topicsHistory,
+  settingsDescribe: settingsDescribeChannels.describe,
+  settingsReset: settingsDescribeChannels.reset,
   notesPage: "app:notes:page",
   notesRelations: "app:notes:relations",
   relationsExplain: "app:relations:explain",
@@ -2086,7 +2089,7 @@ export interface DesktopApi {
     /** Records that the three steps were finished or skipped; the first record stays. */
     finish: (input: OnboardingFinishInput) => Promise<OnboardingState>;
   };
-  settings: {
+  settings: SettingsDescribeApi & {
     getGoogleBooksKeyStatus: () => Promise<{ configured: boolean }>;
     updateGoogleBooksKey: (input: { apiKey: string | null }) => Promise<{ configured: boolean }>;
     getApp: () => Promise<AppSettings>;

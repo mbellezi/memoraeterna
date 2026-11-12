@@ -39,6 +39,8 @@ import { registerHardwareIpc } from "./services/hardware/ipc.js";
 import { registerOnboardingIpc } from "./services/onboarding/onboarding-ipc.js";
 import { OnboardingService, pgOnboardingStore } from "./services/onboarding/onboarding-service.js";
 import { registerKnowledgeControlsIpc } from "./services/gardener/knowledge-controls-ipc.js";
+import { registerSettingsDescribeIpc } from "./services/settings-describe-ipc.js";
+import { SettingsReset } from "./services/settings-reset.js";
 import { WikiService } from "./services/wiki-service.js";
 import { registerWikiIpc } from "./services/wiki-ipc.js";
 import { registerObjectsIpc } from "./services/objects-ipc.js";
@@ -921,6 +923,24 @@ void app.whenReady().then(() => {
   registerKnowledgeControlsIpc(ipcMain, () => backgroundPolicy?.controls ?? null, {
     treeShapeChanged: () => void topicTreeServices?.shapeChanged()
   });
+  // `settings.describe` and `settings.reset` (F5 T160): each reset goes through its setting's writer.
+  registerSettingsDescribeIpc(
+    ipcMain,
+    new SettingsReset({
+      settings: settingsService,
+      ai: () => aiService,
+      recommendedPreset: async () =>
+        (await new HardwareService({ userDataPath: app.getPath("userData") }).profile())
+          .recommendation.recommended,
+      knowledgeControls: () => backgroundPolicy?.controls ?? null,
+      treeShapeChanged: () => void topicTreeServices?.shapeChanged(),
+      obsidian: () => obsidianSyncService,
+      googleBooks: () => metadataEnrichmentService,
+      pool: () => databaseService?.getPool() ?? null,
+      credentials: new CredentialService(app.getPath("userData")),
+      logger: console
+    })
+  );
   const gatewayPort = readGatewayPort(process.env.MEMORA_INTEGRATION_GATEWAY_PORT);
   integrationGateway = new IntegrationGateway({
     getPool: () => databaseService?.getPool() ?? null,
