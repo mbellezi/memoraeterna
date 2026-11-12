@@ -4544,27 +4544,27 @@
       "label": "Token de Hugging Face"
     },
     "managedRoot": {
-      "help": "La carpeta, dentro del vault, donde escribe Memora sus archivos. Predeterminado: Memora.",
-      "label": "Carpeta de Memora en el vault"
+      "help": "La carpeta, dentro de la bóveda, donde escribe Memora sus archivos. Predeterminado: Memora.",
+      "label": "Carpeta de Memora en la bóveda"
     },
     "metadataGoogleBooks": {
       "help": "Opcional. Sin clave, las búsquedas usan el acceso público, con un límite menor.",
       "label": "Clave de Google Books"
     },
     "obsidianLayoutAttachments": {
-      "help": "Copia al vault los archivos vinculados a las fuentes. Desactivado: el vault recibe solo el texto.",
+      "help": "Copia a la bóveda los archivos vinculados a las fuentes. Desactivado: la bóveda recibe solo el texto.",
       "label": "Copiar los archivos originales"
     },
     "obsidianLayoutLanguage": {
       "help": "Por defecto, las carpetas siguen el idioma de las notas. Elige otro solo si quieres los nombres de carpeta en otra lengua.",
-      "label": "Idioma de las carpetas del vault"
+      "label": "Idioma de las carpetas de la bóveda"
     },
     "obsidianSync": {
-      "help": "Activada: Memora escribe la biblioteca en tu vault y recupera lo que edites allí. En pausa: guarda todo sin sincronizar.",
+      "help": "Activada: Memora escribe la biblioteca en tu bóveda y recupera lo que edites allí. En pausa: guarda todo sin sincronizar.",
       "label": "Sincronizar con Obsidian"
     },
     "obsidianVaultPath": {
-      "help": "La carpeta del vault donde escribe Memora. Elígela antes de activar la sincronización.",
+      "help": "La carpeta de la bóveda donde escribe Memora. Elígela antes de activar la sincronización.",
       "label": "Vault"
     },
     "obsidianWikiIncludeDescendants": {
@@ -4572,7 +4572,7 @@
       "label": "Incluir capítulos y partes"
     },
     "obsidianWikiScope": {
-      "help": "Hasta 100 fuentes; sus notas y temas se convierten en páginas del vault.",
+      "help": "Hasta 100 fuentes; sus notas y temas se convierten en páginas de la bóveda.",
       "label": "Fuentes que se vuelven páginas"
     },
     "privacyCallLog": {

@@ -4542,27 +4542,27 @@
       "label": "Jeton Hugging Face"
     },
     "managedRoot": {
-      "help": "Le dossier, dans le vault, où Memora écrit ses fichiers. Par défaut : Memora.",
-      "label": "Dossier de Memora dans le vault"
+      "help": "Le dossier, dans le coffre, où Memora écrit ses fichiers. Par défaut : Memora.",
+      "label": "Dossier de Memora dans le coffre"
     },
     "metadataGoogleBooks": {
       "help": "Facultative. Sans clé, les recherches utilisent l’accès public, avec une limite plus basse.",
       "label": "Clé Google Books"
     },
     "obsidianLayoutAttachments": {
-      "help": "Copie dans le vault les fichiers liés aux sources. Désactivé : le vault ne reçoit que le texte.",
+      "help": "Copie dans le coffre les fichiers liés aux sources. Désactivé : le coffre ne reçoit que le texte.",
       "label": "Copier les fichiers originaux"
     },
     "obsidianLayoutLanguage": {
       "help": "Par défaut, les dossiers suivent la langue des notes. N’en choisissez une autre que si vous voulez les noms de dossier dans une autre langue.",
-      "label": "Langue des dossiers du vault"
+      "label": "Langue des dossiers du coffre"
     },
     "obsidianSync": {
-      "help": "Activée : Memora écrit la bibliothèque dans votre vault et récupère ce que vous y modifiez. En pause : garde tout sans synchroniser.",
+      "help": "Activée : Memora écrit la bibliothèque dans votre coffre et récupère ce que vous y modifiez. En pause : garde tout sans synchroniser.",
       "label": "Synchroniser avec Obsidian"
     },
     "obsidianVaultPath": {
-      "help": "Le dossier du vault où Memora écrit. Choisissez-le avant d’activer la synchronisation.",
+      "help": "Le dossier du coffre où Memora écrit. Choisissez-le avant d’activer la synchronisation.",
       "label": "Vault"
     },
     "obsidianWikiIncludeDescendants": {
@@ -4570,7 +4570,7 @@
       "label": "Inclure chapitres et parties"
     },
     "obsidianWikiScope": {
-      "help": "Jusqu’à 100 sources ; leurs notes et leurs sujets deviennent des pages du vault.",
+      "help": "Jusqu’à 100 sources ; leurs notes et leurs sujets deviennent des pages du coffre.",
       "label": "Sources qui deviennent des pages"
     },
     "privacyCallLog": {
