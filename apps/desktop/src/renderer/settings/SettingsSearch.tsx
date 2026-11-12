@@ -83,7 +83,11 @@ export function SettingsSearchField({
             type="button"
             aria-label={t("settingsShell.search.clear")}
             onClick={() => onChange("")}
-            className="inline-flex size-6 items-center justify-center rounded-sm border-0 bg-transparent text-secondary-foreground hover:bg-surface-hover hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent"
+            className={cn(
+              "inline-flex size-6 items-center justify-center rounded-sm border-0 bg-transparent",
+              "text-secondary-foreground hover:bg-surface-hover hover:text-foreground",
+              "focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent"
+            )}
           >
             <X aria-hidden="true" className="size-4" />
           </button>
@@ -210,7 +214,11 @@ export function SettingsResults({
                 key={key}
                 type="button"
                 onClick={() => onSuggest(t(key))}
-                className="inline-flex h-7 items-center rounded-full border border-border-strong bg-surface px-3 text-sm font-medium text-foreground hover:bg-surface-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                className={cn(
+                  "inline-flex h-7 items-center rounded-full border border-border-strong bg-surface px-3",
+                  "text-sm font-medium text-foreground hover:bg-surface-hover",
+                  "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                )}
               >
                 {t(key)}
               </button>

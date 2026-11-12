@@ -90,7 +90,11 @@ export function SectionNav({ t, current, onSelect, changed, hits }: SectionNavPr
                 </span>
                 {hits !== null && hitCount > 0 ? (
                   <span
-                    className="absolute right-2 top-2 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-surface px-1.5 text-xs font-semibold leading-5 text-foreground tabular-nums [box-shadow:inset_0_0_0_1px_var(--border-strong)]"
+                    className={cn(
+                      "absolute right-2 top-2 inline-flex h-5 min-w-5 items-center justify-center rounded-full",
+                      "bg-surface px-1.5 text-xs font-semibold leading-5 text-foreground tabular-nums",
+                      "[box-shadow:inset_0_0_0_1px_var(--border-strong)]"
+                    )}
                     aria-label={t(
                       hitCount === 1 ? "settingsShell.navHitsOne" : "settingsShell.navHitsMany",
                       { values: { count: hitCount } }

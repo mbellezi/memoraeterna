@@ -61,8 +61,11 @@ export const fixtures: ScreenModule["fixtures"] = {
   empty: { "settings.describe": { entries: [] } }
 };
 
-const selectClass =
-  "h-8 w-56 max-w-full appearance-none rounded-md border border-border-strong bg-surface bg-[length:1rem] px-3 pr-8 text-sm text-foreground hover:bg-surface-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent";
+const selectClass = [
+  "h-8 w-56 max-w-full appearance-none rounded-md border border-border-strong bg-surface px-3 pr-8",
+  "text-sm text-foreground hover:bg-surface-hover",
+  "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+].join(" ");
 
 function LanguageSelect({ id, label }: { id: string; label: string }) {
   const { describe } = useSettings();

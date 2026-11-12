@@ -84,12 +84,47 @@ function textOf(messages: SettingsMessages, locale: LanguageCode, key: string): 
  * English counts in every language because the keywords are English.
  */
 const smallWords: Readonly<Record<LanguageCode, string>> = {
-  en: "a an the of to in on at for by with and or is are was be it its this that these those my me i am you your we our do does did how what which when where why who can could will would should not no any all as from into about so if then than too very more most also only just one some there their them up out off over own let make set turn get want need see show change use choose pick",
-  "pt-BR":
-    "o a os as um uma uns umas de do da dos das em no na nos nas por pelo pela para pra com sem e ou que qual quais quando onde como quem meu minha meus minhas seu sua seus suas eu me se ao aos sao ser esta este esse essa isso isto mais muito tambem so apenas ja nao sim ver quero mudar trocar alterar fazer deixar usar escolher colocar ativar desativar",
-  es: "el la los las un una unos unas de del al en con sin por para y o que cual cuales cuando donde como quien mi mis tu tus su sus yo me se es son ser esta este eso esto mas muy tambien solo ya no si ver quiero cambiar hacer dejar usar elegir poner activar desactivar",
-  fr: "le la les un une des du de d l au aux en dans sur avec sans pour par et ou que qui quel quelle quels quelles quand comment mon ma mes ton ta tes son sa ses je me se est sont etre ce cet cette ces plus tres aussi seulement deja ne pas non oui voir veux changer faire laisser utiliser choisir mettre activer desactiver",
-  it: "il lo la i gli le un uno una di del dello della dei degli delle in con su per tra fra a da e o che chi quale quali quando dove come mio mia miei mie tuo suo io mi si sono essere questo questa piu molto anche solo gia non vedere voglio cambiare fare lasciare usare scegliere mettere attivare disattivare"
+  en: [
+    "a an the of to in on at for by with and or is are was be it its this that these those my ",
+    "me i am you your we our do does did how what which when where why who can could will ",
+    "would should not no any all as from into about so if then than too very more most also ",
+    "only just one some there their them up out off over own let make set turn get want need ",
+    "see show change use choose pick "
+  ]
+    .join("")
+    .trim(),
+  "pt-BR": [
+    "o a os as um uma uns umas de do da dos das em no na nos nas por pelo pela para pra com ",
+    "sem e ou que qual quais quando onde como quem meu minha meus minhas seu sua seus suas eu ",
+    "me se ao aos sao ser esta este esse essa isso isto mais muito tambem so apenas ja nao ",
+    "sim ver quero mudar trocar alterar fazer deixar usar escolher colocar ativar desativar "
+  ]
+    .join("")
+    .trim(),
+  es: [
+    "el la los las un una unos unas de del al en con sin por para y o que cual cuales cuando ",
+    "donde como quien mi mis tu tus su sus yo me se es son ser esta este eso esto mas muy ",
+    "tambien solo ya no si ver quiero cambiar hacer dejar usar elegir poner activar ",
+    "desactivar "
+  ]
+    .join("")
+    .trim(),
+  fr: [
+    "le la les un une des du de d l au aux en dans sur avec sans pour par et ou que qui quel ",
+    "quelle quels quelles quand comment mon ma mes ton ta tes son sa ses je me se est sont ",
+    "etre ce cet cette ces plus tres aussi seulement deja ne pas non oui voir veux changer ",
+    "faire laisser utiliser choisir mettre activer desactiver "
+  ]
+    .join("")
+    .trim(),
+  it: [
+    "il lo la i gli le un uno una di del dello della dei degli delle in con su per tra fra a ",
+    "da e o che chi quale quali quando dove come mio mia miei mie tuo suo io mi si sono ",
+    "essere questo questa piu molto anche solo gia non vedere voglio cambiare fare lasciare ",
+    "usare scegliere mettere attivare disattivare "
+  ]
+    .join("")
+    .trim()
 };
 const smallWordSets = new Map<LanguageCode, ReadonlySet<string>>();
 function smallWordsOf(locale: LanguageCode): ReadonlySet<string> {
