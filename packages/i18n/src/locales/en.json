@@ -4656,5 +4656,96 @@
       "help": "A second copy of each original in a folder of yours, outside Memora’s database.",
       "label": "Keep a copy of uploaded files"
     }
+  },
+  "settingsShell": {
+    "classic": {
+      "open": "Open the old settings"
+    },
+    "navChangedMany": "{count} settings changed",
+    "navChangedOne": "{count} setting changed",
+    "navFoot": "Every setting shows whether it changed and how to go back to the default.",
+    "navHitsMany": "{count} results",
+    "navHitsOne": "{count} result",
+    "navLabel": "Settings sections",
+    "row": {
+      "changed": "Changed",
+      "default": "Default: {value}",
+      "defaultVaries": "Default: depends on this Mac and the other options",
+      "reset": "Restore default",
+      "resetFailed": "Could not restore it. Nothing was changed.",
+      "resetPending": "One step is left for you to confirm in the option itself.",
+      "resetting": "Restoring…",
+      "valueNone": "Not set",
+      "valueOff": "Off",
+      "valueOn": "On",
+      "valueSet": "Set"
+    },
+    "search": {
+      "clear": "Clear the search",
+      "emptyBack": "and go back to {section}.",
+      "emptyBody": "Try another word or a synonym. For example:",
+      "emptyClear": "Clear the search",
+      "emptyTitle": "Nothing for “{query}” in settings.",
+      "exampleBudget": "budget",
+      "exampleDark": "dark",
+      "exampleObsidian": "Obsidian",
+      "examplePrivacy": "privacy",
+      "help": "Also finds synonyms: “dark” leads to Theme.",
+      "keysClear": "clears the search",
+      "keysMove": "move",
+      "keysOpen": "opens the best",
+      "label": "Search settings",
+      "placeholder": "Search: theme, budget…",
+      "resultsMany": "{count} results for “{query}”",
+      "resultsOne": "1 result for “{query}”"
+    },
+    "section": {
+      "allDefault": "Everything is at its default in this section.",
+      "changedMany": "{count} settings changed",
+      "changedOne": "{count} setting changed",
+      "inSection": "in this section",
+      "listLabel": "Which settings changed",
+      "restoreAll": "Restore all",
+      "restoreAskMany": "Restore {count} settings to their defaults?",
+      "restoreAskOne": "Restore {count} setting to its default?",
+      "restoreConfirm": "Restore",
+      "restoreSkippedMany": "{count} need a step from you and stayed as they were.",
+      "restoreSkippedOne": "{count} needs a step from you and stayed as it was."
+    },
+    "sections": {
+      "advanced": {
+        "description": "Matching, logs",
+        "name": "Advanced and diagnostics"
+      },
+      "ai": {
+        "description": "Setup and models",
+        "name": "AI"
+      },
+      "general": {
+        "description": "Theme and languages",
+        "name": "General and appearance"
+      },
+      "integrations": {
+        "description": "Obsidian, books, browser",
+        "name": "Integrations"
+      },
+      "knowledge": {
+        "description": "Gardener, tree, connections",
+        "name": "Knowledge"
+      },
+      "library": {
+        "description": "Copies, backup, imports",
+        "name": "Library and storage"
+      },
+      "privacy": {
+        "description": "What leaves this Mac, delete",
+        "name": "Privacy and data"
+      }
+    },
+    "states": {
+      "errorKept": "Nothing was changed: Memora keeps using the values that already applied.",
+      "errorTitle": "Could not read your saved settings."
+    },
+    "title": "Settings"
   }
 }

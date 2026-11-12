@@ -4654,5 +4654,96 @@
       "help": "Una seconda copia di ogni originale in una tua cartella, fuori dal database di Memora.",
       "label": "Conserva una copia dei file caricati"
     }
+  },
+  "settingsShell": {
+    "classic": {
+      "open": "Apri le vecchie impostazioni"
+    },
+    "navChangedMany": "{count} impostazioni modificate",
+    "navChangedOne": "{count} impostazione modificata",
+    "navFoot": "Ogni impostazione mostra se è stata modificata e come tornare al valore predefinito.",
+    "navHitsMany": "{count} risultati",
+    "navHitsOne": "{count} risultato",
+    "navLabel": "Sezioni delle impostazioni",
+    "row": {
+      "changed": "Modificata",
+      "default": "Predefinito: {value}",
+      "defaultVaries": "Predefinito: dipende da questo Mac e dalle altre opzioni",
+      "reset": "Ripristina predefinito",
+      "resetFailed": "Impossibile ripristinare. Non è cambiato nulla.",
+      "resetPending": "Manca un passaggio da confermare nell’opzione stessa.",
+      "resetting": "Ripristino…",
+      "valueNone": "Non impostato",
+      "valueOff": "Disattivato",
+      "valueOn": "Attivato",
+      "valueSet": "Impostato"
+    },
+    "search": {
+      "clear": "Cancella la ricerca",
+      "emptyBack": "e tornare a {section}.",
+      "emptyBody": "Prova un’altra parola, un sinonimo o il nome in inglese. Per esempio:",
+      "emptyClear": "Cancella la ricerca",
+      "emptyTitle": "Niente per “{query}” nelle impostazioni.",
+      "exampleBudget": "spese",
+      "exampleDark": "scuro",
+      "exampleObsidian": "Obsidian",
+      "examplePrivacy": "riservatezza",
+      "help": "Trova anche per sinonimo: “scuro” porta a Tema.",
+      "keysClear": "cancella la ricerca",
+      "keysMove": "scorrono",
+      "keysOpen": "apre il migliore",
+      "label": "Cerca nelle impostazioni",
+      "placeholder": "Cerca: tema, spese…",
+      "resultsMany": "{count} risultati per “{query}”",
+      "resultsOne": "1 risultato per “{query}”"
+    },
+    "section": {
+      "allDefault": "Tutto è al valore predefinito in questa sezione.",
+      "changedMany": "{count} impostazioni modificate",
+      "changedOne": "{count} impostazione modificata",
+      "inSection": "in questa sezione",
+      "listLabel": "Quali impostazioni sono cambiate",
+      "restoreAll": "Ripristina tutte",
+      "restoreAskMany": "Ripristinare {count} impostazioni ai valori predefiniti?",
+      "restoreAskOne": "Ripristinare {count} impostazione al valore predefinito?",
+      "restoreConfirm": "Ripristina",
+      "restoreSkippedMany": "{count} richiedono un passaggio da parte tua e sono rimaste come prima.",
+      "restoreSkippedOne": "{count} richiede un passaggio da parte tua ed è rimasta come prima."
+    },
+    "sections": {
+      "advanced": {
+        "description": "Corrispondenza, registri",
+        "name": "Avanzate e diagnostica"
+      },
+      "ai": {
+        "description": "Configurazione e modelli",
+        "name": "IA"
+      },
+      "general": {
+        "description": "Tema e lingue",
+        "name": "Generale e aspetto"
+      },
+      "integrations": {
+        "description": "Obsidian, libri, browser",
+        "name": "Integrazioni"
+      },
+      "knowledge": {
+        "description": "Giardiniere, albero, collegamenti",
+        "name": "Conoscenza"
+      },
+      "library": {
+        "description": "Copie, backup, importazione",
+        "name": "Libreria e archiviazione"
+      },
+      "privacy": {
+        "description": "Cosa esce da questo Mac, eliminare",
+        "name": "Privacy e dati"
+      }
+    },
+    "states": {
+      "errorKept": "Non è cambiato nulla: Memora continua a usare i valori che già valevano.",
+      "errorTitle": "Impossibile leggere le impostazioni salvate."
+    },
+    "title": "Impostazioni"
   }
 }

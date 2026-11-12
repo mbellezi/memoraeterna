@@ -4661,5 +4661,96 @@
       "help": "Une seconde copie de chaque original dans un dossier à vous, en dehors de la base de données de Memora.",
       "label": "Garder une copie des fichiers importés"
     }
+  },
+  "settingsShell": {
+    "classic": {
+      "open": "Ouvrir les anciens réglages"
+    },
+    "navChangedMany": "{count} réglages modifiés",
+    "navChangedOne": "{count} réglage modifié",
+    "navFoot": "Chaque réglage indique s’il a changé et comment revenir à la valeur par défaut.",
+    "navHitsMany": "{count} résultats",
+    "navHitsOne": "{count} résultat",
+    "navLabel": "Sections des réglages",
+    "row": {
+      "changed": "Modifié",
+      "default": "Par défaut : {value}",
+      "defaultVaries": "Par défaut : dépend de ce Mac et des autres options",
+      "reset": "Rétablir la valeur par défaut",
+      "resetFailed": "Impossible de rétablir. Rien n’a changé.",
+      "resetPending": "Il reste une étape à confirmer dans l’option elle-même.",
+      "resetting": "Rétablissement…",
+      "valueNone": "Non défini",
+      "valueOff": "Désactivé",
+      "valueOn": "Activé",
+      "valueSet": "Défini"
+    },
+    "search": {
+      "clear": "Effacer la recherche",
+      "emptyBack": "et revenir à {section}.",
+      "emptyBody": "Essayez un autre mot, un synonyme ou le nom en anglais. Par exemple :",
+      "emptyClear": "Effacer la recherche",
+      "emptyTitle": "Rien pour « {query} » dans les réglages.",
+      "exampleBudget": "dépenses",
+      "exampleDark": "sombre",
+      "exampleObsidian": "Obsidian",
+      "examplePrivacy": "confidentialité",
+      "help": "Trouve aussi par synonyme : « sombre » mène à Thème.",
+      "keysClear": "efface la recherche",
+      "keysMove": "parcourent",
+      "keysOpen": "ouvre le meilleur",
+      "label": "Rechercher dans les réglages",
+      "placeholder": "Rechercher : thème, dépenses…",
+      "resultsMany": "{count} résultats pour « {query} »",
+      "resultsOne": "1 résultat pour « {query} »"
+    },
+    "section": {
+      "allDefault": "Tout est à sa valeur par défaut dans cette section.",
+      "changedMany": "{count} réglages modifiés",
+      "changedOne": "{count} réglage modifié",
+      "inSection": "dans cette section",
+      "listLabel": "Quels réglages ont changé",
+      "restoreAll": "Tout rétablir",
+      "restoreAskMany": "Rétablir {count} réglages à leur valeur par défaut ?",
+      "restoreAskOne": "Rétablir {count} réglage à sa valeur par défaut ?",
+      "restoreConfirm": "Rétablir",
+      "restoreSkippedMany": "{count} demandent une étape de votre part et sont restés comme avant.",
+      "restoreSkippedOne": "{count} demande une étape de votre part et est resté comme avant."
+    },
+    "sections": {
+      "advanced": {
+        "description": "Correspondance, journaux",
+        "name": "Avancé et diagnostic"
+      },
+      "ai": {
+        "description": "Configuration et modèles",
+        "name": "IA"
+      },
+      "general": {
+        "description": "Thème et langues",
+        "name": "Général et apparence"
+      },
+      "integrations": {
+        "description": "Obsidian, livres, navigateur",
+        "name": "Intégrations"
+      },
+      "knowledge": {
+        "description": "Jardinier, arbre, liens",
+        "name": "Connaissances"
+      },
+      "library": {
+        "description": "Copies, sauvegarde, import",
+        "name": "Bibliothèque et stockage"
+      },
+      "privacy": {
+        "description": "Ce qui quitte ce Mac, supprimer",
+        "name": "Confidentialité et données"
+      }
+    },
+    "states": {
+      "errorKept": "Rien n’a changé : Memora continue d’utiliser les valeurs qui s’appliquaient déjà.",
+      "errorTitle": "Impossible de lire vos réglages enregistrés."
+    },
+    "title": "Réglages"
   }
 }
