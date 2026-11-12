@@ -33,10 +33,11 @@ new Script(source, { filename: "sandbox-preload.js" }).runInNewContext({
 assert.equal(typeof exposed.get("app")?.prompts?.command, "function");
 
 // The typed event bus (F4 D26): one IPC listener serves every subscription, a payload that does not
-// match its schema is dropped in the preload, and the listener goes with the last subscription.
+// match its schema is dropped in the preload. The listener is attached when the preload loads (the main
+// process replays the sticky states before any view subscribes) and stays when the last subscription goes.
 const app = exposed.get("app");
 assert.equal(typeof app?.onAppEvent, "function");
-assert.equal((wires.get("app:events") ?? []).length, 0);
+assert.equal((wires.get("app:events") ?? []).length, 1);
 const received = [];
 const stopJobs = app.onAppEvent("job.progress", (event) => received.push(event.type));
 const stopDownloads = app.onAppEvent("model.download", (event) => received.push(event.type));
@@ -55,7 +56,7 @@ assert.deepEqual([...received], ["job.progress"]);
 stopJobs();
 assert.equal(wires.get("app:events").length, 1);
 stopDownloads();
-assert.equal(wires.get("app:events").length, 0);
+assert.equal(wires.get("app:events").length, 1);
 console.log(
   "Built sandbox preload initializes with only Electron available, exposes the typed prompt command surface and validates the typed event bus."
 );
