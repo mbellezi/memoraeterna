@@ -4157,7 +4157,7 @@
     },
     "depth": {
       "help": "Qual nível de subtópicos dá a cor aos pontos",
-      "label": "Cores por",
+      "label": "Cor por subtópico de",
       "one": "1º nível",
       "three": "3º nível",
       "two": "2º nível"
@@ -4195,7 +4195,7 @@
       "label": "Legenda",
       "lines": "Linha = conexão:",
       "suggested": "tracejada = sugerida",
-      "thickness": "de longe, cada tópico vira uma etiqueta; espessura = número de conexões",
+      "thickness": "De longe, cada tópico vira uma etiqueta e a espessura da linha conta as conexões.",
       "topics": "Cor do ponto = tópico:",
       "unplaced": "sem lugar na árvore"
     },

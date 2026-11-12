@@ -4159,7 +4159,7 @@
     },
     "depth": {
       "help": "Quel niveau de sous-thèmes donne leur couleur aux points",
-      "label": "Couleurs par",
+      "label": "Couleur par sous-thème de",
       "one": "1er niveau",
       "three": "3e niveau",
       "two": "2e niveau"
@@ -4197,7 +4197,7 @@
       "label": "Légende",
       "lines": "Ligne = connexion :",
       "suggested": "pointillés = suggérée",
-      "thickness": "de loin, chaque thème devient une étiquette ; épaisseur = nombre de connexions",
+      "thickness": "De loin, chaque thème devient une étiquette et l’épaisseur de la ligne compte les connexions.",
       "topics": "Couleur du point = thème :",
       "unplaced": "sans place dans l’arbre"
     },

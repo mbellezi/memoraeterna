@@ -4152,7 +4152,7 @@
     },
     "depth": {
       "help": "Quale livello di sottoargomenti dà il colore ai punti",
-      "label": "Colori per",
+      "label": "Colore per sottoargomento di",
       "one": "1º livello",
       "three": "3º livello",
       "two": "2º livello"
@@ -4190,7 +4190,7 @@
       "label": "Legenda",
       "lines": "Linea = connessione:",
       "suggested": "tratteggiata = suggerita",
-      "thickness": "da lontano, ogni argomento diventa un’etichetta; spessore = numero di connessioni",
+      "thickness": "Da lontano, ogni argomento diventa un’etichetta e lo spessore della linea conta le connessioni.",
       "topics": "Colore del punto = argomento:",
       "unplaced": "senza posto nell’albero"
     },

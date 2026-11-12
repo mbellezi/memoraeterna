@@ -4154,10 +4154,10 @@
     },
     "depth": {
       "help": "Which level of subtopics gives the dots their colour",
-      "label": "Colours by",
-      "one": "1st level",
-      "three": "3rd level",
-      "two": "2nd level"
+      "label": "Colour by subtopic at",
+      "one": "level 1",
+      "three": "level 3",
+      "two": "level 2"
     },
     "description": "Connections between the notes of a branch",
     "edge": {
@@ -4192,7 +4192,7 @@
       "label": "Legend",
       "lines": "Line = connection:",
       "suggested": "dashed = suggested",
-      "thickness": "zoomed out, each topic becomes a label; thickness = number of connections",
+      "thickness": "Zoomed out, each topic becomes a label and a line's thickness counts the connections.",
       "topics": "Dot colour = topic:",
       "unplaced": "no place in the tree"
     },

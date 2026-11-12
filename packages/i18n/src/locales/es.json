@@ -4161,7 +4161,7 @@
     },
     "depth": {
       "help": "Qué nivel de subtemas da el color a los puntos",
-      "label": "Colores por",
+      "label": "Color por subtema de",
       "one": "1.er nivel",
       "three": "3.er nivel",
       "two": "2.º nivel"
@@ -4199,7 +4199,7 @@
       "label": "Leyenda",
       "lines": "Línea = conexión:",
       "suggested": "discontinua = sugerida",
-      "thickness": "de lejos, cada tema se vuelve una etiqueta; grosor = número de conexiones",
+      "thickness": "De lejos, cada tema se vuelve una etiqueta y el grosor de la línea cuenta las conexiones.",
       "topics": "Color del punto = tema:",
       "unplaced": "sin lugar en el árbol"
     },

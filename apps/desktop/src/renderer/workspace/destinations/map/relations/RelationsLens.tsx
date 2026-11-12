@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { ChevronDown, ListTree } from "lucide-react";
 import type { Translator } from "@app/i18n";
 import { formatObjectAddress } from "@app/domain";
@@ -53,8 +53,15 @@ type Load =
   | { status: "missing" }
   /** The tree has no topic yet: there is no branch to draw. */
   | { status: "noTopics" }
-  /** The answer on screen; the model is worded from it in the interface's language. */
-  | { status: "ready"; read: BranchRead };
+  /** The answer on screen (asked for the scope `key`); the model is worded from it. */
+  | { status: "ready"; read: BranchRead; key: string };
+
+/** What the branch chip names while no answer is on screen: the last branch named for a scope. */
+interface KnownScope {
+  key: string;
+  label: string;
+  title: string;
+}
 
 /** The four states of a surface, as the frame names them. */
 export function relationsState(load: Load, model: BranchModel | null): PanelLoadState {
@@ -129,6 +136,8 @@ export function RelationsLens({
   const [selected, setSelected] = useState<BranchCursorItem | null>(null);
   const [webgl] = useState(() => isWebGLAvailable());
   const [unavailable, setUnavailable] = useState(false);
+  const [known, setKnown] = useState<KnownScope | null>(null);
+  const helpId = useId();
   const sensitivity = useWheelSensitivity(active);
   const scopeKey = scope ? `${scope.kind}:${scope.id}` : "";
   // Another "Open in Map" is another branch: the branch picked here gives way to it.
@@ -185,9 +194,11 @@ export function RelationsLens({
         };
         // An answer equal to the one on screen keeps it: nothing is built or drawn again.
         setLoad((previous) =>
-          previous.status === "ready" && sameBranchRead(previous.read, read)
+          previous.status === "ready" &&
+          previous.key === wantedKey &&
+          sameBranchRead(previous.read, read)
             ? previous
-            : { status: "ready", read }
+            : { status: "ready", read, key: wantedKey }
         );
         rereads.answer();
       } catch {
@@ -230,14 +241,33 @@ export function RelationsLens({
     active
   );
 
+  // The chip keeps naming the branch while it is read again (another depth, a retry), so the
+  // header does not change width when the answer arrives.
+  const modelLabel = model ? scopeLabel(t, model) : null;
+  const modelKey = load.status === "ready" ? load.key : null;
+  if (
+    model &&
+    modelLabel !== null &&
+    modelKey === wantedKey &&
+    (known?.key !== modelKey || known.label !== modelLabel)
+  ) {
+    setKnown({ key: modelKey, label: modelLabel, title: model.scopeTitle });
+  }
+  const pending = known?.key === wantedKey ? known : null;
+
   const state = relationsState(load, model);
   useEffect(() => {
     onState?.(state);
   }, [onState, state]);
 
-  const pick = (next: BranchScope) => {
+  const pick = (next: BranchScope, title: string) => {
     setSelected(null);
     setChosen(next);
+    setKnown({
+      key: `${next.kind}:${next.id}`,
+      label: t("mapRelations.scope.label", { values: { title } }),
+      title
+    });
   };
 
   return (
@@ -247,18 +277,20 @@ export function RelationsLens({
       aria-label={t("map.lens.relations")}
       className="flex min-w-0 flex-col gap-3"
     >
+      <span id={helpId} className="sr-only">
+        {t("mapRelations.depth.help")}
+      </span>
       <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
         <p className="m-0 text-sm text-secondary-foreground">{t("mapRelations.description")}</p>
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
           <div className="flex items-center gap-2">
-            <span
-              className="text-xs text-secondary-foreground"
-              title={t("mapRelations.depth.help")}
-            >
+            <span className="text-xs text-secondary-foreground" aria-hidden="true">
               {t("mapRelations.depth.label")}
             </span>
             <ToggleGroup
-              label={t("mapRelations.depth.help")}
+              label={t("mapRelations.depth.label")}
+              aria-describedby={helpId}
+              title={t("mapRelations.depth.help")}
               value={String(depth) as "1" | "2" | "3"}
               onValueChange={(value) => {
                 setSelected(null);
@@ -270,7 +302,16 @@ export function RelationsLens({
               <ToggleGroupItem value="3">{t("mapRelations.depth.three")}</ToggleGroupItem>
             </ToggleGroup>
           </div>
-          <BranchPicker t={t} model={model} wanted={wanted} active={active} onPick={pick} />
+          <BranchPicker
+            t={t}
+            model={model}
+            label={modelLabel ?? pending?.label ?? null}
+            title={model?.scopeTitle ?? pending?.title ?? null}
+            failed={load.status !== "loading"}
+            wanted={wanted}
+            active={active}
+            onPick={pick}
+          />
         </div>
       </div>
       {load.status === "loading" ? <RelationsSkeleton t={t} /> : null}
@@ -307,7 +348,13 @@ export function RelationsLens({
         </EmptyState>
       ) : null}
       {model && hasConnections(model) ? (
-        <div className="grid min-w-0 gap-4 min-[1180px]:grid-cols-[minmax(0,1fr)_auto]">
+        // The second column is the table's: without it, the canvas runs to the header's right edge.
+        <div
+          className={cn(
+            "grid min-w-0 gap-4",
+            aside && "min-[1180px]:grid-cols-[minmax(0,1fr)_auto]"
+          )}
+        >
           <div className="flex min-w-0 flex-col gap-3">
             {webgl && !unavailable ? (
               <RelationsCanvas
@@ -462,6 +509,14 @@ function useWheelSensitivity(active: boolean): number {
   return value;
 }
 
+/** "Ramo: Fermentação" or "Fonte: …": the branch the model is drawn for. */
+function scopeLabel(t: Translator, model: BranchModel): string {
+  return t(
+    model.scope.kind === "source" ? "mapRelations.scope.source" : "mapRelations.scope.label",
+    { values: { title: model.scopeTitle } }
+  );
+}
+
 /**
  * "Ramo: Fermentação ▾": the branch on screen, and the branches next to it (above, beside, inside)
  * and the areas of the tree. The neighbours are read only when the menu opens.
@@ -469,15 +524,23 @@ function useWheelSensitivity(active: boolean): number {
 function BranchPicker({
   t,
   model,
+  label,
+  title,
+  failed,
   wanted,
   active,
   onPick
 }: {
   t: Translator;
   model: BranchModel | null;
+  /** The branch's name; null while it is not known yet. */
+  label: string | null;
+  title: string | null;
+  /** The read failed or found nothing: an unknown name is a still bar, not a shimmering one. */
+  failed: boolean;
   wanted: BranchScope | null;
   active: boolean;
-  onPick: (scope: BranchScope) => void;
+  onPick: (scope: BranchScope, title: string) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [choices, setChoices] = useState<BranchChoices | null>(null);
@@ -507,11 +570,7 @@ function BranchPicker({
     };
   }, [open, active, parentId, scopeId, t]);
 
-  const label = model
-    ? t(model.scope.kind === "source" ? "mapRelations.scope.source" : "mapRelations.scope.label", {
-        values: { title: model.scopeTitle }
-      })
-    : t("mapRelations.scope.menu");
+  const menu = t("mapRelations.scope.menu");
   const inside = model?.children;
   const sections = useMemo(
     () =>
@@ -535,20 +594,24 @@ function BranchPicker({
           type="button"
           variant="secondary"
           className="max-w-[min(22rem,100%)]"
-          aria-label={`${label}. ${t("mapRelations.scope.menu")}`}
+          aria-label={label ? `${label}. ${menu}` : menu}
           disabled={!model}
         >
           <ObjectKindGlyph kind="topic" className="shrink-0 text-object-topic" />
-          <span className="min-w-0 truncate" title={model?.scopeTitle}>
-            {label}
-          </span>
+          {label ? (
+            <span className="min-w-0 truncate" title={title ?? undefined}>
+              {label}
+            </span>
+          ) : failed ? (
+            <span aria-hidden="true" className="h-3 w-28 rounded-sm bg-soft" />
+          ) : (
+            <Skeleton className="w-28" />
+          )}
           <ChevronDown aria-hidden="true" />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="max-w-80">
-        {sections.length === 0 ? (
-          <DropdownMenuLabel>{t("mapRelations.scope.menu")}</DropdownMenuLabel>
-        ) : null}
+        {sections.length === 0 ? <DropdownMenuLabel>{menu}</DropdownMenuLabel> : null}
         {sections.map((section, index) => (
           <div key={section.key}>
             {index > 0 ? <DropdownMenuSeparator /> : null}
@@ -556,7 +619,7 @@ function BranchPicker({
             {section.items.map((item) => (
               <DropdownMenuItem
                 key={item.id}
-                onSelect={() => onPick({ kind: "topic", id: item.id })}
+                onSelect={() => onPick({ kind: "topic", id: item.id }, item.title)}
               >
                 {item.title}
               </DropdownMenuItem>
