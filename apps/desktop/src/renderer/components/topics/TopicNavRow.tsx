@@ -13,6 +13,7 @@ import {
 import type { TopicHealth, TopicItemLeaf } from "@app/domain";
 import type { Translator } from "@app/i18n";
 import { cn } from "../../lib/cn";
+import { FittedLabel } from "../../workspace/destinations/explore/FittedLabel";
 import { ObjectKindGlyph, objectKindTextClass } from "../glyphs";
 import { InlineTitleEditor } from "./ops/InlineTitleEditor";
 import { actionRowOf, actionsLabelKey, itemIdentity, type NavRowOps } from "./ops/nav-ops";
@@ -264,14 +265,10 @@ function RowContent({
               onCancel={ops.onCancelRename}
             />
           ) : (
-            <span
-              className={cn(
-                "min-w-0 flex-1 truncate",
-                node.title === null && "italic text-muted-foreground"
-              )}
-            >
-              {node.title ?? t("topics.navigator.unnamed")}
-            </span>
+            <FittedLabel
+              text={node.title ?? t("topics.navigator.unnamed")}
+              className={cn(node.title === null && "italic text-muted-foreground")}
+            />
           )}
           {node.management === "human" ? (
             <Mark
@@ -299,7 +296,7 @@ function RowContent({
         <>
           <ObjectKindGlyph kind={leaf.kind} className={objectKindTextClass[leaf.kind]} />
           <span className="sr-only">{t(`topics.navigator.kinds.${leaf.kind}`)}: </span>
-          <span className="min-w-0 flex-1 truncate">{leafLabel(t, leaf)}</span>
+          <FittedLabel text={leafLabel(t, leaf)} />
           {leaf.role === "secondary" ? (
             <Mark label={t("topics.navigator.marks.alsoHere")} className="text-muted-foreground">
               <CornerDownRight aria-hidden="true" className="size-3" />
@@ -339,14 +336,10 @@ function RowContent({
         <>
           <ObjectKindGlyph kind={place.kind} className={objectKindTextClass[place.kind]} />
           <span className="sr-only">{t(`topics.navigator.kinds.${place.kind}`)}: </span>
-          <span
-            className={cn(
-              "min-w-0 flex-1 truncate",
-              place.title === null && "italic text-muted-foreground"
-            )}
-          >
-            {place.title ?? t("topics.navigator.unnamed")}
-          </span>
+          <FittedLabel
+            text={place.title ?? t("topics.navigator.unnamed")}
+            className={cn(place.title === null && "italic text-muted-foreground")}
+          />
           {place.pinned || place.management === "pinned" ? <PinMark t={t} /> : null}
           <HealthMark t={t} health={place.health} />
           <Count value={place.count} spoken={placeCountLabel(t, place)} format={format} />

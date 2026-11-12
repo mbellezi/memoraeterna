@@ -13,14 +13,8 @@ import {
   type AppViewId,
   type LegacyViewId
 } from "../shared/app-menu";
-import type { WikiNoticeKind } from "./components/topics/WikiPlaceholder";
-import {
-  currentWikiTopic,
-  showInWiki,
-  startWikiTopicHistory,
-  wikiNavigationStep
-} from "./components/topics/wiki-topic-history";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { formatObjectAddress } from "@app/domain";
 import { Database, RefreshCw } from "lucide-react";
 import {
   createTranslator,
@@ -57,6 +51,10 @@ import { useFirstRun } from "./components/onboarding/use-first-run";
 import { ToastViewport, useToasts } from "./components/ui/toast";
 import type { KnowledgeGraphViewState } from "./components/KnowledgeGraphDashboard";
 import { useDeepLinks } from "./workspace/destinations/explore/deep-link";
+import * as exploreRoot from "./workspace/destinations/explore/ExploreRoot";
+import { ExploreActionsContext } from "./workspace/destinations/explore/explore-actions";
+import { ExploreNavigator, hoistAction } from "./workspace/destinations/explore/ExploreNavigator";
+import { ContextDockContext } from "./workspace/context-dock";
 import { PanelStack, panelRegistry } from "./workspace/PanelStack";
 import { Shell } from "./workspace/Shell";
 import { hasNavigator, hostedViewIds, legacyHostFor } from "./workspace/shell-model";
@@ -99,8 +97,11 @@ const placeOfView: Record<
   knowledgeGraph: "map"
 };
 
-/** The stack's panels: the files of `workspace/panels/`, then the old views' roots (D6). */
-const stackRegistry = [...panelRegistry, legacyPanel];
+/**
+ * The stack's panels: the files of `workspace/panels/`, Explore's root (T141), then the old views'
+ * roots (D6): a destination whose own root exists takes it before the old view it replaces.
+ */
+const stackRegistry = [...panelRegistry, exploreRoot, legacyPanel];
 
 const databaseStartupTimeoutMs = 60_000;
 
@@ -148,19 +149,8 @@ export function App({
   initialSystemInfo = null,
   firstRun = true
 }: AppProps) {
-  // Changes each time a link asks for a page of the removed wiki or for a topic that is gone.
-  const [wikiNotice, setWikiNotice] = useState<{ token: number; kind: WikiNoticeKind } | null>(
-    null
-  );
-  // What the Wiki shows (a topic, or where to start), as the history its Back and Forward follow.
-  const [wikiHistory, setWikiHistory] = useState(startWikiTopicHistory);
   // Where Settings and the old screens were scrolled, kept while the stack covers them.
   const [screenScroll] = useState(createScreenScroll);
-  // What Back and Forward step from: they arrive outside render, after the last commit.
-  const wikiHistoryRef = useRef(wikiHistory);
-  useEffect(() => {
-    wikiHistoryRef.current = wikiHistory;
-  }, [wikiHistory]);
   // F5 T135, T136: the shell's place and the panel stacks (D8); the old views a place hosts follow
   // it (D6). The workspace hook saves the state and routes Cmd-W and Cmd-[ / Cmd-] to the stack.
   const { workspace, dispatch, focusMode, toggleFocusMode } = useWorkspace();
@@ -256,19 +246,22 @@ export function App({
       setActiveView("library");
     }
   );
-  // A topic opens in the Wiki, which keeps showing it while the Library or another view is in front.
+  // A topic opens beside the focused panel of Explore (D8): from the Library, from a link or from
+  // the old views' own links. It never replaces a screen.
   const openTopic = useStableCallback((topicId: string) => {
-    setWikiHistory((current) => showInWiki(current, topicId));
-    setActiveView("wiki");
+    setLegacyView(null);
+    dispatch({ type: "go", destination: "explore" });
+    dispatch({
+      type: "open",
+      address: formatObjectAddress({ kind: "topic", id: topicId }),
+      from: workspace.stacks.explore.focus,
+      mode: "push"
+    });
   });
   // A link from Obsidian or the system opens its object as a panel (D10); a page of the retired
   // wiki says so in a notice.
   useDeepLinks(workspace, dispatch, () => pushToast(t("topics.placeholder.notice"), "info"));
-  // Closing the Topic page (its button or Cmd-W) shows where to start; Back opens the topic again.
-  const closeWikiTopic = useStableCallback(() =>
-    setWikiHistory((current) => showInWiki(current, null))
-  );
-  // Where a click on the Topic page leads: another topic, or a source or note in the Library.
+  // The old Wiki's own links: a topic opens beside, a source or note in the Library.
   const openWikiObject = useStableCallback((navigation: OpenableNavigation) => {
     if (navigation.type === "topic") openTopic(navigation.topicId);
     else {
@@ -288,17 +281,7 @@ export function App({
   useEffect(
     () =>
       subscribeWindowNavigation((direction) => {
-        // The Wiki on screen steps through the topics it showed; the Library through its own history.
-        const wikiStep = wikiNavigationStep(
-          activeViewRef.current === "wiki",
-          wikiHistoryRef.current,
-          direction
-        );
-        if (wikiStep) {
-          wikiHistoryRef.current = wikiStep;
-          setWikiHistory(wikiStep);
-          return true;
-        }
+        // The Library steps through its own history; the stacks step through theirs (use-workspace).
         if (activeViewRef.current !== "library") return false;
         if (direction === "back") window.history.back();
         else window.history.forward();
@@ -557,6 +540,9 @@ export function App({
     }
   });
 
+  // Explore's "Add your first source" does what Cmd-N does.
+  const addFirstSource = useStableCallback(() => handleWorkspaceResult({ type: "newImport" }));
+
   // An Obsidian conflict of the Inbox is solved in Settings, under Connections.
   const openConnectionsSettings = useStableCallback(() => {
     selectSettingsScope("connections");
@@ -570,8 +556,11 @@ export function App({
       toggleNavigation: () => handleWorkspaceResult({ type: "toggleNavigator" }),
       toggleTheme: toggleThemeMode,
       workspace: handleWorkspaceResult,
-      // Hoisting needs the topic in the top panel (T141).
-      hoistTopic: () => undefined
+      // "Show only this branch" hoists the tree to the topic in Explore's top panel.
+      hoistTopic: () => {
+        const action = hoistAction(workspace);
+        if (action) dispatch(action);
+      }
     })
   );
 
@@ -667,9 +656,8 @@ export function App({
   const stackShown = legacyView === null && workspace.destination !== "settings";
   const navigatorOn =
     workspace.destination !== "settings" && workspace.navigator[workspace.destination];
-  // The old Wiki hosts its own navigator (the host appears with Explore's root, T141); focus mode
-  // hides the navigator (design record §8 rule 9).
-  const navigatorHidden = activeView === "wiki" || focusMode;
+  // Focus mode hides the navigator (design record 8 rule 9).
+  const navigatorHidden = focusMode;
   const showNavigator =
     stackShown && hasNavigator(workspace.destination) && navigatorOn && !navigatorHidden;
   const legacyViews: LegacyViewsValue = {
@@ -683,10 +671,10 @@ export function App({
     openLibrarySource,
     clearLibraryTarget: () => setLibraryTarget(null),
     openTopic,
-    wikiNotice,
-    wikiTopicId: currentWikiTopic(wikiHistory),
+    wikiNotice: null,
+    wikiTopicId: null,
     openWikiObject,
-    closeWikiTopic,
+    closeWikiTopic: () => undefined,
     openAskSource,
     openConnectionsSettings,
     graphWheelZoomSensitivity: appSettings.graphWheelZoomSensitivity,
@@ -726,20 +714,30 @@ export function App({
         onNavigateActivity={openFromActivity}
         onOpenInbox={openInbox}
         onOpenTopic={openTopic}
+        navigator={
+          workspace.destination === "explore" ? (
+            <ExploreNavigator t={t} workspace={workspace} dispatch={dispatch} />
+          ) : undefined
+        }
       >
         <LegacyViewsContext.Provider value={legacyViews}>
-          <PanelStack
-            t={t}
-            workspace={workspace}
-            dispatch={dispatch}
-            viewportWidth={viewportWidth}
-            // The context panel joins the layout with its card (T143); until then nothing docks.
-            chrome={{ navigator: showNavigator, context: false }}
-            shown={stackShown}
-            focusMode={focusMode}
-            onToggleFocusMode={toggleFocusMode}
-            registry={stackRegistry}
-          />
+          <ExploreActionsContext.Provider value={{ onAddSource: addFirstSource }}>
+            {/* The context panel joins the layout with its card (T143); until then nothing docks,
+                and a note's body lists its relations in full. */}
+            <ContextDockContext.Provider value={false}>
+              <PanelStack
+                t={t}
+                workspace={workspace}
+                dispatch={dispatch}
+                viewportWidth={viewportWidth}
+                chrome={{ navigator: showNavigator, context: false }}
+                shown={stackShown}
+                focusMode={focusMode}
+                onToggleFocusMode={toggleFocusMode}
+                registry={stackRegistry}
+              />
+            </ContextDockContext.Provider>
+          </ExploreActionsContext.Provider>
           {stackShown ? null : (
             <LegacyScreen
               view={activeView === "settings" ? "settings" : (legacyView ?? "settings")}

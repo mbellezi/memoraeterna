@@ -107,6 +107,8 @@
     "debug.finalScore",
     "debug.relations",
     "debug.rerankScore",
+    "explore.note.suggestionsMany",
+    "explore.note.suggestionsOne",
     "import.content.labels.articles",
     "import.content.labels.sections",
     "import.fields.doi",

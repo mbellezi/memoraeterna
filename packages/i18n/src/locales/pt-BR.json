@@ -3847,5 +3847,46 @@
     },
     "stackLabel": "Painéis abertos",
     "untitled": "Sem título"
+  },
+  "explore": {
+    "navigator": {
+      "branch": "Ramo",
+      "branchLabel": "Mostrando só um ramo da árvore",
+      "wholeTree": "Árvore inteira"
+    },
+    "note": {
+      "alsoInInbox": "também na Caixa de entrada",
+      "error": "Não foi possível abrir esta nota.",
+      "errorKept": "O resto do Explorar continua aberto e suas notas não foram alteradas.",
+      "gardenerSuggestion": "sugestão do Jardineiro · decida quando quiser",
+      "goneBody": "Ela pode ter sido juntada a outra nota ou removida. Mais nada mudou.",
+      "goneHeadline": "Esta nota não está mais na sua biblioteca.",
+      "moreRelations": "mais {count}",
+      "suggestionsMany": "{count} sugestões",
+      "suggestionsOne": "{count} sugestão",
+      "summaryHint": "Cada conexão, com a sua evidência, está no painel de contexto."
+    },
+    "root": {
+      "addFirst": "Adicionar a primeira fonte",
+      "areasLead": "Escolha uma área para abrir ao lado. O que você abrir fica aqui, um painel ao lado do outro.",
+      "areasTitle": "Suas áreas",
+      "emptyBody": "Tudo o que você abrir aparece aqui, um painel ao lado do outro. Os mais antigos ficam recolhidos em tiras à esquerda, com o tipo e o título à vista; um clique reabre. Assim o caminho até aqui nunca se perde.",
+      "emptyHeadline": "Nada aberto ainda",
+      "error": "Não foi possível carregar as suas áreas.",
+      "errorKept": "Suas fontes e notas continuam como estavam.",
+      "keyClose": "fecha o painel em foco",
+      "keyOpen": "abre ao lado",
+      "keyPeek": "espia sem abrir",
+      "keySpace": "Espaço",
+      "keysLabel": "Teclas",
+      "unsorted": "Esperando um lugar: {count}"
+    },
+    "topic": {
+      "error": "Não foi possível abrir este tópico.",
+      "errorKept": "O resto do Explorar continua aberto e suas notas não foram alteradas.",
+      "goneBody": "Ele pode ter sido unido a outro tópico ou removido. Mais nada mudou.",
+      "goneHeadline": "Este tópico não está mais na árvore.",
+      "noDirectNotes": "Ainda sem notas diretas. As notas estão nos subtópicos."
+    }
   }
 }

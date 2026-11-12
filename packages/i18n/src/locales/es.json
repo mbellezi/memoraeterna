@@ -3851,5 +3851,46 @@
     },
     "stackLabel": "Paneles abiertos",
     "untitled": "Sin título"
+  },
+  "explore": {
+    "navigator": {
+      "branch": "Rama",
+      "branchLabel": "Mostrando solo una rama del árbol",
+      "wholeTree": "Árbol completo"
+    },
+    "note": {
+      "alsoInInbox": "también en la Bandeja de entrada",
+      "error": "No se pudo abrir esta nota.",
+      "errorKept": "El resto de Explorar sigue abierto y tus notas no han cambiado.",
+      "gardenerSuggestion": "sugerencia del Jardinero · decide cuando quieras",
+      "goneBody": "Puede que se haya unido a otra nota o que se haya eliminado. Nada más ha cambiado.",
+      "goneHeadline": "Esta nota ya no está en tu biblioteca.",
+      "moreRelations": "{count} más",
+      "suggestionsMany": "{count} sugerencias",
+      "suggestionsOne": "{count} sugerencia",
+      "summaryHint": "Cada conexión, con su evidencia, está en el panel de contexto."
+    },
+    "root": {
+      "addFirst": "Añadir la primera fuente",
+      "areasLead": "Elige un área para abrirla al lado. Lo que abras se queda aquí, un panel junto al otro.",
+      "areasTitle": "Tus áreas",
+      "emptyBody": "Todo lo que abras aparece aquí, un panel junto al otro. Los más antiguos se pliegan en tiras a la izquierda, con el tipo y el título a la vista; un clic los reabre. Así el camino hasta aquí nunca se pierde.",
+      "emptyHeadline": "Nada abierto todavía",
+      "error": "No se pudieron cargar tus áreas.",
+      "errorKept": "Tus fuentes y notas siguen como estaban.",
+      "keyClose": "cierra el panel en foco",
+      "keyOpen": "abre al lado",
+      "keyPeek": "echa un vistazo sin abrir",
+      "keySpace": "Espacio",
+      "keysLabel": "Teclas",
+      "unsorted": "Esperando un lugar: {count}"
+    },
+    "topic": {
+      "error": "No se pudo abrir este tema.",
+      "errorKept": "El resto de Explorar sigue abierto y tus notas no han cambiado.",
+      "goneBody": "Puede que se haya unido a otro tema o que se haya eliminado. Nada más ha cambiado.",
+      "goneHeadline": "Este tema ya no está en el árbol.",
+      "noDirectNotes": "Aún sin notas propias. Las notas están en los subtemas."
+    }
   }
 }

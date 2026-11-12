@@ -274,12 +274,21 @@ function branchRows(
   });
 }
 
-/** The Topics tree: the root's children as the top level, open topics showing their branch. */
+/**
+ * The Topics tree: the root's children as the top level, open topics showing their branch. A
+ * hoisted tree (`hoistId`, "Show only this branch") starts at that topic: its subtopics and its
+ * own leaves are the top level.
+ */
 export function topicRows(
   branches: ReadonlyMap<string, Branch>,
-  expanded: ReadonlySet<string>
+  expanded: ReadonlySet<string>,
+  hoistId: string | null = null
 ): NavRow[] {
   const out: NavRow[] = [];
+  if (hoistId !== null) {
+    branchRows(branches, expanded, hoistId, null, 1, out, { leaves: true, waiting: true });
+    return out;
+  }
   if (!branches.get(rootBranchKey)?.data) return out;
   branchRows(branches, expanded, null, null, 1, out, { leaves: false, waiting: false });
   return out;

@@ -15,6 +15,7 @@ import { Skeleton } from "../components/ui/skeleton";
 import { useAppEvent } from "../lib/app-events";
 import { cn } from "../lib/cn";
 import { destinationIds, type DestinationId } from "./destinations";
+import { pinOf } from "./pin-object";
 import { PanelFrame, type PanelLoadState } from "./PanelFrame";
 import { destinationGlyphs } from "./Rail";
 import type { RibbonPlace } from "./PathRibbon";
@@ -564,6 +565,8 @@ export function PanelStack({
     const drawn = item !== null && !item.merged && mode !== "spine";
     const onScreen = active && drawn;
     const shownPlace = places.get(key);
+    // The pin of the top panel's object: a view address has nothing to pin.
+    const pin = pinOf(address);
     if (!module) return null;
     const Component = module.Component;
     return (
@@ -602,6 +605,7 @@ export function PanelStack({
             focusMode={focusMode}
             {...(onToggleFocusMode ? { onToggleFocusMode } : {})}
             onOpen={openFrom(index)}
+            {...(pin ? { onPin: pin } : {})}
             {...(panel.scroll !== undefined ? { scroll: panel.scroll } : {})}
             onScrollEnd={(top) => dispatch({ type: "scroll", panel: index, top })}
           >

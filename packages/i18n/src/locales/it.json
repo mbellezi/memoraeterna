@@ -3842,5 +3842,46 @@
     },
     "stackLabel": "Pannelli aperti",
     "untitled": "Senza titolo"
+  },
+  "explore": {
+    "navigator": {
+      "branch": "Ramo",
+      "branchLabel": "Mostrando solo un ramo dell’albero",
+      "wholeTree": "Albero intero"
+    },
+    "note": {
+      "alsoInInbox": "anche nella Posta in arrivo",
+      "error": "Impossibile aprire questa nota.",
+      "errorKept": "Il resto di Esplora resta aperto e le tue note non sono cambiate.",
+      "gardenerSuggestion": "suggerimento del Giardiniere · decidi quando vuoi",
+      "goneBody": "Potrebbe essere stata unita a un’altra nota o rimossa. Nient’altro è cambiato.",
+      "goneHeadline": "Questa nota non è più nella tua libreria.",
+      "moreRelations": "altre {count}",
+      "suggestionsMany": "{count} suggerimenti",
+      "suggestionsOne": "{count} suggerimento",
+      "summaryHint": "Ogni connessione, con la sua evidenza, è nel pannello di contesto."
+    },
+    "root": {
+      "addFirst": "Aggiungi la prima fonte",
+      "areasLead": "Scegli un’area per aprirla accanto. Ciò che apri resta qui, un pannello accanto all’altro.",
+      "areasTitle": "Le tue aree",
+      "emptyBody": "Tutto ciò che apri compare qui, un pannello accanto all’altro. I più vecchi si ripiegano in strisce a sinistra, con tipo e titolo in vista; un clic li riapre. Così il percorso fin qui non si perde mai.",
+      "emptyHeadline": "Ancora nulla di aperto",
+      "error": "Impossibile caricare le tue aree.",
+      "errorKept": "Le tue fonti e le tue note non sono cambiate.",
+      "keyClose": "chiude il pannello attivo",
+      "keyOpen": "apre accanto",
+      "keyPeek": "dà un’occhiata senza aprire",
+      "keySpace": "Spazio",
+      "keysLabel": "Tasti",
+      "unsorted": "In attesa di un posto: {count}"
+    },
+    "topic": {
+      "error": "Impossibile aprire questo argomento.",
+      "errorKept": "Il resto di Esplora resta aperto e le tue note non sono cambiate.",
+      "goneBody": "Potrebbe essere stato unito a un altro argomento o rimosso. Nient’altro è cambiato.",
+      "goneHeadline": "Questo argomento non è più nell’albero.",
+      "noDirectNotes": "Ancora nessuna nota propria. Le note sono negli argomenti secondari."
+    }
   }
 }

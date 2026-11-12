@@ -6,7 +6,7 @@ import { openCitedSource, TopicAskSlot, TopicAskView } from "./TopicAskSlot";
 import { topicFixtureId } from "./topic-page-fixtures";
 
 const noop = () => undefined;
-const actions = { openTopic: noop, openNote: noop, openSource: noop };
+const actions = { openTopic: noop, openNote: noop, openSource: noop, openAddress: noop };
 const topic = { id: topicFixtureId(3), title: "Forgetting curve" };
 /** Server rendering separates adjacent text nodes with comments; the person sees none. */
 const plain = (html: string) => html.replaceAll("<!-- -->", "");

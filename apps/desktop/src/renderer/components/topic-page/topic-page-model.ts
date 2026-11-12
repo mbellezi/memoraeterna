@@ -27,6 +27,8 @@ export interface TopicPageActions {
   openNote(noteId: string): void;
   /** A source, located first (it opens at its place in the Library). */
   openSource(sourceId: string): void;
+  /** An object address, anchors included (a cited passage opens highlighted in its source). */
+  openAddress(address: string): void;
 }
 
 /** A topic as the person reads it: its name, "All topics" for the root, "Unnamed topic" otherwise. */
