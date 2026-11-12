@@ -500,7 +500,7 @@ function BranchPicker({
         values: { title: model.scopeTitle }
       })
     : t("mapRelations.scope.menu");
-  const inside = model?.children ?? [];
+  const inside = model?.children;
   const sections = useMemo(
     () =>
       [
@@ -509,11 +509,11 @@ function BranchPicker({
           label: t("mapRelations.scope.above"),
           items: choices?.above ? [choices.above] : []
         },
-        { key: "inside", label: t("mapRelations.scope.inside"), items: inside },
+        { key: "inside", label: t("mapRelations.scope.inside"), items: inside ?? [] },
         { key: "beside", label: t("mapRelations.scope.beside"), items: choices?.beside ?? [] },
         { key: "areas", label: t("mapRelations.scope.areas"), items: choices?.areas ?? [] }
       ].filter((section) => section.items.length > 0),
-    [choices, inside, model, t]
+    [choices, inside, t]
   );
 
   return (

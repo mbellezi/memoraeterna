@@ -155,7 +155,6 @@ export function RelationsCanvas({
     [model]
   );
   const sensitivity = useRef(wheelZoomSensitivity);
-  sensitivity.current = wheelZoomSensitivity;
   const titleOf = (id: string) => nodesById.get(id)?.title ?? "";
 
   const describe = (item: BranchCursorItem): string => {
@@ -168,6 +167,8 @@ export function RelationsCanvas({
   };
 
   useLayoutEffect(() => {
+    // The next canvas starts at this sensitivity; the one on screen takes it now.
+    sensitivity.current = wheelZoomSensitivity;
     api.current?.setSensitivity(wheelZoomSensitivity);
   }, [wheelZoomSensitivity]);
 
