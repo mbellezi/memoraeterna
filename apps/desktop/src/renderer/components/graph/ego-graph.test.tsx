@@ -84,7 +84,7 @@ describe("the relation graph states", () => {
   it("says there is nothing to draw for a note with no shown relation, and offers the list", () => {
     const html = render(ready(answer({ nodes: [node(1, 0)], edges: [], neighbourTotal: 0 })));
     expect(text(html)).toContain("This note has no relations to draw yet.");
-    expect(text(html)).toContain("Show as list");
+    expect(text(html)).toContain("See as a list");
     expect(html).not.toContain('role="application"');
   });
 
@@ -96,6 +96,8 @@ describe("the relation graph states", () => {
       'aria-label="Relation graph: 3 notes and 2 relations. Drag the background to pan; the List shows this note&#x27;s relations as text."'
     );
     expect(text(html)).toContain("3 notes · 2 relations");
+    // One word to show the list, the context panel's own.
+    expect(text(html)).toContain("See as a list");
     expect(text(html)).toContain("Keyboard: Tab to the graph");
     // The canvas names a hint element that exists.
     const hint = /aria-describedby="([^"]+)"/.exec(html)?.[1];

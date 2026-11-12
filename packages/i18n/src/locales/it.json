@@ -4186,8 +4186,7 @@
       "contextLost": "Il grafo ha smesso di essere disegnato.",
       "empty": "Questa nota non ha ancora relazioni da disegnare. Compaiono qui quando altre note vengono collegate a essa.",
       "depthTwo": "Includi le relazioni delle note collegate",
-      "counts": "{notes} note · {relations} relazioni",
-      "showList": "Mostra come elenco",
+      "showList": "Vedi come elenco",
       "label": "Grafo delle relazioni: {notes} note e {relations} relazioni. Trascina lo sfondo per spostarti; l’elenco mostra come testo le relazioni di questa nota.",
       "keyboardHint": "Tastiera: raggiungi il grafo con Tab; le frecce passano tra note e relazioni, Invio apre una nota e Esc chiude la scheda.",
       "legend": "Legenda",
@@ -4203,7 +4202,11 @@
       "openHint": "Fai clic, o premi Invio, per aprire questa nota.",
       "stateSuggested": "Suggerimento: nessuno ha ancora mantenuto questa relazione.",
       "stateKept": "Hai mantenuto questa relazione.",
-      "stateApplied": "Questa relazione è applicata."
+      "stateApplied": "Questa relazione è applicata.",
+      "notesOne": "{count} nota",
+      "notesMany": "{count} note",
+      "relationsOne": "{count} relazione",
+      "relationsMany": "{count} relazioni"
     },
     "linkedStance": "collegate: {type}",
     "stance": {

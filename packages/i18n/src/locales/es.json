@@ -4186,8 +4186,7 @@
       "contextLost": "El grafo dejó de dibujarse.",
       "empty": "Esta nota aún no tiene relaciones que dibujar. Aparecen aquí cuando otras notas se vinculan a ella.",
       "depthTwo": "Incluir las relaciones de las notas relacionadas",
-      "counts": "{notes} notas · {relations} relaciones",
-      "showList": "Mostrar como lista",
+      "showList": "Ver como lista",
       "label": "Grafo de relaciones: {notes} notas y {relations} relaciones. Arrastra el fondo para moverte; la lista muestra en texto las relaciones de esta nota.",
       "keyboardHint": "Teclado: usa Tab hasta el grafo; las flechas pasan entre notas y relaciones, Intro abre una nota y Esc cierra la ficha.",
       "legend": "Leyenda",
@@ -4203,7 +4202,11 @@
       "openHint": "Haz clic, o pulsa Intro, para abrir esta nota.",
       "stateSuggested": "Sugerencia: nadie ha mantenido todavía esta relación.",
       "stateKept": "Mantuviste esta relación.",
-      "stateApplied": "Esta relación está aplicada."
+      "stateApplied": "Esta relación está aplicada.",
+      "notesOne": "{count} nota",
+      "notesMany": "{count} notas",
+      "relationsOne": "{count} relación",
+      "relationsMany": "{count} relaciones"
     },
     "linkedStance": "relacionadas: {type}",
     "stance": {

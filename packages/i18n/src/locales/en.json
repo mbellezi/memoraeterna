@@ -4186,8 +4186,7 @@
       "contextLost": "The graph stopped drawing.",
       "empty": "This note has no relations to draw yet. They appear here when other notes are linked to it.",
       "depthTwo": "Include the relations of related notes",
-      "counts": "{notes} notes · {relations} relations",
-      "showList": "Show as list",
+      "showList": "See as a list",
       "label": "Relation graph: {notes} notes and {relations} relations. Drag the background to pan; the List shows this note's relations as text.",
       "keyboardHint": "Keyboard: Tab to the graph, then the arrow keys move between notes and relations, Enter opens a note and Escape closes the card.",
       "legend": "Legend",
@@ -4203,7 +4202,11 @@
       "openHint": "Click, or press Enter, to open this note.",
       "stateSuggested": "Suggestion: nobody has kept this relation yet.",
       "stateKept": "You kept this relation.",
-      "stateApplied": "This relation is applied."
+      "stateApplied": "This relation is applied.",
+      "notesOne": "{count} note",
+      "notesMany": "{count} notes",
+      "relationsOne": "{count} relation",
+      "relationsMany": "{count} relations"
     },
     "linkedStance": "linked: {type}",
     "stance": {
