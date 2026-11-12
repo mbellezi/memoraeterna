@@ -6,9 +6,9 @@
 // label starts with the query; the label has a word that starts with each word of the query; a
 // keyword does; the help text does. Small words of the person's language ("how", "onde", "para")
 // are not asked for. An entry that has every word, by the start of a word, comes first. After those
-// come the entries that have half of the words, a word one slip away from a real one (a swapped or
-// missing letter) counting too, ranked by how rare the words they have are; they fill a list up to
-// eight. The hit carries the label's matched ranges so the list can underline and embolden them.
+// come the entries that have at least one of the words, a word one slip away from a real one (a
+// swapped or missing letter) counting too, ranked by how rare the words they have are; they fill a
+// list up to eight. The hit carries the label's matched ranges so the list can underline and embolden them.
 import { messages as catalog, type LanguageCode } from "@app/i18n";
 
 import {

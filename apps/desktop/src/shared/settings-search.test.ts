@@ -314,6 +314,32 @@ describe("the held-out queries (X9, held-out part)", () => {
     }
   });
 
+  it("names the registry entries that have no held-out query, so the bar is not met by leaving them out", () => {
+    // The bar is at least one held-out hit per entry and locale. These entries were not among T109's
+    // 85 ids (they came with the registry's final shape), so nothing holds them to it yet: the
+    // orchestrator has to ask for blind queries for them (T174's X10 meets the same gap). A new entry
+    // without a query, or a listed one that gets its queries, fails this test until the list is
+    // updated: the gap can only shrink.
+    const covered = new Set(heldOutRows.map((row) => row.entry));
+    const uncovered = settingsRegistryV2.map((entry) => entry.id).filter((id) => !covered.has(id));
+    expect(uncovered.sort()).toEqual(
+      [
+        "advanced.similarityRuns",
+        "advanced.taskHistory",
+        "ai.profiles",
+        "ai.route.judge",
+        "library.storage",
+        "obsidian.layout.attachments",
+        "obsidian.wiki.includeDescendants",
+        "privacy.callLog",
+        "privacy.clearQuestions",
+        "privacy.clearViewHistory",
+        "privacy.summary",
+        "relationLabels"
+      ].sort()
+    );
+  });
+
   it("finds every entry that has held-out queries by at least one of them, in every locale", () => {
     const entries = [...new Set(heldOutRows.map((row) => row.entry))];
     for (const locale of localesOfX9)
