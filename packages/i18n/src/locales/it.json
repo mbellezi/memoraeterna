@@ -4373,6 +4373,227 @@
     "stackLabel": "Pannelli aperti",
     "untitled": "Senza titolo"
   },
+  "contextPanel": {
+    "connections": {
+      "actions": {
+        "failed": "Non è stato possibile salvare la tua scelta. Riprova.",
+        "keep": "Mantieni",
+        "keepLabel": "Mantieni la connessione con {title}",
+        "remove": "Rimuovi",
+        "removeLabel": "Rimuovi la connessione con {title}"
+      },
+      "empty": {
+        "entity": "Nessun'altra entità compare ancora nelle stesse note.",
+        "note": "Ancora nessuna connessione. Il Giardiniere cerca quando il Mac è inattivo.",
+        "question": "Una domanda non ha connessioni proprie. Ciò che cita è in Evidenze.",
+        "source": "Ancora nessuna fonte correlata. Compaiono quando note di questa fonte si collegano a note di altre.",
+        "topic": "Ancora nessun argomento collegato. Compaiono quando note di questo argomento si collegano a note di altri."
+      },
+      "foot": {
+        "graph": "Vedi nel Grafo",
+        "map": "Apri nella Mappa"
+      },
+      "groups": {
+        "contradicts": "Contraddice questa nota",
+        "dependsOnIn": "Dipendono da questa nota",
+        "dependsOnLinked": "Collegate per dipendenza",
+        "dependsOnOut": "Questa nota dipende da",
+        "exampleOfIn": "Sono esempi di questa nota",
+        "exampleOfLinked": "Collegate per esempio",
+        "exampleOfOut": "Questa nota è un esempio di",
+        "extendsIn": "Estendono questa nota",
+        "extendsLinked": "Collegate per estensione",
+        "extendsOut": "Questa nota estende",
+        "relatedIn": "Chiariscono questa nota",
+        "relatedMutual": "Correlate a questa nota",
+        "relatedOut": "Questa nota chiarisce",
+        "supportsIn": "Sostengono questa nota",
+        "supportsLinked": "Collegate per sostegno",
+        "supportsOut": "Questa nota sostiene"
+      },
+      "groupsOther": {
+        "entities": "Entità che compaiono insieme",
+        "sources": "Fonti correlate",
+        "topics": "Argomenti collegati"
+      },
+      "legend": "Le sei forme di connessione",
+      "link": "Collega a un’altra nota",
+      "meta": {
+        "alsoInInbox": "anche nella Posta in arrivo",
+        "byYou": "l'hai mantenuta tu",
+        "confidenceHigh": "confidenza alta",
+        "confidenceLow": "confidenza bassa",
+        "confidenceMedium": "confidenza media",
+        "confidenceUnknown": "confidenza sconosciuta",
+        "decideWhenever": "decidi quando vuoi",
+        "gardener": "Giardiniere",
+        "gardenerSuggested": "suggerimento del Giardiniere",
+        "inCommon": "{notes} in comune"
+      },
+      "question": {
+        "below": "la nota qui sotto",
+        "linked": "{heading}?",
+        "otherSubject": "{verb} {object}?",
+        "thisSubject": "{subject} {verb} {object}?"
+      },
+      "suggestionTag": "suggerimento",
+      "suggestionsLabel": "Connessioni suggerite"
+    },
+    "count": {
+      "connectionsOne": "{count} connessione",
+      "connectionsOther": "{count} connessioni",
+      "mentionsOne": "{count} menzione",
+      "mentionsOther": "{count} menzioni",
+      "notesOne": "{count} nota",
+      "notesOther": "{count} note",
+      "passagesOne": "{count} brano",
+      "passagesOther": "{count} brani",
+      "questionsOne": "{count} domanda",
+      "questionsOther": "{count} domande",
+      "sourcesOne": "{count} fonte",
+      "sourcesOther": "{count} fonti",
+      "suggestionsOne": "{count} suggerimento",
+      "suggestionsOther": "{count} suggerimenti"
+    },
+    "errors": {
+      "connections": "Impossibile caricare le connessioni.",
+      "evidence": "Impossibile caricare le evidenze.",
+      "graph": "Impossibile caricare il grafo.",
+      "kept": {
+        "entity": "L'entità resta aperta.",
+        "note": "La nota resta aperta.",
+        "question": "La domanda resta aperta.",
+        "source": "La fonte resta aperta.",
+        "topic": "L'argomento resta aperto."
+      },
+      "mentions": "Impossibile caricare le menzioni."
+    },
+    "evidence": {
+      "citedBy": "citato da {parts}",
+      "earlierVersion": "brano di una versione precedente",
+      "empty": {
+        "entity": "Un'entità non ha brani propri. Apri Menzioni per vedere le note che li hanno.",
+        "note": "Questa nota non ha più brani di fonte. È stata conservata da una fonte che non esiste più.",
+        "question": "Questa risposta non cita nessuna fonte. Una domanda ancora in corso riceve le fonti alla fine.",
+        "source": "Nessuna nota o domanda ha ancora citato un brano di questa fonte.",
+        "topic": "Questo argomento non ha ancora una panoramica, quindi non ci sono brani da mostrare."
+      },
+      "noPassage": "nessun brano indicato",
+      "open": "Apri il brano di {source}",
+      "preserved": "brano conservato da una fonte eliminata",
+      "provenance": "Chi l'ha scritta",
+      "seeConnections": "Vedi le connessioni",
+      "stale": "potrebbe non essere aggiornata",
+      "unavailable": "questo brano non è più nella libreria"
+    },
+    "graph": {
+      "empty": "Non c’è ancora nulla da disegnare: nessuna nota è collegata a questa.",
+      "legend": "Forme di connessione",
+      "openMap": "Apri nella Mappa › Grafo",
+      "showList": "Vedi come elenco",
+      "unavailable": "Questo computer non riesce a disegnare il grafo."
+    },
+    "headings": {
+      "connections": {
+        "entity": {
+          "description": "Entità che compaiono nelle stesse note.",
+          "title": "Connessioni di questa entità"
+        },
+        "note": {
+          "description": "Come questa nota si collega ad altre, e chi lo ha deciso.",
+          "title": "Connessioni di questa nota"
+        },
+        "question": {
+          "description": "Una domanda si collega a ciò che cita. Vedi Evidenze.",
+          "title": "Connessioni di questa domanda"
+        },
+        "source": {
+          "description": "Fonti che trattano argomenti collegati a questa.",
+          "title": "Connessioni di questa fonte"
+        },
+        "topic": {
+          "description": "Argomenti collegati a questo dalle connessioni tra le note.",
+          "title": "Connessioni di questo argomento"
+        }
+      },
+      "evidence": {
+        "entity": {
+          "description": "Un'entità non ha brani propri. Li hanno le sue note.",
+          "title": "Evidenze di questa entità"
+        },
+        "note": {
+          "description": "I brani di fonte su cui si regge la nota, nell'ordine dei numeri.",
+          "title": "Evidenze di questa nota"
+        },
+        "question": {
+          "description": "Le fonti citate, nell'ordine dei numeri.",
+          "title": "Evidenze di questa risposta"
+        },
+        "source": {
+          "description": "Brani di questa fonte citati da note e domande.",
+          "title": "Evidenze di questa fonte"
+        },
+        "topic": {
+          "description": "I brani su cui si regge la panoramica, nell'ordine dei numeri.",
+          "title": "Evidenze di questo argomento"
+        }
+      },
+      "graph": {
+        "note": {
+          "description": "Questa nota e le note più collegate a essa. L'elenco in Connessioni ha lo stesso contenuto.",
+          "title": "Grafo di questa nota"
+        },
+        "other": {
+          "description": "Il disegno delle connessioni di questo oggetto sta nella Mappa.",
+          "title": "Grafo"
+        }
+      },
+      "mentions": {
+        "description": "Dove questo oggetto è citato senza una connessione.",
+        "title": "Menzioni"
+      }
+    },
+    "loadingMore": "Caricamento…",
+    "locate": {
+      "alsoIn": "anche in",
+      "andMore": "e altri {count}",
+      "citedBy": "citato da",
+      "citedByOverview": "citato dalla panoramica di",
+      "error": "Impossibile leggere la posizione.",
+      "label": "Dove si trova"
+    },
+    "mentions": {
+      "empty": "Niente lo cita fuori dalle connessioni. Quando una domanda, un argomento o una nota lo citerà, comparirà qui.",
+      "groups": {
+        "mention": "Note che menzionano questa entità",
+        "overview": "Argomenti la cui panoramica cita questa nota",
+        "question": "Domande le cui risposte citano questa nota"
+      }
+    },
+    "more": "Altro",
+    "moreFailed": "Impossibile caricare altro.",
+    "moreLabel": "Altre schede del contesto",
+    "none": {
+      "body": "Apri una nota, una fonte, un argomento o una domanda e il suo contesto compare qui: connessioni, evidenze e menzioni.",
+      "title": "Niente in primo piano"
+    },
+    "region": "Contesto",
+    "showMore": "Mostra altro",
+    "strip": {
+      "close": "Chiudi il contesto",
+      "label": "Contesto",
+      "open": "Apri il contesto: {tab}"
+    },
+    "tablist": "Contesto del pannello in primo piano",
+    "tabs": {
+      "ask": "Chiedi",
+      "connections": "Connessioni",
+      "evidence": "Evidenze",
+      "graph": "Grafo",
+      "history": "Cronologia",
+      "mentions": "Menzioni"
+    }
+  },
   "entityPage": {
     "aliases": "Altri nomi:",
     "articleLabel": "Entità: {name}",

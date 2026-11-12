@@ -4375,6 +4375,227 @@
     "stackLabel": "Open panels",
     "untitled": "Untitled"
   },
+  "contextPanel": {
+    "connections": {
+      "actions": {
+        "failed": "Your choice could not be saved. Try again.",
+        "keep": "Keep",
+        "keepLabel": "Keep the connection with {title}",
+        "remove": "Remove",
+        "removeLabel": "Remove the connection with {title}"
+      },
+      "empty": {
+        "entity": "No other entity appears in the same notes yet.",
+        "note": "No connections yet. The Gardener looks when the Mac is idle.",
+        "question": "A question has no connections of its own. What it cites is under Evidence.",
+        "source": "No related sources yet. They appear when notes of this source link to notes of others.",
+        "topic": "No linked topics yet. They appear when notes of this topic link to notes of others."
+      },
+      "foot": {
+        "graph": "See in the Graph",
+        "map": "Open in the Map"
+      },
+      "groups": {
+        "contradicts": "Contradicts this note",
+        "dependsOnIn": "Notes that depend on this one",
+        "dependsOnLinked": "Linked by dependence",
+        "dependsOnOut": "This note depends on",
+        "exampleOfIn": "Examples of this note",
+        "exampleOfLinked": "Linked by example",
+        "exampleOfOut": "This note is an example of",
+        "extendsIn": "Notes that extend this one",
+        "extendsLinked": "Linked by extension",
+        "extendsOut": "This note extends",
+        "relatedIn": "Notes that clarify this one",
+        "relatedMutual": "Related to this note",
+        "relatedOut": "This note clarifies",
+        "supportsIn": "Notes that support this one",
+        "supportsLinked": "Linked by support",
+        "supportsOut": "This note supports"
+      },
+      "groupsOther": {
+        "entities": "Entities that appear together",
+        "sources": "Related sources",
+        "topics": "Linked topics"
+      },
+      "legend": "The six kinds of connection",
+      "link": "Link to another note",
+      "meta": {
+        "alsoInInbox": "also in the Inbox",
+        "byYou": "you kept it",
+        "confidenceHigh": "high confidence",
+        "confidenceLow": "low confidence",
+        "confidenceMedium": "medium confidence",
+        "confidenceUnknown": "confidence unknown",
+        "decideWhenever": "decide whenever you like",
+        "gardener": "Gardener",
+        "gardenerSuggested": "suggested by the Gardener",
+        "inCommon": "{notes} in common"
+      },
+      "question": {
+        "below": "the note below",
+        "linked": "{heading}?",
+        "otherSubject": "{verb} {object}?",
+        "thisSubject": "{subject} {verb} {object}?"
+      },
+      "suggestionTag": "suggestion",
+      "suggestionsLabel": "Suggested connections"
+    },
+    "count": {
+      "connectionsOne": "{count} connection",
+      "connectionsOther": "{count} connections",
+      "mentionsOne": "{count} mention",
+      "mentionsOther": "{count} mentions",
+      "notesOne": "{count} note",
+      "notesOther": "{count} notes",
+      "passagesOne": "{count} passage",
+      "passagesOther": "{count} passages",
+      "questionsOne": "{count} question",
+      "questionsOther": "{count} questions",
+      "sourcesOne": "{count} source",
+      "sourcesOther": "{count} sources",
+      "suggestionsOne": "{count} suggestion",
+      "suggestionsOther": "{count} suggestions"
+    },
+    "errors": {
+      "connections": "Could not load the connections.",
+      "evidence": "Could not load the evidence.",
+      "graph": "Could not load the graph.",
+      "kept": {
+        "entity": "The entity stays open.",
+        "note": "The note stays open.",
+        "question": "The question stays open.",
+        "source": "The source stays open.",
+        "topic": "The topic stays open."
+      },
+      "mentions": "Could not load the mentions."
+    },
+    "evidence": {
+      "citedBy": "cited by {parts}",
+      "earlierVersion": "passage of an earlier version",
+      "empty": {
+        "entity": "An entity has no passages of its own. Open Mentions to see the notes that carry them.",
+        "note": "This note has no source passage left. It was kept from a source that is gone.",
+        "question": "This answer cites no source. A question that is still being answered gets its sources when it ends.",
+        "source": "No note or question cites a passage of this source yet.",
+        "topic": "This topic has no overview yet, so there are no passages to show."
+      },
+      "noPassage": "no passage named",
+      "open": "Open the passage of {source}",
+      "preserved": "passage kept from a deleted source",
+      "provenance": "Who wrote it",
+      "seeConnections": "See the connections",
+      "stale": "may be out of date",
+      "unavailable": "this passage is no longer in the library"
+    },
+    "graph": {
+      "empty": "Nothing to draw yet: no note is linked to this one.",
+      "legend": "Kinds of connection",
+      "openMap": "Open in the Map › Graph",
+      "showList": "See as a list",
+      "unavailable": "This computer cannot draw the graph."
+    },
+    "headings": {
+      "connections": {
+        "entity": {
+          "description": "Entities that appear in the same notes.",
+          "title": "Connections of this entity"
+        },
+        "note": {
+          "description": "How this note links to others, and who decided.",
+          "title": "Connections of this note"
+        },
+        "question": {
+          "description": "A question links to what it cites. See Evidence.",
+          "title": "Connections of this question"
+        },
+        "source": {
+          "description": "Sources that deal with related subjects.",
+          "title": "Connections of this source"
+        },
+        "topic": {
+          "description": "Topics linked to this one through the connections between notes.",
+          "title": "Connections of this topic"
+        }
+      },
+      "evidence": {
+        "entity": {
+          "description": "An entity has no passages of its own. Its notes carry them.",
+          "title": "Evidence of this entity"
+        },
+        "note": {
+          "description": "The source passages the note rests on, in the order of its numbers.",
+          "title": "Evidence of this note"
+        },
+        "question": {
+          "description": "The cited sources, in the order of the numbers.",
+          "title": "Evidence of this answer"
+        },
+        "source": {
+          "description": "Passages of this source that notes and questions cite.",
+          "title": "Evidence of this source"
+        },
+        "topic": {
+          "description": "The passages the overview rests on, in the order of its numbers.",
+          "title": "Evidence of this topic"
+        }
+      },
+      "graph": {
+        "note": {
+          "description": "This note and the notes most linked to it. The list in Connections has the same information.",
+          "title": "Graph of this note"
+        },
+        "other": {
+          "description": "The drawing of this object's connections lives in the Map.",
+          "title": "Graph"
+        }
+      },
+      "mentions": {
+        "description": "Where this object is cited without a connection.",
+        "title": "Mentions"
+      }
+    },
+    "loadingMore": "Loading more…",
+    "locate": {
+      "alsoIn": "also in",
+      "andMore": "and {count} more",
+      "citedBy": "cited by",
+      "citedByOverview": "cited by the overview of",
+      "error": "Could not read the place.",
+      "label": "Where this is"
+    },
+    "mentions": {
+      "empty": "Nothing cites this outside its connections. When a question, a topic or a note does, it shows here.",
+      "groups": {
+        "mention": "Notes that mention this entity",
+        "overview": "Topics whose overview cites this note",
+        "question": "Questions whose answers cite this note"
+      }
+    },
+    "more": "More",
+    "moreFailed": "Could not load more.",
+    "moreLabel": "More context tabs",
+    "none": {
+      "body": "Open a note, source, topic or question and its context appears here: connections, evidence and mentions.",
+      "title": "Nothing in focus"
+    },
+    "region": "Context",
+    "showMore": "Show more",
+    "strip": {
+      "close": "Close the context",
+      "label": "Context",
+      "open": "Open the context: {tab}"
+    },
+    "tablist": "Context of the focused panel",
+    "tabs": {
+      "ask": "Ask",
+      "connections": "Connections",
+      "evidence": "Evidence",
+      "graph": "Graph",
+      "history": "History",
+      "mentions": "Mentions"
+    }
+  },
   "entityPage": {
     "aliases": "Other names:",
     "articleLabel": "Entity: {name}",
