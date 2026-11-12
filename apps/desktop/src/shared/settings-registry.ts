@@ -1,9 +1,15 @@
-// The settings registry (F4 T98, D33): every persisted setting of the application with the screen
-// that shows it, its category for E7 and the production code that reads it. It feeds the static
-// tests that keep the Settings cut honest: E7 (at most six `automation` controls outside an Advanced
-// disclosure, the six Knowledge controls), "no stored key lacks a reader", and that the screens
-// render what the registry says. A setting added without a row fails those tests.
-import type { MatchingValueControlId } from "@app/domain";
+// The settings registry. The first half (F4 T98, D33) is the v1 registry that feeds the Settings
+// screen of F4: every persisted setting with the screen that shows it, its category for E7 and
+// the code that reads it. It goes with `SettingsView` when T166 deletes it. The second half is the
+// v2 registry (F5 T159, D17, `settingsRegistryV2`) that Settings v2, the search and the reset read;
+// `M/settings-registry.test.ts` holds it to a body that reads each key, to a reader that is not a
+// schema or a test, and to a path from an app entry point. A setting added without an entry fails it.
+import {
+  defaultKnowledgeControls,
+  recommendedMatchingConfiguration,
+  recommendedMatchingPresetId,
+  type MatchingValueControlId
+} from "@app/domain";
 
 /** The scopes of the Settings screen. */
 export const settingsScopeIds = [
@@ -441,8 +447,7 @@ export const settingsRegistry: readonly SettingEntry[] = [
   },
 
   // --- state with no control ------------------------------------------------------------------
-  // The rail no longer collapses (F5 T135): the key is only the stored schema now; T159 removes it.
-  internal("navigationCollapsed", "app.preferences", "apps/desktop/src/shared/ipc.ts"),
+  // `navigationCollapsed` left this list in F5 T159: the rail no longer collapses (T135).
   internal("updatedAt", "app.preferences", `${main}/services/settings-service.ts`),
   internal("import.lastDirectory", "settings", `${main}/services/settings-service.ts`),
   internal("ai.classTests.v1", "settings", `${main}/services/ai-class-routes.ts`),
@@ -529,4 +534,899 @@ export function visibleAutomationSettings(
   registry: readonly SettingEntry[] = settingsRegistry
 ): SettingEntry[] {
   return registry.filter(isVisibleAutomation);
+}
+
+// =================================================================================================
+// Registry v2 (F5 T159, D17, spec 3.8). One entry per control of Settings v2: the persisted
+// settings, the six workload routes, the provider credentials and the pages, in the order of the
+// Settings v2 mockup. Persisted state with no control is `persistedStateRegistry`. The copy
+// (`labelKey`, `helpKey`, the group names) lives in `@app/i18n` under `settingsRegistry` (T175,
+// which also writes the English keywords: `keywords` stays empty here). `settingsRegistryV2` takes
+// the name `settingsRegistry` when T166 deletes the v1 rows above.
+// =================================================================================================
+
+/** The seven sections of Settings v2, in navigation order (D17). */
+export const settingsSectionIds = [
+  "general",
+  "ai",
+  "knowledge",
+  "library",
+  "integrations",
+  "privacy",
+  "advanced"
+] as const;
+export type SettingsSectionId = (typeof settingsSectionIds)[number];
+
+export type Json = string | number | boolean | null | Json[] | { [key: string]: Json };
+
+/** What the control is. `block` is a read-only panel; `page` opens a page of its own. */
+export type ControlKind =
+  | "switch"
+  | "select"
+  | "segmented"
+  | "choice"
+  | "number"
+  | "range"
+  | "text"
+  | "folder"
+  | "copies"
+  | "credential"
+  | "action"
+  | "info"
+  | "page"
+  | "block";
+
+/** Where the value lives. `none`: nothing is stored (an action, a page or a read-only panel). */
+export type StoreKind = SettingStore | "route" | "none";
+/** `keys` are the stored keys the control edits (a merged control lists more than one). */
+export interface StoreRef {
+  kind: StoreKind;
+  keys: readonly string[];
+}
+
+/** The value a "changed" marker compares with, and what a reset restores. */
+export type DefaultRef =
+  | { value: Json }
+  | { osLocale: true }
+  | { unset: true }
+  /** Depends on the machine or on another setting; the key names what it depends on. */
+  | { computed: string };
+
+/** How T160 puts a setting back; each adapter writes through the setting's existing writer. */
+export const resetAdapterIds = [
+  "ai-preset",
+  "ai-route",
+  "app-preference",
+  "book-lookup",
+  "credential",
+  "decider-mode",
+  "decisions-opt-in",
+  "kv-setting",
+  "knowledge-control",
+  "matching-preset",
+  "matching-value",
+  "none",
+  "obsidian-sync",
+  "storage-setting",
+  "upload-copies"
+] as const;
+export type ResetAdapterId = (typeof resetAdapterIds)[number];
+
+export type PageId =
+  | "backup"
+  | "callLog"
+  | "gateway"
+  | "models"
+  | "processingPresets"
+  | "profiles"
+  | "prompts"
+  | "taskHistory";
+
+/** `tool` is an entry with no stored value: an action, a page, a read-only panel. */
+export type EntryCategory = SettingCategory | "tool";
+
+/** The message keys the copy card (T175) writes, one pair per entry. */
+export type SettingMessageKey = `settingsRegistry.${string}.${"label" | "help"}`;
+
+export interface SettingEntryV2 {
+  /** The stored key path, or the control's own id when it merges keys or stores nothing. */
+  id: string;
+  section: SettingsSectionId;
+  /** A group of the section; its name is `settingsRegistry.groups.<section>.<group>`. */
+  group: string;
+  labelKey: SettingMessageKey;
+  helpKey: SettingMessageKey;
+  /** English synonyms and task words for the search (T175). */
+  keywords: string[];
+  control: ControlKind;
+  store: StoreRef;
+  /** The Settings screen of F4 that shows it today; absent for what has no such control. */
+  scope?: SettingsScope;
+  default: DefaultRef;
+  reset: ResetAdapterId;
+  /** Production code that reads the value (or, with no store, performs the action). */
+  reader: { file: string; symbol: string };
+  /** Behind an Advanced disclosure in a section other than Advanced. */
+  advanced?: boolean;
+  page?: PageId;
+  category: EntryCategory;
+}
+
+/** Persisted state with no control (counters, cursors, markers): it needs a reader, not a label. */
+export interface PersistedStateEntry {
+  id: string;
+  store: StoreRef;
+  reader: { file: string; symbol: string };
+}
+
+/** The flat message-key name of an entry id: `ai.preset.v1` is `aiPresetV1`. */
+export function settingSlug(id: string): string {
+  return id
+    .split(/[^A-Za-z0-9]+/u)
+    .filter(Boolean)
+    .map((part, index) => (index === 0 ? part : part.charAt(0).toUpperCase() + part.slice(1)))
+    .join("");
+}
+
+const base = "apps/desktop/src/main/services";
+const rendererApp = "apps/desktop/src/renderer/App.tsx";
+const mainIndex = "apps/desktop/src/main/index.ts";
+const read = (file: string, symbol: string) => ({ file, symbol });
+/** The top-level code of a module (the main entry point wires its readers inline). */
+const moduleCode = "<module>";
+
+const matchingDefault = (id: MatchingValueControlId): Json => {
+  const [group, member] = id.split(".") as [string, string | undefined];
+  const configuration = recommendedMatchingConfiguration as unknown as Record<string, Json>;
+  const value = member
+    ? (configuration[group] as Record<string, Json> | undefined)?.[member]
+    : configuration[group];
+  return value ?? null;
+};
+
+type Spec = Omit<SettingEntryV2, "labelKey" | "helpKey" | "keywords" | "category"> & {
+  category?: EntryCategory;
+};
+const entry = (spec: Spec): SettingEntryV2 => ({
+  ...spec,
+  labelKey: `settingsRegistry.${settingSlug(spec.id)}.label`,
+  helpKey: `settingsRegistry.${settingSlug(spec.id)}.help`,
+  keywords: [],
+  category: spec.category ?? "tool"
+});
+const at = (kind: StoreKind, ...keys: string[]): StoreRef => ({ kind, keys });
+const nothing: StoreRef = { kind: "none", keys: [] };
+/** A page, an action or a panel: no stored value, nothing to reset. */
+const tool = (
+  id: string,
+  section: SettingsSectionId,
+  group: string,
+  control: ControlKind,
+  reader: SettingEntryV2["reader"],
+  more: Partial<Spec> = {}
+) =>
+  entry({
+    id,
+    section,
+    group,
+    control,
+    store: nothing,
+    default: { unset: true },
+    reset: "none",
+    reader,
+    ...more
+  });
+
+const preference = (
+  id: string,
+  section: SettingsSectionId,
+  group: string,
+  control: ControlKind,
+  value: DefaultRef,
+  reader: SettingEntryV2["reader"],
+  more: Partial<Spec> = {}
+) =>
+  entry({
+    id,
+    section,
+    group,
+    control,
+    store: at("app.preferences", id),
+    default: value,
+    reset: "app-preference",
+    reader,
+    category: "preference",
+    ...more
+  });
+
+const route = (name: string, key: string) =>
+  entry({
+    id: `ai.route.${name}`,
+    section: "ai",
+    group: "routes",
+    control: "select",
+    store: at("route", key),
+    default: { computed: "ai.route.presetDefault" },
+    reset: "ai-route",
+    reader: read(`${base}/ai-class-routes.ts`, "AiClassRouteService.readView"),
+    scope: "intelligence",
+    category: "setup"
+  });
+
+const credential = (
+  id: string,
+  section: SettingsSectionId,
+  group: string,
+  reader: SettingEntryV2["reader"],
+  more: Partial<Spec> = {}
+) =>
+  entry({
+    id,
+    section,
+    group,
+    control: "credential",
+    store: at("credential", id),
+    default: { unset: true },
+    reset: "credential",
+    reader,
+    category: "credential",
+    ...more
+  });
+
+const knowledgeControlKinds: Record<keyof typeof knowledgeControlDomIds, ControlKind> = {
+  autonomy: "choice",
+  monthlyCapUsd: "number",
+  paused: "switch",
+  treeShape: "segmented",
+  onlyIdle: "switch",
+  onlyOnAc: "switch"
+};
+const knowledge = (field: keyof typeof knowledgeControlDomIds, group: string, symbol: string) =>
+  entry({
+    id: `knowledge.controls.v1.${field}`,
+    section: "knowledge",
+    group,
+    control: knowledgeControlKinds[field],
+    store: at("settings", `knowledge.controls.v1.${field}`),
+    default: { value: defaultKnowledgeControls[field] as Json },
+    reset: "knowledge-control",
+    reader: read(
+      field === "monthlyCapUsd" || field === "treeShape"
+        ? mainIndex
+        : `${base}/gardener/background-gate.ts`,
+      symbol
+    ),
+    scope: "knowledge",
+    category: "automation"
+  });
+
+const matching = (id: MatchingValueControlId, file: string, symbol: string) =>
+  entry({
+    id,
+    section: "advanced",
+    group: "matching",
+    control: id === "sourceRelationSettings.includeWeakTypes" ? "switch" : "number",
+    store: at("app.preferences", id),
+    default: { value: matchingDefault(id) },
+    reset: "matching-value",
+    reader: read(file, symbol),
+    scope: "knowledge",
+    category: "automation"
+  });
+
+const sourceJudge = `${base}/source-relation-processing.ts`;
+const pairIdentity = "sourceJudgeRequestSettings";
+const aiService = `${base}/ai-service.ts`;
+/** The column of `ai_provider_configs` that names the secret of a provider; one path reads it for all three. */
+const providerCredentialKey = "ai_provider_configs.credentialRef";
+const monitoring = `${base}/monitoring-service.ts`;
+const wikiProjection = `${base}/obsidian-wiki-projection.ts`;
+
+/** Every control of Settings v2, in the order of the mockup. */
+export const settingsRegistryV2: readonly SettingEntryV2[] = [
+  // --- General: what people change most ------------------------------------------------------
+  preference(
+    "themeMode",
+    "general",
+    "appearance",
+    "segmented",
+    { value: "system" },
+    read(rendererApp, "App"),
+    {
+      scope: "personalization"
+    }
+  ),
+  preference(
+    "contentLanguage",
+    "general",
+    "language",
+    "select",
+    { osLocale: true },
+    read(mainIndex, moduleCode),
+    {
+      scope: "personalization"
+    }
+  ),
+  preference(
+    "language",
+    "general",
+    "language",
+    "select",
+    { osLocale: true },
+    read(rendererApp, "App"),
+    {
+      scope: "personalization"
+    }
+  ),
+
+  // --- AI: the setup first, then the providers, the machine and the route of each job ---------
+  entry({
+    id: "ai.preset.v1",
+    section: "ai",
+    group: "setup",
+    control: "choice",
+    store: at("settings", "ai.preset.v1"),
+    default: { computed: "ai.preset.recommendedForThisMac" },
+    reset: "ai-preset",
+    reader: read(`${base}/ai-class-routes.ts`, "AiClassRouteService.readState"),
+    scope: "intelligence",
+    category: "setup"
+  }),
+  credential(
+    "ai.provider.openai-codex",
+    "ai",
+    "providers",
+    read(aiService, "AiService.buildRemoteAdapter"),
+    {
+      store: at("credential", providerCredentialKey)
+    }
+  ),
+  credential(
+    "ai.provider.openai-compatible",
+    "ai",
+    "providers",
+    read(aiService, "AiService.buildRemoteAdapter"),
+    {
+      store: at("credential", providerCredentialKey)
+    }
+  ),
+  credential(
+    "ai.provider.google",
+    "ai",
+    "providers",
+    read(aiService, "AiService.buildRemoteAdapter"),
+    {
+      store: at("credential", providerCredentialKey)
+    }
+  ),
+  tool(
+    "ai.thisMac",
+    "ai",
+    "thisMac",
+    "block",
+    read(`${base}/hardware/hardware-service.ts`, "HardwareService.profile")
+  ),
+  route("embed", "class:embed"),
+  route("decide", "class:decide"),
+  route("write-fast", "class:write-fast"),
+  route("write-quality", "class:write-quality"),
+  route("answer", "class:answer"),
+  route("judge", "judge"),
+  tool(
+    "ai.models",
+    "ai",
+    "models",
+    "page",
+    read(`${base}/local-model-service.ts`, "LocalModelService"),
+    {
+      scope: "models",
+      page: "models"
+    }
+  ),
+  credential(
+    "local-models.repository-token-ref",
+    "ai",
+    "models",
+    read(`${base}/local-model-service.ts`, "LocalModelService.getRepositoryToken"),
+    { scope: "models", store: at("settings", "local-models.repository-token-ref") }
+  ),
+  tool("ai.profiles", "ai", "models", "page", read(aiService, "AiService.listProfiles"), {
+    scope: "intelligence",
+    page: "profiles"
+  }),
+  entry({
+    id: "relations.decisions",
+    section: "ai",
+    group: "decisions",
+    control: "switch",
+    store: at("settings", "relations.decisions"),
+    default: { value: false },
+    reset: "decisions-opt-in",
+    reader: read(`${base}/ai-decisions.ts`, "DecisionsRuntime.storedEnabled"),
+    scope: "intelligence",
+    category: "setup"
+  }),
+  credential(
+    "ai:decisions-openai-platform",
+    "ai",
+    "decisions",
+    read(`${base}/ai-decisions.ts`, "DecisionsRuntime.readKey"),
+    { scope: "intelligence", category: "setup" }
+  ),
+
+  // --- Knowledge: the gardener, the tree, when to work -----------------------------------------
+  knowledge("autonomy", "gardener", "BackgroundGate.activeReasons"),
+  knowledge("paused", "gardener", "sharedHolds"),
+  knowledge("monthlyCapUsd", "gardener", moduleCode),
+  knowledge("treeShape", "tree", moduleCode),
+  knowledge("onlyIdle", "schedule", "sharedHolds"),
+  knowledge("onlyOnAc", "schedule", "sharedHolds"),
+  tool(
+    "relationLabels",
+    "knowledge",
+    "connections",
+    "action",
+    read(`${base}/relation-explanation-service.ts`, "RelationExplanationService.backfill"),
+    { scope: "personalization" }
+  ),
+
+  // --- Library and storage ---------------------------------------------------------------------
+  tool(
+    "library.storage",
+    "library",
+    "data",
+    "block",
+    read(`${base}/database-service.ts`, "DatabaseService"),
+    {
+      scope: "data"
+    }
+  ),
+  entry({
+    id: "uploadCopies",
+    section: "library",
+    group: "uploads",
+    control: "copies",
+    store: at("storage_settings", "uploadCopiesEnabled", "uploadCopiesFolderPath"),
+    default: { value: false },
+    reset: "upload-copies",
+    reader: read(`${base}/ingestion-service.ts`, "IngestionService.stageAssetFiles"),
+    scope: "data",
+    category: "data"
+  }),
+  tool(
+    "library.backup",
+    "library",
+    "backup",
+    "page",
+    read(`${base}/backup-service.ts`, "BackupService.create"),
+    {
+      scope: "data",
+      page: "backup"
+    }
+  ),
+  entry({
+    id: "processingPresets",
+    section: "library",
+    group: "imports",
+    control: "page",
+    store: at("app.preferences", "processingPresets"),
+    default: { unset: true },
+    reset: "app-preference",
+    reader: read(
+      "apps/desktop/src/renderer/components/ProcessingPlanPicker.tsx",
+      "ProcessingPlanPicker"
+    ),
+    page: "processingPresets",
+    category: "preference"
+  }),
+
+  // --- Integrations ----------------------------------------------------------------------------
+  entry({
+    id: "obsidianVaultPath",
+    section: "integrations",
+    group: "obsidian",
+    control: "folder",
+    store: at("storage_settings", "obsidianVaultPath"),
+    default: { unset: true },
+    reset: "storage-setting",
+    reader: read(`${base}/obsidian-sync-service.ts`, "ObsidianSyncService.reconcileVault"),
+    scope: "connections",
+    category: "integration"
+  }),
+  entry({
+    id: "obsidianSync",
+    section: "integrations",
+    group: "obsidian",
+    control: "segmented",
+    store: at("storage_settings", "obsidianSyncEnabled", "obsidianSyncPaused"),
+    default: { value: "off" },
+    reset: "obsidian-sync",
+    reader: read(`${base}/obsidian-sync-service.ts`, "isSyncActive"),
+    scope: "connections",
+    category: "integration"
+  }),
+  entry({
+    id: "obsidian.wiki.scope",
+    section: "integrations",
+    group: "obsidian",
+    control: "info",
+    store: at("settings", "obsidian.wiki.scope"),
+    default: { unset: true },
+    reset: "kv-setting",
+    reader: read(wikiProjection, "ObsidianWikiProjection.scope"),
+    scope: "connections",
+    category: "integration"
+  }),
+  entry({
+    id: "obsidian.wiki.includeDescendants",
+    section: "integrations",
+    group: "obsidian",
+    control: "switch",
+    store: at("settings", "obsidian.wiki.scope"),
+    default: { value: true },
+    reset: "kv-setting",
+    reader: read(wikiProjection, "ObsidianWikiProjection.scope"),
+    scope: "connections",
+    category: "integration"
+  }),
+  entry({
+    id: "obsidian.layout.attachments",
+    section: "integrations",
+    group: "obsidian",
+    control: "switch",
+    store: at("settings", "obsidian.layout"),
+    default: { value: "omit" },
+    reset: "kv-setting",
+    reader: read(wikiProjection, "ObsidianWikiProjection.layout"),
+    scope: "connections",
+    category: "integration"
+  }),
+  entry({
+    id: "bookLookup",
+    section: "integrations",
+    group: "books",
+    control: "select",
+    store: at("app.preferences", "metadataEnrichmentEnabled", "bookMetadataProvider"),
+    default: { value: "auto" },
+    reset: "book-lookup",
+    reader: read(mainIndex, moduleCode),
+    scope: "external-services",
+    category: "integration"
+  }),
+  credential(
+    "metadata:google-books",
+    "integrations",
+    "books",
+    read(`${base}/metadata-enrichment-service.ts`, "MetadataEnrichmentService.getGoogleBooksKey"),
+    { scope: "external-services" }
+  ),
+  tool(
+    "integrations.gateway",
+    "integrations",
+    "local",
+    "page",
+    read(`${base}/integration-gateway.ts`, "IntegrationGateway.getStatus"),
+    {
+      scope: "connections",
+      page: "gateway"
+    }
+  ),
+
+  // --- Privacy and data ------------------------------------------------------------------------
+  tool(
+    "privacy.summary",
+    "privacy",
+    "leaving",
+    "block",
+    read(aiService, "AiService.pinOrganizationProfile")
+  ),
+  tool(
+    "privacy.clearViewHistory",
+    "privacy",
+    "history",
+    "action",
+    read(`${base}/view-history-service.ts`, "ViewHistoryService.clear")
+  ),
+  tool(
+    "privacy.clearQuestions",
+    "privacy",
+    "history",
+    "action",
+    read(`${base}/questions-service.ts`, "QuestionsService.clear")
+  ),
+  tool("privacy.callLog", "privacy", "logs", "block", read(monitoring, "MonitoringService.prune")),
+  tool(
+    "privacy.reset",
+    "privacy",
+    "reset",
+    "action",
+    read(`${base}/library-reset-service.ts`, "LibraryResetService.reset"),
+    {
+      scope: "data"
+    }
+  ),
+
+  // --- Advanced: matching (Q4), processing, local models, the map, Obsidian, prompts, diagnostics -
+  entry({
+    id: "activeMatchingPresetId",
+    section: "advanced",
+    group: "matching",
+    control: "select",
+    store: at("app.preferences", "activeMatchingPresetId", "matchingPresets"),
+    default: { value: recommendedMatchingPresetId },
+    reset: "matching-preset",
+    reader: read(`${base}/settings-service.ts`, "SettingsService.updateApp"),
+    scope: "knowledge",
+    category: "automation"
+  }),
+  matching("relationTypeSimilarityThreshold", mainIndex, moduleCode),
+  matching("entityIdentitySimilarityThreshold", mainIndex, moduleCode),
+  matching(
+    "canonicalMatchingSettings.relationTypeCandidateLimit",
+    `${base}/relation-type-resolution.ts`,
+    "createRelationTypeResolver"
+  ),
+  matching(
+    "canonicalMatchingSettings.entityCandidateLimit",
+    `${base}/entity-identity-resolution.ts`,
+    "createEntityIdentityResolver"
+  ),
+  matching(
+    "canonicalMatchingSettings.confirmationBatchSize",
+    `${base}/entity-identity-resolution.ts`,
+    "createEntityIdentityResolver"
+  ),
+  matching(
+    "canonicalMatchingSettings.confirmationMaxCharacters",
+    `${base}/entity-identity-resolution.ts`,
+    "createEntityIdentityResolver"
+  ),
+  matching(
+    "atomicNoteMatchingSettings.maxRerankOutputTokens",
+    `${base}/relations/relation-matcher.ts`,
+    "RelationMatcher.matchNotes"
+  ),
+  matching("sourceRelationSettings.evidenceChunksPerSource", sourceJudge, pairIdentity),
+  matching("sourceRelationSettings.evidenceMaxCharacters", sourceJudge, pairIdentity),
+  matching("sourceRelationSettings.summaryMaxCharacters", sourceJudge, pairIdentity),
+  matching("sourceRelationSettings.maxOutputTokens", sourceJudge, pairIdentity),
+  matching("sourceRelationSettings.maxRelationsPerPair", sourceJudge, pairIdentity),
+  matching("sourceRelationSettings.maxInputTokens", sourceJudge, "judgeRoot"),
+  matching(
+    "sourceRelationSettings.minImportance",
+    "packages/domain/src/source-relations.ts",
+    "sourceDecisionPassesFloors"
+  ),
+  matching(
+    "sourceRelationSettings.minConfidence",
+    "packages/domain/src/source-relations.ts",
+    "sourceDecisionPassesFloors"
+  ),
+  matching("sourceRelationSettings.includeWeakTypes", sourceJudge, pairIdentity),
+  preference(
+    "summaryMinimumWordCount",
+    "advanced",
+    "processing",
+    "number",
+    { value: 40 },
+    read(mainIndex, moduleCode),
+    {
+      scope: "knowledge",
+      category: "automation"
+    }
+  ),
+  preference(
+    "keepLocalEmbeddingModelsLoaded",
+    "advanced",
+    "localModels",
+    "switch",
+    { value: true },
+    read(mainIndex, moduleCode),
+    {
+      scope: "intelligence",
+      category: "automation"
+    }
+  ),
+  entry({
+    id: "relations.deciderMode",
+    section: "advanced",
+    group: "connections",
+    control: "select",
+    store: at("settings", "relations.deciderMode"),
+    default: { unset: true },
+    reset: "decider-mode",
+    reader: read(`${base}/relations/relation-matcher.ts`, "RelationMatcher.resolveDecider"),
+    scope: "intelligence",
+    category: "automation"
+  }),
+  preference(
+    "graphWheelZoomSensitivity",
+    "advanced",
+    "map",
+    "range",
+    { value: 1 },
+    read(rendererApp, "App"),
+    {
+      scope: "personalization"
+    }
+  ),
+  entry({
+    id: "managedRoot",
+    section: "advanced",
+    group: "obsidian",
+    control: "text",
+    store: at("storage_settings", "managedRoot"),
+    default: { value: "Memora" },
+    reset: "storage-setting",
+    reader: read(`${base}/obsidian-sync-service.ts`, "ObsidianSyncService.reconcileVault"),
+    scope: "connections",
+    category: "integration"
+  }),
+  entry({
+    id: "obsidian.layout.language",
+    section: "advanced",
+    group: "obsidian",
+    control: "select",
+    store: at("settings", "obsidian.layout"),
+    default: { computed: "obsidian.layout.followsContentLanguage" },
+    reset: "kv-setting",
+    reader: read(wikiProjection, "ObsidianWikiProjection.layout"),
+    scope: "connections",
+    category: "integration"
+  }),
+  tool(
+    "advanced.prompts",
+    "advanced",
+    "prompts",
+    "page",
+    read(`${base}/prompt-service.ts`, "PromptService"),
+    {
+      scope: "prompts",
+      page: "prompts"
+    }
+  ),
+  preference(
+    "debugMode",
+    "advanced",
+    "diagnostics",
+    "switch",
+    { value: false },
+    read(monitoring, "MonitoringService.start"),
+    {
+      category: "diagnostics"
+    }
+  ),
+  preference(
+    "debugFullCapture",
+    "advanced",
+    "diagnostics",
+    "switch",
+    { value: false },
+    read(monitoring, "MonitoringService.start"),
+    {
+      category: "diagnostics"
+    }
+  ),
+  tool(
+    "advanced.callLog",
+    "advanced",
+    "diagnostics",
+    "page",
+    read(monitoring, "MonitoringService.prune"),
+    {
+      page: "callLog"
+    }
+  ),
+  tool(
+    "advanced.taskHistory",
+    "advanced",
+    "diagnostics",
+    "page",
+    read("packages/db/src/repositories/taskHistory.ts", "taskHistoryVisibleSql"),
+    {
+      page: "taskHistory"
+    }
+  ),
+  tool(
+    "advanced.similarityRuns",
+    "advanced",
+    "diagnostics",
+    "action",
+    read(monitoring, "MonitoringService.prune")
+  )
+];
+
+const state = (
+  id: string,
+  file: string,
+  symbol: string,
+  kind: StoreKind = "settings"
+): PersistedStateEntry => ({ id, store: at(kind, id), reader: read(file, symbol) });
+const repositories = "packages/db/src/repositories";
+
+/** Persisted state no control edits. The reader test holds it to a reader like any other row. */
+export const persistedStateRegistry: readonly PersistedStateEntry[] = [
+  state("updatedAt", `${base}/settings-service.ts`, "changedSettingPaths", "app.preferences"),
+  state("import.lastDirectory", `${base}/settings-service.ts`, "createDbSettingsRepository"),
+  state("ai.classTests.v1", `${base}/ai-class-routes.ts`, "AiClassRouteService.readState"),
+  state("ai.routes.classMap.v1", `${base}/ai-route-mapping.ts`, "createRouteMappingStore"),
+  state(
+    "relations.decisions.dailySpend",
+    `${base}/relations/decisions-budget.ts`,
+    "createDecisionsSpendBudget"
+  ),
+  state("relations.decisions.state", `${base}/ai-decisions.ts`, "DecisionsRuntime.readState"),
+  state(
+    "relations.ai.dailyCalls",
+    `${base}/relations/relation-call-budget.ts`,
+    "createRelationCallBudget"
+  ),
+  state("catalogHeader.dailyRoots", `${base}/catalog-header-policy.ts`, "catalogHeaderConfig"),
+  state(
+    "gardener.budget.subscriptionCalls.v1",
+    `${base}/gardener/remote-budget.ts`,
+    "RemoteBudget.current"
+  ),
+  state(
+    "gardener.budget.continue.v1",
+    `${base}/gardener/remote-budget.ts`,
+    "RemoteBudget.continuePastPause"
+  ),
+  state(
+    "gardener.audit.cursors.v1",
+    `${base}/topic-tree/topic-audit-lints.ts`,
+    "AuditLints.readCursors"
+  ),
+  state("topics.ai.daily.v1", `${base}/topic-tree/topic-ai.ts`, "settingsAiBudgetStore"),
+  state("topics.corpus.v1", `${base}/topic-tree/corpus-runner.ts`, "CorpusRunner.readMarker"),
+  state(
+    "local-models.first-run-ranker",
+    `${base}/first-run-ranker.ts`,
+    "settingsFirstRunRankerStore"
+  ),
+  state("prompts.active", `${repositories}/promptRepository.ts`, "createPromptRepository"),
+  state(
+    "jobs.history.dismissed-through.v1",
+    `${repositories}/taskHistory.ts`,
+    "taskHistoryVisibleSql"
+  ),
+  state(
+    "obsidian.layout.presence",
+    `${repositories}/obsidianLayoutRepository.ts`,
+    "createObsidianLayoutRepository"
+  ),
+  state(
+    "obsidian.editorial.client",
+    `${repositories}/obsidianEditorialRepository.ts`,
+    "createObsidianEditorialRepository"
+  ),
+  state(
+    "relations.match.valuesHistory.v1",
+    `${base}/relations/relation-match-values.ts`,
+    "matchValuesHistorySettingKey"
+  ),
+  state("onboarding.v1", `${base}/onboarding/onboarding-service.ts`, "pgOnboardingStore")
+];
+
+/**
+ * Keys that were persisted settings and are not any more: no entry, and no production code reads
+ * them. `navigationCollapsed` stays in the stored schema (`S/ipc.ts`) until the owner of that chain
+ * file drops it; nothing reads it (the rail no longer collapses, F5 T135).
+ */
+export const retiredSettingKeys = [
+  "deletionPolicy",
+  "knowledgeGraphMaxEntitiesPerSource",
+  "knowledgeGraphMaxRelationsPerSource",
+  "navigationCollapsed",
+  "wikiTreeWidth"
+] as const;
+
+/** E7 on v2: an `automation` entry outside Advanced (the section or the disclosure). */
+export function visibleAutomationEntries(
+  registry: readonly SettingEntryV2[] = settingsRegistryV2
+): SettingEntryV2[] {
+  return registry.filter(
+    (candidate) =>
+      candidate.category === "automation" && candidate.section !== "advanced" && !candidate.advanced
+  );
 }
