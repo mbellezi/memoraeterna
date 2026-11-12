@@ -478,6 +478,13 @@ describe("the Activity drawer", () => {
     expect(html).not.toMatch(/Placed 12 items in topics[^<]* · /u);
   });
 
+  it("keeps Undo on the title's line, flush with the column's right edge", () => {
+    const html = drawer(answered({ done: ready([changeSet(1)]) }));
+    // Baseline-aligned with the title (not start-aligned), the button's padding pulled back.
+    expect(html).toMatch(/class="flex items-baseline justify-between gap-3"/u);
+    expect(html).toMatch(/<button[^>]*class="[^"]*-my-1 -mr-1 /u);
+  });
+
   it("shows the result of an undo beside the change", () => {
     const one = changeSet(1);
     const html = drawer(

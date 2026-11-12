@@ -314,8 +314,8 @@ export function DoneList({
             className="grid gap-1 border-t border-border py-2 first:border-t-0"
           >
             {/* The sentence leads and its time sits muted on its own line under it, so a long title
-                wraps on its own words; Undo stays at the end of the first line. */}
-            <div className="flex items-start justify-between gap-3">
+                wraps on its own words; Undo shares the title's baseline at the end of the first line. */}
+            <div className="flex items-baseline justify-between gap-3">
               <div className="grid min-w-0 gap-0.5">
                 <p className="text-sm text-foreground">{changeSetTitle(t, change)}</p>
                 <p className="text-xs text-muted-foreground">
@@ -326,7 +326,7 @@ export function DoneList({
                 <button
                   type="button"
                   disabled={pending}
-                  className="-my-0.5 shrink-0 rounded-sm px-1 py-1 text-xs font-medium leading-5 text-accent transition-colors hover:text-accent-hover focus-visible:outline-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-45"
+                  className="-my-1 -mr-1 shrink-0 rounded-sm px-1 py-1 text-xs font-medium leading-5 text-accent transition-colors hover:text-accent-hover focus-visible:outline-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-45"
                   onClick={() => onUndo(change)}
                 >
                   {pending ? t("activity.done.undoing") : t("activity.done.undo")}
