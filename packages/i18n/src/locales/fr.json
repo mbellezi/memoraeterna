@@ -5506,6 +5506,7 @@
     "errors": {
       "write": "Impossible d’enregistrer. Rien n’a changé."
     },
+    "intro": "Commencez par la configuration : elle choisit d’un coup le modèle de chaque tâche. Hybride et Cloud demandent un fournisseur, juste en dessous. Le reste est du réglage fin.",
     "models": {
       "action": {
         "download": "Télécharger",

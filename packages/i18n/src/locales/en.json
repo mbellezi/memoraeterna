@@ -5501,6 +5501,7 @@
     "errors": {
       "write": "Could not save. Nothing was changed."
     },
+    "intro": "Start with the setup: it picks the model for every job at once. Hybrid and Cloud need a provider, just below. Everything else is fine-tuning.",
     "models": {
       "action": {
         "download": "Download",

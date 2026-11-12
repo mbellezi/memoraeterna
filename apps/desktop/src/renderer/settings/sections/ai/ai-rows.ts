@@ -2,7 +2,7 @@ import type { SettingEntryV2 } from "../../../../shared/settings-registry";
 import type { SettingDescription } from "../../../../shared/ipc-settings-describe";
 import type { SettingRowProps } from "../../SettingRow";
 import { useSettings } from "../../settings-context";
-import { helpOf, labelOf, resetNeedsConfirm } from "../../settings-model";
+import { helpOf, isCredential, labelOf, resetNeedsConfirm } from "../../settings-model";
 
 /**
  * What every row of the section takes from Settings for one registry entry: the registry's label and
@@ -26,7 +26,8 @@ export function useRowProps(
     id: entry.id,
     label: labelOf(t, entry),
     help: helpOf(t, entry),
-    changed: description?.changed === true,
+    // A saved credential is not a changed setting: its line says what is set, and taking it away is its own step.
+    changed: !isCredential(entry) && description?.changed === true,
     reset: settings.rowState(entry.id),
     highlighted: settings.highlighted === entry.id,
     onReset: withReset ? () => void settings.reset(entry.id, resetNeedsConfirm(entry)) : undefined,

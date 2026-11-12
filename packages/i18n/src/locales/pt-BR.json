@@ -4871,7 +4871,7 @@
       "label": "Chave da OpenAI Platform"
     },
     "aiModels": {
-      "help": "Catálogo de modelos locais: baixar, importar GGUF, testar e escolher padrões.",
+      "help": "Catálogo de modelos locais: baixar, importar um arquivo de modelo (GGUF), testar e escolher padrões.",
       "label": "Modelos neste Mac"
     },
     "aiPresetV1": {
@@ -4879,7 +4879,7 @@
       "label": "Onde a IA roda"
     },
     "aiProfiles": {
-      "help": "Modelo, temperatura, máximo de tokens e raciocínio de cada perfil. Raramente necessário.",
+      "help": "Modelo, temperatura, tamanho máximo da resposta e raciocínio de cada perfil. Raramente necessário.",
       "label": "Perfis e parâmetros"
     },
     "aiProviderGoogle": {
@@ -4907,8 +4907,8 @@
       "label": "Busca e semelhança"
     },
     "aiRouteJudge": {
-      "help": "Um modelo de escrita que decide as relações entre notas quando não há ranqueador e avalia como as fontes se relacionam.",
-      "label": "Juiz generativo"
+      "help": "Um modelo de escrita que decide as relações entre notas quando não há classificador local e avalia como as fontes se relacionam.",
+      "label": "Juiz das conexões"
     },
     "aiRouteWriteFast": {
       "help": "Resumos, nomes de tópicos e explicações curtas.",
@@ -5126,11 +5126,11 @@
       "label": "Semelhança entre tipos de relação"
     },
     "relationsDeciderMode": {
-      "help": "Automático segue os seus modelos: o ranqueador quando há um validado, senão o juiz, se houver.",
+      "help": "Automático segue os seus modelos: o classificador local quando há um validado, senão o juiz, se houver.",
       "label": "Quem decide as relações entre notas"
     },
     "relationsDecisions": {
-      "help": "Um decisor na nuvem, pago e mais preciso que o ranqueador local. Só nas configurações Híbrida e Nuvem.",
+      "help": "Um decisor na nuvem, pago e mais preciso que o classificador local. Só nas configurações Híbrida e Nuvem.",
       "label": "Decidir as conexões com o OpenAI Decisions"
     },
     "sourceRelationSettingsEvidenceChunksPerSource": {
@@ -5466,7 +5466,7 @@
       "confirmBody": "Ligar isto envia o texto das notas à OpenAI como descrito acima. Você pode desligar a qualquer momento; depois disso nada é enviado.",
       "confirmTitle": "Enviar o texto das notas à OpenAI?",
       "errorTitle": "Não deu para ler o estado do OpenAI Decisions.",
-      "fallback": "Ligado, mas o ranqueador local está decidindo: {reason}.",
+      "fallback": "Ligado, mas o classificador local está decidindo: {reason}.",
       "key": {
         "add": "Salvar chave…",
         "hint": "Ela fica guardada criptografada neste computador, nunca é exibida de novo e só é enviada à OpenAI.",
@@ -5480,11 +5480,11 @@
         "testing": "Testando…"
       },
       "keySaved": "A chave da OpenAI foi salva.",
-      "lastFallback": "Da última vez, o ranqueador local decidiu no lugar: {reason}.",
+      "lastFallback": "Da última vez, o classificador local decidiu no lugar: {reason}.",
       "noticeBody": "Enquanto estiver ligado, o título, a ideia e os primeiros {characters} caracteres do texto de cada nota comparada, e das notas com que ela é comparada (inclusive as comparadas antes), são enviados à OpenAI (a API Decisions, modelo {model}) com a sua própria chave da OpenAI Platform. Por padrão a OpenAI não treina com dados da API e pode guardar as requisições por até 30 dias para monitorar abusos. O Memora não controla essa retenção. Nada é enviado com ele desligado, na configuração Local ou sem uma chave.",
-      "noticeCost": "Custa cerca de {price} por milhão de tokens de entrada, tipicamente um centavo ou menos por nota. O Memora deixa de usá-lo no dia ao chegar a {cap}, e o ranqueador local assume.",
+      "noticeCost": "Custa cerca de {price} por milhão de tokens de entrada, tipicamente um centavo ou menos por nota. O Memora deixa de usá-lo no dia ao chegar a {cap}, e o classificador local assume.",
       "noticeTitle": "O texto das suas notas é enviado à OpenAI",
-      "off": "Desligado: nada é enviado. O ranqueador local decide as conexões.",
+      "off": "Desligado: nada é enviado. O classificador local decide as conexões.",
       "ready": "Ligado: o OpenAI Decisions decide as conexões.",
       "reason": {
         "breaker_open": "a OpenAI não está respondendo agora",
@@ -5504,10 +5504,11 @@
     "errors": {
       "write": "Não deu para salvar. Nada foi alterado."
     },
+    "intro": "Comece pela configuração: ela escolhe o modelo de cada trabalho de uma vez. Híbrida e Nuvem pedem um provedor, logo abaixo. O resto é ajuste fino.",
     "models": {
       "action": {
         "download": "Baixar",
-        "import": "Importar arquivo GGUF…",
+        "import": "Importar arquivo de modelo (GGUF)…",
         "remove": "Remover",
         "resume": "Retomar",
         "test": "Testar",
@@ -5536,9 +5537,9 @@
       "license": "Aceito a licença:",
       "parameters": "Parâmetros",
       "ranker": {
-        "fallback": "Sem um ranqueador validado, as notas que cabem em mais de um tópico iniciam novos tópicos. Elas são colocadas de novo quando houver um pronto.",
-        "installing": "Este ranqueador coloca as notas que cabem em mais de um tópico. Até ficar pronto, elas iniciam novos tópicos e são colocadas de novo depois.",
-        "pending": "Execute o teste para validar este ranqueador."
+        "fallback": "Sem um classificador local validado, as notas que cabem em mais de um tópico iniciam novos tópicos. Elas são colocadas de novo quando houver um pronto.",
+        "installing": "Este classificador local coloca as notas que cabem em mais de um tópico. Até ficar pronto, elas iniciam novos tópicos e são colocadas de novo depois.",
+        "pending": "Execute o teste para validar este classificador local."
       },
       "removeAsk": "Remover {model} e os arquivos dele deste Mac?",
       "removeBlocked": "Em uso por {profiles}. Mude o perfil antes.",
@@ -5613,7 +5614,7 @@
         "atomic-note-generation": "Notas atômicas",
         "embedding": "Busca e semelhança",
         "knowledge-graph-generation": "Grafo de conhecimento",
-        "reranking": "Comparação (ranqueador)",
+        "reranking": "Comparação (classificador local)",
         "structured-output": "Respostas estruturadas",
         "summarization": "Resumos",
         "text-generation": "Escrita de texto"
@@ -5671,7 +5672,7 @@
       "introCustom": "Cada trabalho mantém o modelo que você escolheu. Para recomeçar, escolha uma configuração acima.",
       "noModel": "Nenhum modelo escolhido",
       "noModelsAvailable": "Sem modelos para escolher. Adicione um provedor ou instale um modelo local abaixo.",
-      "noRanker": "Nenhum ranqueador instalado. As conexões esperam por um, a menos que o juiz generativo decida.",
+      "noRanker": "Nenhum classificador local instalado. As conexões esperam por um, a menos que o juiz das conexões decida.",
       "partial": "Faltam algumas rotas do juiz. Escolha um modelo para defini-las todas.",
       "where": {
         "local": "Neste Mac",
@@ -5691,7 +5692,7 @@
       "button": "Testar",
       "failed": "O teste falhou",
       "failedWith": "O teste falhou: {reason}",
-      "none": "Sem ranqueador",
+      "none": "Sem classificador local",
       "passed": "Teste aprovado",
       "passedMs": "Teste aprovado em {ms} ms",
       "passedSeconds": "Teste aprovado em {seconds} s",

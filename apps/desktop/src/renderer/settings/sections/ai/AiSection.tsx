@@ -1,11 +1,12 @@
 import { useEffect, useId, useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
-import { Coins } from "lucide-react";
+import { CircleDollarSign } from "lucide-react";
 import type { Translator } from "@app/i18n";
 
 import type { SettingEntryV2 } from "../../../../shared/settings-registry";
 import { Button } from "../../../components/ui/button";
 import { ErrorState } from "../../../components/ui/error-state";
-import { Skeleton } from "../../../components/ui/skeleton";
+import { LoadingState, Skeleton } from "../../../components/ui/skeleton";
+import { cn } from "../../../lib/cn";
 import { ReadOnlyValue, RegistryRow, SettingRow } from "../../SettingRow";
 import type { SettingsSectionModule } from "../../sections-registry";
 import { useSettings } from "../../settings-context";
@@ -239,6 +240,9 @@ export function AiSection() {
           onRetry={() => controller.retry()}
         />
       ) : null}
+      <p className="m-0 mt-3 text-sm text-secondary-foreground [text-wrap:pretty]">
+        {t("settingsAi.intro")}
+      </p>
       {groupsOf(section).map(({ group, entries }, index) => (
         <section key={group} aria-labelledby={`settings-group-${section}-${group}`}>
           <GroupHeading id={`settings-group-${section}-${group}`} first={index === 0}>
@@ -257,7 +261,59 @@ export function AiSection() {
 }
 
 /** The registry's id of this section's body, for the surface to find it by file. */
-export const section: SettingsSectionModule = { id: "ai", Section: AiSection };
+export const section: SettingsSectionModule = {
+  id: "ai",
+  Section: AiSection,
+  Skeleton: AiSkeleton
+};
+
+/**
+ * The bars of the section while its values are read, in the shape of what arrives: a group title, the
+ * row of four setup cards, the spending-limit line and the first rows of the providers.
+ */
+function AiSkeleton({ t }: { t: Translator }) {
+  return (
+    <LoadingState t={t} className="mt-4 max-w-[45rem]">
+      <div>
+        <Skeleton className="mt-1 h-3 w-full max-w-[40rem]" />
+        <Skeleton className="mt-8 h-3 w-28" />
+        <Skeleton className="mt-4 h-3.5 w-36" />
+        <Skeleton className="mt-2 h-3 w-80 max-w-full" />
+        <SetupCardsSkeleton className="mt-4" />
+        <div className="flex items-center gap-4 border-b border-border py-4">
+          <Skeleton className="size-4 rounded-full" />
+          <div className="grid flex-1 gap-2">
+            <Skeleton className="h-3.5 w-64 max-w-full" />
+            <Skeleton className="h-3 w-80 max-w-full" />
+          </div>
+          <Skeleton className="h-8 w-44 rounded-lg" />
+        </div>
+        <Skeleton className="mt-10 h-3 w-36" />
+        <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-6 gap-y-2 border-b border-border py-4">
+          <Skeleton className="h-3.5 w-44" />
+          <Skeleton className="row-span-2 h-8 w-32 rounded-lg" />
+          <Skeleton className="h-3 w-80 max-w-full" />
+        </div>
+      </div>
+    </LoadingState>
+  );
+}
+
+/** Four cards at the height the setup cards take, so nothing moves when they arrive. */
+function SetupCardsSkeleton({ className }: { className?: string }) {
+  return (
+    <div
+      className={cn(
+        "grid w-full grid-cols-[repeat(auto-fit,minmax(9.25rem,1fr))] gap-2",
+        className
+      )}
+    >
+      {[0, 1, 2, 3].map((index) => (
+        <Skeleton key={index} className="h-48 rounded-lg" />
+      ))}
+    </div>
+  );
+}
 
 // ---------------------------------------------------------------------------
 
@@ -304,11 +360,7 @@ function PresetRow({
       control={
         cards === null ? (
           waiting ? (
-            <div className="grid w-full grid-cols-[repeat(auto-fit,minmax(9.25rem,1fr))] gap-2">
-              {[0, 1, 2, 3].map((index) => (
-                <Skeleton key={index} className="h-24 rounded-lg" />
-              ))}
-            </div>
+            <SetupCardsSkeleton />
           ) : undefined
         ) : (
           <PresetChoice
@@ -342,7 +394,7 @@ function CapLink({ t, snap }: { t: Translator; snap: AiSnapshot }) {
   const spent = snap.budget.status === "ready" ? snap.budget.value.money.spentUsd : null;
   return (
     <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-border py-4">
-      <Coins aria-hidden="true" className="size-4 shrink-0 text-secondary-foreground" />
+      <CircleDollarSign aria-hidden="true" className="size-4 shrink-0 text-secondary-foreground" />
       <div className="min-w-0 flex-1 basis-60">
         <p className="m-0 text-sm font-medium text-foreground">
           {t("settingsAi.cap.label", { values: { amount: formatUsd(t.locale, cap) } })}

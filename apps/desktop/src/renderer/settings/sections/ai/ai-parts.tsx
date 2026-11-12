@@ -26,13 +26,16 @@ export function StatusLine({
   tone,
   children,
   className,
-  live = false
+  live = false,
+  icon
 }: {
   tone: Tone;
   children: ReactNode;
   className?: string;
   /** Announced when it changes (a test result, a save). */
   live?: boolean;
+  /** A glyph of its own in the place of the tone's (a line that is not a state, such as "your text goes to ..."). */
+  icon?: ReactNode;
 }) {
   return (
     <span
@@ -43,7 +46,9 @@ export function StatusLine({
       )}
     >
       <span className={cn("mt-[3px] inline-flex shrink-0", toneClass[tone])}>
-        {tone === "ok" ? (
+        {icon ? (
+          icon
+        ) : tone === "ok" ? (
           <SolidCheck className="size-3.5" />
         ) : tone === "warn" || tone === "danger" ? (
           <SolidTriangle className="size-3.5" />

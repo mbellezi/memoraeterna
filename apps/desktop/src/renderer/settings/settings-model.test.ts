@@ -63,7 +63,9 @@ describe("the changed counts", () => {
     described("contentLanguage", "en", "pt-BR", true),
     described("themeMode", "system", "system", false),
     described("obsidianSync", "on", "off", true),
-    described("obsidianVaultPath", true, null, true)
+    described("obsidianVaultPath", true, null, true),
+    described("ai.provider.openai-codex", true, null, true),
+    described("local-models.repository-token-ref", true, null, true)
   ]);
 
   it("count per section only what differs, and list those entries in the registry's order", () => {
@@ -80,6 +82,11 @@ describe("the changed counts", () => {
       "obsidianVaultPath",
       "obsidianSync"
     ]);
+  });
+
+  it("never count or list a saved credential: its own line says what is set", () => {
+    expect(changedIn("ai", index)).toEqual([]);
+    expect(changedIn("advanced", index)).toEqual([]);
   });
 });
 

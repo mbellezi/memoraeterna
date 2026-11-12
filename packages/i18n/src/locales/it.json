@@ -5499,6 +5499,7 @@
     "errors": {
       "write": "Impossibile salvare. Non è cambiato nulla."
     },
+    "intro": "Parti dalla configurazione: sceglie in una volta il modello di ogni attività. Ibrida e Cloud richiedono un fornitore, qui sotto. Il resto è messa a punto.",
     "models": {
       "action": {
         "download": "Scarica",

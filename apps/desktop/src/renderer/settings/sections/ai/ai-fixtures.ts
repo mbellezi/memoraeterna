@@ -411,7 +411,7 @@ export const budgetFixture = {
 
 /**
  * What `settings.describe` answers for the AI section: the entries that store something, at their
- * default except the ones the fixture changes (a route on another model, the stored credentials).
+ * default except the ones the fixture changes (a route on another model).
  */
 export function describeFixture(
   changed: Readonly<Record<string, { value: Json; default: Json | null }>> = defaultChanges
@@ -431,8 +431,6 @@ export function describeFixture(
 
 const defaultChanges: Record<string, { value: Json; default: Json | null }> = {
   "ai.route.write-quality": { value: ids.profileCompat, default: ids.profileCodex },
-  "ai.provider.openai-codex": { value: true, default: null },
-  "ai.provider.openai-compatible": { value: true, default: null },
   themeMode: { value: "dark", default: "system" }
 };
 

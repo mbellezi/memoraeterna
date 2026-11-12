@@ -167,7 +167,7 @@ function SetupOption({
         "flex min-w-0 flex-col items-start gap-1 rounded-lg border p-3 text-left transition-colors [transition-duration:var(--motion-fast)]",
         "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent",
         checked
-          ? "border-border-strong bg-surface-selected [box-shadow:inset_0_0_0_1px_var(--border-strong)]"
+          ? "border-accent bg-surface-selected [box-shadow:inset_0_0_0_1px_var(--accent)]"
           : asked
             ? "border-accent bg-surface"
             : unavailable

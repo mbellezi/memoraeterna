@@ -1,4 +1,5 @@
 import { useId } from "react";
+import { CloudUpload } from "lucide-react";
 import type { Translator } from "@app/i18n";
 
 import type { AiClassRoutes, AiProfile } from "../../../../shared/ipc";
@@ -212,7 +213,10 @@ function Disclosure({
   if (!show) return null;
   if (!asking)
     return (
-      <StatusLine tone="idle">
+      <StatusLine
+        tone="idle"
+        icon={<CloudUpload aria-hidden="true" className="size-3.5 text-secondary-foreground" />}
+      >
         {t("settingsAi.routes.disclosure.title", { values: { provider } })}
       </StatusLine>
     );

@@ -3,6 +3,7 @@ import type { Translator } from "@app/i18n";
 
 import type { SettingEntryV2 } from "../../../../shared/settings-registry";
 import { Button } from "../../../components/ui/button";
+import { InlineAction } from "../../InlineAction";
 import { SettingRow } from "../../SettingRow";
 import { AreaNotice, Field, StatusLine, TextField } from "./ai-parts";
 import { useRowProps } from "./ai-rows";
@@ -10,8 +11,9 @@ import { useRowProps } from "./ai-rows";
 /**
  * A credential that is one key or token: whether it is saved (never its value), a way to add or
  * replace it and, for the one that can be checked, a test. The secret is typed once into a password
- * field, sent to the main process and forgotten; taking it away is the row's own "Restore default",
- * which asks first. `extra` is what the credential's own story adds under its state (the Decisions
+ * field, sent to the main process and forgotten; taking it away is the row's own "Remove" (the
+ * entry's reset), which asks first. A saved credential is never a "changed" setting: the state line says
+ * what is set. `extra` is what the credential's own story adds under its state (the Decisions
  * key says what OpenAI refused).
  */
 export function CredentialRow({
@@ -54,6 +56,7 @@ export function CredentialRow({
   const [editing, setEditing] = useState(false);
   const [testing, setTesting] = useState(false);
   const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null);
+  const [asking, setAsking] = useState(false);
 
   const test = async () => {
     if (!onTest) return;
@@ -91,9 +94,38 @@ export function CredentialRow({
       }
       note={
         <div className="grid gap-2">
-          <StatusLine tone={invalid ? "warn" : saved ? "ok" : "idle"}>
-            {invalid && labels.invalid ? labels.invalid : saved ? labels.set : labels.none}
-          </StatusLine>
+          <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <StatusLine tone={invalid ? "warn" : saved ? "ok" : "idle"}>
+              {invalid && labels.invalid ? labels.invalid : saved ? labels.set : labels.none}
+            </StatusLine>
+            {saved && row.onReset && !editing && !asking ? (
+              <InlineAction
+                size="xs"
+                disabled={busy || row.reset === "working"}
+                aria-label={`${t("settingsAi.providers.action.remove")}: ${row.label}`}
+                onClick={() => setAsking(true)}
+              >
+                {t("settingsAi.providers.action.remove")}
+              </InlineAction>
+            ) : null}
+          </span>
+          {asking ? (
+            <span role="group" className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
+              <span className="text-foreground">{t("settingsShell.row.removeAsk")}</span>
+              <Button
+                aria-label={`${t("settingsAi.providers.action.remove")}: ${row.label}`}
+                onClick={() => {
+                  setAsking(false);
+                  row.onReset?.();
+                }}
+              >
+                {t("settingsAi.providers.action.remove")}
+              </Button>
+              <Button variant="ghost" onClick={() => setAsking(false)}>
+                {t("shell.actions.cancel")}
+              </Button>
+            </span>
+          ) : null}
           {result ? (
             <StatusLine tone={result.ok ? "ok" : "warn"} live>
               {result.text}

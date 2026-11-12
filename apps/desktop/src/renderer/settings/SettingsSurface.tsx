@@ -241,6 +241,7 @@ export function SettingsSurface({
   const changed = index ? changedIn(section, index, registry) : null;
   const counts = index ? changedCounts(index, registry) : null;
   const Body = sections[section]?.Section ?? GenericSection;
+  const Waiting = sections[section]?.Skeleton ?? SettingsSkeleton;
   const columns = "grid-cols-[248px_minmax(0,1fr)] min-[1180px]:grid-cols-[288px_minmax(0,1fr)]";
 
   return (
@@ -312,7 +313,7 @@ export function SettingsSurface({
                 {t(sectionMeta[section].name)}
               </h2>
               {read.status === "loading" ? (
-                <SettingsSkeleton t={t} />
+                <Waiting t={t} />
               ) : read.status === "error" ? (
                 <ErrorState
                   t={t}

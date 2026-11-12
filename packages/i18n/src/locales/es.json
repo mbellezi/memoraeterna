@@ -5508,6 +5508,7 @@
     "errors": {
       "write": "No se pudo guardar. No se cambió nada."
     },
+    "intro": "Empieza por la configuración: elige el modelo de cada trabajo de una vez. Híbrida y Nube piden un proveedor, justo debajo. Lo demás es ajuste fino.",
     "models": {
       "action": {
         "download": "Descargar",

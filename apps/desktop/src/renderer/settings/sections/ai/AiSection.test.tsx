@@ -354,6 +354,50 @@ describe("the model of each job", () => {
 });
 
 describe("providers and credentials", () => {
+  it("never marks a saved credential as changed, and counts only the route that is", async () => {
+    await mount(
+      ai({
+        "settings.describe": {
+          entries: describeFixture({
+            "ai.route.write-quality": { value: ids.profileCompat, default: ids.profileCodex },
+            "ai.provider.openai-codex": { value: true, default: null },
+            "ai.provider.openai-compatible": { value: true, default: null }
+          })
+        }
+      })
+    );
+    expect(row("ai.provider.openai-codex")?.hasAttribute("data-changed")).toBe(false);
+    expect(row("ai.provider.openai-compatible")?.hasAttribute("data-changed")).toBe(false);
+    expect(row("ai.provider.openai-codex")?.textContent).not.toContain("Changed");
+    expect(row("ai.route.write-quality")?.hasAttribute("data-changed")).toBe(true);
+    expect(dom.document.body.textContent).toContain("1 setting changed");
+  });
+
+  it("says where to start above the first group", async () => {
+    await mount();
+    const intro = [...dom.document.querySelectorAll("p")].find((p) =>
+      p.textContent?.startsWith("Start with the setup")
+    );
+    expect(intro).toBeDefined();
+    expect(intro!.nextElementSibling?.tagName).toBe("SECTION");
+  });
+
+  it("removes a saved token only after the yes, through the entry's reset", async () => {
+    await mount(ai({ "ai.decisionsStatus": { ...decisionsFixture, keyStored: true } }));
+    const key = row("ai:decisions-openai-platform")!;
+    expect(key.hasAttribute("data-changed")).toBe(false);
+    await click(byLabel("Remove: ", key)!);
+    expect(spies["settings.reset"]).not.toHaveBeenCalled();
+    expect(key.textContent).toContain("Remove it from this Mac?");
+    await click(
+      buttons(key).find((b) => b.textContent === "Remove" && b.getAttribute("aria-label"))!
+    );
+    await flush();
+    expect(spies["settings.reset"]).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "ai:decisions-openai-platform" })
+    );
+  });
+
   it("says a sign-in, a saved key and none, and never shows a key", async () => {
     await mount();
     expect(row("ai.provider.openai-codex")?.textContent).toContain("Connected");
