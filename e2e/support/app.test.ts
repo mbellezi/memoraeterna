@@ -19,7 +19,8 @@ import {
   firstRunRankerEnv,
   firstRunRankerState,
   journeyEnvironment,
-  secondSourceKey
+  secondSourceKey,
+  setTheme
 } from "./app.js";
 import { repositoryRoot } from "./profile.js";
 
@@ -142,6 +143,33 @@ describe("the first-run ranker a journey waits for", () => {
     expect(() => firstRunRankerState(listed("failed", [], "bad checksum"))).toThrow(
       new RegExp(`${ranker} failed: bad checksum`, "u")
     );
+  });
+});
+
+describe("setTheme", () => {
+  const fakeSession = () => {
+    const calls: string[] = [];
+    const session = {
+      electronApp: {
+        evaluate: async (_run: unknown, theme: string) => calls.push(`native ${theme}`)
+      },
+      page: {
+        emulateMedia: async (options: { colorScheme: string }) =>
+          calls.push(`emulate ${options.colorScheme}`),
+        waitForFunction: async (_check: unknown, dark: boolean) => calls.push(`wait dark=${dark}`),
+        evaluate: async () => calls.push("frames")
+      }
+    };
+    return { calls, session };
+  };
+
+  it("emulates the colour scheme on the page, because the native theme alone does not reach a window shown inactive", async () => {
+    const { calls, session } = fakeSession();
+    await setTheme(session as never, "dark");
+    expect(calls).toEqual(["native dark", "emulate dark", "wait dark=true", "frames"]);
+    calls.length = 0;
+    await setTheme(session as never, "light");
+    expect(calls.slice(0, 3)).toEqual(["native light", "emulate light", "wait dark=false"]);
   });
 });
 

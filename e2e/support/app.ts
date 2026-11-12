@@ -269,14 +269,21 @@ export async function openClone(
 
 export type Theme = "light" | "dark";
 
-/** Switches the window's theme the way the system would (`nativeTheme.themeSource`). */
+/**
+ * Switches the window's theme: the colour scheme is emulated on the page and the native theme follows.
+ * `nativeTheme.themeSource` alone is not enough: a window shown inactive (or covered by another app)
+ * keeps `prefers-color-scheme: light` in the renderer although `nativeTheme.shouldUseDarkColors` is
+ * true, so a "dark" capture would be a light page.
+ */
 export async function setTheme(session: Pick<MemoraSession, "electronApp" | "page">, theme: Theme) {
   await session.electronApp.evaluate(({ nativeTheme }, source) => {
     nativeTheme.themeSource = source;
   }, theme);
+  await session.page.emulateMedia({ colorScheme: theme });
   await session.page.waitForFunction(
     (dark) => window.matchMedia("(prefers-color-scheme: dark)").matches === dark,
-    theme === "dark"
+    theme === "dark",
+    { polling: 100 }
   );
   // Two frames: the styles that follow the media query are applied and painted.
   await session.page.evaluate(
