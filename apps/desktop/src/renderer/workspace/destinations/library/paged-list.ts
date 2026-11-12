@@ -70,9 +70,12 @@ const timers: Scheduler = {
 
 export interface PagedListOptions<Item, Facets> {
   pageSize: number;
-  /** The most rows one request may ask for (a re-read pages by this). */
+  /** The most rows one request of this source may ask for (a re-read pages by this). */
   refreshPage: number;
-  /** The most rows a re-read brings back. */
+  /**
+   * How deep a re-read goes. A list loaded deeper than this keeps the rows past it as they were
+   * (they follow the re-read head), so a live change never cuts what the person scrolled to.
+   */
   refreshCap: number;
   refreshDelayMs: number;
   /** An item's identity: a row that arrives twice (a page edge that moved) is kept once. */
@@ -91,7 +94,10 @@ export interface PagedList<Item, Facets> {
   /** Tries again what failed: the first page, or the page that did not load. */
   retry(): void;
   getState(): PagedState<Item, Facets>;
+  /** Stops reporting and drops every answer in flight. */
   dispose(): void;
+  /** Undoes `dispose` (React runs a cleanup and a setup again on a kept state in development). */
+  resume(): void;
 }
 
 export function createPagedList<Item, Facets>(
@@ -105,6 +111,8 @@ export function createPagedList<Item, Facets>(
   let generation = 0;
   /** A page or a re-read is being read. */
   let busy = false;
+  /** A first page is being read (a change that comes meanwhile may not be in it). */
+  let loading = false;
   let wanted = false;
   let timer: unknown = null;
   let disposed = false;
@@ -141,6 +149,7 @@ export function createPagedList<Item, Facets>(
     source = next;
     cursor = undefined;
     busy = false;
+    loading = true;
     wanted = false;
     if (timer !== null) schedule.clear(timer);
     timer = null;
@@ -156,8 +165,7 @@ export function createPagedList<Item, Facets>(
         if (mine !== generation) return;
         const items = unique(result.items);
         cursor = result.next;
-        // A change that came while the page was being read is in it already.
-        wanted = false;
+        loading = false;
         set({
           status: "ready",
           stale: false,
@@ -168,9 +176,14 @@ export function createPagedList<Item, Facets>(
           loadingMore: false,
           moreFailed: false
         });
+        // A change that came while the page was being read may have missed its snapshot: read once more.
+        if (wanted && timer === null && !disposed) {
+          timer = schedule.set(runRefresh, options.refreshDelayMs);
+        }
       })
       .catch(() => {
         if (mine !== generation) return;
+        loading = false;
         set({ ...initialPagedState, facets: state.facets, status: "error" });
       });
   };
@@ -209,7 +222,8 @@ export function createPagedList<Item, Facets>(
     busy = true;
     const mine = generation;
     const reading = source;
-    const want = Math.min(options.refreshCap, Math.max(options.pageSize, state.items.length));
+    const before = state.items;
+    const want = Math.min(options.refreshCap, Math.max(options.pageSize, before.length));
     void (async () => {
       const items: Item[] = [];
       let next: string | undefined;
@@ -232,33 +246,54 @@ export function createPagedList<Item, Facets>(
         return;
       }
       if (mine !== generation || first === null) return;
-      const kept = unique(items);
-      cursor = next;
+      const head = unique(items);
+      // A list deeper than the re-read keeps the rows past the head, from the last row both share.
+      const tail = next !== undefined && before.length > want ? tailAfter(before, head) : [];
+      const kept = tail.length > 0 ? [...head, ...tail] : head;
+      if (tail.length === 0) cursor = next;
       set({
         items: kept,
         total: first.total ?? (next === undefined ? kept.length : state.total),
         facets: first.facets ?? state.facets,
-        hasMore: next !== undefined,
+        hasMore: tail.length > 0 ? state.hasMore : next !== undefined,
         moreFailed: false
       });
       settle();
     })();
   }
 
+  /** The rows of `before` past the last one that `head` also holds, none of them in `head` again. */
+  function tailAfter(before: readonly Item[], head: readonly Item[]): Item[] {
+    const inHead = new Set(head.map(options.key));
+    let last = -1;
+    before.forEach((item, index) => {
+      if (inHead.has(options.key(item))) last = index;
+    });
+    return last === -1
+      ? []
+      : before.slice(last + 1).filter((item) => !inHead.has(options.key(item)));
+  }
+
   return {
     load,
     more,
     refresh() {
-      // Nothing to re-read before a first page has arrived (the first page is current), or after it failed.
-      if (disposed || !source || state.status !== "ready") return;
+      // Nothing to re-read after a first page failed. A change during a first page's read is kept
+      // for after it (the page's snapshot may not hold it); a re-read that is running reads again after.
+      if (disposed || !source || state.status === "error") return;
       wanted = true;
-      if (timer === null && !busy) timer = schedule.set(runRefresh, options.refreshDelayMs);
+      if (timer === null && !busy && !loading) {
+        timer = schedule.set(runRefresh, options.refreshDelayMs);
+      }
     },
     retry() {
       if (state.status === "error" && source) load(source, { facets: true });
       else if (state.moreFailed) more();
     },
     getState: () => state,
+    resume() {
+      disposed = false;
+    },
     dispose() {
       disposed = true;
       generation += 1;

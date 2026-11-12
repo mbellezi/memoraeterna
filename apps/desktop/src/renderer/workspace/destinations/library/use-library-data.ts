@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { ObjectKind } from "@app/domain";
+import { formatObjectAddress, type ObjectKind } from "@app/domain";
 
 import type { LibraryRow } from "../../../../shared/ipc-library";
 import type { QuestionListItemView } from "../../../../shared/ipc-questions";
@@ -27,6 +27,7 @@ import { createPagedList, initialPagedState, type PageSource, type PagedState } 
 
 const sourceChanges: readonly ObjectKind[] = ["source"];
 const questionChanges: readonly ObjectKind[] = ["question"];
+const topicChanges: readonly ObjectKind[] = ["topic"];
 
 function sourcesSource(query: LibraryQuery): PageSource<LibraryRow, LibraryFacets> {
   return {
@@ -62,6 +63,8 @@ interface PagedConfig<Item, Facets> {
   key: string;
   /** Identifies the counts: a change asks for them again. */
   facetKey: string;
+  /** The most rows one request of this source may ask for. */
+  refreshPage: number;
   source: () => PageSource<Item, Facets>;
   itemKey: (item: Item) => string;
   kinds: readonly ObjectKind[];
@@ -74,14 +77,31 @@ function usePagedData<Item, Facets>(config: PagedConfig<Item, Facets>): PagedDat
   );
   const latest = useRef(config);
   // The identity of a row is the same function for the life of the list.
-  const [list] = useState(() =>
-    createPagedList<Item, Facets>({ ...libraryPaging, key: config.itemKey, onChange: setState })
-  );
+  const [list] = useState(() => {
+    return createPagedList<Item, Facets>({
+      pageSize: libraryPaging.pageSize,
+      refreshCap: libraryPaging.refreshCap,
+      refreshDelayMs: libraryPaging.refreshDelayMs,
+      refreshPage: config.refreshPage,
+      key: config.itemKey,
+      onChange: setState
+    });
+  });
   useEffect(() => {
     latest.current = config;
   });
   // What the last read was for: the first read starts at once, later ones wait for the typing to settle.
   const read = useRef<{ key: string; facetKey: string } | null>(null);
+
+  // React (development) runs a setup, a cleanup and a setup again on the state it keeps: the list
+  // wakes up again, and what the first setup read is read again.
+  useEffect(() => {
+    list.resume();
+    return () => {
+      list.dispose();
+      read.current = null;
+    };
+  }, [list]);
 
   useEffect(() => {
     if (!config.active) return undefined;
@@ -107,7 +127,6 @@ function usePagedData<Item, Facets>(config: PagedConfig<Item, Facets>): PagedDat
     // The query's key is the whole dependency: the source is built from the latest config.
   }, [config.active, config.key, list]);
 
-  useEffect(() => () => list.dispose(), [list]);
   useObjectKindChanged(config.kinds, () => list.refresh(), config.active);
 
   const more = useCallback(() => list.more(), [list]);
@@ -123,6 +142,7 @@ export function useLibrarySources(
   return usePagedData<LibraryRow, LibraryFacets>({
     key: queryKey(query),
     facetKey: facetKey(query),
+    refreshPage: libraryPaging.refreshPages.sources,
     source: () => sourcesSource(query),
     itemKey: (row) => row.id,
     kinds: sourceChanges,
@@ -139,6 +159,7 @@ export function useLibraryQuestions(
   return usePagedData<QuestionListItemView, never>({
     key,
     facetKey: key,
+    refreshPage: libraryPaging.refreshPages.questions,
     source: () => questionsSource(text),
     itemKey: (question) => question.id,
     kinds: questionChanges,
@@ -146,42 +167,51 @@ export function useLibraryQuestions(
   });
 }
 
+/** `objects.resolveMany` takes up to this many addresses. */
+const resolveBatch = 200;
+
 /**
  * The titles of the topics that the loaded questions were asked about, in one `resolveMany` per
- * change of the set. A topic that no longer exists maps to null; one not read yet is absent.
+ * batch of 200 per change of the set, and again when a topic changes (a rename). A topic that no
+ * longer exists maps to null; one not read yet is absent, and reads "Um tópico".
  */
 export function useScopeTitles(
   questions: readonly QuestionListItemView[],
   active: boolean
 ): ReadonlyMap<string, string | null> {
   const [titles, setTitles] = useState<ReadonlyMap<string, string | null>>(new Map());
+  const [changes, setChanges] = useState(0);
   const ids = useMemo(() => scopeTopicIds(questions).sort(), [questions]);
   const key = ids.join(",");
+  useObjectKindChanged(topicChanges, () => setChanges((count) => count + 1), active);
   useEffect(() => {
     if (!active || ids.length === 0) return undefined;
     const app = typeof window === "undefined" ? undefined : window.app;
     if (!app?.objects?.resolveMany) return undefined;
     let live = true;
-    const addresses = ids.map((id) => `memora://topic/${id}`);
-    app.objects
-      .resolveMany({ addresses: addresses.slice(0, 200) })
-      .then((result) => {
-        if (!live) return;
-        const next = new Map<string, string | null>();
-        ids.forEach((id, index) => {
-          const found = result.items[addresses[index] as string];
-          next.set(id, found ? found.title : null);
-        });
-        setTitles(next);
-      })
-      .catch(() => {
-        // The scope reads "tópico" until a later read names it.
-      });
+    const addressOf = (id: string) => formatObjectAddress({ kind: "topic", id });
+    void (async () => {
+      const next = new Map<string, string | null>();
+      try {
+        for (let from = 0; from < ids.length; from += resolveBatch) {
+          const batch = ids.slice(from, from + resolveBatch);
+          const result = await app.objects.resolveMany({ addresses: batch.map(addressOf) });
+          if (!live) return;
+          for (const id of batch) {
+            const found = result.items[addressOf(id)];
+            next.set(id, found ? found.title : null);
+          }
+        }
+      } catch {
+        // The scope reads "Um tópico" for what a later read does not name; what was read stays.
+      }
+      if (live && next.size > 0) setTitles((known) => new Map([...known, ...next]));
+    })();
     return () => {
       live = false;
     };
     // `ids` is read through its key.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key, active]);
+  }, [key, active, changes]);
   return titles;
 }

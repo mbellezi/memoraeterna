@@ -181,6 +181,19 @@ describe("the table in success", () => {
     expect(html).toContain("open beside");
   });
 
+  it("draws the quick-look sheet in place over the table when it is told to, under its own surface id", () => {
+    const html = render({
+      selected: id(2),
+      peeking: true,
+      peekPortal: false,
+      surfaceId: "library-peek"
+    });
+    expect(html).toContain('data-surface="library-peek"');
+    expect(html).toContain("Peeking");
+    expect(html).toContain("Source 2");
+    expect(render({ selected: id(2) })).not.toContain("Peeking");
+  });
+
   it("marks the sorted header and the selected row", () => {
     const selected = render({ selected: id(2) });
     expect(selected).toContain('aria-selected="true"');

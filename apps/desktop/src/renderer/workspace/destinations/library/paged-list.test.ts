@@ -290,6 +290,76 @@ describe("a re-read after a change", () => {
     expect(context.last().items.map((item) => item.id)).toEqual(["r70"]);
   });
 
+  it("keeps the rows past the cap when a deeper list is re-read, and pages on from where it ended", async () => {
+    const context = setup({ refreshCap: 4 });
+    const { source, pending } = controlledSource();
+    context.list.load(source, { facets: false });
+    pending[0]?.resolve({ items: items(0, 3), next: "c1", total: 20 });
+    await flush();
+    context.list.more();
+    pending[1]?.resolve({ items: items(3, 6), next: "c2", total: 20 });
+    await flush();
+    context.list.more();
+    pending[2]?.resolve({ items: items(6, 9), next: "c3", total: 20 });
+    await flush();
+    context.list.refresh();
+    context.clock.fire();
+    // The head (4 rows) is read again: a new row leads, r3 slid out of it.
+    pending[3]?.resolve({ items: [{ id: "new" }, ...items(0, 3)], next: "d1", total: 21 });
+    await flush();
+    expect(context.last().items.map((item) => item.id)).toEqual([
+      "new",
+      "r0",
+      "r1",
+      "r2",
+      "r3",
+      "r4",
+      "r5",
+      "r6",
+      "r7",
+      "r8"
+    ]);
+    expect(context.last()).toMatchObject({ total: 21, hasMore: true });
+    // The next page still continues from the end of what was loaded.
+    context.list.more();
+    expect(pending[4]?.request.cursor).toBe("c3");
+  });
+
+  it("re-reads after a first page that was being read when the change came", async () => {
+    const { list, clock, last } = setup();
+    const { source, pending } = controlledSource();
+    list.load(source, { facets: true });
+    // The change is pushed while the first page is in flight: its snapshot may not hold it.
+    list.refresh();
+    expect(clock.pending()).toBe(0);
+    pending[0]?.resolve({ items: items(0, 2), total: 2, facets: { count: 2 } });
+    await flush();
+    expect(last().status).toBe("ready");
+    expect(clock.pending()).toBe(1);
+    clock.fire();
+    expect(pending[1]?.request.cursor).toBeUndefined();
+    pending[1]?.resolve({ items: items(0, 3), total: 3, facets: { count: 3 } });
+    await flush();
+    expect(last().items).toHaveLength(3);
+  });
+
+  it("re-reads after a re-query that was being read when the change came", async () => {
+    const { list, clock, last } = setup();
+    const first = controlledSource();
+    list.load(first.source, { facets: true });
+    first.pending[0]?.resolve({ items: items(0, 2), total: 2 });
+    await flush();
+    const next = controlledSource();
+    list.load(next.source, { facets: false });
+    expect(last().stale).toBe(true);
+    list.refresh();
+    next.pending[0]?.resolve({ items: items(5, 7), total: 2 });
+    await flush();
+    expect(clock.pending()).toBe(1);
+    clock.fire();
+    expect(next.pending).toHaveLength(2);
+  });
+
   it("does nothing before the first page has arrived or after it failed", async () => {
     const { list, clock } = setup();
     const { source, pending } = controlledSource();
@@ -304,6 +374,23 @@ describe("a re-read after a change", () => {
 });
 
 describe("when the list is gone", () => {
+  it("reads again once it is resumed (React runs a cleanup and a setup on a kept state)", async () => {
+    const { list, last } = setup();
+    const { source, pending } = controlledSource();
+    list.load(source, { facets: true });
+    list.dispose();
+    list.resume();
+    pending[0]?.resolve({ items: items(0, 3), total: 3 });
+    await flush();
+    // The answer to the load that was dropped is not taken ...
+    expect(last().status).toBe("loading");
+    // ... and a load after the resume reports again.
+    list.load(source, { facets: true });
+    pending[1]?.resolve({ items: items(0, 3), total: 3 });
+    await flush();
+    expect(last().status).toBe("ready");
+  });
+
   it("never reports an answer that comes late, and starts no re-read", async () => {
     const { list, clock, states } = setup();
     const { source, pending } = controlledSource();

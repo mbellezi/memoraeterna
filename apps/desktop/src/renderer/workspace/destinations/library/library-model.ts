@@ -21,8 +21,9 @@ import type { Density } from "../../state";
 /** Rows per page and what a live refresh re-reads (typed configuration, not a rule). */
 export const libraryPaging = {
   pageSize: 50,
-  /** A refresh re-reads in pages of the API's maximum, up to this many rows. */
-  refreshPage: 100,
+  /** A refresh re-reads in pages of each API's maximum (`library.rows` 100, `questions.list` 50). */
+  refreshPages: { sources: 100, questions: 50 },
+  /** A refresh re-reads this many rows; a list loaded deeper keeps the rows past it. */
   refreshCap: 500,
   /** The table asks for the next page when the window comes this close to the end. */
   nearEnd: 20,

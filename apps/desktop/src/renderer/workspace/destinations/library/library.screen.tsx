@@ -264,20 +264,46 @@ const resolved = (address: string) => {
   };
 };
 
+/** What the quick-look sheet reads of a source (the first row is the one a capture looks at). */
+const previews: Record<string, string> = {
+  [uuid(1)]:
+    "Compara a rua completa em Bogotá e em Quito: calçadas largas, ciclovia protegida e comércio no térreo. Os dados de acidentes caem onde a rua ganhou lugar para quem anda.",
+  [uuid(5)]:
+    "O capítulo explica como bactérias láticas, leveduras e bolores competem nos alimentos e por que a acidez, o sal e a falta de oxigênio decidem quem vence."
+};
+
+/** Where a source sits, for the path ribbon of the quick-look sheet. */
+function located(address: string) {
+  const id = address.slice(address.lastIndexOf("/") + 1);
+  const found = rows.find((entry) => entry.id === id);
+  const object = { kind: "source" as const, id, title: found?.title ?? "" };
+  const path = found?.place?.path.map((entry) => ({ kind: "topic" as const, ...entry })) ?? [];
+  return {
+    object,
+    primaryPath: [...path, object],
+    alsoIn: [],
+    citedBy: [],
+    counts: { alsoIn: 0, citedBy: 0, notes: found?.noteCount ?? 0, passages: 0, children: 0 }
+  };
+}
+
 export const fixtures: ScreenModule["fixtures"] = {
   success: {
+    "objects.locate": ({ address }: { address: string }) => located(address),
     "library.rows": (input?: LibraryRowsInput) => answerRows(input),
     "questions.list": { items: questions },
-    "objects.get": ({ address }: { address: string }) => ({
-      address,
-      kind: "source" as const,
-      title: "Microbiologia dos alimentos, cap. 3",
-      status: "current" as const,
-      preview:
-        "O capítulo explica como bactérias láticas, leveduras e bolores competem nos alimentos e por que a acidez, o sal e a falta de oxigênio decidem quem vence.",
-      updatedAt: at(3, 11, 0),
-      counts: { notes: 14, passages: 31 }
-    }),
+    "objects.get": ({ address }: { address: string }) => {
+      const found = rows.find((entry) => address.endsWith(entry.id));
+      return {
+        address,
+        kind: "source" as const,
+        title: found?.title ?? "",
+        status: "current" as const,
+        preview: previews[found?.id ?? ""] ?? previews[uuid(5)] ?? "",
+        updatedAt: found?.updatedAt ?? at(3, 11, 0),
+        counts: { notes: found?.noteCount ?? 0, passages: 31 }
+      };
+    },
     "objects.resolveMany": ({ addresses }: { addresses: string[] }) => ({
       items: Object.fromEntries(addresses.map((address) => [address, resolved(address)])),
       missing: []

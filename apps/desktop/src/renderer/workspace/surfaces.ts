@@ -172,6 +172,12 @@ export const surfaces: readonly SurfaceEntry[] = [
     "workspace/add/drop-overlay.screen.tsx"
   ),
   entry("quick-look", "overlay", "workspace/QuickLook.tsx", "workspace/QuickLook.screen.tsx"),
+  entry(
+    "library-peek",
+    "overlay",
+    "workspace/destinations/library/LibraryPeek.tsx",
+    "workspace/destinations/library/library-peek.screen.tsx"
+  ),
 
   // Settings v2: the surface and its seven sections.
   entry("settings", "settings", "settings/SettingsSurface.tsx", "settings/settings.screen.tsx"),

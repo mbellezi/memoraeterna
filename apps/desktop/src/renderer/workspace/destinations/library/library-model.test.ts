@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { createTranslator } from "@app/i18n";
 
-import type { LibraryRow } from "../../../../shared/ipc-library";
+import { libraryRowsLimit, type LibraryRow } from "../../../../shared/ipc-library";
+import { questionListMaxLimit } from "../../../../shared/ipc-questions";
 import {
   chipViews,
   defaultDirections,
@@ -44,6 +45,14 @@ const key = (input: Partial<TableKeyInput> & { key: string }): TableKeyInput => 
   altKey: false,
   shiftKey: false,
   ...input
+});
+
+describe("paging", () => {
+  it("never asks a source for more rows in one request than its API takes", () => {
+    expect(libraryPaging.refreshPages.sources).toBeLessThanOrEqual(libraryRowsLimit.max);
+    expect(libraryPaging.refreshPages.questions).toBeLessThanOrEqual(questionListMaxLimit);
+    expect(libraryPaging.pageSize).toBeLessThanOrEqual(questionListMaxLimit);
+  });
 });
 
 describe("sorting", () => {

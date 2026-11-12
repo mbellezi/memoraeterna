@@ -36,7 +36,7 @@ import {
   sourcesCount
 } from "./LibraryBars";
 import { LibraryGrid, RowSkeleton, type GridColumn } from "./LibraryGrid";
-import { LibraryPeek } from "./LibraryPeek";
+import { LibraryPeek, libraryPeekSurface } from "./LibraryPeek";
 import {
   DateCell,
   NotesCell,
@@ -82,6 +82,11 @@ import {
 export const librarySurface = "destination-library";
 
 export interface LibraryRootProps extends PanelProps {
+  /**
+   * Screens only: opens the sheet on the first row and draws it in place instead of in a portal, so
+   * a capture shows it; the frame then reports `library-peek`.
+   */
+  preview?: "peek";
   /** The Library header's density, kept per device in `memora.workspace.v1`. */
   density?: Density;
   onDensity?: (density: Density) => void;
@@ -243,6 +248,10 @@ export interface LibraryViewProps {
   onExpand: (expanded: boolean) => void;
   onOpen: (address: string) => void;
   onKeyDown?: (event: KeyboardEvent<HTMLElement>) => void;
+  /** What the frame reports as `data-surface`. */
+  surfaceId?: string;
+  /** Draw the sheet in place instead of in a portal (the screens tool). */
+  peekPortal?: boolean;
 }
 
 export function LibraryView(props: LibraryViewProps) {
@@ -273,7 +282,9 @@ export function LibraryView(props: LibraryViewProps) {
     onClosePeek,
     onExpand,
     onOpen,
-    onKeyDown
+    onKeyDown,
+    surfaceId = librarySurface,
+    peekPortal
   } = props;
   const onSources = tab === "sources";
   const data = onSources ? sources : questions;
@@ -367,7 +378,7 @@ export function LibraryView(props: LibraryViewProps) {
     );
     return (
       <section
-        data-surface={librarySurface}
+        data-surface={surfaceId}
         data-state={state}
         data-mode="compact"
         aria-label={t("libraryTable.title")}
@@ -410,6 +421,7 @@ export function LibraryView(props: LibraryViewProps) {
           meta={peek.meta}
           onClose={onClosePeek}
           onOpen={onOpen}
+          {...(peekPortal === undefined ? {} : { portal: peekPortal })}
         />
       </section>
     );
@@ -465,7 +477,7 @@ export function LibraryView(props: LibraryViewProps) {
 
   return (
     <section
-      data-surface={librarySurface}
+      data-surface={surfaceId}
       data-state={state}
       data-mode="full"
       aria-label={t("libraryTable.title")}
@@ -616,6 +628,7 @@ export function LibraryView(props: LibraryViewProps) {
         meta={peek.meta}
         onClose={onClosePeek}
         onOpen={onOpen}
+        {...(peekPortal === undefined ? {} : { portal: peekPortal })}
       />
     </section>
   );
@@ -633,7 +646,8 @@ export function LibraryRoot({
   onOpen,
   current,
   density: densityProp,
-  onDensity: onDensityProp
+  onDensity: onDensityProp,
+  preview
 }: LibraryRootProps) {
   const view = parseViewAddress(address);
   const fromAddress = view?.view === "library" ? view : { view: "library" as const };
@@ -649,7 +663,7 @@ export function LibraryRoot({
   }
   const [densityLocal, setDensityLocal] = useState<Density>("comfortable");
   const [selected, setSelected] = useState<string | null>(null);
-  const [peeking, setPeeking] = useState(false);
+  const [peeking, setPeeking] = useState(preview === "peek");
   const [expanded, setExpanded] = useState(false);
   const input = useRef<HTMLInputElement>(null);
   const panelId = useId();
@@ -667,7 +681,12 @@ export function LibraryRoot({
 
   // The sheet closes with the row it was on.
   const rows = data.items as readonly Row[];
-  const selectedRow = useMemo(() => rows.find((row) => row.id === selected), [rows, selected]);
+  const selectedRow = useMemo(
+    () =>
+      rows.find((row) => row.id === selected) ??
+      (preview === "peek" && selected === null ? rows[0] : undefined),
+    [rows, selected, preview]
+  );
 
   const onTab = useCallback((next: LibraryTab) => {
     setTab(next);
@@ -709,8 +728,10 @@ export function LibraryRoot({
       sources={sources}
       questions={questions}
       titles={titles}
-      selected={selected}
+      selected={selectedRow?.id ?? selected}
       peeking={peeking && selectedRow !== undefined}
+      surfaceId={preview === "peek" ? libraryPeekSurface : librarySurface}
+      {...(preview === "peek" ? { peekPortal: false } : {})}
       expanded={expanded}
       currentKey={current ? (parseObjectAddress(current)?.id ?? null) : null}
       now={new Date()}

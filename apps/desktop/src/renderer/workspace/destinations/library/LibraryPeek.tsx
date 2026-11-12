@@ -23,6 +23,9 @@ import { PathRibbon } from "../../PathRibbon";
  * and a question alike, and it reads again when the object changes.
  */
 
+/** What the frame of the screens tool reports for the sheet over the table (`LibraryRoot` `preview="peek"`). */
+export const libraryPeekSurface = "library-peek";
+
 export interface LibraryPeekProps {
   t: Translator;
   /** The object being looked at; null closes the sheet. */
