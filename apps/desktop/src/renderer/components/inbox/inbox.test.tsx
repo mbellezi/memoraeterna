@@ -120,6 +120,16 @@ describe("the Inbox screen", () => {
     expect(html).toContain("<kbd");
   });
 
+  it("draws Backspace on the remove button of a connection, and no X", () => {
+    for (const kind of ["suggestion", "contradiction", "withdrawn"] as const) {
+      const html = view(stateOf([item(kind)]));
+      expect(html, kind).toContain(">Remove<");
+      expect(html, kind).toContain('aria-keyshortcuts="Backspace"');
+      expect(html, kind).toContain("⌫");
+      expect(html, kind).not.toContain('aria-keyshortcuts="X"');
+    }
+  });
+
   it("offers the budget's continue as a button without a key", () => {
     const html = view(stateOf([item("budget")]));
     expect(html).toContain(">Continue<");
@@ -232,6 +242,49 @@ describe("the Inbox screen", () => {
       expect(open).toContain(text);
     expect(open).toContain("never while you type or in a dialog");
     expect(open).toContain("Continuing past the spending limit is a button, never a key.");
+  });
+
+  it("words the keys sheet for the selected item: remove on a connection, dismiss on the rest", () => {
+    const sheet = (state: InboxState) => view(reduceInbox(state, { type: "help" }));
+    const connection = sheet(stateOf([item("suggestion")]));
+    expect(connection).toContain("Remove a connection: it is never suggested again");
+    expect(connection).not.toContain("Dismiss: it leaves the Inbox and nothing changes");
+    const review = sheet(stateOf([item("review")]));
+    expect(review).toContain("Dismiss: it leaves the Inbox and nothing changes");
+    expect(review).not.toContain("Remove a connection");
+    // Editing names is not offered anywhere: the writer takes none.
+    expect(review).not.toContain("Edit the names before applying");
+    expect(connection).not.toContain("Edit the names before applying");
+  });
+
+  it("shows only the item list when it is the previous panel, the selected item marked", () => {
+    const html = view(stateOf(everyKind), { compact: true });
+    expect(html).toContain('role="listbox"');
+    expect(html.match(/role="option"/gu)).toHaveLength(inboxKinds.length);
+    expect(html).toContain('aria-current="true"');
+    expect(html).not.toContain("<h2");
+    expect(html).not.toContain('aria-label="Filters"');
+    expect(view(initialInboxState(), { compact: true })).toContain("Loading your Inbox...");
+    expect(view(stateOf([]), { compact: true })).toContain("Nothing needs you");
+  });
+
+  it("shows the previous panel's error and empty states on the shared words, as the full form does", () => {
+    const failed = view(reduceInbox(initialInboxState(), { type: "loadFailed" }), {
+      compact: true
+    });
+    expect(failed).toContain('role="alert"');
+    expect(failed).toContain("Your Inbox could not be loaded.");
+    expect(failed).toContain("Nothing was decided or changed.");
+    expect(failed.match(/Retry/gu)).toHaveLength(1);
+    expect(view(initialInboxState(), { compact: true })).toContain('aria-busy="true"');
+    const empty = view(stateOf([]), { compact: true });
+    expect(empty).toContain("Nothing needs you");
+    expect(empty).toContain("text-muted-foreground");
+  });
+
+  it("gives the item list the width of its tier", () => {
+    expect(view(stateOf(everyKind), { listWidth: 300 })).toContain("--inbox-list-w:300px");
+    expect(view(stateOf(everyKind), { listWidth: 360 })).toContain("--inbox-list-w:360px");
   });
 
   it("filters by kind with the count of each, offering only the kinds that have items", () => {

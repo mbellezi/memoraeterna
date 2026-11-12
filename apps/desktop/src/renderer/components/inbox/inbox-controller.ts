@@ -15,10 +15,9 @@ import type { MessageKey } from "@app/i18n";
 import type { AppEventHandler } from "../../../shared/app-events";
 import type { DesktopApi } from "../../../shared/ipc";
 import { isSilentRefresh, type LoadOutcome } from "../../lib/hidden-view";
-import type { InboxCommand } from "./inbox-keys";
+import { verbForKey, type InboxCommand } from "./inbox-keys";
 import {
   initialInboxState,
-  keyCarries,
   keyOf,
   mergeItems,
   offers,
@@ -341,8 +340,11 @@ export class InboxController {
         return true;
       case "verb": {
         const item = selectedItem(this.state);
-        if (!item || !keyCarries(item, command.verb)) return false;
-        void this.act(command.verb);
+        // A key carries a verb only where it is offered: `x` never removes a connection and Backspace
+        // never dismisses anything else (D34).
+        const verb = item ? verbForKey(item, command.verb) : null;
+        if (!item || verb === null) return false;
+        void this.act(verb);
         return true;
       }
       case "open":

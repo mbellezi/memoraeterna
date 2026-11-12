@@ -74,13 +74,6 @@ export function verbLabel(
   return t(labels[verb] ?? "inbox.verbs.dismiss");
 }
 
-/** The key that carries each verb out, as it is shown. */
-export const verbKeys: Readonly<Record<InboxVerb, string>> = {
-  apply: "A",
-  dismiss: "X",
-  retry: "R"
-};
-
 export function objectName(t: Translator, object: InboxObject): string {
   if (object.title !== null && object.title.trim() !== "") return object.title;
   return object.kind === "topic" ? t("topics.page.unnamed") : t("inbox.detail.unnamed");
@@ -346,4 +339,21 @@ export function ageText(t: Translator, at: string, now: number): string {
     -Math.floor(elapsed / size),
     unit
   );
+}
+
+/**
+ * What choosing a row of the item list opens beside the Inbox when it is the previous panel
+ * (design record §8, rule 1): the first object the item names, or Settings for an Obsidian
+ * conflict, which is solved there. An item that names no object has nothing to open.
+ */
+export type PreviousPanelTarget =
+  { type: "object"; object: InboxObject } | { type: "settings" } | null;
+
+export function previousPanelTarget(
+  item: Pick<InboxItem, "kind" | "objects"> | undefined
+): PreviousPanelTarget {
+  if (!item) return null;
+  const [first] = item.objects;
+  if (first) return { type: "object", object: first };
+  return item.kind === "obsidian_conflict" ? { type: "settings" } : null;
 }

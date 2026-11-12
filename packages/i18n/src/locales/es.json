@@ -330,7 +330,8 @@
       "emptyFiltered": "Nada coincide con este filtro.",
       "loadMore": "Cargar más",
       "loadingMore": "Cargando más...",
-      "moreFailed": "No se pudieron cargar más elementos."
+      "moreFailed": "No se pudieron cargar más elementos.",
+      "errorKept": "No se decidió ni cambió nada."
     },
     "filters": {
       "label": "Filtrar la bandeja de entrada",
@@ -486,12 +487,14 @@
       "move": "Elemento siguiente o anterior",
       "open": "Ir a los detalles",
       "apply": "Aplicar o conservar",
-      "dismiss": "Descartar o eliminar",
+      "dismiss": "Descartar: sale de la bandeja y nada cambia",
       "retry": "Reintentar",
       "undo": "Deshacer la última decisión",
       "help": "Mostrar u ocultar esta ayuda",
       "note": "Estas teclas funcionan mientras la lista o los detalles tienen el foco, nunca mientras escribes ni dentro de un diálogo.",
-      "money": "Continuar más allá del límite de gasto es un botón, nunca una tecla."
+      "money": "Continuar más allá del límite de gasto es un botón, nunca una tecla.",
+      "remove": "Quitar una conexión: no vuelve a sugerirse",
+      "edit": "Editar los nombres antes de aplicar"
     },
     "result": {
       "applied": "Aplicado.",
@@ -534,7 +537,8 @@
         "empty": "Aún no hay resumen",
         "divergences": "Dónde discrepan las nuevas pruebas",
         "divergence": "Párrafos {existing} y {new}: {summary}"
-      }
+      },
+      "legend": "Bloques pequeños, por letra"
     },
     "errors": {
       "invalidCursor": "La lista cambió mientras tanto. Vuelve a cargarla.",
@@ -4067,5 +4071,81 @@
       "more": "y {count} más",
       "mostCited": "más citada"
     }
+  },
+  "map": {
+    "band": {
+      "action": "Volver",
+      "back": "vuelve a {topic}, donde estabas.",
+      "whole": "Estás viendo el árbol entero."
+    },
+    "chart": {
+      "columns": {
+        "areas": "Áreas",
+        "subtopics": "Subtemas",
+        "topics": "Temas"
+      },
+      "deeper": "{count} temas están más abajo: la tabla los lista todos e Intro amplía una rama.",
+      "deeperOne": "1 tema está más abajo: la tabla lo lista e Intro amplía una rama.",
+      "here": "aquí",
+      "label": "Árbol de temas. Cada bloque es un botón que selecciona un tema: las flechas se mueven e Intro amplía.",
+      "legend": {
+        "attention": "necesita atención",
+        "direct": "notas colocadas directamente en el tema",
+        "height": "Altura = notas",
+        "here": "aquí = contiene dónde estabas",
+        "selected": "seleccionado"
+      },
+      "merged": "Los bloques pequeños aparecen agrupados; la tabla lista cada uno.",
+      "moreTopics": "{count} más · {notes}"
+    },
+    "count": {
+      "topics": "{count} temas",
+      "topicsOne": "1 tema"
+    },
+    "display": {
+      "both": "Gráfico y tabla",
+      "label": "Visualización",
+      "table": "Solo tabla"
+    },
+    "inspector": {
+      "next": "Siguiente paso",
+      "nextInbox": "Ver la propuesta en la Bandeja de entrada",
+      "selected": "Seleccionado",
+      "table": "Los mismos números en tabla"
+    },
+    "lens": {
+      "label": "Vistas del mapa",
+      "relations": "Grafo",
+      "shape": "Árbol"
+    },
+    "relations": {
+      "action": "Ver el árbol",
+      "body": "Mostrará cómo se conectan tus temas. Mientras tanto, el Árbol muestra su tamaño y su salud.",
+      "headline": "El grafo de conexiones llegará pronto"
+    },
+    "selected": {
+      "growth": "{growth} notas en {days} días",
+      "growthOne": "{growth} nota en {days} días",
+      "subtopics": "{count} subtemas directos",
+      "subtopicsOne": "1 subtema directo"
+    },
+    "shape": {
+      "description": "Tamaño y salud del árbol: {notes} en {topics}",
+      "descriptionPlain": "Tamaño y salud del árbol."
+    },
+    "states": {
+      "empty": "El mapa aparece cuando haya temas.",
+      "emptyBody": "Cuando tu primera fuente se convierta en notas, los temas nacen solos y el mapa los muestra aquí.",
+      "error": "No se pudo cargar el mapa.",
+      "errorKept": "Tus fuentes y notas siguen intactas."
+    },
+    "table": {
+      "caption": "Los mismos números del gráfico, una fila por tema",
+      "growth": "7 días",
+      "health": "Salud",
+      "notes": "Notas",
+      "topic": "Tema"
+    },
+    "title": "Mapa"
   }
 }

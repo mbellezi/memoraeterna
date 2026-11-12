@@ -69,11 +69,14 @@ export function InboxList({
               id={optionId(idPrefix, index)}
               role="option"
               aria-selected={selected}
+              aria-current={selected ? "true" : undefined}
               aria-busy={pending || undefined}
               onClick={() => onSelect(key)}
               className={cn(
                 "flex cursor-pointer flex-col gap-1 border-b border-border px-3 py-2.5 last:border-b-0",
-                selected ? "bg-accent-soft" : "hover:bg-surface-hover",
+                selected
+                  ? "bg-accent-soft [box-shadow:inset_3px_0_0_0_var(--accent)]"
+                  : "hover:bg-surface-hover",
                 pending && "opacity-60"
               )}
             >
